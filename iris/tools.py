@@ -155,6 +155,59 @@ def _type_tier(args: dict) -> str:
     return NEVER if _NEVER_WORDS.search(str(args.get("into", ""))) else CONFIRM
 
 
+# --- hands --------------------------------------------------------------------
+# Window titles that mean "pressing Enter sends a message or email": never automated.
+_MAIL_CHAT = re.compile(r"(outlook|gmail|whatsapp|discord|\bteams\b|slack)", re.I)
+
+
+def press_keys(window: str, keys: str) -> str:
+    w = _window(window)
+    w.set_focus()
+    w.type_keys(keys)  # pywinauto syntax: ^s = Ctrl+S, {TAB}, {ENTER}
+    return f"pressed {keys!r} in {w.window_text()!r}"
+
+
+def _press_keys_tier(args: dict) -> str:
+    keys = str(args.get("keys", "")).upper()
+    if "{ENTER}" not in keys:
+        return CONFIRM
+    # Enter in a mail/chat window sends the message, so that combination is never automated.
+    return NEVER if _MAIL_CHAT.search(str(args.get("window", ""))) else CONFIRM
+
+
+def focus_window(title: str) -> str:
+    w = _window(title)
+    w.set_focus()
+    return f"focused {w.window_text()!r}"
+
+
+def _scroll_at(x: int, y: int, delta: int) -> None:
+    import ctypes
+
+    ctypes.windll.user32.SetCursorPos(x, y)
+    ctypes.windll.user32.mouse_event(0x0800, 0, delta, 0)  # MOUSEEVENTF_WHEEL
+
+
+def scroll(window: str, direction: str, amount: int = 3) -> str:
+    if direction not in ("up", "down"):
+        raise ValueError("direction must be 'up' or 'down'")
+    w = _window(window)
+    r = w.rectangle()
+    delta = 120 * amount if direction == "up" else -120 * amount
+    _scroll_at((r.left + r.right) // 2, (r.top + r.bottom) // 2, delta)
+    return f"scrolled {direction} by {amount} in {w.window_text()!r}"
+
+
+def open_url(url: str) -> str:
+    from urllib.parse import urlparse
+
+    p = urlparse(url)
+    if p.scheme not in ("http", "https"):
+        raise ValueError(f"refusing to open a {p.scheme or 'schemeless'} URL; only http and https are allowed")
+    os.startfile(url)
+    return f"opened {url}"
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -168,4 +221,14 @@ TOOLS = {t.name: t for t in [
     Tool("type_text", "Type text into a window, optionally into the named field `into`. "
          "replace=true clears the field first.",
          {"window": S, "text": S, "into": S, "replace": {"type": "boolean"}}, ["window", "text"], CONFIRM, type_text, _type_tier),
+    Tool("press_keys", "Press keyboard shortcuts in a window. pywinauto syntax: ^s = Ctrl+S, {TAB}, {ENTER}. "
+          "Never used to send messages or emails.",
+         {"window": S, "keys": S}, ["window", "keys"], CONFIRM, press_keys, _press_keys_tier),
+    Tool("focus_window", "Bring the window whose title contains `title` to the front and give it focus.",
+         {"title": S}, ["title"], SAFE, focus_window),
+    Tool("scroll", "Scroll up or down inside a window (mouse wheel at its center).",
+         {"window": S, "direction": {"type": "string", "enum": ["up", "down"]},
+          "amount": {"type": "integer"}}, ["window", "direction"], SAFE, scroll),
+    Tool("open_url", "Open an http or https URL in the default browser. file:, javascript: and data: are refused.",
+         {"url": S}, ["url"], SAFE, open_url),
 ]}

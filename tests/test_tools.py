@@ -99,10 +99,61 @@ def test_open_url_allows_http_and_https(url, monkeypatch):
     assert started == [url]
 
 
-# --- registration -------------------------------------------------------------
-def test_new_tools_registered_with_tiers():
+# --- files (trash + undo) -----------------------------------------------------
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(tmp_path / "trash"))
+    return tmp_path
+
+
+def test_trash_then_restore_roundtrip(home):
+    f = home / "report.txt"
+    f.write_text("hello")
+    tools.trash_file(str(f))
+    assert not f.exists()
+    trashed = list((home / "trash").iterdir())
+    assert len(trashed) == 2  # the file + its .json sidecar
+
+    out = tools.restore_trash()
+    assert f.exists() and f.read_text() == "hello"
+    assert out.startswith("restored")
+    assert list((home / "trash").iterdir()) == []
+
+
+def test_restore_by_name_filter(home):
+    (home / "a.txt").write_text("a")
+    (home / "b.txt").write_text("b")
+    tools.trash_file(str(home / "a.txt"))
+    tools.trash_file(str(home / "b.txt"))
+    tools.restore_trash(name="b.txt")
+    assert (home / "b.txt").exists() and not (home / "a.txt").exists()
+
+
+def test_restore_unknown_name_raises(home):
+    with pytest.raises(LookupError):
+        tools.restore_trash(name="nope")
+
+
+def test_trash_missing_file_raises(home):
+    with pytest.raises(LookupError):
+        tools.trash_file(str(home / "ghost.txt"))
+
+
+def test_restore_refuses_to_overwrite_existing(home):
+    f = home / "x.txt"
+    f.write_text("old")
+    tools.trash_file(str(f))
+    f.write_text("new")  # Jay made a new file at the same path meanwhile
+    with pytest.raises(FileExistsError):
+        tools.restore_trash()
+
+
+def test_tiers():
     t = tools.TOOLS
     assert t["press_keys"].tier_of({"window": "Notepad", "keys": "^s"}) == tools.CONFIRM
     assert t["focus_window"].tier == tools.SAFE
     assert t["scroll"].tier == tools.SAFE
     assert t["open_url"].tier == tools.SAFE
+    assert t["trash_file"].tier == tools.CONFIRM
+    assert t["restore_trash"].tier == tools.SAFE
+

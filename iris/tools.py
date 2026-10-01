@@ -7,10 +7,14 @@ never    refused, always (sending, buying, paying, passwords, deleting)
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
 import subprocess
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 SAFE, CONFIRM, NEVER = "safe", "confirm", "never"
@@ -208,6 +212,45 @@ def open_url(url: str) -> str:
     return f"opened {url}"
 
 
+# --- files --------------------------------------------------------------------
+def _trash_dir() -> Path:
+    d = Path(os.environ.get("IRIS_TRASH_DIR") or (Path.home() / ".iris" / "trash"))
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def trash_file(path: str) -> str:
+    p = Path(path).expanduser().resolve()
+    if not p.exists():
+        raise LookupError(f"no such file or folder: {p}")
+    dest = _trash_dir() / f"{time.strftime('%Y%m%d-%H%M%S')}_{p.name}"
+    n = 1
+    while dest.exists():
+        dest = _trash_dir() / f"{time.strftime('%Y%m%d-%H%M%S')}_{n}_{p.name}"
+        n += 1
+    shutil.move(str(p), str(dest))
+    (dest.parent / (dest.name + ".json")).write_text(json.dumps({"original": str(p)}), encoding="utf-8")
+    return f"moved {p} to the trash; say 'restore' and I'll put it back"
+
+
+def restore_trash(name: str = "") -> str:
+    d = _trash_dir()
+    items = [x for x in d.iterdir() if not x.name.endswith(".json")]
+    items.sort(key=lambda x: x.stat().st_mtime, reverse=True)  # most recently trashed first
+    hits = [x for x in items if name.lower() in x.name.lower()] if name else list(items)
+    if not hits:
+        raise LookupError(f"nothing matching {name!r} in the trash")
+    item = hits[0]
+    meta = json.loads((d / (item.name + ".json")).read_text(encoding="utf-8"))
+    original = Path(meta["original"])
+    if original.exists():
+        raise FileExistsError(f"{original} already exists; restore it from the trash manually")
+    original.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(item), str(original))
+    (d / (item.name + ".json")).unlink()
+    return f"restored {item.name} to {original}"
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -231,4 +274,8 @@ TOOLS = {t.name: t for t in [
           "amount": {"type": "integer"}}, ["window", "direction"], SAFE, scroll),
     Tool("open_url", "Open an http or https URL in the default browser. file:, javascript: and data: are refused.",
          {"url": S}, ["url"], SAFE, open_url),
+    Tool("trash_file", "Move a file or folder to Iris's trash (undoable with restore_trash). Never deletes permanently.",
+         {"path": S}, ["path"], CONFIRM, trash_file),
+    Tool("restore_trash", "Put the most recently trashed item back where it came from. `name` filters by filename substring.",
+         {"name": S}, [], SAFE, restore_trash),
 ]}

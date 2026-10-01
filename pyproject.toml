@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 dependencies = ["pywinauto>=0.6.9", "psutil>=5.9"]
 
 [project.optional-dependencies]
-voice = ["faster-whisper>=1.0", "sounddevice>=0.4", "numpy", "pyttsx3>=2.90"]
+voice = ["faster-whisper>=1.0", "sounddevice>=0.4", "numpy", "pyttsx3>=2.90", "openwakeword>=0.6"]
 dev = ["pytest"]
 
 [tool.setuptools]

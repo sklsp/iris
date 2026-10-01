@@ -1,5 +1,5 @@
 [project]
-name = "hermes"
+name = "iris"
 version = "0.1.0"
 description = "A local voice agent that operates this Windows PC through UI Automation."
 requires-python = ">=3.11"
@@ -10,4 +10,4 @@ voice = ["faster-whisper>=1.0", "sounddevice>=0.4", "numpy", "pyttsx3>=2.90"]
 dev = ["pytest"]
 
 [tool.setuptools]
-packages = ["hermes"]
+packages = ["iris"]

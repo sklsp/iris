@@ -7,8 +7,8 @@ import os
 import urllib.request
 from dataclasses import dataclass, field
 
-BASE_URL = os.environ.get("HERMES_LLM_URL", "http://127.0.0.1:1234/v1")
-MODEL = os.environ.get("HERMES_MODEL", "qwen3.8-27b")
+BASE_URL = os.environ.get("IRIS_LLM_URL", "http://127.0.0.1:1234/v1")
+MODEL = os.environ.get("IRIS_MODEL", "qwen3.8-27b")
 
 
 @dataclass

@@ -6,8 +6,8 @@ import os
 import re
 import threading
 
-WHISPER_MODEL = os.environ.get("HERMES_WHISPER", "small")
-WHISPER_DEVICE = os.environ.get("HERMES_WHISPER_DEVICE", "cpu")  # "cuda" to use a GPU
+WHISPER_MODEL = os.environ.get("IRIS_WHISPER", "small")
+WHISPER_DEVICE = os.environ.get("IRIS_WHISPER_DEVICE", "cpu")  # "cuda" to use a GPU
 RATE = 16000
 
 _YES = re.compile(r"\b(yes|yeah|yep|sure|do it|go ahead|ja|jazeker|doe maar|ga je gang|prima|oké|oke|okay)\b", re.I)
@@ -45,7 +45,7 @@ class Voice:
 
 
 def speak(text: str) -> None:
-    print(f"Hermes: {text}")
+    print(f"Iris: {text}")
     try:
         import pyttsx3
 

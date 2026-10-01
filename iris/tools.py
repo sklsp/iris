@@ -1,4 +1,4 @@
-"""What Hermes can do on this PC, each with a risk tier enforced in code.
+"""What Iris can do on this PC, each with a risk tier enforced in code.
 
 safe     runs immediately (reading, opening apps, status)
 confirm  asks Jay first (clicking, typing)

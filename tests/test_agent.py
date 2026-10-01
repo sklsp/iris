@@ -1,9 +1,9 @@
 import json
 
-from hermes.agent import MAX_STEPS, Agent, Journal
-from hermes.llm import Reply, ToolCall
-from hermes.tools import CONFIRM, SAFE, TOOLS, Tool, _click_tier
-from hermes.voice import is_yes
+from iris.agent import MAX_STEPS, Agent, Journal
+from iris.llm import Reply, ToolCall
+from iris.tools import CONFIRM, SAFE, TOOLS, Tool, _click_tier
+from iris.voice import is_yes
 
 
 class ScriptedLLM:

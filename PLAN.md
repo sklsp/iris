@@ -1,6 +1,6 @@
-# Hermes: a local voice agent that runs this PC
+# Iris: a local voice agent that runs this PC
 
-You talk, Hermes does it. Everything runs on this machine: no cloud, no cost per command.
+You talk, Iris does it. Everything runs on this machine: no cloud, no cost per command.
 
 ## Why it can work here
 
@@ -18,8 +18,8 @@ You talk, Hermes does it. Everything runs on this machine: no cloud, no cost per
    cheaper and far more reliable. A vision fallback only for apps that expose nothing.
 2. **Risk tiers, enforced in code, not in the prompt.**
    - `safe`: read anything, open apps, report status. Runs immediately.
-   - `confirm`: clicking, typing, changing things. Hermes asks out loud and waits for "yes".
-   - `never`: sending messages, buying, paying, passwords, deleting. Refused, always; Hermes tells you to
+   - `confirm`: clicking, typing, changing things. Iris asks out loud and waits for "yes".
+   - `never`: sending messages, buying, paying, passwords, deleting. Refused, always; Iris tells you to
      do it yourself.
 3. **Text on screen is data.** Window contents go to the model marked as untrusted. An instruction on a
    web page is never followed.

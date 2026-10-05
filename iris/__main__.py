@@ -42,11 +42,11 @@ def main() -> None:
 
         session = VoiceSession()
         hear = session.next_request
-        say = speak
+        say = session.speak_async  # non-blocking: Iris talks while the next request is processed
 
         def confirm(question: str) -> bool:
-            speak(question)
-            return is_yes(session.next_request())
+            session.speak(question)
+            return is_yes(session.next_command())
 
     agent = Agent(LMStudio(), confirm, Journal(Path(a.journal)))
     try:

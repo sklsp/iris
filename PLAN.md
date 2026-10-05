@@ -45,3 +45,13 @@ You talk, Iris does it. Everything runs on this machine: no cloud, no cost per c
 ## Not in scope, on purpose
 
 Logging in, payments, messages to other people, and anything irreversible stay with Jay.
+
+## Progress
+
+- [x] **1. Core loop:** text/voice in → LM Studio (Qwen) picks tools → tier check → confirmation → UI Automation → spoken answer; append-only journal.
+- [x] **2. Ears:** openWakeWord ONNX wake word (`hey_jarvis` default, `IRIS_WAKEWORD` override), energy-VAD silence detection, long-lived `VoiceSession`, push-to-talk mode.
+- [x] **3. More hands:** `press_keys`, `focus_window`, `scroll`, `open_url`; `{ENTER}` in mail/chat windows escalates to NEVER.
+- [x] **4. Undoable files:** `trash_file` (CONFIRM) and `restore_trash` (SAFE) via an Iris-managed trash dir with JSON sidecars.
+- [x] **5. Mouth + barge-in:** optional Kokoro TTS (`IRIS_TTS=kokoro`, fp16 model files placed by hand in `~/.iris`, never downloaded automatically) streams chunk by chunk so a wake word stops the speech between chunks; Windows SAPI is the default and the fallback whenever Kokoro is missing or fails. Speech runs in a thread, so Iris listens for the next request while it talks, and after a barge-in it records your command without asking for the wake word again.
+- [ ] **Next:** custom "hey iris" wake-word model (fine-tune openWakeWord); v2 skills (ComfyUI, LM Studio manager, Cline/Claude agent manager, GPU governor).
+

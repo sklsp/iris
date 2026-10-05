@@ -8,6 +8,7 @@ import queue
 import re
 import threading
 import time
+from pathlib import Path
 
 WHISPER_MODEL = os.environ.get("IRIS_WHISPER", "small")
 WHISPER_DEVICE = os.environ.get("IRIS_WHISPER_DEVICE", "cpu")  # "cuda" to use a GPU
@@ -19,6 +20,18 @@ FRAME = 1280  # 80 ms at 16 kHz, the frame size openWakeWord wants
 WAKE_THRESHOLD = float(os.environ.get("IRIS_WAKE_THRESHOLD", 0.5))
 SILENCE_SECONDS = 1.2  # stop recording after this much continuous silence
 VAD_THRESHOLD = float(os.environ.get("IRIS_VAD_THRESHOLD", 0.01))  # RMS below this counts as silence
+
+# Kokoro TTS (optional, IRIS_TTS=kokoro). fp16: 0.999 spectral correlation with the 326 MB fp32 model
+# for half the download. Nothing is downloaded automatically: drop the two files in ~/.iris by hand
+# and Iris uses them, otherwise it keeps speaking with Windows SAPI.
+KOKORO_DIR = os.environ.get("IRIS_KOKORO_DIR", str(Path.home() / ".iris"))
+KOKORO_MODEL = os.path.join(KOKORO_DIR, "kokoro-v1.0.fp16.onnx")
+KOKORO_VOICES = os.path.join(KOKORO_DIR, "voices-v1.0.bin")
+KOKORO_VOICE = os.environ.get("IRIS_KOKORO_VOICE", "af_heart")
+_KOKORO_FILES = {
+    "kokoro-v1.0.fp16.onnx": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.fp16.onnx",
+    "voices-v1.0.bin": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin",
+}
 
 _YES = re.compile(r"\b(yes|yeah|yep|sure|do it|go ahead|ja|jazeker|doe maar|ga je gang|prima|oké|oke|okay)\b", re.I)
 
@@ -115,19 +128,23 @@ class VoiceSession:
     """Mic + wake word + VAD in one long-lived session.
 
     The input stream stays open the whole time, so a new wake word can interrupt speech even while
-    the agent is thinking or talking (the on_wake callback stops the speaker)."""
+    the agent is thinking or talking (speak() returns True when that happens)."""
 
     def __init__(self, whisper_model: str | None = None, wake_word: str | None = None,
                  vad_threshold: float | None = None, silence_seconds: float = SILENCE_SECONDS,
-                 max_record_seconds: float = 30):
+                 max_record_seconds: float = 30, speaker: Speaker | None = None):
         self.whisper_name = whisper_model or WHISPER_MODEL
         self.wake = WakeWord(wake_word)
         self.vad_threshold = vad_threshold
         self.silence_seconds = silence_seconds
         self.max_record_seconds = max_record_seconds
+        self.speaker = speaker or Speaker()
         self._frames: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=1024)  # ~80 s, drops oldest when full
         self._stream = None
         self._whisper = None
+        self._speech: threading.Thread | None = None
+        self._interrupted = False
+        self._wake_seen = False  # a wake word landed while Iris was talking (barge-in)
 
     def __enter__(self):
         import sounddevice as sd
@@ -164,19 +181,30 @@ class VoiceSession:
             except queue.Empty:
                 return
 
-    def next_request(self, on_wake=None) -> str | None:
-        """Block until the user says the wake word and then an utterance; returns the transcript."""
-        import numpy as np
+    def wait_for_speech(self) -> bool:
+        """Block until any running speech (and its watcher) is done. Returns True if it was interrupted."""
+        if self._speech is not None:
+            self._speech.join()
+        return self._interrupted
 
+    def next_request(self) -> str | None:
+        """Block until the user says the wake word and then an utterance; returns the transcript."""
+        self.wait_for_speech()  # never race the wake watcher for frames
+        if self._wake_seen:  # barge-in: Jay said the wake word while Iris was talking
+            self._wake_seen = False
+            return self.next_command()
         print("Say the wake word...")
         while True:  # phase 1: wait for the wake word
             if self.wake.detect(self._frames.get()):
                 break
-        if on_wake is not None:
-            on_wake()
+        return self.next_command()
+
+    def next_command(self) -> str | None:
+        """The wake word was already heard (barge-in); record and transcribe what follows."""
+        import numpy as np
+
         print("Listening...")
         self._drain()  # drop the wake word itself so it does not end up in the transcript
-
         det = SilenceDetector(threshold=self.vad_threshold, silence_seconds=self.silence_seconds)
         chunks, t0 = [], time.time()
         while True:  # phase 2: record until 1.2 s of silence (or a hard cap)
@@ -188,6 +216,45 @@ class VoiceSession:
                 break
         return self._transcribe(np.concatenate(chunks))
 
+    def speak(self, text: str) -> bool:
+        """Speak with barge-in and block until done. Returns True if a wake word cut it short."""
+        self.speak_async(text).join()
+        return self._interrupted
+
+    def speak_async(self, text: str) -> threading.Thread:
+        """Speak in a background thread, so the agent can listen for the next request while Iris talks.
+
+        A wake word during the speech stops it; the next next_request() then records straight away
+        instead of waiting for a new wake word."""
+        self.wait_for_speech()  # one speech at a time
+        self._interrupted = False
+        thread = threading.Thread(target=self._speak_and_watch, args=(text,), daemon=True)
+        self._speech = thread
+        thread.start()
+        return thread
+
+    def _speak_and_watch(self, text: str) -> None:
+        stop = threading.Event()
+        watcher = threading.Thread(target=self._watch_for_wake, args=(stop,), daemon=True)
+        watcher.start()
+        try:
+            finished = self.speaker.speak(text, stop_event=stop)
+        finally:
+            stop.set()  # release the watcher whether or not it was interrupted
+        watcher.join(timeout=1.0)
+        self._interrupted = not finished
+
+    def _watch_for_wake(self, stop: threading.Event) -> None:
+        while not stop.is_set():
+            try:
+                frame = self._frames.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if self.wake.detect(frame):
+                print("Interrupted.")
+                self._wake_seen = True
+                stop.set()
+
     def _transcribe(self, audio: "np.ndarray") -> str:
         from faster_whisper import WhisperModel
 
@@ -198,13 +265,70 @@ class VoiceSession:
         return " ".join(s.text.strip() for s in segments).strip()
 
 
-def speak(text: str) -> None:
-    print(f"Iris: {text}")
-    try:
-        import pyttsx3
+class Speaker:
+    """The mouth. Windows SAPI by default; Kokoro (kokoro-onnx) when IRIS_TTS=kokoro.
 
-        engine = pyttsx3.init()
-        engine.say(text)
-        engine.runAndWait()
-    except Exception:  # noqa: BLE001 - speech is a nicety; the printed line is the answer
-        pass
+    speak() blocks until done and returns True if the text was fully spoken, False if a wake word
+    cut it short. SAPI cannot be interrupted mid-utterance, so barge-in only lands between chunks
+    in Kokoro mode (which streams)."""
+
+    def __init__(self, engine: str | None = None):
+        self.engine = engine or os.environ.get("IRIS_TTS", "sapi")
+        self._kokoro = None
+
+    def speak(self, text: str, stop_event: threading.Event | None = None) -> bool:
+        print(f"Iris: {text}")
+        if self.engine == "kokoro":
+            return self._speak_kokoro(text, stop_event)
+        try:
+            import pyttsx3
+
+            engine = pyttsx3.init()
+            engine.say(text)
+            engine.runAndWait()
+        except Exception:  # noqa: BLE001 - speech is a nicety; the printed line is the answer
+            pass
+        return True
+
+    def _kokoro_model(self):
+        if self._kokoro is None:
+            from kokoro_onnx import Kokoro
+
+            missing = [os.path.basename(p) for p in (KOKORO_MODEL, KOKORO_VOICES) if not os.path.exists(p)]
+            if missing:
+                urls = " ".join(_KOKORO_FILES[n] for n in missing if n in _KOKORO_FILES)
+                raise FileNotFoundError(f"missing {', '.join(missing)} in {KOKORO_DIR}; get them from {urls}")
+            self._kokoro = Kokoro(KOKORO_MODEL, KOKORO_VOICES)
+        return self._kokoro
+
+    def _speak_kokoro(self, text: str, stop_event: threading.Event | None) -> bool:
+        import asyncio
+
+        try:
+            model = self._kokoro_model()
+
+            async def play():
+                import sounddevice as sd
+
+                async for chunk, sr in model.create_stream(text, voice=KOKORO_VOICE):
+                    if stop_event is not None and stop_event.is_set():
+                        return False
+                    sd.play(chunk.astype("float32"), sr)  # blocks per chunk: streaming with an interrupt point between chunks
+                return True
+
+            return asyncio.run(play())
+        except Exception as exc:  # noqa: BLE001 - fall back to SAPI so Iris keeps talking
+            print(f"Kokoro failed ({exc}); using Windows SAPI instead.")
+            self.engine = "sapi"
+            return self.speak(text, stop_event)
+
+
+_speaker: Speaker | None = None
+
+
+def speak(text: str) -> bool:
+    """Speak out loud (module level, for push-to-talk mode). Returns True if fully spoken."""
+    global _speaker
+    if _speaker is None:
+        _speaker = Speaker()
+    return _speaker.speak(text)

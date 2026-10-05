@@ -7,6 +7,7 @@ dependencies = ["pywinauto>=0.6.9", "psutil>=5.9"]
 
 [project.optional-dependencies]
 voice = ["faster-whisper>=1.0", "sounddevice>=0.4", "numpy", "pyttsx3>=2.90", "openwakeword>=0.6"]
+tts = ["kokoro-onnx>=0.6"]  # optional Kokoro TTS (IRIS_TTS=kokoro); SAPI is the default and needs nothing
 dev = ["pytest"]
 
 [tool.setuptools]

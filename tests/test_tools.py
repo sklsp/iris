@@ -191,3 +191,16 @@ def test_readme_documents_the_wake_word_and_how_to_run():
     for var in ("IRIS_TTS", "IRIS_LLM_URL", "IRIS_WHISPER_DEVICE", "IRIS_TRASH_DIR", "IRIS_AGENTS_TOML"):
         assert var in readme
 
+
+
+def test_trash_refuses_paths_outside_home_and_w_and_system_dirs():
+    from pathlib import Path
+
+    from iris.tools import NEVER, CONFIRM, TOOLS
+
+    t = TOOLS["trash_file"]
+    for bad in ("C:/Windows/System32/drivers", "C:/Program Files/LM Studio", "C:/ProgramData",
+                str(Path.home()), "W:/", "D:/anything.txt", str(Path.home() / ".iris" / "trash" / "x")):
+        assert t.tier_of({"path": bad}) == NEVER, bad
+    assert t.tier_of({"path": str(Path.home() / "Documents" / "notes.txt")}) == CONFIRM
+    assert t.tier_of({"path": "W:/Iris/scratch.txt"}) == CONFIRM

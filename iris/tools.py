@@ -219,6 +219,29 @@ def _trash_dir() -> Path:
     return d
 
 
+_TRASH_ROOTS = [Path.home(), Path("W:/")]
+_SYSTEM_DIRS = [Path(os.environ.get("SystemRoot", "C:/Windows")), Path("C:/Program Files"),
+                Path("C:/Program Files (x86)"), Path("C:/ProgramData")]
+
+
+def _under(p: Path, root: Path) -> bool:
+    try:
+        return p.is_relative_to(root.resolve())
+    except OSError:
+        return False
+
+
+def _trash_tier(args: dict) -> str:
+    """Only files under the home folder or W:/ may be trashed; never a root itself, system dirs, or the trash."""
+    p = Path(str(args.get("path", ""))).expanduser().resolve()
+    roots = [r.resolve() for r in _TRASH_ROOTS]
+    if p in roots or not any(_under(p, r) for r in roots):
+        return NEVER
+    if any(_under(p, s) for s in _SYSTEM_DIRS) or _under(p, _trash_dir()):
+        return NEVER
+    return CONFIRM
+
+
 def trash_file(path: str) -> str:
     p = Path(path).expanduser().resolve()
     if not p.exists():
@@ -285,7 +308,7 @@ TOOLS = {t.name: t for t in [
     Tool("open_url", "Open an http or https URL in the default browser. file:, javascript: and data: are refused.",
          {"url": S}, ["url"], SAFE, open_url),
     Tool("trash_file", "Move a file or folder to Iris's trash (undoable with restore_trash). Never deletes permanently.",
-         {"path": S}, ["path"], CONFIRM, trash_file),
+         {"path": S}, ["path"], CONFIRM, trash_file, _trash_tier),
     Tool("restore_trash", "Put the most recently trashed item back where it came from. `name` filters by filename substring.",
          {"name": S}, [], SAFE, restore_trash),
     Tool("agents_status", "Status of every repo listed in iris/agents.toml: branch, last commit and how long ago, "

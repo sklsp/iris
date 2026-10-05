@@ -9,7 +9,7 @@ You talk, Iris does it. Everything runs on this machine: no cloud, no cost per c
 | Ears: speech to text | 3060 or CPU | faster-whisper |
 | Brain: plan and pick tools | 3090 | Qwen 3.8 27B in LM Studio (OpenAI-compatible API, tool calling) |
 | Hands: apps, clicks, typing | CPU | Windows UI Automation (the accessibility tree), screenshots only as a fallback |
-| Mouth: text to speech | CPU | Windows SAPI for v0, Kokoro later |
+| Mouth: text to speech | CPU | Windows SAPI by default, Kokoro (`kokoro-onnx`) behind `IRIS_TTS=kokoro`, streaming so the wake word can interrupt |
 | Senses: load, VRAM, temps, windows | CPU | psutil + nvidia-smi (the System-Monitor-Project, rebuilt as tools) |
 
 ## Principles
@@ -29,11 +29,12 @@ You talk, Iris does it. Everything runs on this machine: no cloud, no cost per c
 
 ## Phases
 
-- **v0, core loop (now):** text or voice in → Qwen picks tools → tier check → confirmation → act through UI
+- **v0, core loop (done):** text or voice in → Qwen picks tools → tier check → confirmation → act through UI
   Automation → spoken answer. Tools: system status, list windows, read a window, open an app, click,
   type. Tests with a scripted fake LLM.
-- **v1, hands:** focus/scroll/menus, keyboard shortcuts, file operations with Recycle Bin undo, a wake
-  word (openWakeWord), streaming speech.
+- **v1, hands (done):** focus/scroll/menus, keyboard shortcuts, file operations with undo, a wake
+  word (openWakeWord), streaming speech. Shipped as `press_keys`, `focus_window`, `scroll`, `open_url`,
+  `trash_file` and `restore_trash`, wake word plus energy VAD, and Kokoro with SAPI fallback and barge-in.
 - **v2, skills:**
   - ComfyUI (API), LM Studio (load/unload models)
   - Cline and Claude: the agent manager. It reads the worktrees' git logs, spots stuck chats and pastes
@@ -54,5 +55,7 @@ Logging in, payments, messages to other people, and anything irreversible stay w
 - [x] **4. Undoable files:** `trash_file` (CONFIRM) and `restore_trash` (SAFE) via an Iris-managed trash dir with JSON sidecars.
 - [x] **5. Mouth + barge-in:** optional Kokoro TTS (`IRIS_TTS=kokoro`, fp16 model files placed by hand in `~/.iris`, never downloaded automatically) streams chunk by chunk so a wake word stops the speech between chunks; Windows SAPI is the default and the fallback whenever Kokoro is missing or fails. Speech runs in a thread, so Iris listens for the next request while it talks, and after a barge-in it records your command without asking for the wake word again.
 - [x] **6. The agent manager:** `agents_status` (safe, read only) walks the repos in `iris/agents.toml` plus every Cline worktree and reports the branch, the last commit and how long ago, the uncommitted file count, whether BLOCKED.md exists, and STUCK when there are uncommitted changes but no commit for over an hour.
-- [ ] **Next:** custom "hey iris" wake-word model (fine-tune openWakeWord); v2 skills (ComfyUI, LM Studio manager, Cline/Claude agent manager, GPU governor).
+- [x] **7. README and PLAN:** every tool documented with its tier, the wake word and how to run it; v1 ticked.
+
+Next: v2 skills. A custom "hey iris" wake-word model (fine-tune openWakeWord), ComfyUI, the LM Studio manager, the GPU governor.
 

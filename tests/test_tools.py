@@ -1,5 +1,7 @@
 """Tests for press_keys, focus_window, scroll and open_url with fakes only (no real desktop)."""
 
+from pathlib import Path
+
 import pytest
 
 from iris import tools
@@ -165,4 +167,27 @@ def test_agents_status_tool_reads_the_real_config(tmp_path, monkeypatch):
 
     monkeypatch.setattr(iris.agents, "agents_status", lambda *a, **k: "all quiet")
     assert tools.agents_status() == "all quiet"
+
+
+# --- the README cannot drift from the code --------------------------------------
+def test_readme_documents_every_tool_with_its_tier():
+    """Every tool in the registry must appear in README.md on a row with the right tier."""
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    rows = {}
+    for line in readme.splitlines():
+        if line.startswith("| ") and "|" in line[2:]:
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            rows[cells[0]] = cells[1]
+    for tool in tools.TOOLS.values():
+        assert tool.name in rows, f"{tool.name} is missing from the README table"
+        assert rows[tool.name] == tool.tier, f"{tool.name} is {rows[tool.name]} in the README, {tool.tier} in code"
+
+
+def test_readme_documents_the_wake_word_and_how_to_run():
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    assert "hey_jarvis" in readme and "IRIS_WAKEWORD" in readme  # the wake word and how to change it
+    for cmd in ("python -m iris", "--voice", "--push-to-talk"):
+        assert cmd in readme
+    for var in ("IRIS_TTS", "IRIS_LLM_URL", "IRIS_WHISPER_DEVICE", "IRIS_TRASH_DIR", "IRIS_AGENTS_TOML"):
+        assert var in readme
 

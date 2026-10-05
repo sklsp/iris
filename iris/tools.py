@@ -251,6 +251,16 @@ def restore_trash(name: str = "") -> str:
     return f"restored {item.name} to {original}"
 
 
+# --- the agent manager (read only) -----------------------------------------------
+def agents_status() -> str:
+    """Branch, last commit and its age, uncommitted file count and BLOCKED.md for every agent repo.
+
+    Read only: iris/agents.py only runs git rev-parse, log and status, never anything that writes."""
+    from iris.agents import agents_status as _status
+
+    return _status()
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -278,4 +288,8 @@ TOOLS = {t.name: t for t in [
          {"path": S}, ["path"], CONFIRM, trash_file),
     Tool("restore_trash", "Put the most recently trashed item back where it came from. `name` filters by filename substring.",
          {"name": S}, [], SAFE, restore_trash),
+    Tool("agents_status", "Status of every repo listed in iris/agents.toml: branch, last commit and how long ago, "
+         "uncommitted file count, whether BLOCKED.md exists, and STUCK when there are uncommitted changes "
+         "but no commit for over an hour. Read only.",
+         {}, [], SAFE, agents_status),
 ]}

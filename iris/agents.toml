@@ -1,0 +1,14 @@
+# Which repos the agent manager watches. Every path here is read only: Iris runs git plumbing and
+# never writes, checks out or commits in another agent's repo.
+#
+# repos     explicit repo roots
+# worktrees roots that contain Cline worktrees: each <hash>/<project> that is a git repo is added,
+#           so a new worktree shows up in the status without editing this file
+#
+# A missing file means the defaults below are used.
+
+repos = ["W:/Ledger", "W:/feedbot", "W:/acme-render", "W:/Iris"]
+worktrees = ["C:/Users/Jayde/.cline/worktrees"]
+
+# Minutes without a commit, together with uncommitted changes, that count as STUCK.
+stuck_minutes = 60

@@ -156,4 +156,13 @@ def test_tiers():
     assert t["open_url"].tier == tools.SAFE
     assert t["trash_file"].tier == tools.CONFIRM
     assert t["restore_trash"].tier == tools.SAFE
+    assert t["agents_status"].tier == tools.SAFE  # the agent manager only ever reads
+
+
+def test_agents_status_tool_reads_the_real_config(tmp_path, monkeypatch):
+    """The registered tool must reach iris.agents.agents_status, so the voice loop can call it."""
+    import iris.agents
+
+    monkeypatch.setattr(iris.agents, "agents_status", lambda *a, **k: "all quiet")
+    assert tools.agents_status() == "all quiet"
 

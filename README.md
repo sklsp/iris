@@ -113,16 +113,25 @@ The server binds to loopback only. All data endpoints answer GET; the two model 
 loopback Origin or Referer plus the `IRIS_TOKEN` header, so a page opened from anywhere else cannot
 trigger them. Every other method gets a 405. The journal file is opened read-only, there are no CORS
 headers, and the page inserts every string with `textContent`, so journal text cannot run as HTML.
-The page polls every 3 seconds and shows:
+The page polls every 3 seconds and has three tabs:
 
-- System: CPU and RAM with sparklines over the last five minutes, plus load, VRAM and temperature per GPU
-- LM Studio: every listed model with its type badge and a load or unload button, or a note when it is not reachable
-- Agents: branch, last commit and its age, uncommitted files, BLOCKED.md and STUCK flags, stuck repos first
-- Activity: the last 50 journal entries newest first with tier and outcome chips, plus today's request,
-  confirmation, refusal and error counts
-- Tools: every tool with its risk tier
+- Overview tab:
+  - System: CPU and RAM with sparklines over the last five minutes, plus load, VRAM and temperature per GPU
+  - LM Studio: every listed model with its type badge and a load or unload button, or a note when it is not reachable
+  - Agents: branch, last commit and its age, uncommitted files, BLOCKED.md and STUCK flags, stuck repos first
+  - Activity: the last 50 journal entries newest first with tier and outcome chips, plus today's request,
+    confirmation, refusal and error counts
+  - Tools: every tool with its risk tier
+- Sessions tab: `GET /api/sessions` reads `~/.iris/sessions.db` read-only on every poll. A session is running
+  only while `ended_at` is empty and its pid still exists; a row whose process died without recording an exit
+  shows as "ended (no exit recorded)", never as running. Subagents are indented under their parent, orphans
+  stay top-level, running sessions come first
+- Claude tab: `GET /api/claude` lists the folders in `~/.claude/projects` whose newest `.jsonl` was written
+  within the last 10 minutes, with folder name and age only. It stats files but never reads them
 
-Agents and LM Studio data are cached for 30 seconds so the page does not hammer git or LM Studio.
+Agents, LM Studio and Claude data are cached for 30 seconds so the page does not hammer git or LM Studio;
+the sessions database is small enough to read fresh on every poll. A missing or unreadable source shows an
+empty list in its tab, not an error page.
 
 ## Environment variables
 
@@ -141,11 +150,14 @@ Agents and LM Studio data are cached for 30 seconds so the page does not hammer 
 | `IRIS_TRASH_DIR` | `~/.iris/trash` | Iris's undoable trash |
 | `IRIS_AGENTS_TOML` | `iris/agents.toml` | which repos the agent manager watches |
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
+| `IRIS_SESSIONS_DB` | `~/.iris/sessions.db` | where the Sessions tab reads its rows from |
+| `IRIS_CLAUDE_DIR` | `~/.claude/projects` | where the Claude tab looks for active projects |
 
 ## Status
 
 Core loop works end to end against Qwen 3.8 27B. On this PC, a Dutch status question took 9 s, reading
-Notepad took 5 s, and an edit request stopped at the confirmation. 127 tests cover the loop with a
-scripted model, the wake word and VAD on synthetic audio, the SAPI and Kokoro speakers with fakes, the
-window and URL tools with fake windows, and the agent manager against temporary git repos. Nothing in
-the suite touches the real desktop, the microphone, the LLM or your repos.
+Notepad took 5 s, and an edit request stopped at the confirmation. 149 tests cover the loop with a scripted
+model, the wake word and VAD on synthetic audio, the SAPI and Kokoro speakers with fakes, the window and URL
+tools with fake windows, the agent manager against temporary git repos, and the dashboard's sessions and
+Claude endpoints against temporary databases and controlled file times. Nothing in the suite touches the real
+desktop, the microphone, the LLM or your repos.

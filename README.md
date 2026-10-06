@@ -98,6 +98,29 @@ A repo is flagged STUCK when it has uncommitted changes and nothing committed fo
 
 > Acme Shop: last commit 12 minutes ago. Beacon: stuck for 2 hours with 1 uncommitted.
 
+## Dashboard
+
+A read-only status page for Iris and the machine it runs on:
+
+```bash
+.venv\Scripts\python -m iris dashboard              # http://127.0.0.1:8765
+.venv\Scripts\python -m iris dashboard --port 9000  # if 8765 is taken
+set IRIS_DASHBOARD_PORT=9000                        # same, via environment variable
+```
+
+The server binds to loopback only and answers GET requests; every other method gets a 405. It never
+writes: the journal file is opened read-only, there are no CORS headers, and the page inserts every
+string with `textContent`, so journal text cannot run as HTML. The page polls every 3 seconds and shows:
+
+- System: CPU and RAM with sparklines over the last five minutes, plus load, VRAM and temperature per GPU
+- LM Studio: the loaded models, or a note when it is not reachable
+- Agents: branch, last commit and its age, uncommitted files, BLOCKED.md and STUCK flags, stuck repos first
+- Activity: the last 50 journal entries newest first with tier and outcome chips, plus today's request,
+  confirmation, refusal and error counts
+- Tools: every tool with its risk tier
+
+Agents and LM Studio data are cached for 30 seconds so the page does not hammer git or LM Studio.
+
 ## Environment variables
 
 | Variable | Default | Meaning |
@@ -114,6 +137,7 @@ A repo is flagged STUCK when it has uncommitted changes and nothing committed fo
 | `IRIS_KOKORO_VOICE` | `af_heart` | Kokoro voice |
 | `IRIS_TRASH_DIR` | `~/.iris/trash` | Iris's undoable trash |
 | `IRIS_AGENTS_TOML` | `iris/agents.toml` | which repos the agent manager watches |
+| `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
 
 ## Status
 

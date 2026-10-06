@@ -66,7 +66,12 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .a-err{color:#8a9099;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}
 
 /* lm studio */
-.lm-count{color:#8a9099;font-size:11px;margin-bottom:6px}
+.lm-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.lm-count{color:#8a9099;font-size:11px}
+.lm-uses{color:#8a9099;font-size:11px;margin-top:2px;min-height:14px}
+.spin{width:10px;height:10px;border:2px solid #2c313a;border-top-color:#7aa2ff;border-radius:50%;
+      display:inline-block;flex:none;animation:rot 1s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
 .lm-model{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #1c1f24}
 .lm-model:last-child{border-bottom:none}
 .lm-name{font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -121,6 +126,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   .a-commit{grid-column:1/-1}
   .metric{grid-template-columns:64px 96px minmax(0,1fr)}
   .t-args{max-width:32%}
+  .lm-actions{flex-wrap:wrap}
 }
 </style>
 </head>
@@ -137,6 +143,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <section class="panel">
     <h2>LM Studio</h2>
     <div id="lmstudio-body"><div class="empty">loading...</div></div>
+    <div id="lm-uses" class="lm-uses"></div>
     <div id="lm-status" class="lm-status"></div>
   </section>
   <section class="panel wide">
@@ -300,11 +307,18 @@ function renderAgents(d){
   }
 }
 let modelBusy = false;   // one load or unload at a time, same as the server enforces
+let busyTimer = null;
 
-function lmStatus(msg, cls){
+function setLmStatus(msg, cls){
   const s = $("lm-status");
   s.className = "lm-status" + (cls ? " " + cls : "");
-  s.textContent = msg || "";
+  s.textContent = "";
+  if (modelBusy && !cls) s.appendChild(el("span", "spin"));   // spinner while a load or unload runs
+  s.appendChild(el("span", null, msg || ""));
+}
+
+function stopBusyTimer(){
+  if (busyTimer){ clearInterval(busyTimer); busyTimer = null; }
 }
 
 async function postModel(route, body){
@@ -319,22 +333,56 @@ async function postModel(route, body){
 async function runModelAction(route, id){
   modelBusy = true;
   document.querySelectorAll(".mbtn").forEach(b => { b.disabled = true; });
-  lmStatus((route.endsWith("/load") ? "loading " : "unloading ") + id + "...");
+  const verb = route.endsWith("/load") ? "loading" : "unloading";
+  const started = Date.now();
+  setLmStatus(verb + " " + id + "...");   // big models take minutes, so show elapsed seconds
+  busyTimer = setInterval(() => {
+    setLmStatus(verb + " " + id + "... " + Math.round((Date.now() - started) / 1000) + "s");
+  }, 1000);
   const d = await postModel(route, {model: id});
+  stopBusyTimer();
   if (d && typeof d.reachable === "boolean"){
     modelBusy = false;
     renderLM(d);   // the response carries a fresh model list; paint it at once
-    lmStatus("ok", "ok");
+    setLmStatus("ok", "ok");
+    return true;
+  }
+  modelBusy = false;
+  document.querySelectorAll(".mbtn").forEach(b => { b.disabled = !window.IRIS_TOKEN; });
+  setLmStatus((d && d.error) ? d.error : "request failed", "err");
+  return false;
+}
+
+async function useForIris(id){
+  if (modelBusy || !window.IRIS_TOKEN) return;
+  modelBusy = true;
+  document.querySelectorAll(".mbtn").forEach(b => { b.disabled = true; });
+  setLmStatus("setting iris model...");
+  const d = await postModel("/api/iris/model", {model: id});
+  modelBusy = false;
+  document.querySelectorAll(".mbtn").forEach(b => { b.disabled = !window.IRIS_TOKEN; });
+  if (d && typeof d.model === "string"){
+    renderIrisModel(d);
+    setLmStatus("ok", "ok");
   } else {
-    modelBusy = false;
-    document.querySelectorAll(".mbtn").forEach(b => { b.disabled = !window.IRIS_TOKEN; });
-    lmStatus((d && d.error) ? d.error : "request failed", "err");
+    setLmStatus((d && d.error) ? d.error : "request failed", "err");
+  }
+}
+
+function renderIrisModel(d){
+  const s = $("lm-uses");
+  if (d && typeof d.model === "string" && d.model){
+    s.textContent = "";
+    s.appendChild(el("span", null, "Iris uses: "));
+    s.appendChild(el("span", "num", d.model));
+  } else {
+    s.textContent = "";   // nothing to show until the settings route answers (item 3)
   }
 }
 
 function renderLM(d){
   const body = $("lmstudio-body");
-  if (!modelBusy && !$("lm-status").className.includes("err")) lmStatus("");   // fresh poll replaces stale feedback; errors stay until the next action
+  if (!modelBusy && !$("lm-status").className.includes("err")) setLmStatus("");   // fresh poll replaces stale feedback; errors stay until the next action
   body.textContent = "";
   if (!d || typeof d.reachable !== "boolean"){
     body.appendChild(el("div", "empty", d && d.error ? d.error : "no data yet"));
@@ -349,8 +397,16 @@ function renderLM(d){
     body.appendChild(el("div", "empty", "reachable, no models listed"));
     return;
   }
-  const loaded = models.filter(m => m.state === "loaded").length;
-  body.appendChild(el("div", "lm-count num", d.states_known ? (loaded + " of " + models.length + " loaded") : "available (state unknown)"));
+  const loadedCount = models.filter(m => m.state === "loaded").length;
+  const head = el("div", "lm-head");
+  head.appendChild(el("span", "lm-count num", d.states_known ? (loadedCount + " of " + models.length + " loaded") : "available (state unknown)"));
+  if (d.states_known && loadedCount > 0){
+    const ua = el("button", "mbtn danger", "unload all");
+    if (modelBusy || !window.IRIS_TOKEN) ua.disabled = true;
+    ua.onclick = () => runModelAction("/api/models/unload", "all");
+    head.appendChild(ua);
+  }
+  body.appendChild(head);
   for (const m of models){
     const row = el("div", "lm-model");
     if (d.states_known && m.state === "loaded"){
@@ -364,8 +420,21 @@ function renderLM(d){
     const acts = el("div", "lm-actions");
     const b = el("button", "mbtn" + (loaded ? " danger" : ""), loaded ? "unload" : "load");
     if (modelBusy || !window.IRIS_TOKEN) b.disabled = true;
-    b.onclick = () => runModelAction(loaded ? "/api/models/unload" : "/api/models/load", m.id);
+    b.onclick = async () => {
+      if (loaded){ runModelAction("/api/models/unload", m.id); return; }
+      const other = models.find(x => x.state === "loaded" && x.id !== m.id);
+      if (other){   // both may not fit in VRAM, so ask before swapping
+        if (!confirm("Unload " + other.id + " first?")) return;
+        const ok = await runModelAction("/api/models/unload", other.id);
+        if (!ok) return;   // the unload failed; do not pile a load on top
+      }
+      runModelAction("/api/models/load", m.id);
+    };
     acts.appendChild(b);
+    const b2 = el("button", "mbtn", "use for iris");
+    if (modelBusy || !window.IRIS_TOKEN) b2.disabled = true;
+    b2.onclick = () => useForIris(m.id);
+    acts.appendChild(b2);
     row.appendChild(acts);
     body.appendChild(row);
   }
@@ -456,6 +525,7 @@ const RENDERERS = {
   "/api/system": renderSystem,
   "/api/agents": renderAgents,
   "/api/lmstudio": renderLM,
+  "/api/iris/model": renderIrisModel,
   "/api/journal": renderJournal,
   "/api/tools": renderTools
 };

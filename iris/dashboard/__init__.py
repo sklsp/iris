@@ -12,8 +12,11 @@ IRIS_DASHBOARD_PORT). The page plus five JSON routes are polled every 3 s by the
                   list labelled "available (state unknown)"; cached 30 s
     /api/journal  the last 50 journal entries, newest first, plus today's counters
     /api/tools    every tool with its risk tier, straight from iris.tools.TOOLS
+    /api/iris/model which model Iris talks to right now and where that choice came from
+                    (the IRIS_MODEL environment variable, then ~/.iris/settings.json)
 
-POST (the only writes): /api/models/load {model}, /api/models/unload {model | "all"}.
+POST (the only writes): /api/models/load {model}, /api/models/unload {model | "all"}
+and /api/iris/model {model}, which writes the model key of ~/.iris/settings.json.
 Every POST must carry the X-Iris-Token header (a random token generated at server start
 and injected into the served page) and an Origin or Referer of this very dashboard;
 anything else is a 403. The model id must be one LM Studio reports right now, else 400.
@@ -124,7 +127,7 @@ def lmstudio_payload() -> dict:
 
 LMS_EXE = os.environ.get("IRIS_LMS_BIN", "C:/Users/Jayde/.lmstudio/bin/lms.exe")
 LMS_TIMEOUT_SECONDS = 600   # big models can take minutes to load
-WRITE_ROUTES = ("/api/models/load", "/api/models/unload")   # the only POST routes (item 3 adds one)
+WRITE_ROUTES = ("/api/models/load", "/api/models/unload", "/api/iris/model")   # the only POST routes
 
 _model_action_lock = threading.Lock()   # one load or unload at a time, full stop
 
@@ -202,8 +205,36 @@ def model_action(action: str, body: dict) -> dict:
     return {"action": action, "model": target, **_fresh_lmstudio_state()}
 
 
-def iris_model_payload() -> dict:  # item 3 fills this in; the route exists from day one
-    raise ModelActionError(501, "not implemented yet")
+def iris_model_payload() -> dict:
+    """Which model Iris talks to right now, and where that choice came from."""
+    from iris.llm import resolve_model
+
+    model, source = resolve_model()
+    return {"model": model, "source": source}
+
+
+def set_iris_model(body: dict) -> dict:
+    """Point Iris at a model by writing the "model" key of settings.json.
+
+    Same rules as a load or unload: the body must name an id LM Studio reports right
+    now (or 400). The IRIS_MODEL environment variable still wins over this file."""
+    if not isinstance(body, dict):
+        raise ModelActionError(400, "the body must be a JSON object")
+    model = body.get("model")
+    if not isinstance(model, str) or not model:
+        raise ModelActionError(400, "missing model id in the request body")
+    if model not in _known_model_ids():
+        raise ModelActionError(400, f"unknown model: {model}")
+    from iris.llm import read_settings, settings_path
+
+    path = settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = read_settings()   # keep any other keys the user has in the file
+    data["model"] = model
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    _log_model_event("select", model, "ok")
+    return iris_model_payload()
 
 
 def _authorized(self) -> bool:
@@ -313,6 +344,8 @@ class Handler(BaseHTTPRequestHandler):
             token = getattr(self.server, "token", "")
             page = _page_template().replace(b"__IRIS_TOKEN__", token.encode())
             self._send(200, page, "text/html; charset=utf-8")
+        elif path == "/api/iris/model":
+            self._json(iris_model_payload())   # readable via GET; writes go through the POST below
         elif path in WRITE_ROUTES:
             self._json({"error": "write routes only accept POST"}, code=405)
         elif path == "/api/system":
@@ -345,8 +378,11 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "bad JSON body"}, code=400)
             return
         try:
-            action = "load" if path.endswith("/load") else "unload"
-            payload = model_action(action, body)
+            if path == "/api/iris/model":
+                payload = set_iris_model(body)
+            else:
+                action = "load" if path.endswith("/load") else "unload"
+                payload = model_action(action, body)
         except ModelActionError as exc:
             self._json({"error": exc.message}, code=exc.code)
             return

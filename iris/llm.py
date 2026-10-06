@@ -6,9 +6,46 @@ import json
 import os
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 
 BASE_URL = os.environ.get("IRIS_LLM_URL", "http://127.0.0.1:1234/v1")
-MODEL = os.environ.get("IRIS_MODEL", "qwen3.8-27b")
+DEFAULT_MODEL = "qwen3.8-27b"
+
+
+def settings_path() -> Path:
+    """Where the user's model choice lives; IRIS_SETTINGS overrides it (tests)."""
+    return Path(os.environ.get("IRIS_SETTINGS") or (Path.home() / ".iris" / "settings.json"))
+
+
+def read_settings() -> dict:
+    """The contents of settings.json, re-read on every call so edits apply at once.
+
+    A missing file, a broken one and a non-object top level all mean "no user choice"."""
+    try:
+        with settings_path().open(encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def resolve_model() -> tuple[str, str]:
+    """(model, source); the source is "env", "settings" or "default".
+
+    The IRIS_MODEL environment variable wins; then the "model" key in settings.json;
+    otherwise the default. Re-resolved on every call so a change applies at once."""
+    env = os.environ.get("IRIS_MODEL") or ""
+    if env:
+        return env, "env"
+    model = read_settings().get("model")
+    if isinstance(model, str) and model:
+        return model, "settings"
+    return DEFAULT_MODEL, "default"
+
+
+def effective_model() -> str:
+    """The model Iris talks to right now."""
+    return resolve_model()[0]
 
 
 @dataclass
@@ -26,11 +63,16 @@ class Reply:
 
 
 class LMStudio:
-    def __init__(self, base_url: str = BASE_URL, model: str = MODEL, timeout: float = 300):
-        self.url, self.model, self.timeout = base_url.rstrip("/") + "/chat/completions", model, timeout
+    def __init__(self, base_url: str = BASE_URL, model: str | None = None, timeout: float = 300):
+        self.url = base_url.rstrip("/") + "/chat/completions"
+        self.model = model   # an explicit id wins; None resolves on every request
+        self.timeout = timeout
+
+    def _model(self) -> str:
+        return self.model if self.model is not None else effective_model()
 
     def chat(self, messages: list[dict], tools: list[dict]) -> Reply:
-        body = {"model": self.model, "messages": messages, "tools": tools, "temperature": 0.3, "max_tokens": 4096}
+        body = {"model": self._model(), "messages": messages, "tools": tools, "temperature": 0.3, "max_tokens": 4096}
         req = urllib.request.Request(self.url, json.dumps(body).encode(), {"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
             msg = json.load(r)["choices"][0]["message"]

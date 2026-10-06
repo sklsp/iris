@@ -13,6 +13,7 @@ import pytest
 
 import iris.dashboard as d
 from iris.dashboard import HOST, agents_payload, journal_payload, lmstudio_payload, make_server, system_payload
+from iris.llm import DEFAULT_MODEL
 
 
 @pytest.fixture(scope="session")
@@ -420,3 +421,108 @@ def test_post_to_any_other_route_stays_405(srv):
     for path in ("/", "/api/system", "/api/journal"):
         code, _ = post(base + path, {"model": "m1"}, token=srv.token, origin=base)
         assert code == 405, f"POST {path} must be a 405"
+
+
+# --- iris model selection (~/.iris/settings.json) ---------------------------------
+
+def _clean_model_env(monkeypatch, tmp_path):
+    """Point settings and journal at temp files so tests never touch the real ones."""
+    monkeypatch.delenv("IRIS_MODEL", raising=False)
+    monkeypatch.setenv("IRIS_SETTINGS", str(tmp_path / "settings.json"))
+    monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "journal.jsonl"))
+
+
+def test_iris_model_get_reports_the_default_when_nothing_is_set(srv, tmp_path, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_model_env(monkeypatch, tmp_path)
+    status, _, raw = get(base + "/api/iris/model")   # a read route: no token needed
+    assert status == 200 and json.loads(raw) == {"model": DEFAULT_MODEL, "source": "default"}
+
+
+def test_iris_model_get_reads_the_settings_file(srv, tmp_path, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_model_env(monkeypatch, tmp_path)
+    (tmp_path / "settings.json").write_text(json.dumps({"model": "m1", "other": 5}), encoding="utf-8")
+    status, _, raw = get(base + "/api/iris/model")
+    assert status == 200 and json.loads(raw) == {"model": "m1", "source": "settings"}
+
+
+def test_iris_model_get_prefers_the_environment_variable(srv, tmp_path, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_model_env(monkeypatch, tmp_path)
+    (tmp_path / "settings.json").write_text(json.dumps({"model": "m1"}), encoding="utf-8")
+    monkeypatch.setenv("IRIS_MODEL", "m9")
+    status, _, raw = get(base + "/api/iris/model")
+    assert status == 200 and json.loads(raw) == {"model": "m9", "source": "env"}
+
+
+def test_iris_model_get_survives_a_broken_settings_file(srv, tmp_path, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_model_env(monkeypatch, tmp_path)
+    (tmp_path / "settings.json").write_text("not json at all", encoding="utf-8")
+    status, _, raw = get(base + "/api/iris/model")
+    assert status == 200 and json.loads(raw)["source"] == "default"
+
+
+def test_iris_model_post_writes_the_file_keeps_other_keys_and_logs_it(srv, tmp_path, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_model_env(monkeypatch, tmp_path)
+    fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
+    (tmp_path / "settings.json").write_text(json.dumps({"other": 5}), encoding="utf-8")
+
+    code, body = post(base + "/api/iris/model", {"model": "m1"}, token=srv.token, origin=base)
+    assert code == 200 and body == {"model": "m1", "source": "settings"}
+
+    saved = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
+    assert saved == {"other": 5, "model": "m1"}   # any other keys the user has are kept
+
+    last = json.loads((tmp_path / "journal.jsonl").read_text(encoding="utf-8").strip().splitlines()[-1])
+    assert last["event"] == "model" and last["action"] == "select"
+    assert last["model"] == "m1" and last["outcome"] == "ok"
+
+
+def test_iris_model_post_unknown_model_is_400_and_writes_nothing(srv, tmp_path, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_model_env(monkeypatch, tmp_path)
+    fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
+
+    code, body = post(base + "/api/iris/model", {"model": "nope"}, token=srv.token, origin=base)
+    assert code == 400 and "unknown model" in body["error"]
+    assert not (tmp_path / "settings.json").exists()
+
+
+@pytest.mark.parametrize("body", [{}, {"model": ""}, {"model": 5}])
+def test_iris_model_post_missing_or_bad_id_is_400(srv, tmp_path, monkeypatch, body):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_model_env(monkeypatch, tmp_path)
+    fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
+
+    code, b = post(base + "/api/iris/model", body, token=srv.token, origin=base)
+    assert code == 400
+
+
+def test_iris_model_post_needs_the_token_and_origin(srv, tmp_path, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_model_env(monkeypatch, tmp_path)
+    fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
+
+    code, body = post(base + "/api/iris/model", {"model": "m1"}, origin=base)   # no token
+    assert code == 403 and "forbidden" in body["error"]
+    code, _ = post(base + "/api/iris/model", {"model": "m1"}, token=srv.token, origin="http://evil.example")
+    assert code == 403
+
+
+def test_resolve_model_re_resolves_on_every_call(tmp_path, monkeypatch):
+    """The choice is read on every request: a file edit applies without a restart."""
+    from iris.llm import resolve_model
+
+    settings = tmp_path / "settings.json"
+    monkeypatch.delenv("IRIS_MODEL", raising=False)
+    monkeypatch.setenv("IRIS_SETTINGS", str(settings))
+
+    assert resolve_model() == (DEFAULT_MODEL, "default")   # nothing set yet
+    settings.write_text(json.dumps({"model": "m1"}), encoding="utf-8")
+    assert resolve_model() == ("m1", "settings")           # the file is re-read on every call
+    monkeypatch.setenv("IRIS_MODEL", "m9")
+    assert resolve_model() == ("m9", "env")                # the environment variable still wins
+

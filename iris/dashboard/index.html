@@ -161,56 +161,68 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 </head>
 <body>
 <header class="top">
-  <div class="brand">IRIS<small>local dashboard, read only</small></div>
+  <div class="brand">IRIS<small>local dashboard</small></div>
   <div class="status"><span class="dot" id="pulse"></span><span class="num" id="updated">connecting...</span></div>
 </header>
 <nav class="tabs" id="tabs">
   <button type="button" class="tab active" data-tab="overview">Overview</button>
-  <button type="button" class="tab" data-tab="sessions">Sessions</button>
-  <button type="button" class="tab" data-tab="claude">Claude</button>
+  <button type="button" class="tab" data-tab="agents">Agents</button>
+  <button type="button" class="tab" data-tab="activity">Activity</button>
+  <button type="button" class="tab" data-tab="repos">Repos</button>
+  <button type="button" class="tab" data-tab="tools">Tools</button>
 </nav>
 <main>
   <section id="overview-pane" class="pane">
     <div class="grid">
-  <section class="panel">
-    <h2>System</h2>
-    <div id="system-body"><div class="empty">loading...</div></div>
-  </section>
-  <section class="panel">
-    <h2>LM Studio</h2>
-    <div id="lmstudio-body"><div class="empty">loading...</div></div>
-    <div id="lm-uses" class="lm-uses"></div>
-    <div id="lm-status" class="lm-status"></div>
-  </section>
-  <section class="panel wide">
-    <h2>Agents</h2>
-    <div id="agents-body"><div class="empty">loading...</div></div>
-  </section>
-  <section class="panel">
-    <h2>Activity<span class="chips" id="counters"></span></h2>
-    <div id="journal-body" class="scroll"><div class="empty">loading...</div></div>
-  </section>
-  <section class="panel">
-    <h2>Tools</h2>
-    <div id="tools-body"><div class="empty">loading...</div></div>
-  </section>
-    </div>
-  </section>
-
-  <section id="sessions-pane" class="pane hidden">
-    <div class="grid">
-      <section class="panel wide">
-        <h2>Sessions</h2>
-        <div id="sessions-body"><div class="empty">loading...</div></div>
+      <section class="panel">
+        <h2>System</h2>
+        <div id="system-body"><div class="empty">loading...</div></div>
+      </section>
+      <section class="panel">
+        <h2>Models</h2>
+        <div id="lmstudio-body"><div class="empty">loading...</div></div>
+        <div id="lm-uses" class="lm-uses"></div>
+        <div id="lm-status" class="lm-status"></div>
       </section>
     </div>
   </section>
 
-  <section id="claude-pane" class="pane hidden">
+  <section id="agents-pane" class="pane hidden">
     <div class="grid">
       <section class="panel wide">
-        <h2>Claude projects</h2>
+        <h2>Cline sessions</h2>
+        <div id="sessions-body"><div class="empty">loading...</div></div>
+      </section>
+      <section class="panel wide">
+        <h2>Claude sessions, active in the last 10 minutes</h2>
         <div id="claude-body"><div class="empty">loading...</div></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="activity-pane" class="pane hidden">
+    <div class="grid">
+      <section class="panel wide">
+        <h2>Activity<span class="chips" id="counters"></span></h2>
+        <div id="journal-body" class="scroll"><div class="empty">loading...</div></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="repos-pane" class="pane hidden">
+    <div class="grid">
+      <section class="panel wide">
+        <h2>Repos</h2>
+        <div id="agents-body"><div class="empty">loading...</div></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="tools-pane" class="pane hidden">
+    <div class="grid">
+      <section class="panel wide">
+        <h2>Tools</h2>
+        <div id="tools-body"><div class="empty">loading...</div></div>
       </section>
     </div>
   </section>
@@ -331,7 +343,7 @@ function renderAgents(d){
     return;
   }
   const head = el("div", "arow a-head");
-  ["agent", "branch", "last commit", "uncommitted", ""].forEach(h => {
+  ["repo", "branch", "last commit", "uncommitted", ""].forEach(h => {
     head.appendChild(el("span", null, h));
   });
   body.appendChild(head);
@@ -602,11 +614,17 @@ function renderSessions(d){
   const head = el("div", "srow s-head");
   ["folder", "model", "provider", "status", ""].forEach(t => head.appendChild(el("span", null, t)));
   body.appendChild(head);
-  for (const s of d.rows){
+  // everything running, then only the 10 most recent others: a week of history is noise here
+  const live = d.rows.filter(s => s.live), rest = d.rows.filter(s => !s.live);
+  for (const s of live.concat(rest.slice(0, HISTORY_ROWS))){
     body.appendChild(sessionRow(s, false));
-    for (const c of s.children || []) body.appendChild(sessionRow(c, true));   // subagents under their parent
+    // subagents under their parent, but only while it runs: finished ones collapse to a count
+    if (s.live) for (const c of s.children || []) body.appendChild(sessionRow(c, true));
+    else if ((s.children || []).length) body.appendChild(el("div", "empty sub-note", `  + ${s.children.length} subagents`));
   }
+  if (rest.length > HISTORY_ROWS) body.appendChild(el("div", "empty", `${rest.length - HISTORY_ROWS} older sessions hidden`));
 }
+const HISTORY_ROWS = 10;
 
 function renderClaude(d){
   const body = $("claude-body");
@@ -651,12 +669,15 @@ tick();
 setInterval(tick, 3000);
 
 // --- tabs ------------------------------------------------------------------------
-const PANES = ["overview", "sessions", "claude"];
+const PANES = ["overview", "agents", "activity", "repos", "tools"];
 function showTab(name){
+  if (!PANES.includes(name)) name = "overview";
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   for (const p of PANES) $(p + "-pane").classList.toggle("hidden", p !== name);
 }
-document.querySelectorAll(".tab").forEach(b => { b.onclick = () => showTab(b.dataset.tab); });
+document.querySelectorAll(".tab").forEach(b => { b.onclick = () => { location.hash = b.dataset.tab; }; });
+window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+showTab(location.hash.slice(1));
 
 </script>
 </body>

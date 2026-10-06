@@ -1,10 +1,12 @@
 """python -m iris              type requests
 python -m iris --voice         wake word mode: say "hey jarvis" (IRIS_WAKEWORD), stop on silence, hear answers
-python -m iris --push-to-talk  old voice mode: press Enter to stop recording"""
+python -m iris --push-to-talk  old voice mode: press Enter to stop recording
+python -m iris dashboard       read-only status page at http://127.0.0.1:8765 (add --port N if taken)"""
 
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from iris.agent import Agent, Journal
@@ -13,6 +15,16 @@ from iris.voice import is_yes, speak
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "dashboard":
+        from iris.dashboard import serve
+
+        port = None
+        args = sys.argv[2:]
+        for i, a in enumerate(args):
+            if a == "--port" and i + 1 < len(args):
+                port = int(args[i + 1])
+        serve(port=port)
+        return
     ap = argparse.ArgumentParser(prog="iris", description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--voice", action="store_true")
     ap.add_argument("--push-to-talk", action="store_true")

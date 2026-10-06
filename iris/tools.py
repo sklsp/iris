@@ -50,19 +50,36 @@ class Tool:
 
 
 # --- senses -------------------------------------------------------------------
-def system_status() -> str:
+def system_data() -> dict:
+    """The same numbers as system_status, as data instead of text (the dashboard uses this)."""
     import psutil
 
     vm = psutil.virtual_memory()
-    lines = [f"CPU {psutil.cpu_percent(interval=0.3):.0f}%, RAM {vm.used / 2**30:.1f}/{vm.total / 2**30:.1f} GB"]
+    d = {"cpu_percent": psutil.cpu_percent(interval=0.3),
+         "ram_used_gb": vm.used / 2**30,
+         "ram_total_gb": vm.total / 2**30}
+    gpus = []
     try:
         out = subprocess.run(
             ["nvidia-smi", "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",
              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=10).stdout
         for row in filter(None, out.strip().splitlines()):
             i, name, util, used, total, temp = [x.strip() for x in row.split(",")]
-            lines.append(f"GPU{i} {name}: {util}% load, VRAM {used}/{total} MiB, {temp} C")
+            gpus.append({"index": int(i), "name": name, "load_percent": float(util),
+                         "vram_used_mib": float(used), "vram_total_mib": float(total), "temp_c": float(temp)})
     except (OSError, subprocess.SubprocessError, ValueError):
+        pass  # no nvidia-smi or an unexpected row: report CPU and RAM only
+    d["gpus"] = gpus
+    return d
+
+
+def system_status() -> str:
+    d = system_data()
+    lines = [f"CPU {d['cpu_percent']:.0f}%, RAM {d['ram_used_gb']:.1f}/{d['ram_total_gb']:.1f} GB"]
+    for g in d["gpus"]:
+        lines.append(f"GPU{g['index']} {g['name']}: {g['load_percent']:.0f}% load, "
+                     f"VRAM {g['vram_used_mib']:.0f}/{g['vram_total_mib']:.0f} MiB, {g['temp_c']:.0f} C")
+    if not d["gpus"]:
         lines.append("GPU: nvidia-smi not available")
     return "\n".join(lines)
 

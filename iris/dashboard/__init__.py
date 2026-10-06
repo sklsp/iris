@@ -7,7 +7,9 @@ IRIS_DASHBOARD_PORT). The page plus five JSON routes are polled every 3 s by the
                   five-minute history for the sparklines
     /api/agents   one row per watched repo (branch, last commit and age, uncommitted
                   count, BLOCKED.md, STUCK), stuck rows first; cached 30 s
-    /api/lmstudio the loaded model(s) from LM Studio, or reachable: false; cached 30 s
+    /api/lmstudio every model LM Studio knows, with its state (loaded or not) and type
+                  (llm/vlm/embeddings) from the v0 API; falls back to the OpenAI-style
+                  list labelled "available (state unknown)"; cached 30 s
     /api/journal  the last 50 journal entries, newest first, plus today's counters
     /api/tools    every tool with its risk tier, straight from iris.tools.TOOLS
 
@@ -34,7 +36,13 @@ CACHE_SECONDS = 30      # agents and LM Studio can be slow; do not re-query on e
 HISTORY_SECONDS = 300   # the sparklines cover five minutes
 JOURNAL_LIMIT = 50
 
-LM_STUDIO_URL = os.environ.get("IRIS_LLM_URL", "http://127.0.0.1:1234/v1") + "/models"
+_LM_BASE = os.environ.get("IRIS_LLM_URL", "http://127.0.0.1:1234/v1")
+if _LM_BASE.endswith("/v1"):
+    _LM_ROOT = _LM_BASE[: -len("/v1")]
+else:
+    _LM_ROOT = _LM_BASE.rstrip("/")
+V0_MODELS_URL = _LM_ROOT + "/api/v0/models"  # per-model state and type (the real list)
+V1_MODELS_URL = _LM_ROOT + "/v1/models"      # fallback: every id, no state information
 
 _lock = threading.Lock()
 _cache: dict[str, tuple[float, dict]] = {}   # key -> (fetched_at, payload)
@@ -80,11 +88,26 @@ def agents_payload() -> dict:
     return {"rows": rows}
 
 
+def _fetch_json(url: str) -> dict:
+    with urllib.request.urlopen(url, timeout=5) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
 def lmstudio_payload() -> dict:
+    """Every model LM Studio knows. The v0 API says which one is loaded and what kind it
+    is; the OpenAI-style /v1 list only gives ids, so a fallback answer carries no state."""
     try:
-        with urllib.request.urlopen(LM_STUDIO_URL, timeout=5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        return {"reachable": True, "models": [str(m.get("id", "")) for m in data.get("data", [])]}
+        data = _fetch_json(V0_MODELS_URL)
+        models = [{"id": str(m.get("id", "")), "state": m.get("state"), "type": m.get("type")}
+                  for m in data.get("data", [])]
+        return {"reachable": True, "states_known": True, "models": models}
+    except Exception:  # noqa: BLE001 - no v0 endpoint (older LM Studio): try the plain list
+        pass
+    try:
+        data = _fetch_json(V1_MODELS_URL)
+        models = [{"id": str(m.get("id", "")), "state": None, "type": None}
+                  for m in data.get("data", [])]
+        return {"reachable": True, "states_known": False, "models": models}
     except Exception:  # noqa: BLE001 - unreachable or bad JSON both mean "not reachable"
         return {"reachable": False}
 

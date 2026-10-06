@@ -20,6 +20,7 @@ body{background:#0e0f11;color:#e6e6e6;font-family:system-ui,-apple-system,"Segoe
 .status{display:flex;align-items:center;gap:8px;color:#8a9099;font-size:11px}
 .dot{width:7px;height:7px;border-radius:50%;background:#3fb950;display:inline-block;flex:none}
 .dot.err{background:#f85149}
+.dot.off{background:#3a3f47;animation:none}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .dot.live{animation:pulse 2.6s ease-in-out infinite}
 
@@ -300,14 +301,20 @@ function renderLM(d){
   }
   const models = d.models || [];
   if (models.length === 0){
-    body.appendChild(el("div", "empty", "reachable, no model loaded"));
+    body.appendChild(el("div", "empty", "reachable, no models listed"));
     return;
   }
-  body.appendChild(el("div", "lm-count num", models.length + " loaded"));
+  const loaded = models.filter(m => m.state === "loaded").length;
+  body.appendChild(el("div", "lm-count num", d.states_known ? (loaded + " of " + models.length + " loaded") : "available (state unknown)"));
   for (const m of models){
     const row = el("div", "lm-model");
-    row.appendChild(el("span", "dot live"));
-    row.appendChild(el("span", "lm-name num", m));
+    if (d.states_known && m.state === "loaded"){
+      row.appendChild(el("span", "dot live"));
+    } else {
+      row.appendChild(el("span", "dot off"));
+    }
+    row.appendChild(el("span", "lm-name num", m.id));
+    if (m.type) row.appendChild(el("span", "badge t-safe", m.type));
     body.appendChild(row);
   }
 }

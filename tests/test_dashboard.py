@@ -156,14 +156,18 @@ def test_api_agents_stuck_rows_first(tmp_path, monkeypatch):
 
 
 def test_api_lmstudio_unreachable_reports_false(monkeypatch):
-    monkeypatch.setattr(d, "LM_STUDIO_URL", "http://127.0.0.1:9/v1/models")  # port 9: nothing listens
+    monkeypatch.setattr(d, "V0_MODELS_URL", "http://127.0.0.1:9/api/v0/models")  # port 9: nothing listens
+    monkeypatch.setattr(d, "V1_MODELS_URL", "http://127.0.0.1:9/v1/models")
     assert lmstudio_payload() == {"reachable": False}
 
 
-def test_api_lmstudio_lists_loaded_models(monkeypatch):
+def test_api_lmstudio_lists_models_with_state_and_type(monkeypatch):
     class FakeResp:
+        def __init__(self, body):
+            self.body = body
+
         def read(self):
-            return b'{"data": [{"id": "qwen3-8b"}, {"id": "llama-3.1-8b"}]}'
+            return self.body
 
         def __enter__(self):
             return self
@@ -171,9 +175,42 @@ def test_api_lmstudio_lists_loaded_models(monkeypatch):
         def __exit__(self, *a):
             return False
 
-    monkeypatch.setattr(d.urllib.request, "urlopen", lambda url, timeout=None: FakeResp())
+    v0 = b'{"data": [{"id": "qwen3.8-27b", "state": "loaded", "type": "vlm"}, ' \
+         b'{"id": "iq3_xxs", "state": "not-loaded", "type": "llm"}]}'
+    monkeypatch.setattr(d.urllib.request, "urlopen", lambda url, timeout=None: FakeResp(v0))
     data = lmstudio_payload()
-    assert data == {"reachable": True, "models": ["qwen3-8b", "llama-3.1-8b"]}
+    assert data["reachable"] is True and data["states_known"] is True
+    assert data["models"] == [
+        {"id": "qwen3.8-27b", "state": "loaded", "type": "vlm"},
+        {"id": "iq3_xxs", "state": "not-loaded", "type": "llm"}]
+
+
+def test_api_lmstudio_falls_back_to_v1_without_states(monkeypatch):
+    class FakeResp:
+        def read(self):
+            return b'{"data": [{"id": "qwen3.8-27b"}, {"id": "llama-3.1-8b"}]}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(url, timeout=None):
+        if url.endswith("/api/v0/models"):
+            raise OSError("no v0 endpoint")
+        return FakeResp()
+
+    monkeypatch.setattr(d.urllib.request, "urlopen", fake_urlopen)
+    data = lmstudio_payload()
+    assert data["reachable"] is True and data["states_known"] is False
+    assert [m["id"] for m in data["models"]] == ["qwen3.8-27b", "llama-3.1-8b"]
+    assert all(m["state"] is None for m in data["models"])  # the v1 list carries no state
+
+
+def test_v0_url_points_at_the_api_v0_endpoint():
+    assert d.V0_MODELS_URL.endswith("/api/v0/models")  # never the OpenAI-style list again
+    assert not d.V0_MODELS_URL.endswith("/v1/models")
 
 
 def test_agents_and_lmstudio_are_cached_for_30_seconds(monkeypatch):

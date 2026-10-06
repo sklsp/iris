@@ -552,6 +552,10 @@ def make_sessions_db(path: Path, rows: list[tuple]) -> Path:
     return path
 
 
+def _recent():
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - 60)) + "Z"
+
+
 def sess_row(sid="s1", *, ended=None, status="completed", pid=4242, model="qwen3.8-27b",
              provider="lmstudio", cwd=r"W:\work\proj", subagent=0, parent=None,
              updated="2026-10-06T12:00:00"):
@@ -565,7 +569,7 @@ def alive_pids(monkeypatch, pids):
 
 
 def test_live_session_is_running(tmp_path, monkeypatch):
-    db = make_sessions_db(tmp_path / "s.db", [sess_row(ended=None)])
+    db = make_sessions_db(tmp_path / "s.db", [sess_row(ended=None, updated=_recent())])
     alive_pids(monkeypatch, {4242})
     rows = d.session_rows(db)
     assert len(rows) == 1
@@ -621,7 +625,7 @@ def test_session_row_shows_folder_model_provider_and_age(tmp_path, monkeypatch):
 
 
 def test_api_sessions_route(tmp_path, srv, monkeypatch):
-    db = make_sessions_db(tmp_path / "s.db", [sess_row(ended=None)])
+    db = make_sessions_db(tmp_path / "s.db", [sess_row(ended=None, updated=_recent())])
     alive_pids(monkeypatch, {4242})
     monkeypatch.setattr(d, "SESSIONS_DB", db)
     code, _headers, text = get(f"http://{HOST}:{srv.server_address[1]}/api/sessions")
@@ -681,3 +685,11 @@ def test_api_claude_route(tmp_path, srv, monkeypatch):
     body = json.loads(text)
     assert code == 200 and body["ok"] is True
     assert [r["folder"] for r in body["rows"]] == ["fresh"]
+
+
+def test_open_but_quiet_session_is_not_running(tmp_path, monkeypatch):
+    """Cline desktop sessions share the app pid: open but idle for an hour is not running."""
+    db = make_sessions_db(tmp_path / "s.db", [sess_row(ended=None, status="idle", updated="2026-10-06T12:00:00")])
+    alive_pids(monkeypatch, {4242})
+    rows = d.session_rows(db)
+    assert rows[0]["live"] is False and rows[0]["status"] == "idle"

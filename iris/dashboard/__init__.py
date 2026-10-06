@@ -12,7 +12,7 @@ IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by th
                   list labelled "available (state unknown)"; cached 30 s
     /api/journal  the last 50 journal entries, newest first, plus today's counters
     /api/tools    every tool with its risk tier, straight from iris.tools.TOOLS
-    /api/sessions rows of ~/.iris/sessions.db: running sessions (ended_at NULL and a
+    /api/sessions rows of Cline's ~/.cline/data/db/sessions.db: running sessions (ended_at NULL and a
                   live pid) first, then history; subagents grouped under their parent
     /api/claude   Claude Code project folders whose newest *.jsonl is under 10 minutes
                   old, folder name and age only; cached 30 s
@@ -309,8 +309,9 @@ def tools_payload() -> dict:
 
 
 # --- sessions.db -----------------------------------------------------------------
+ACTIVE_WINDOW_S = 15 * 60   # an open session idle longer than this is not counted as running
 
-SESSIONS_DB = Path(os.environ.get("IRIS_SESSIONS_DB") or (Path.home() / ".iris" / "sessions.db"))
+SESSIONS_DB = Path(os.environ.get("IRIS_SESSIONS_DB") or (Path.home() / ".cline" / "data" / "db" / "sessions.db"))
 STALE_STATUS = "ended (no exit recorded)"   # ended_at is NULL but the pid is gone
 
 
@@ -362,9 +363,14 @@ def session_rows(db_path: Path | str | None = None, now: float | None = None) ->
             pid_alive = bool(int(r["pid"])) and psutil.pid_exists(int(r["pid"]))
         except (TypeError, ValueError):
             pid_alive = False
-        live = r.get("ended_at") is None and pid_alive
+        # Cline's desktop sessions all share the app's pid, so a live pid only means "the app is
+        # open". A session is running when it is open AND was updated in the last 15 minutes.
+        open_ = r.get("ended_at") is None and pid_alive
+        live = open_ and now - updated_ts < ACTIVE_WINDOW_S
         if live:
             status = "running"
+        elif open_:
+            status = str(r.get("status") or "idle")
         elif ended_ts is None:
             status = STALE_STATUS
         else:

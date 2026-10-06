@@ -1,6 +1,7 @@
 """Safety and route tests for the read-only dashboard (no real repos, LLM or journal touched)."""
 
 import json
+import sqlite3
 import subprocess
 import threading
 import time
@@ -525,4 +526,105 @@ def test_resolve_model_re_resolves_on_every_call(tmp_path, monkeypatch):
     assert resolve_model() == ("m1", "settings")           # the file is re-read on every call
     monkeypatch.setenv("IRIS_MODEL", "m9")
     assert resolve_model() == ("m9", "env")                # the environment variable still wins
+
+
+
+# --- sessions.db (item 5) ---------------------------------------------------------
+
+SESSIONS_SQL = """
+CREATE TABLE sessions (
+    session_id TEXT PRIMARY KEY, source TEXT, pid INTEGER, started_at TEXT, ended_at TEXT,
+    exit_code INTEGER, status TEXT, interactive INTEGER, provider TEXT, model TEXT, cwd TEXT,
+    workspace_root TEXT, is_subagent INTEGER, parent_session_id TEXT, updated_at TEXT)
+"""
+
+
+def make_sessions_db(path: Path, rows: list[tuple]) -> Path:
+    """A temporary sessions.db with the real schema; tests never touch ~/.iris."""
+    con = sqlite3.connect(str(path))
+    try:
+        con.execute(SESSIONS_SQL)
+        con.executemany("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        con.commit()
+    finally:
+        con.close()
+    return path
+
+
+def sess_row(sid="s1", *, ended=None, status="completed", pid=4242, model="qwen3.8-27b",
+             provider="lmstudio", cwd=r"W:\work\proj", subagent=0, parent=None,
+             updated="2026-10-06T12:00:00"):
+    return (sid, "cli", pid, "2026-10-06T11:00:00", ended, 0 if ended else None, status,
+            1, provider, model, cwd, r"W:\work", subagent, parent, updated)
+
+
+def alive_pids(monkeypatch, pids):
+    """psutil.pid_exists as a set lookup, so the tests never depend on real processes."""
+    monkeypatch.setattr(d.psutil, "pid_exists", lambda pid: pid in pids)
+
+
+def test_live_session_is_running(tmp_path, monkeypatch):
+    db = make_sessions_db(tmp_path / "s.db", [sess_row(ended=None)])
+    alive_pids(monkeypatch, {4242})
+    rows = d.session_rows(db)
+    assert len(rows) == 1
+    assert rows[0]["live"] is True and rows[0]["status"] == "running"
+
+
+def test_stale_row_with_dead_pid_never_shows_as_running(tmp_path, monkeypatch):
+    """The case that confused before: ended_at NULL but the pid is gone."""
+    db = make_sessions_db(tmp_path / "s.db", [sess_row(ended=None)])
+    alive_pids(monkeypatch, set())   # 4242 is not in the set: dead
+    rows = d.session_rows(db)
+    assert len(rows) == 1
+    assert rows[0]["live"] is False
+    assert rows[0]["status"] == "ended (no exit recorded)"
+
+
+def test_ended_status_is_shown_as_is(tmp_path, monkeypatch):
+    db = make_sessions_db(tmp_path / "s.db", [
+        sess_row("a", ended="2026-10-06T11:30:00", status="completed"),
+        sess_row("b", ended="2026-10-06T11:45:00", status="idle"),
+        sess_row("c", ended="2026-10-06T11:50:00", status="paused"),   # unknown value, still as-is
+    ])
+    alive_pids(monkeypatch, set())
+    rows = d.session_rows(db)
+    assert {r["session_id"]: r["status"] for r in rows} == {"a": "completed", "b": "idle", "c": "paused"}
+
+
+def test_subagents_group_under_their_parent(tmp_path, monkeypatch):
+    db = make_sessions_db(tmp_path / "s.db", [
+        sess_row("parent"),
+        sess_row("kid1", subagent=1, parent="parent"),
+        sess_row("kid2", subagent=1, parent="parent"),
+        sess_row("orphan", subagent=1, parent="ghost"),   # no such parent: listed on its own
+    ])
+    alive_pids(monkeypatch, set())
+    rows = d.session_rows(db)
+    assert [r["session_id"] for r in rows] == ["parent", "orphan"]
+    assert [c["session_id"] for c in rows[0]["children"]] == ["kid1", "kid2"]
+
+
+def test_missing_db_file_means_no_sessions(tmp_path):
+    assert d.session_rows(tmp_path / "nope.db") == []
+
+
+def test_session_row_shows_folder_model_provider_and_age(tmp_path, monkeypatch):
+    db = make_sessions_db(tmp_path / "s.db", [sess_row(cwd=r"W:\work\proj", model="m9", provider="anthropic")])
+    alive_pids(monkeypatch, set())
+    now = d._parse_ts("2026-10-06T12:05:00")   # five minutes after updated_at
+    r = d.session_rows(db, now=now)[0]
+    assert r["folder"] == "proj"
+    assert r["model"] == "m9" and r["provider"] == "anthropic"
+    assert 295 <= r["age_seconds"] <= 305
+
+
+def test_api_sessions_route(tmp_path, srv, monkeypatch):
+    db = make_sessions_db(tmp_path / "s.db", [sess_row(ended=None)])
+    alive_pids(monkeypatch, {4242})
+    monkeypatch.setattr(d, "SESSIONS_DB", db)
+    code, _headers, text = get(f"http://{HOST}:{srv.server_address[1]}/api/sessions")
+    body = json.loads(text)
+    assert code == 200 and body["ok"] is True
+    assert body["rows"][0]["status"] == "running"
 

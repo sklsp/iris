@@ -1,7 +1,7 @@
 """The Iris dashboard: python -m iris dashboard serves http://127.0.0.1:8765.
 
 If that port is taken, pass another one: python -m iris dashboard --port 8766 (or set
-IRIS_DASHBOARD_PORT). The page plus five JSON routes are polled every 3 s by the browser:
+IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by the browser:
 
     /api/system   CPU %, RAM used/total, per-GPU load, VRAM and temperature, with a
                   five-minute history for the sparklines
@@ -12,6 +12,8 @@ IRIS_DASHBOARD_PORT). The page plus five JSON routes are polled every 3 s by the
                   list labelled "available (state unknown)"; cached 30 s
     /api/journal  the last 50 journal entries, newest first, plus today's counters
     /api/tools    every tool with its risk tier, straight from iris.tools.TOOLS
+    /api/sessions rows of ~/.iris/sessions.db: running sessions (ended_at NULL and a
+                  live pid) first, then history; subagents grouped under their parent
     /api/iris/model which model Iris talks to right now and where that choice came from
                     (the IRIS_MODEL environment variable, then ~/.iris/settings.json)
 
@@ -32,12 +34,15 @@ from __future__ import annotations
 
 import json
 import os
+import psutil
 import secrets
+import sqlite3
 import subprocess
 import threading
 import time
 import urllib.request
 from collections import deque
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -301,6 +306,92 @@ def tools_payload() -> dict:
                       for t in TOOLS.values()]}
 
 
+# --- sessions.db -----------------------------------------------------------------
+
+SESSIONS_DB = Path(os.environ.get("IRIS_SESSIONS_DB") or (Path.home() / ".iris" / "sessions.db"))
+STALE_STATUS = "ended (no exit recorded)"   # ended_at is NULL but the pid is gone
+
+
+def _parse_ts(value) -> float | None:
+    """An ISO-8601 timestamp to epoch seconds; None when missing or unparseable."""
+    if value is None:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def load_sessions(db_path: Path | str | None = None) -> list[dict]:
+    """The raw rows of sessions.db, opened read-only. A missing or unreadable file means no data."""
+    path = Path(db_path) if db_path else SESSIONS_DB
+    try:
+        con = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, timeout=2)
+    except (sqlite3.Error, OSError):
+        return []
+    try:
+        cur = con.execute(
+            "SELECT session_id, source, pid, started_at, ended_at, exit_code, status,"
+            " interactive, provider, model, cwd, is_subagent, parent_session_id, updated_at"
+            " FROM sessions")
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except (sqlite3.Error, OSError):
+        return []   # no db yet or a different schema: the tab shows empty, not an error page
+    finally:
+        con.close()
+
+
+def session_rows(db_path: Path | str | None = None, now: float | None = None) -> list[dict]:
+    """Sessions shaped for display.
+
+    A session is running only when ended_at IS NULL and its pid still exists (psutil).
+    A row with ended_at NULL but a dead pid is stale: it shows as "ended (no exit
+    recorded)" in the history, never as running. Subagents are grouped under their
+    parent_session_id instead of listed separately; an orphan subagent stays on its own."""
+    now = time.time() if now is None else now
+    rows = load_sessions(db_path)
+    by_id = {r.get("session_id"): r for r in rows}
+    shaped: list[dict] = []
+    for r in rows:
+        ended_ts = _parse_ts(r.get("ended_at"))
+        updated_ts = _parse_ts(r.get("updated_at")) or now
+        try:
+            pid_alive = bool(int(r["pid"])) and psutil.pid_exists(int(r["pid"]))
+        except (TypeError, ValueError):
+            pid_alive = False
+        live = r.get("ended_at") is None and pid_alive
+        if live:
+            status = "running"
+        elif ended_ts is None:
+            status = STALE_STATUS
+        else:
+            status = str(r.get("status") or "-")   # idle, completed, anything else: as-is
+        cwd = r.get("cwd") or ""
+        shaped.append({"session_id": r.get("session_id") or "", "source": r.get("source") or "",
+                       "model": r.get("model") or "", "provider": r.get("provider") or "",
+                       "folder": Path(cwd).name if cwd else "-", "status": status,
+                       "live": live, "age_seconds": max(0.0, now - updated_ts),
+                       "_updated": updated_ts})
+    top: list[dict] = []
+    for s in shaped:
+        raw = by_id.get(s["session_id"])
+        if raw and int(raw.get("is_subagent") or 0) == 1 and raw.get("parent_session_id"):
+            parent = next((t for t in top if t["session_id"] == raw["parent_session_id"]), None)
+            if parent is not None:
+                s.pop("_updated", None)
+                parent.setdefault("children", []).append(s)
+                continue
+        s.pop("_updated", None)
+        top.append(s)
+    for t in top:   # newest first within each group, running sessions before history
+        kids = t.get("children")
+        if kids:
+            kids.sort(key=lambda c: c["age_seconds"])
+    top.sort(key=lambda t: (0 if t["live"] else 1, t["age_seconds"]))
+    return top
+
+
 def _cached(key: str, fn) -> dict:
     now = time.time()
     with _lock:
@@ -354,6 +445,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(_cached("agents", agents_payload))
         elif path == "/api/lmstudio":
             self._json(_cached("lmstudio", lmstudio_payload))
+        elif path == "/api/sessions":
+            self._json({"ok": True, "rows": session_rows()})   # local sqlite: fresh on every poll
         elif path == "/api/journal":
             self._json(journal_payload())
         elif path == "/api/tools":

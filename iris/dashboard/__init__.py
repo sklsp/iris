@@ -13,16 +13,24 @@ IRIS_DASHBOARD_PORT). The page plus five JSON routes are polled every 3 s by the
     /api/journal  the last 50 journal entries, newest first, plus today's counters
     /api/tools    every tool with its risk tier, straight from iris.tools.TOOLS
 
-Read only by construction. The handler implements GET and nothing else (every other
-method is a 405), it never runs a tool or confirms an action, it opens files for
-reading only, it binds to 127.0.0.1 so no other machine can reach it, and it sends no
-CORS headers so no website can read it either. Journal text reaches the page as JSON
-and is rendered with textContent, never as HTML."""
+POST (the only writes): /api/models/load {model}, /api/models/unload {model | "all"}.
+Every POST must carry the X-Iris-Token header (a random token generated at server start
+and injected into the served page) and an Origin or Referer of this very dashboard;
+anything else is a 403. The model id must be one LM Studio reports right now, else 400.
+lms.exe runs as an argument list with no shell and a 600 s timeout; only one action
+runs at a time (a second request gets 409); every action is logged to the journal.
+
+GET stays read-only everywhere: it never runs a tool or confirms an action, it opens
+files for reading only, it binds to 127.0.0.1 so no other machine can reach it, and it
+sends no CORS headers so no website can read it either. Journal text reaches the page
+as JSON and is rendered with textContent, never as HTML."""
 
 from __future__ import annotations
 
 import json
 import os
+import secrets
+import subprocess
 import threading
 import time
 import urllib.request
@@ -112,6 +120,117 @@ def lmstudio_payload() -> dict:
         return {"reachable": False}
 
 
+# --- model control (the only write the dashboard performs) ----------------------
+
+LMS_EXE = os.environ.get("IRIS_LMS_BIN", "C:/Users/Jayde/.lmstudio/bin/lms.exe")
+LMS_TIMEOUT_SECONDS = 600   # big models can take minutes to load
+WRITE_ROUTES = ("/api/models/load", "/api/models/unload")   # the only POST routes (item 3 adds one)
+
+_model_action_lock = threading.Lock()   # one load or unload at a time, full stop
+
+
+class ModelActionError(Exception):
+    """A model action that cannot run; carries the HTTP code and a plain message."""
+
+    def __init__(self, code: int, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def run_lms(args: list[str]) -> tuple[int, str]:
+    """Run lms with an argument list. No shell, no user text in a command line."""
+    proc = subprocess.run([LMS_EXE] + args, capture_output=True, text=True,
+                          timeout=LMS_TIMEOUT_SECONDS)
+    return proc.returncode, (proc.stderr or proc.stdout or "").strip()
+
+
+def _known_model_ids() -> list[str]:
+    """The ids LM Studio reports right now; the only ids a model action may name."""
+    try:
+        data = _fetch_json(V0_MODELS_URL)
+        return [str(m.get("id", "")) for m in data.get("data", [])]
+    except Exception:  # noqa: BLE001 - if we cannot ask, no id is acceptable
+        return []
+
+
+def _log_model_event(action: str, model: str, outcome: str) -> None:
+    from iris.agent import Journal
+
+    Journal(journal_path()).log(event="model", action=action, model=model, outcome=outcome)
+
+
+def _fresh_lmstudio_state() -> dict:
+    """The v0 state after an action; the 30 s cache is dropped so it is really fresh."""
+    with _lock:
+        _cache.pop("lmstudio", None)
+    return lmstudio_payload()
+
+
+def model_action(action: str, body: dict) -> dict:
+    """Run one load or unload and return the new LM Studio state.
+
+    action is "load" or "unload". The model must be an id from /api/v0/models at this
+    moment (or "all" for an unload). Raises ModelActionError with the HTTP code."""
+    if not isinstance(body, dict):
+        raise ModelActionError(400, "the body must be a JSON object")
+    model = body.get("model")
+    if action == "unload" and model == "all":
+        args, target = ["unload", "--all"], "all"
+    else:
+        if not isinstance(model, str) or not model:
+            raise ModelActionError(400, "missing model id in the request body")
+        if model not in _known_model_ids():
+            raise ModelActionError(400, f"unknown model: {model}")
+        args = [action, model]
+        target = model
+
+    if not _model_action_lock.acquire(blocking=False):
+        raise ModelActionError(409, "another load or unload is already running")
+    try:
+        try:
+            code, output = run_lms(args)
+        except subprocess.TimeoutExpired:
+            _log_model_event(action, target, "error")
+            raise ModelActionError(502, f"lms timed out after {LMS_TIMEOUT_SECONDS} s") from None
+        if code != 0:
+            _log_model_event(action, target, "error")
+            raise ModelActionError(502, output or f"lms exited with code {code}")
+        _log_model_event(action, target, "ok")
+    finally:
+        _model_action_lock.release()
+    return {"action": action, "model": target, **_fresh_lmstudio_state()}
+
+
+def iris_model_payload() -> dict:  # item 3 fills this in; the route exists from day one
+    raise ModelActionError(501, "not implemented yet")
+
+
+def _authorized(self) -> bool:
+    """A POST is allowed only with the right token AND a matching Origin or Referer."""
+    token = self.headers.get("X-Iris-Token")
+    if not token or not secrets.compare_digest(token, self.server.token):
+        return False
+    port = str(self.server.server_address[1])
+    for origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}"):
+        if self.headers.get("Origin") == origin:
+            return True
+        referer = self.headers.get("Referer") or ""
+        if referer.startswith(origin + "/") or referer == origin:
+            return True
+    return False
+
+
+_PAGE_TEMPLATE: bytes | None = None
+
+
+def _page_template() -> bytes:
+    global _PAGE_TEMPLATE
+    if _PAGE_TEMPLATE is None:
+        _PAGE_TEMPLATE = (Path(__file__).parent / "index.html").read_bytes()
+    return _PAGE_TEMPLATE
+
+
 def journal_payload() -> dict:
     """The last 50 entries, newest first, plus today's counters. Read only."""
     path = journal_path()
@@ -167,12 +286,35 @@ def _cached(key: str, fn) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    server_version = "IrisDashboard/1.0"
+    server_version = "IrisDashboard/2.0"
+    timeout = 30   # a stuck client must never pin a handler thread forever
 
-    def do_GET(self):  # the only method that does anything at all
+    def _drain_body(self, cap: int = 65536) -> None:
+        """Read and discard the request body so closing the socket sends FIN, not RST.
+
+        On Windows, closing a socket with unread data resets the connection, which can
+        destroy an error response before the client has read it."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return
+        try:
+            while length > 0:
+                chunk = self.rfile.read(min(length, cap))
+                if not chunk:
+                    break
+                length -= len(chunk)
+        except Exception:  # noqa: BLE001 - a lying Content-Length must never kill the handler
+            pass
+
+    def do_GET(self):  # GET stays read-only; the write routes refuse it with a 405
         path = self.path.split("?", 1)[0]
         if path == "/":
-            self._send(200, _page_bytes(), "text/html; charset=utf-8")
+            token = getattr(self.server, "token", "")
+            page = _page_template().replace(b"__IRIS_TOKEN__", token.encode())
+            self._send(200, page, "text/html; charset=utf-8")
+        elif path in WRITE_ROUTES:
+            self._json({"error": "write routes only accept POST"}, code=405)
         elif path == "/api/system":
             self._json(system_payload())
         elif path == "/api/agents":
@@ -186,10 +328,35 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._json({"error": "not found"}, code=404)
 
-    def _method_not_allowed(self):  # POST, PUT, DELETE, PATCH, OPTIONS and HEAD alike
-        self._json({"error": "read only: GET is the only method"}, code=405)
+    def do_POST(self):  # the write routes and nothing else
+        path = self.path.split("?", 1)[0]
+        if path not in WRITE_ROUTES:
+            self._drain_body()
+            self._json({"error": "read only: POST is allowed on the model routes only"}, code=405)
+            return
+        if not _authorized(self):
+            self._drain_body()
+            self._json({"error": "forbidden: wrong token or origin"}, code=403)
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+        except (ValueError, UnicodeDecodeError):
+            self._json({"error": "bad JSON body"}, code=400)
+            return
+        try:
+            action = "load" if path.endswith("/load") else "unload"
+            payload = model_action(action, body)
+        except ModelActionError as exc:
+            self._json({"error": exc.message}, code=exc.code)
+            return
+        self._json(payload)
 
-    do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_HEAD = _method_not_allowed
+    def _method_not_allowed(self):  # PUT, DELETE, PATCH, OPTIONS and HEAD alike
+        self._drain_body()
+        self._json({"error": "read only: GET or POST on the model routes"}, code=405)
+
+    do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_HEAD = _method_not_allowed
 
     def _json(self, payload: dict, code: int = 200) -> None:
         self._send(code, json.dumps(payload), "application/json")
@@ -207,13 +374,11 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-def _page_bytes() -> bytes:
-    return (Path(__file__).parent / "index.html").read_bytes()
-
-
 def make_server(host: str = HOST, port: int = PORT) -> ThreadingHTTPServer:
     """A dashboard server on `host`:`port`. Port 0 lets the OS pick a free one (tests)."""
-    return ThreadingHTTPServer((host, port), Handler)
+    server = ThreadingHTTPServer((host, port), Handler)
+    server.token = secrets.token_urlsafe(32)   # injected into the page; required on every POST
+    return server
 
 
 def default_port() -> int:
@@ -231,7 +396,7 @@ def serve(host: str = HOST, port: int | None = None) -> None:
     except OSError as exc:  # something else already owns the port (it happens on this machine)
         raise SystemExit(f"cannot bind {host}:{port} ({exc}). Another program is using it; "
                          f"try: python -m iris dashboard --port 8766") from None
-    print(f"Iris dashboard: http://{host}:{server.server_address[1]}  (read only)")
+    print(f"Iris dashboard: http://{host}:{server.server_address[1]}  (model control needs the page token)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

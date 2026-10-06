@@ -69,7 +69,16 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .lm-count{color:#8a9099;font-size:11px;margin-bottom:6px}
 .lm-model{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #1c1f24}
 .lm-model:last-child{border-bottom:none}
-.lm-name{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lm-name{font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lm-actions{display:flex;gap:6px;margin-left:auto;flex:none}
+.mbtn{font-family:inherit;font-size:10px;line-height:16px;padding:0 8px;border-radius:4px;letter-spacing:.05em;
+      text-transform:uppercase;border:1px solid #2c313a;background:#1b1e24;color:#c3c7cd;cursor:pointer}
+.mbtn:hover{border-color:#7aa2ff;color:#fff}
+.mbtn.danger:hover{border-color:#f85149;color:#f85149}
+.mbtn:disabled{opacity:.4;cursor:default;border-color:#2c313a;color:#c3c7cd}
+.lm-status{font-size:11px;padding-top:6px;min-height:14px;color:#8a9099}
+.lm-status.ok{color:#3fb950}
+.lm-status.err{color:#f85149}
 
 /* activity */
 .chips{display:flex;gap:10px;margin-left:auto;font-weight:400;letter-spacing:.02em;text-transform:none}
@@ -128,6 +137,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <section class="panel">
     <h2>LM Studio</h2>
     <div id="lmstudio-body"><div class="empty">loading...</div></div>
+    <div id="lm-status" class="lm-status"></div>
   </section>
   <section class="panel wide">
     <h2>Agents</h2>
@@ -145,6 +155,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 
 <script>
 "use strict";
+window.IRIS_TOKEN = "__IRIS_TOKEN__";   // replaced by the server with its per-start token
 const $ = (id) => document.getElementById(id);
 function el(tag, cls, text){
   const n = document.createElement(tag);
@@ -288,8 +299,42 @@ function renderAgents(d){
     body.appendChild(row);
   }
 }
+let modelBusy = false;   // one load or unload at a time, same as the server enforces
+
+function lmStatus(msg, cls){
+  const s = $("lm-status");
+  s.className = "lm-status" + (cls ? " " + cls : "");
+  s.textContent = msg || "";
+}
+
+async function postModel(route, body){
+  try {
+    const r = await fetch(route, {method: "POST",
+      headers: {"Content-Type": "application/json", "X-Iris-Token": window.IRIS_TOKEN},
+      body: JSON.stringify(body)});
+    return await r.json();   // the server answers with JSON on every path, errors included
+  } catch (err) { return null; }
+}
+
+async function runModelAction(route, id){
+  modelBusy = true;
+  document.querySelectorAll(".mbtn").forEach(b => { b.disabled = true; });
+  lmStatus((route.endsWith("/load") ? "loading " : "unloading ") + id + "...");
+  const d = await postModel(route, {model: id});
+  if (d && typeof d.reachable === "boolean"){
+    modelBusy = false;
+    renderLM(d);   // the response carries a fresh model list; paint it at once
+    lmStatus("ok", "ok");
+  } else {
+    modelBusy = false;
+    document.querySelectorAll(".mbtn").forEach(b => { b.disabled = !window.IRIS_TOKEN; });
+    lmStatus((d && d.error) ? d.error : "request failed", "err");
+  }
+}
+
 function renderLM(d){
   const body = $("lmstudio-body");
+  if (!modelBusy && !$("lm-status").className.includes("err")) lmStatus("");   // fresh poll replaces stale feedback; errors stay until the next action
   body.textContent = "";
   if (!d || typeof d.reachable !== "boolean"){
     body.appendChild(el("div", "empty", d && d.error ? d.error : "no data yet"));
@@ -315,6 +360,13 @@ function renderLM(d){
     }
     row.appendChild(el("span", "lm-name num", m.id));
     if (m.type) row.appendChild(el("span", "badge t-safe", m.type));
+    const loaded = m.state === "loaded";
+    const acts = el("div", "lm-actions");
+    const b = el("button", "mbtn" + (loaded ? " danger" : ""), loaded ? "unload" : "load");
+    if (modelBusy || !window.IRIS_TOKEN) b.disabled = true;
+    b.onclick = () => runModelAction(loaded ? "/api/models/unload" : "/api/models/load", m.id);
+    acts.appendChild(b);
+    row.appendChild(acts);
     body.appendChild(row);
   }
 }

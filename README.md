@@ -100,7 +100,7 @@ A repo is flagged STUCK when it has uncommitted changes and nothing committed fo
 
 ## Dashboard
 
-A read-only status page for Iris and the machine it runs on:
+A mostly read-only status page for Iris and the machine it runs on:
 
 ```bash
 .venv\Scripts\python -m iris dashboard              # http://127.0.0.1:8765
@@ -108,12 +108,15 @@ A read-only status page for Iris and the machine it runs on:
 set IRIS_DASHBOARD_PORT=9000                        # same, via environment variable
 ```
 
-The server binds to loopback only and answers GET requests; every other method gets a 405. It never
-writes: the journal file is opened read-only, there are no CORS headers, and the page inserts every
-string with `textContent`, so journal text cannot run as HTML. The page polls every 3 seconds and shows:
+The server binds to loopback only. All data endpoints answer GET; the two model actions,
+`POST /api/models/load` and `POST /api/models/unload`, are the only writes, and they require a
+loopback Origin or Referer plus the `IRIS_TOKEN` header, so a page opened from anywhere else cannot
+trigger them. Every other method gets a 405. The journal file is opened read-only, there are no CORS
+headers, and the page inserts every string with `textContent`, so journal text cannot run as HTML.
+The page polls every 3 seconds and shows:
 
 - System: CPU and RAM with sparklines over the last five minutes, plus load, VRAM and temperature per GPU
-- LM Studio: the loaded models, or a note when it is not reachable
+- LM Studio: every listed model with its type badge and a load or unload button, or a note when it is not reachable
 - Agents: branch, last commit and its age, uncommitted files, BLOCKED.md and STUCK flags, stuck repos first
 - Activity: the last 50 journal entries newest first with tier and outcome chips, plus today's request,
   confirmation, refusal and error counts
@@ -142,7 +145,7 @@ Agents and LM Studio data are cached for 30 seconds so the page does not hammer 
 ## Status
 
 Core loop works end to end against Qwen 3.8 27B. On this PC, a Dutch status question took 9 s, reading
-Notepad took 5 s, and an edit request stopped at the confirmation. 62 tests cover the loop with a
+Notepad took 5 s, and an edit request stopped at the confirmation. 127 tests cover the loop with a
 scripted model, the wake word and VAD on synthetic audio, the SAPI and Kokoro speakers with fakes, the
 window and URL tools with fake windows, and the agent manager against temporary git repos. Nothing in
 the suite touches the real desktop, the microphone, the LLM or your repos.

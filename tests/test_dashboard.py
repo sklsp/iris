@@ -1,6 +1,7 @@
 """Safety and route tests for the read-only dashboard (no real repos, LLM or journal touched)."""
 
 import json
+import subprocess
 import threading
 import time
 import urllib.error
@@ -14,19 +15,47 @@ import iris.dashboard as d
 from iris.dashboard import HOST, agents_payload, journal_payload, lmstudio_payload, make_server, system_payload
 
 
-@pytest.fixture
-def server():
-    srv = make_server(HOST, 0)  # port 0: the OS picks a free one, so tests never collide
-    t = threading.Thread(target=srv.serve_forever, daemon=True)
+@pytest.fixture(scope="session")
+def srv():
+    s = make_server(HOST, 0)  # port 0: the OS picks a free one; one server for the whole file
+    t = threading.Thread(target=s.serve_forever, daemon=True)
     t.start()
-    yield f"http://{HOST}:{srv.server_address[1]}"
-    srv.shutdown()
-    srv.server_close()
+    yield s
+    s.shutdown()
+    s.server_close()
+
+
+@pytest.fixture
+def server(srv):
+    return f"http://{HOST}:{srv.server_address[1]}"
 
 
 def get(url):
     with urllib.request.urlopen(url, timeout=5) as r:
         return r.status, dict(r.headers), r.read().decode("utf-8")  # callers parse JSON when they need it
+
+
+def post(url, body=None, token=None, origin=None, referer=None):
+    data = json.dumps(body if body is not None else {}).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json"})
+    if token is not None:
+        req.add_header("X-Iris-Token", token)
+    if origin is not None:
+        req.add_header("Origin", origin)
+    if referer is not None:
+        req.add_header("Referer", referer)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8") or "{}"
+        return e.code, json.loads(raw)
+
+
+def fake_v0(monkeypatch, models):
+    """Point every LM Studio fetch at a canned v0 list. Tests never touch the real one."""
+    body = {"data": [{"id": m[0], "state": m[1], "type": m[2]} for m in models]}
+    monkeypatch.setattr(d, "_fetch_json", lambda url: body)
 
 
 # --- safety --------------------------------------------------------------------
@@ -243,3 +272,151 @@ def test_journal_script_text_renders_as_text(tmp_path, monkeypatch):
     for bad in ("innerHTML", "insertAdjacentHTML", "document.write"):
         assert bad not in html, f"the page uses {bad}; journal text must go in via textContent only"
     assert "textContent" in html
+
+
+# --- model control (the one write the dashboard performs) ------------------------
+
+def test_page_carries_the_server_token(srv):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _, _, page = get(base + "/")
+    assert srv.token in page  # injected so the page can send it back on POSTs
+
+
+@pytest.mark.parametrize("route", ["/api/models/load", "/api/models/unload"])
+def test_get_on_a_write_route_is_405(srv, route):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(base + route, timeout=5)
+    assert exc.value.code == 405
+
+
+def test_post_without_a_token_is_403(srv):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/models/load", {"model": "m1"}, origin=base)
+    assert code == 403 and "forbidden" in body["error"]
+
+
+def test_post_with_a_wrong_token_is_403(srv):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, _ = post(base + "/api/models/load", {"model": "m1"}, token="not-the-token", origin=base)
+    assert code == 403
+
+
+def test_post_from_a_foreign_origin_is_403(srv):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, _ = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, origin="http://evil.example")
+    assert code == 403
+
+
+def test_post_with_no_origin_and_no_referer_is_403(srv):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, _ = post(base + "/api/models/load", {"model": "m1"}, token=srv.token)
+    assert code == 403
+
+
+def test_post_with_a_matching_referer_is_allowed(srv, monkeypatch, tmp_path):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
+    calls = []
+    monkeypatch.setattr(d, "run_lms", lambda args: (calls.append(args) or (0, "")))
+    monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "j.jsonl"))
+    code, body = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, referer=base + "/")
+    assert code == 200 and calls == [["load", "m1"]]
+
+
+def test_post_unknown_model_is_400_and_lms_never_runs(srv, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
+    calls = []
+    monkeypatch.setattr(d, "run_lms", lambda args: (calls.append(args) or (0, "")))
+    code, body = post(base + "/api/models/load", {"model": "nope"}, token=srv.token, origin=base)
+    assert code == 400 and "unknown model" in body["error"]
+    assert calls == []
+
+
+def test_post_load_runs_lms_with_an_argument_list_and_logs_it(srv, monkeypatch, tmp_path):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
+    calls = []
+
+    def fake_run_lms(args):
+        assert isinstance(args, list) and all(isinstance(a, str) for a in args)  # no shell string
+        calls.append(args)
+        return (0, "")
+
+    monkeypatch.setattr(d, "run_lms", fake_run_lms)
+    journal = tmp_path / "j.jsonl"
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    code, body = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, origin=base)
+    assert code == 200 and calls == [["load", "m1"]]
+    assert body["action"] == "load" and body["model"] == "m1"
+    assert body["reachable"] is True and body["states_known"] is True  # the new v0 state comes back
+
+    last = json.loads(journal.read_text(encoding="utf-8").strip().splitlines()[-1])
+    assert last["event"] == "model" and last["action"] == "load"
+    assert last["model"] == "m1" and last["outcome"] == "ok"
+
+
+def test_post_unload_all_skips_model_validation(srv, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    fake_v0(monkeypatch, [])  # even with an empty list, "all" is a valid unload target
+    calls = []
+    monkeypatch.setattr(d, "run_lms", lambda args: (calls.append(args) or (0, "")))
+    code, body = post(base + "/api/models/unload", {"model": "all"}, token=srv.token, origin=base)
+    assert code == 200 and calls == [["unload", "--all"]] and body["model"] == "all"
+
+
+def test_second_concurrent_load_is_409(srv, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
+
+    def slow_lms(args):
+        time.sleep(0.8)  # long enough that the second request is sure to overlap
+        return (0, "")
+
+    monkeypatch.setattr(d, "run_lms", slow_lms)
+    results = []
+
+    def fire():
+        code, _ = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, origin=base)
+        results.append(code)
+
+    threads = [threading.Thread(target=fire), threading.Thread(target=fire)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(results) == [200, 409]
+
+
+def test_lms_failure_is_reported_plainly_and_logged(srv, monkeypatch, tmp_path):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
+    monkeypatch.setattr(d, "run_lms", lambda args: (1, "boom: not enough VRAM"))
+    journal = tmp_path / "j.jsonl"
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    code, body = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, origin=base)
+    assert code == 502 and "boom: not enough VRAM" in body["error"]
+    last = json.loads(journal.read_text(encoding="utf-8").strip().splitlines()[-1])
+    assert last["outcome"] == "error"
+
+
+def test_lms_timeout_is_reported(srv, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
+
+    def timeout_lms(args):
+        raise subprocess.TimeoutExpired(cmd="lms", timeout=d.LMS_TIMEOUT_SECONDS)
+
+    monkeypatch.setattr(d, "run_lms", timeout_lms)
+    code, body = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, origin=base)
+    assert code == 502 and "timed out" in body["error"]
+
+
+def test_post_to_any_other_route_stays_405(srv):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    for path in ("/", "/api/system", "/api/journal"):
+        code, _ = post(base + path, {"model": "m1"}, token=srv.token, origin=base)
+        assert code == 405, f"POST {path} must be a 405"

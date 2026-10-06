@@ -14,6 +14,8 @@ IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by th
     /api/tools    every tool with its risk tier, straight from iris.tools.TOOLS
     /api/sessions rows of ~/.iris/sessions.db: running sessions (ended_at NULL and a
                   live pid) first, then history; subagents grouped under their parent
+    /api/claude   Claude Code project folders whose newest *.jsonl is under 10 minutes
+                  old, folder name and age only; cached 30 s
     /api/iris/model which model Iris talks to right now and where that choice came from
                     (the IRIS_MODEL environment variable, then ~/.iris/settings.json)
 
@@ -392,6 +394,40 @@ def session_rows(db_path: Path | str | None = None, now: float | None = None) ->
     return top
 
 
+# --- Claude Code projects ----------------------------------------------------------
+
+CLAUDE_PROJECTS = Path(os.environ.get("IRIS_CLAUDE_DIR") or (Path.home() / ".claude" / "projects"))
+CLAUDE_FRESH_SECONDS = 10 * 60   # a project counts as active while its newest .jsonl is under 10 minutes old
+
+
+def claude_projects(projects_dir: Path | str | None = None, now: float | None = None) -> list[dict]:
+    """Claude Code project folders whose newest *.jsonl is under 10 minutes old.
+
+    Folder name and age only; the .jsonl files are stat'ed for their mtime, never opened
+    or read."""
+    base = Path(projects_dir) if projects_dir else CLAUDE_PROJECTS
+    now = time.time() if now is None else now
+    out: list[dict] = []
+    try:
+        entries = sorted(base.iterdir())
+    except OSError:
+        return []   # no ~/.claude/projects yet: nothing to show, not an error
+    for d in entries:
+        if not d.is_dir():
+            continue
+        try:
+            files = [f for f in d.glob("*.jsonl") if f.is_file()]
+        except OSError:
+            continue
+        if not files:
+            continue
+        mtime = max(f.stat().st_mtime for f in files)   # the newest file decides
+        age = now - mtime
+        if age < CLAUDE_FRESH_SECONDS:
+            out.append({"folder": d.name, "age_seconds": max(0.0, age)})
+    return sorted(out, key=lambda r: r["age_seconds"])
+
+
 def _cached(key: str, fn) -> dict:
     now = time.time()
     with _lock:
@@ -447,6 +483,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(_cached("lmstudio", lmstudio_payload))
         elif path == "/api/sessions":
             self._json({"ok": True, "rows": session_rows()})   # local sqlite: fresh on every poll
+        elif path == "/api/claude":
+            self._json({"ok": True, "rows": _cached("claude", lambda: claude_projects())})
         elif path == "/api/journal":
             self._json(journal_payload())
         elif path == "/api/tools":

@@ -1,6 +1,7 @@
 """Safety and route tests for the read-only dashboard (no real repos, LLM or journal touched)."""
 
 import json
+import os
 import sqlite3
 import subprocess
 import threading
@@ -628,3 +629,55 @@ def test_api_sessions_route(tmp_path, srv, monkeypatch):
     assert code == 200 and body["ok"] is True
     assert body["rows"][0]["status"] == "running"
 
+
+
+
+# --- Claude Code projects (item 6) --------------------------------------------------
+
+
+def make_claude_dir(base: Path, folders: dict[str, list[tuple[str, float]]]) -> Path:
+    """folders maps a project folder name to [(jsonl file name, age in seconds)]."""
+    now = time.time()
+    for name, files in folders.items():
+        d = base / name
+        d.mkdir(parents=True)
+        for fname, age in files:
+            f = d / fname
+            f.write_text("never read\n", encoding="utf-8")   # content is irrelevant; only the mtime matters
+            os.utime(f, (now - age, now - age))
+    return base
+
+
+def test_claude_projects_lists_only_fresh_jsonl_folders(tmp_path):
+    base = make_claude_dir(tmp_path / "projects", {
+        "fresh": [("a.jsonl", 60)],             # one minute old: active
+        "borderline_old": [("b.jsonl", 700)],   # over ten minutes: not listed
+        "no_jsonl": [],                          # no .jsonl at all: not listed
+    })
+    (base / "stray.txt").write_text("x", encoding="utf-8")   # a file, not a folder: ignored
+    rows = d.claude_projects(base)
+    assert [r["folder"] for r in rows] == ["fresh"]
+    assert 50 <= rows[0]["age_seconds"] <= 70
+
+
+def test_claude_project_uses_the_newest_jsonl(tmp_path):
+    base = make_claude_dir(tmp_path / "projects", {
+        "mixed": [("old.jsonl", 3600), ("new.jsonl", 120)],   # the newest file decides: active
+    })
+    rows = d.claude_projects(base)
+    assert len(rows) == 1 and 110 <= rows[0]["age_seconds"] <= 130
+
+
+def test_claude_missing_dir_means_empty(tmp_path):
+    assert d.claude_projects(tmp_path / "nope") == []
+
+
+def test_api_claude_route(tmp_path, srv, monkeypatch):
+    base = make_claude_dir(tmp_path / "projects", {"fresh": [("a.jsonl", 30)]})
+    monkeypatch.setattr(d, "CLAUDE_PROJECTS", base)
+    with d._lock:   # the route caches for 30 s; drop any stale entry first
+        d._cache.pop("claude", None)
+    code, _headers, text = get(f"http://{HOST}:{srv.server_address[1]}/api/claude")
+    body = json.loads(text)
+    assert code == 200 and body["ok"] is True
+    assert [r["folder"] for r in body["rows"]] == ["fresh"]

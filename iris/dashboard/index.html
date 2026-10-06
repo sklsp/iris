@@ -115,6 +115,33 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .tool-name{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tool-desc{color:#8a9099;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+/* tabs */
+.tabs{display:flex;gap:2px;padding:0 18px;background:#0e0f11;border-bottom:1px solid #23262c}
+.tab{appearance:none;background:none;border:none;border-bottom:2px solid transparent;color:#8a9099;
+     font-family:inherit;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+     padding:10px 12px;cursor:pointer}
+.tab:hover{color:#c3c7cd}
+.tab.active{color:#e6e6e6;border-bottom-color:#7aa2ff}
+.pane.hidden{display:none}
+
+/* sessions */
+.srow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto auto 58px;gap:8px;align-items:center;
+      padding:6px 8px;border-bottom:1px solid #1c1f24;font-size:12px}
+.srow.child{margin-left:18px;padding-left:10px;background:rgba(122,162,255,.03)}
+.s-head{color:#565c66;font-size:10px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #23262c}
+.s-folder{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.s-model{color:#c3c7cd;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-run{color:#3fb950;background:rgba(63,185,80,.14)}
+.b-end{color:#8a9099;background:rgba(138,144,153,.12)}
+.b-prov{color:#7aa2ff;background:rgba(122,162,255,.12)}
+.s-age{text-align:right;color:#565c66}
+
+/* claude */
+.crow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #1c1f24;font-size:12px}
+.crow:last-child{border-bottom:none}
+.c-folder{font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-age{color:#565c66}
+
 @media (max-width:899px){
   .grid{grid-template-columns:1fr}
   .wide{grid-column:auto}
@@ -127,6 +154,8 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   .metric{grid-template-columns:64px 96px minmax(0,1fr)}
   .t-args{max-width:32%}
   .lm-actions{flex-wrap:wrap}
+  .srow{grid-template-columns:minmax(0,1fr) auto}
+  .s-head,.s-model,.b-prov{display:none}
 }
 </style>
 </head>
@@ -135,7 +164,14 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <div class="brand">IRIS<small>local dashboard, read only</small></div>
   <div class="status"><span class="dot" id="pulse"></span><span class="num" id="updated">connecting...</span></div>
 </header>
-<main class="grid">
+<nav class="tabs" id="tabs">
+  <button type="button" class="tab active" data-tab="overview">Overview</button>
+  <button type="button" class="tab" data-tab="sessions">Sessions</button>
+  <button type="button" class="tab" data-tab="claude">Claude</button>
+</nav>
+<main>
+  <section id="overview-pane" class="pane">
+    <div class="grid">
   <section class="panel">
     <h2>System</h2>
     <div id="system-body"><div class="empty">loading...</div></div>
@@ -157,6 +193,26 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <section class="panel">
     <h2>Tools</h2>
     <div id="tools-body"><div class="empty">loading...</div></div>
+  </section>
+    </div>
+  </section>
+
+  <section id="sessions-pane" class="pane hidden">
+    <div class="grid">
+      <section class="panel wide">
+        <h2>Sessions</h2>
+        <div id="sessions-body"><div class="empty">loading...</div></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="claude-pane" class="pane hidden">
+    <div class="grid">
+      <section class="panel">
+        <h2>Claude projects</h2>
+        <div id="claude-body"><div class="empty">loading...</div></div>
+      </section>
+    </div>
   </section>
 </main>
 
@@ -521,13 +577,65 @@ function renderTools(d){
   }
 }
 
+function sessionRow(s, child){
+  const row = el("div", "srow" + (child ? " child" : ""));
+  row.appendChild(el("span", "s-folder num", s.folder || "-"));
+  row.appendChild(el("span", "s-model num", s.model || "-"));
+  if (s.provider) row.appendChild(el("span", "badge b-prov", s.provider));
+  else row.appendChild(el("span", "badge", ""));   // keeps the columns aligned
+  row.appendChild(el("span", "badge " + (s.live ? "b-run" : "b-end"), s.status || "-"));
+  row.appendChild(el("span", "s-age num", fmtAge(s.age_seconds)));
+  return row;
+}
+
+function renderSessions(d){
+  const body = $("sessions-body");
+  body.textContent = "";
+  if (!d || !Array.isArray(d.rows)){
+    body.appendChild(el("div", "empty", d && d.error ? d.error : "no data yet"));
+    return;
+  }
+  if (!d.rows.length){
+    body.appendChild(el("div", "empty", "no sessions recorded"));
+    return;
+  }
+  const head = el("div", "srow s-head");
+  ["folder", "model", "provider", "status", ""].forEach(t => head.appendChild(el("span", null, t)));
+  body.appendChild(head);
+  for (const s of d.rows){
+    body.appendChild(sessionRow(s, false));
+    for (const c of s.children || []) body.appendChild(sessionRow(c, true));   // subagents under their parent
+  }
+}
+
+function renderClaude(d){
+  const body = $("claude-body");
+  body.textContent = "";
+  if (!d || !Array.isArray(d.rows)){
+    body.appendChild(el("div", "empty", d && d.error ? d.error : "no data yet"));
+    return;
+  }
+  if (!d.rows.length){
+    body.appendChild(el("div", "empty", "no active projects in the last 10 minutes"));
+    return;
+  }
+  for (const c of d.rows){
+    const row = el("div", "crow");
+    row.appendChild(el("span", "c-folder num", c.folder));
+    row.appendChild(el("span", "c-age num", fmtAge(c.age_seconds)));
+    body.appendChild(row);
+  }
+}
+
 const RENDERERS = {
   "/api/system": renderSystem,
   "/api/agents": renderAgents,
   "/api/lmstudio": renderLM,
   "/api/iris/model": renderIrisModel,
   "/api/journal": renderJournal,
-  "/api/tools": renderTools
+  "/api/tools": renderTools,
+  "/api/sessions": renderSessions,
+  "/api/claude": renderClaude
 };
 
 async function tick(){
@@ -541,6 +649,15 @@ async function tick(){
 
 tick();
 setInterval(tick, 3000);
+
+// --- tabs ------------------------------------------------------------------------
+const PANES = ["overview", "sessions", "claude"];
+function showTab(name){
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  for (const p of PANES) $(p + "-pane").classList.toggle("hidden", p !== name);
+}
+document.querySelectorAll(".tab").forEach(b => { b.onclick = () => showTab(b.dataset.tab); });
+
 </script>
 </body>
 </html>

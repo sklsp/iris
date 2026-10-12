@@ -264,10 +264,10 @@ def test_eval_command_json_model(tmp_path, monkeypatch):
 
 def test_shipped_tasks_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 21
+    assert len(tasks) == 36
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
-    assert (ids[0], ids[-1]) == ("gpu_temp", "scroll")
+    assert (ids[0], ids[-1]) == ("gpu_temp", "gpu_3060")
 
 
 # --- comparing two runs --------------------------------------------------------

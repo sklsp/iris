@@ -1,6 +1,6 @@
 import json
 
-from iris.agent import MAX_STEPS, Agent, Journal
+from iris.agent import MAX_STEPS, Agent, Journal, _describe
 from iris.llm import Reply, ToolCall
 from iris.tools import CONFIRM, SAFE, TOOLS, Tool, _click_tier
 from iris.voice import is_yes
@@ -101,3 +101,9 @@ def test_real_tool_tiers():
 def test_is_yes():
     assert is_yes("Yes please") and is_yes("ja, doe maar") and is_yes("okay")
     assert not is_yes("no") and not is_yes("nee, niet doen") and not is_yes("yes... no, stop")
+
+
+def test_describe_asks_clearer_questions_for_trash_and_keys():
+    assert _describe("trash_file", {"path": "W:/tmp/oud.txt"}) == "Move W:/tmp/oud.txt to the trash?"
+    assert _describe("press_keys", {"window": "Naamloos - Kladblok", "keys": "^s"}) == "Press ^s in Naamloos - Kladblok?"
+    assert _describe("scroll", {"window": "Chrome"}) == "Run scroll with {'window': 'Chrome'}?"

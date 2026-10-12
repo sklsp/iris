@@ -79,4 +79,8 @@ def _describe(name: str, args: dict) -> str:
     if name == "type_text":
         where = args.get("into") or args.get("window")
         return f"Type '{str(args.get('text'))[:60]}' into {where}?"
+    if name == "trash_file":
+        return f"Move {args.get('path')} to the trash?"
+    if name == "press_keys":
+        return f"Press {args.get('keys')} in {args.get('window')}?"
     return f"Run {name} with {args}?"

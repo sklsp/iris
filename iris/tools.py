@@ -134,6 +134,22 @@ def comfy_status() -> str:
     return f"ComfyUI {version} is running. Queue: {running} running, {waiting} waiting."
 
 
+def lmstudio_models() -> str:
+    """Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads."""
+    from iris.dashboard import lmstudio_payload
+
+    p = lmstudio_payload()
+    if not p.get("reachable"):
+        return "LM Studio is not reachable."
+    n = len(p["models"])
+    if p.get("states_known"):
+        loaded = [m["id"] for m in p["models"] if m.get("state") == "loaded"]
+        if loaded:
+            return f"Loaded: {', '.join(loaded)}. Available: {n} models."
+        return f"No model is loaded. Available: {n} models."
+    return f"LM Studio is running with {n} models; it does not say which one is loaded."
+
+
 # --- windows (UI Automation) --------------------------------------------------
 def _desktop():
     from pywinauto import Desktop
@@ -356,6 +372,7 @@ TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
     Tool("gpu_check", "Whether each GPU has room for a heavy job (ComfyUI, a big model): free VRAM against min_free_mib (default 8000) and temperature under 80 C. Read only.", {"min_free_mib": {"type": "integer"}}, [], SAFE, gpu_check),
     Tool("comfy_status", "Whether ComfyUI is running on this PC, its version and how many jobs are running and waiting. Read only.", {}, [], SAFE, comfy_status),
+    Tool("lmstudio_models", "Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads.", {}, [], SAFE, lmstudio_models),
     Tool("list_windows", "Titles of all open windows.", {}, [], SAFE, list_windows),
     Tool("read_window", "The named controls (buttons, fields, text) in a window. Title match is a substring.",
          {"title": S}, ["title"], SAFE, read_window),

@@ -315,3 +315,32 @@ def test_comfy_status_honors_iris_comfy_url(monkeypatch):
     tools.comfy_status()
     assert urls[1] == "http://10.0.0.5:8188/queue"
 
+
+# --- lmstudio_models -----------------------------------------------------------
+def test_lmstudio_models_loaded(monkeypatch):
+    monkeypatch.setattr("iris.dashboard.lmstudio_payload", lambda: {
+        "reachable": True, "states_known": True,
+        "models": [{"id": "qwen3.8-27b", "state": "loaded", "type": "llm"},
+                   {"id": "text-embedding-nomic", "state": "not-loaded", "type": "embeddings"}]})
+    assert tools.lmstudio_models() == "Loaded: qwen3.8-27b. Available: 2 models."
+
+
+def test_lmstudio_models_none_loaded(monkeypatch):
+    monkeypatch.setattr("iris.dashboard.lmstudio_payload", lambda: {
+        "reachable": True, "states_known": True,
+        "models": [{"id": "qwen3.8-27b", "state": "not-loaded", "type": "llm"},
+                   {"id": "text-embedding-nomic", "state": "not-loaded", "type": "embeddings"}]})
+    assert tools.lmstudio_models() == "No model is loaded. Available: 2 models."
+
+
+def test_lmstudio_models_states_unknown(monkeypatch):
+    monkeypatch.setattr("iris.dashboard.lmstudio_payload", lambda: {
+        "reachable": True, "states_known": False,
+        "models": [{"id": "a", "state": None, "type": None}]})
+    assert tools.lmstudio_models() == "LM Studio is running with 1 models; it does not say which one is loaded."
+
+
+def test_lmstudio_models_not_reachable(monkeypatch):
+    monkeypatch.setattr("iris.dashboard.lmstudio_payload", lambda: {"reachable": False})
+    assert tools.lmstudio_models() == "LM Studio is not reachable."
+

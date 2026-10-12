@@ -115,6 +115,10 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .tool-name{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tool-desc{color:#8a9099;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+/* eval */
+.eval-big{font-size:20px;font-weight:600;color:#e6e6e6;padding:4px 0}
+.eval-line{color:#8a9099;font-size:12px;padding:2px 0;overflow-wrap:anywhere}
+
 /* tabs */
 .tabs{display:flex;gap:2px;padding:0 18px;background:#0e0f11;border-bottom:1px solid #23262c}
 .tab{appearance:none;background:none;border:none;border-bottom:2px solid transparent;color:#8a9099;
@@ -170,6 +174,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <button type="button" class="tab" data-tab="activity">Activity</button>
   <button type="button" class="tab" data-tab="repos">Repos</button>
   <button type="button" class="tab" data-tab="tools">Tools</button>
+  <button type="button" class="tab" data-tab="eval">Eval</button>
 </nav>
 <main>
   <section id="overview-pane" class="pane">
@@ -223,6 +228,15 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
       <section class="panel wide">
         <h2>Tools</h2>
         <div id="tools-body"><div class="empty">loading...</div></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="eval-pane" class="pane hidden">
+    <div class="grid">
+      <section class="panel wide">
+        <h2>Eval</h2>
+        <div id="eval-body"><div class="empty">loading...</div></div>
       </section>
     </div>
   </section>
@@ -645,6 +659,27 @@ function renderClaude(d){
   }
 }
 
+function renderEval(d){
+  const body = $("eval-body");
+  body.textContent = "";
+  if (!d || !d.latest){
+    body.appendChild(el("div", "empty", "No eval run yet. Run: python -m iris eval"));
+    return;
+  }
+  const s = d.latest.summary || {};
+  const failed = Array.isArray(s.failed) ? s.failed : [];
+  body.appendChild(el("div", "eval-big num", s.passed + "/" + s.tasks + " passed"));
+  body.appendChild(el("div", "eval-line num", (s.success_rate * 100).toFixed(1) + "%, median " +
+    s.median_seconds + " s, " + s.confirmations_per_task + " confirmations per task"));
+  body.appendChild(el("div", "eval-line", "Model: " + d.latest.model));
+  body.appendChild(el("div", "eval-line num", "Run: " + d.latest.stamp));
+  body.appendChild(el("div", "eval-line", failed.length ? "Failed: " + failed.join(", ") : "Failed: none"));
+}
+
+async function loadEval(){
+  renderEval(await j("/api/eval"));   // fetched when the tab is shown, not on every poll
+}
+
 const RENDERERS = {
   "/api/system": renderSystem,
   "/api/agents": renderAgents,
@@ -669,11 +704,12 @@ tick();
 setInterval(tick, 3000);
 
 // --- tabs ------------------------------------------------------------------------
-const PANES = ["overview", "agents", "activity", "repos", "tools"];
+const PANES = ["overview", "agents", "activity", "repos", "tools", "eval"];
 function showTab(name){
   if (!PANES.includes(name)) name = "overview";
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   for (const p of PANES) $(p + "-pane").classList.toggle("hidden", p !== name);
+  if (name === "eval") loadEval();   // the eval tab fetches when shown, not on every poll
 }
 document.querySelectorAll(".tab").forEach(b => { b.onclick = () => { location.hash = b.dataset.tab; }; });
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));

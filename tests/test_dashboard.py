@@ -729,3 +729,11 @@ def test_api_eval_route(server, tmp_path, monkeypatch):
     code, _headers, text = get(server + "/api/eval")
     body = json.loads(text)
     assert code == 200 and body["latest"]["stamp"] == "20261013-090000" and body["runs"] == 1
+
+
+def test_page_contains_eval_tab_and_empty_state(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    assert "/api/eval" in page
+    assert "No eval run yet. Run: python -m iris eval" in page
+

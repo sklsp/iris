@@ -113,6 +113,27 @@ def gpu_check(min_free_mib: int = 8000) -> str:
     return "\n".join(lines)
 
 
+def _get_json(url: str) -> dict:
+    import urllib.request
+
+    with urllib.request.urlopen(url, timeout=3) as r:
+        return json.loads(r.read().decode())
+
+
+def comfy_status() -> str:
+    """Whether ComfyUI is running on this PC, its version and how many jobs are running and waiting."""
+    base = os.environ.get("IRIS_COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
+    try:
+        stats = _get_json(base + "/system_stats")
+        queue = _get_json(base + "/queue")
+    except (OSError, ValueError):
+        return "ComfyUI is not running."
+    version = stats.get("system", {}).get("comfyui_version", "unknown")
+    running = len(queue.get("queue_running", []))
+    waiting = len(queue.get("queue_pending", []))
+    return f"ComfyUI {version} is running. Queue: {running} running, {waiting} waiting."
+
+
 # --- windows (UI Automation) --------------------------------------------------
 def _desktop():
     from pywinauto import Desktop
@@ -334,6 +355,7 @@ S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
     Tool("gpu_check", "Whether each GPU has room for a heavy job (ComfyUI, a big model): free VRAM against min_free_mib (default 8000) and temperature under 80 C. Read only.", {"min_free_mib": {"type": "integer"}}, [], SAFE, gpu_check),
+    Tool("comfy_status", "Whether ComfyUI is running on this PC, its version and how many jobs are running and waiting. Read only.", {}, [], SAFE, comfy_status),
     Tool("list_windows", "Titles of all open windows.", {}, [], SAFE, list_windows),
     Tool("read_window", "The named controls (buttons, fields, text) in a window. Title match is a substring.",
          {"title": S}, ["title"], SAFE, read_window),

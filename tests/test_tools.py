@@ -267,3 +267,51 @@ def test_gpu_check_without_gpus(monkeypatch):
                                                        "ram_total_gb": 32.0, "gpus": []})
     assert tools.gpu_check() == "GPU: nvidia-smi not available"
 
+
+
+# --- comfy_status --------------------------------------------------------------
+def test_comfy_status_reports_version_and_queue(monkeypatch):
+    def fake(url):
+        if url.endswith("/system_stats"):
+            return {"system": {"comfyui_version": "0.37.0"}}
+        return {"queue_running": [[1]], "queue_pending": [[2], [3]]}
+
+    monkeypatch.setattr(tools, "_get_json", fake)
+    assert tools.comfy_status() == "ComfyUI 0.37.0 is running. Queue: 1 running, 2 waiting."
+
+
+def test_comfy_status_when_not_running(monkeypatch):
+    import urllib.error
+
+    def fake(url):
+        raise urllib.error.URLError("refused")
+
+    monkeypatch.setattr(tools, "_get_json", fake)
+    assert tools.comfy_status() == "ComfyUI is not running."
+
+
+def test_comfy_status_default_urls(monkeypatch):
+    urls = []
+
+    def fake(url):
+        urls.append(url)
+        return {}
+
+    monkeypatch.setattr(tools, "_get_json", fake)
+    monkeypatch.delenv("IRIS_COMFY_URL", raising=False)
+    tools.comfy_status()
+    assert urls == ["http://127.0.0.1:8188/system_stats", "http://127.0.0.1:8188/queue"]
+
+
+def test_comfy_status_honors_iris_comfy_url(monkeypatch):
+    urls = []
+
+    def fake(url):
+        urls.append(url)
+        return {}
+
+    monkeypatch.setattr(tools, "_get_json", fake)
+    monkeypatch.setenv("IRIS_COMFY_URL", "http://10.0.0.5:8188/")
+    tools.comfy_status()
+    assert urls[1] == "http://10.0.0.5:8188/queue"
+

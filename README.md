@@ -36,6 +36,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 |---|---|---|
 | system_status | safe | CPU, RAM, and per-GPU load, VRAM and temperature |
 | gpu_check | safe | free VRAM and temperature per GPU against a threshold, before a heavy job |
+| comfy_status | safe | is ComfyUI running, its version and its queue |
 | list_windows | safe | titles of the open windows |
 | read_window | safe | the named controls in a window, with the contents of text fields |
 | open_app | safe | start an app, an `ms-settings:` page or a file |

@@ -150,6 +150,31 @@ def lmstudio_models() -> str:
     return f"LM Studio is running with {n} models; it does not say which one is loaded."
 
 
+def followups(today: str = "") -> str:
+    """Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note."""
+    import csv
+    from datetime import date
+
+    folder = Path(os.environ.get("IRIS_LEADSCAN_DIR", "W:/leadscan"))
+    file = folder / "out" / "pipeline.csv"
+    if not file.exists():
+        return "No leadscan CRM found."
+    day = today or date.today().isoformat()
+    done = {"klant", "geen interesse", "niet benaderen"}
+    due = []
+    with open(file, encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            nxt = (row.get("next") or "").strip()
+            status = (row.get("status") or "").strip()
+            if not nxt or nxt > day or status in done:
+                continue
+            due.append((nxt, (row.get("name") or "").strip(), status, (row.get("note") or "").strip()))
+    due.sort(key=lambda r: (r[0], r[1]))
+    lines = [f"{n} {name} ({status}): {note}" if note else f"{n} {name} ({status})"
+             for n, name, status, note in due]
+    return "\n".join(lines) or "No follow-ups due."
+
+
 # --- windows (UI Automation) --------------------------------------------------
 def _desktop():
     from pywinauto import Desktop
@@ -373,6 +398,7 @@ TOOLS = {t.name: t for t in [
     Tool("gpu_check", "Whether each GPU has room for a heavy job (ComfyUI, a big model): free VRAM against min_free_mib (default 8000) and temperature under 80 C. Read only.", {"min_free_mib": {"type": "integer"}}, [], SAFE, gpu_check),
     Tool("comfy_status", "Whether ComfyUI is running on this PC, its version and how many jobs are running and waiting. Read only.", {}, [], SAFE, comfy_status),
     Tool("lmstudio_models", "Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads.", {}, [], SAFE, lmstudio_models),
+    Tool("followups", "Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note. Read only.", {}, [], SAFE, followups),
     Tool("list_windows", "Titles of all open windows.", {}, [], SAFE, list_windows),
     Tool("read_window", "The named controls (buttons, fields, text) in a window. Title match is a substring.",
          {"title": S}, ["title"], SAFE, read_window),

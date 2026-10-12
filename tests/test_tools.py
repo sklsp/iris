@@ -344,3 +344,37 @@ def test_lmstudio_models_not_reachable(monkeypatch):
     monkeypatch.setattr("iris.dashboard.lmstudio_payload", lambda: {"reachable": False})
     assert tools.lmstudio_models() == "LM Studio is not reachable."
 
+
+
+# --- followups -----------------------------------------------------------------
+PIPELINE_CSV = """osm,name,status,note,next,tier,since,demo,updated
+node/1,Bakkerij Zon,interesse,eigenaar vond demo goed,2026-10-17,,,https://bakkerij-zon.example.com,2026-10-12
+node/2,Bakkerij Aart,bezocht,,2026-10-15,,,,2026-10-11
+node/3,Kapper Sem,klant,,2026-10-01,etalage,2026-10-01,,2026-10-01
+node/4,Cafe Noord,interesse,later,2026-10-20,,,,2026-10-12
+"""
+
+
+@pytest.fixture
+def leadscan(tmp_path, monkeypatch):
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "pipeline.csv").write_text(PIPELINE_CSV, encoding="utf-8")
+    monkeypatch.setenv("IRIS_LEADSCAN_DIR", str(tmp_path))
+    return tmp_path
+
+
+def test_followups_lists_due_leads_sorted_by_date_and_name(leadscan):
+    assert tools.followups("2026-10-17") == (
+        "2026-10-15 Bakkerij Aart (bezocht)\n"
+        "2026-10-17 Bakkerij Zon (interesse): eigenaar vond demo goed")
+
+
+def test_followups_none_due(leadscan):
+    assert tools.followups("2026-10-14") == "No follow-ups due."
+
+
+def test_followups_without_crm(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_LEADSCAN_DIR", str(tmp_path))
+    assert tools.followups() == "No leadscan CRM found."
+

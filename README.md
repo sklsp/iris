@@ -87,7 +87,7 @@ chunk, so the wake word stops it between chunks; SAPI cannot be cut off mid-sent
 The repos live in [iris/agents.toml](iris/agents.toml):
 
 ```toml
-repos = ["W:/Ledger", "W:/feedbot", "W:/acme-render", "W:/Iris"]
+repos = ["W:/Ledger", "W:/feedbot", "W:/acme-render", "W:/Iris", "W:/leadscan"]
 worktrees = ["C:/Users/Jayde/.cline/worktrees"]
 stuck_minutes = 60
 ```

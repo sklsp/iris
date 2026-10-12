@@ -7,7 +7,7 @@
 #
 # A missing file means the defaults below are used.
 
-repos = ["W:/Ledger", "W:/feedbot", "W:/acme-render", "W:/Iris"]
+repos = ["W:/Ledger", "W:/feedbot", "W:/acme-render", "W:/Iris", "W:/leadscan"]
 worktrees = ["C:/Users/Jayde/.cline/worktrees"]
 
 # Minutes without a commit, together with uncommitted changes, that count as STUCK.

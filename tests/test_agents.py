@@ -5,7 +5,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from iris.agents import Config, _age, agents_status, discover, load_config, repo_status
+from iris.agents import DEFAULT_REPOS, Config, _age, agents_status, discover, load_config, repo_status
 from iris.tools import SAFE, TOOLS
 
 
@@ -120,12 +120,18 @@ def test_stuck_summary_line_counts_the_stuck_repos(tmp_path):
 
 
 def test_config_defaults_and_overrides(tmp_path):
-    assert load_config(tmp_path / "missing.toml").repos == load_config().repos  # falls back
+    assert load_config(tmp_path / "missing.toml").repos == DEFAULT_REPOS  # missing file falls back to built-in defaults
     cfg = write_config(tmp_path, repos=["W:/Iris"], worktrees=[], stuck=15)
     loaded = load_config(cfg)
     assert loaded.repos == ["W:/Iris"] and loaded.worktrees == [] and loaded.stuck_minutes == 15
     (tmp_path / "agents.toml").write_text("repos = [ broken", encoding="utf-8")  # broken file
     assert load_config(tmp_path / "agents.toml").stuck_minutes == 60  # defaults, not a crash
+
+
+def test_shipped_config_watches_leadscan():
+    shipped = Path(__file__).resolve().parents[1] / "iris" / "agents.toml"
+    cfg = load_config(shipped)
+    assert "W:/leadscan" in cfg.repos
 
 
 def test_agents_status_is_safe_and_never_writes(tmp_path):

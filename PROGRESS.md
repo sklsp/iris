@@ -18,5 +18,5 @@
 - [x] 23. iris night 1 item 23 (2a3d662, 203 passed in 13.24s)
 - [x] 24. iris night 1 item 24 (12dac35, 212 passed in 13.50s)
 - [x] 25. iris night 1 item 25 (b56f247, 213 passed in 13.51s)
-- [ ] 26. iris night 1 item 26
+- [x] 26. iris night 1 item 26 (761ae03, 213 passed in 13.16s)
 - [ ] 27. iris night 1 item 27

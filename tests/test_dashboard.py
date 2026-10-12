@@ -64,7 +64,7 @@ def fake_v0(monkeypatch, models):
 # --- safety --------------------------------------------------------------------
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
-@pytest.mark.parametrize("path", ["/", "/api/system", "/api/agents", "/api/lmstudio", "/api/journal", "/api/tools"])
+@pytest.mark.parametrize("path", ["/", "/api/system", "/api/agents", "/api/lmstudio", "/api/journal", "/api/tools", "/api/eval"])
 def test_non_get_methods_are_refused_with_405(server, method, path):
     req = urllib.request.Request(server + path, data=b"{}", method=method)
     with pytest.raises(urllib.error.HTTPError) as exc:
@@ -693,3 +693,39 @@ def test_open_but_quiet_session_is_not_running(tmp_path, monkeypatch):
     alive_pids(monkeypatch, {4242})
     rows = d.session_rows(db)
     assert rows[0]["live"] is False and rows[0]["status"] == "idle"
+
+
+# --- eval reports -----------------------------------------------------------------
+
+def _report(stamp):
+    """A minimal valid report: the same keys iris.eval.write_report always writes."""
+    return json.dumps({"stamp": stamp, "model": "test-model",
+                       "summary": {"passed": 1, "tasks": 2}, "results": []})
+
+
+def test_eval_payload_latest_and_runs(tmp_path, monkeypatch):
+    (tmp_path / "20261012-090000.json").write_text(_report("20261012-090000"), encoding="utf-8")
+    (tmp_path / "20261013-090000.json").write_text(_report("20261013-090000"), encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    p = d.eval_payload()
+    assert p["latest"]["stamp"] == "20261013-090000"   # newest by name: stamps sort by time
+    assert p["runs"] == 2
+
+
+def test_eval_payload_empty_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    assert d.eval_payload() == {"latest": None, "runs": 0}
+
+
+def test_eval_payload_unreadable_newest(tmp_path, monkeypatch):
+    (tmp_path / "20261013-090000.json").write_text("{not json", encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    assert d.eval_payload() == {"latest": None, "runs": 1, "error": "unreadable report"}
+
+
+def test_api_eval_route(server, tmp_path, monkeypatch):
+    (tmp_path / "20261013-090000.json").write_text(_report("20261013-090000"), encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    code, _headers, text = get(server + "/api/eval")
+    body = json.loads(text)
+    assert code == 200 and body["latest"]["stamp"] == "20261013-090000" and body["runs"] == 1

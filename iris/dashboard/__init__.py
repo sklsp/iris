@@ -18,6 +18,8 @@ IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by th
                   old, folder name and age only; cached 30 s
     /api/iris/model which model Iris talks to right now and where that choice came from
                     (the IRIS_MODEL environment variable, then ~/.iris/settings.json)
+    /api/eval     the newest eval report from eval/results (or IRIS_EVAL_DIR): its stamp,
+                  model and summary, plus how many runs exist so far
 
 POST (the only writes): /api/models/load {model}, /api/models/unload {model | "all"}
 and /api/iris/model {model}, which writes the model key of ~/.iris/settings.json.
@@ -446,6 +448,33 @@ def _cached(key: str, fn) -> dict:
     return value
 
 
+# --- eval reports ---------------------------------------------------------------
+
+def eval_payload(results_dir=None) -> dict:
+    """The newest eval report from results_dir / IRIS_EVAL_DIR, plus how many runs exist.
+
+    The newest file is decided by name alone: the stamps sort by time."""
+    if results_dir is None:
+        results_dir = os.environ.get("IRIS_EVAL_DIR") or str(Path(__file__).resolve().parents[2] / "eval" / "results")
+    base = Path(results_dir)
+    try:
+        files = sorted(f for f in base.glob("*.json") if f.is_file())
+    except OSError:
+        return {"latest": None, "runs": 0}
+    if not files:
+        return {"latest": None, "runs": 0}
+    newest = files[-1]
+    try:
+        report = json.loads(newest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"latest": None, "runs": len(files), "error": "unreadable report"}
+    if not isinstance(report, dict):
+        return {"latest": None, "runs": len(files), "error": "unreadable report"}
+    return {"latest": {"stamp": report.get("stamp"), "model": report.get("model"),
+                       "summary": report.get("summary")},
+            "runs": len(files)}
+
+
 # --- the server -----------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -495,6 +524,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(journal_payload())
         elif path == "/api/tools":
             self._json(tools_payload())
+        elif path == "/api/eval":
+            self._json(eval_payload())
         else:
             self._json({"error": "not found"}, code=404)
 

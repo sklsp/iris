@@ -378,3 +378,47 @@ def test_followups_without_crm(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_LEADSCAN_DIR", str(tmp_path))
     assert tools.followups() == "No leadscan CRM found."
 
+
+
+# --- journal_today -------------------------------------------------------------
+def _write_journal(tmp_path, monkeypatch):
+    import json
+
+    lines = [
+        {"event": "request", "text": "open notepad", "t": "2026-10-17T09:00:00"},
+        {"event": "tool", "tool": "focus_window", "args": {}, "tier": "safe",
+         "outcome": "ok", "result": "focused 'Notepad'", "t": "2026-10-17T09:00:05"},
+        {"event": "tool", "tool": "press_keys", "args": {}, "tier": "never",
+         "outcome": "refused", "t": "2026-10-17T09:01:00"},
+        {"event": "request", "text": "check the gpu", "t": "2026-10-17T10:00:00"},
+        {"event": "tool", "tool": "click", "args": {}, "tier": "confirm",
+         "outcome": "declined", "t": "2026-10-17T10:00:30"},
+        {"event": "tool", "tool": "open_url", "args": {}, "tier": "safe",
+         "outcome": "error", "error": "boom", "t": "2026-10-17T10:01:00"},
+    ]
+    text = "\n".join(json.dumps(e) for e in lines) + "\nnot json\n"
+    text += json.dumps({"event": "request", "text": "yesterday", "t": "2026-10-16T20:00:00"}) + "\n"
+    p = tmp_path / "journal.jsonl"
+    p.write_text(text, encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(p))
+    return p
+
+
+def test_journal_today_counts_by_outcome(tmp_path, monkeypatch):
+    _write_journal(tmp_path, monkeypatch)
+    assert tools.journal_today("2026-10-17") == (
+        "Today: 2 requests, 4 tool calls (1 ok, 1 refused, 1 declined, 1 errors).")
+
+
+def test_journal_today_empty_file(tmp_path, monkeypatch):
+    p = tmp_path / "journal.jsonl"
+    p.write_text("", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(p))
+    assert tools.journal_today() == (
+        "Today: 0 requests, 0 tool calls (0 ok, 0 refused, 0 declined, 0 errors).")
+
+
+def test_journal_today_missing_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "nope.jsonl"))
+    assert tools.journal_today() == "Nothing in the journal yet."
+

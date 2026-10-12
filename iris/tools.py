@@ -175,6 +175,45 @@ def followups(today: str = "") -> str:
     return "\n".join(lines) or "No follow-ups due."
 
 
+def journal_today(today: str = "") -> str:
+    """How many requests and tool calls Iris handled today, by outcome. Read only."""
+    from datetime import date
+
+    from iris.dashboard import journal_path
+
+    path = journal_path()
+    if not path.exists():
+        return "Nothing in the journal yet."
+    day = today or date.today().isoformat()
+    requests = ok = refused = declined = errors = 0
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue  # a torn or foreign line must never break the count
+            if not str(e.get("t", "")).startswith(day):
+                continue
+            if e.get("event") == "request":
+                requests += 1
+            elif e.get("event") == "tool":
+                outcome = e.get("outcome")
+                if outcome == "ok":
+                    ok += 1
+                elif outcome == "refused":
+                    refused += 1
+                elif outcome == "declined":
+                    declined += 1
+                elif outcome == "error":
+                    errors += 1
+    calls = ok + refused + declined + errors
+    return (f"Today: {requests} requests, {calls} tool calls "
+            f"({ok} ok, {refused} refused, {declined} declined, {errors} errors).")
+
+
 # --- windows (UI Automation) --------------------------------------------------
 def _desktop():
     from pywinauto import Desktop
@@ -399,6 +438,7 @@ TOOLS = {t.name: t for t in [
     Tool("comfy_status", "Whether ComfyUI is running on this PC, its version and how many jobs are running and waiting. Read only.", {}, [], SAFE, comfy_status),
     Tool("lmstudio_models", "Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads.", {}, [], SAFE, lmstudio_models),
     Tool("followups", "Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note. Read only.", {}, [], SAFE, followups),
+    Tool("journal_today", "How many requests and tool calls Iris handled today, by outcome. Read only.", {}, [], SAFE, journal_today),
     Tool("list_windows", "Titles of all open windows.", {}, [], SAFE, list_windows),
     Tool("read_window", "The named controls (buttons, fields, text) in a window. Title match is a substring.",
          {"title": S}, ["title"], SAFE, read_window),

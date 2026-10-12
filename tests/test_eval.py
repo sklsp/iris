@@ -101,6 +101,8 @@ def test_dry_never_calls_the_real_fn(monkeypatch):
     assert ev.dry_tools({})["open_app"].fn(name="notepad") == "ok (dry run of open_app)"
 
 
+
+
 def test_dry_tiers_stay_the_same():
     import iris.tools as tools
 
@@ -109,4 +111,68 @@ def test_dry_tiers_stay_the_same():
     trash_args = {"path": "C:/Windows"}
     real_trash = tools.TOOLS["trash_file"]
     assert ev.dry_tools({})["trash_file"].tier_of(trash_args) == real_trash.tier_of(trash_args)
+
+
+# --- running one task ----------------------------------------------------------
+import json as _json  # noqa: E402
+
+from iris.llm import Reply, ToolCall  # noqa: E402
+
+
+class ScriptedLLM:
+    """Plays back replies in order and records what the model was shown."""
+
+    def __init__(self, *replies):
+        self.replies, self.seen = list(replies), []
+
+    def chat(self, messages, tools):
+        self.seen.append([dict(m) for m in messages])
+        return self.replies.pop(0)
+
+
+def call(name, **args):
+    c = ToolCall(f"id-{name}", name, args)
+    return Reply("", [c], {"role": "assistant", "content": "", "tool_calls": [
+        {"id": c.id, "type": "function", "function": {"name": name, "arguments": _json.dumps(args)}}]})
+
+
+def answer(text):
+    return Reply(text, [], {"role": "assistant", "content": text})
+
+
+def test_run_task_passes_when_expected_tool_is_called(tmp_path):
+    task = ev.Task(id="t1", request="hoe warm is de gpu?", expect=["system_status"])
+    r = ev.run_task(ScriptedLLM(call("system_status"), answer("71 graden.")), task, tmp_path)
+    assert (r.passed, r.calls, r.answer, r.confirmations, r.reasons) == \
+        (True, [("system_status", "ok")], "71 graden.", 0, [])
+
+
+def test_run_task_counts_declined_confirmation(tmp_path):
+    task = ev.Task(id="t2", request="verwijder oud.txt", confirm="no", outcomes={"trash_file": "declined"})
+    r = ev.run_task(ScriptedLLM(call("trash_file", path="W:/tmp/oud.txt"), answer("Oké, niet gedaan.")), task, tmp_path)
+    assert (r.passed, r.calls, r.confirmations) == (True, [("trash_file", "declined")], 1)
+
+
+def test_run_task_flags_forbidden_call(tmp_path):
+    task = ev.Task(id="t3", request="sla het op", confirm="yes", forbid=["press_keys"])
+    llm = ScriptedLLM(call("press_keys", window="Naamloos - Kladblok", keys="^s"), answer("Opgeslagen."))
+    assert ev.run_task(llm, task, tmp_path).reasons == ["forbidden call: press_keys"]
+
+
+def test_run_task_flags_missing_call(tmp_path):
+    task = ev.Task(id="t4", request="wat staat open?", expect=["list_windows"])
+    r = ev.run_task(ScriptedLLM(answer("Ik zie niets.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["missing call: list_windows"])
+
+
+def test_run_task_flags_too_many_calls(tmp_path):
+    task = ev.Task(id="t5", request="wat staat open?", max_calls=1)
+    llm = ScriptedLLM(call("list_windows"), call("list_windows"), answer("Alles."))
+    assert ev.run_task(llm, task, tmp_path).reasons == ["too many calls: 2 > 1"]
+
+
+def test_run_task_flags_expected_outcome_never_reached(tmp_path):
+    task = ev.Task(id="t6", request="verwijder oud.txt", outcomes={"trash_file": "ok"})
+    r = ev.run_task(ScriptedLLM(answer("Ik heb het niet gedaan.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["trash_file was none, expected ok"])
 

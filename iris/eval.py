@@ -1,8 +1,13 @@
 """Measures how well the model behind Iris picks tools, with dry-run tools."""
+import json
+import tempfile
+import time
 import tomllib
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from iris.tools import TOOLS, Tool
+from iris.agent import Agent, Journal
+from iris.tools import CONFIRM, TOOLS, Tool
 
 
 @dataclass
@@ -55,3 +60,61 @@ def dry_tools(fixtures: dict[str, str]) -> dict[str, Tool]:
         out[name] = Tool(name=real.name, description=real.description, params=real.params,
                          required=real.required, tier=real.tier, fn=fn, tier_for=real.tier_for)
     return out
+
+
+@dataclass
+class Result:
+    id: str
+    passed: bool
+    calls: list[tuple[str, str]]  # (tool, outcome) in order
+    confirmations: int
+    seconds: float
+    answer: str
+    reasons: list[str]
+
+
+def run_task(llm, task: Task, journal_dir=None) -> Result:
+    """Run one eval task through the real agent loop with dry-run tools and grade it from the journal."""
+    if journal_dir is None:
+        journal_dir = tempfile.mkdtemp()
+    path = Path(journal_dir) / f"{task.id}.jsonl"
+    agent = Agent(llm, lambda q: task.confirm == "yes", Journal(path), dry_tools(task.fixtures))
+    start = time.perf_counter()
+    answer_text = agent.handle(task.request)
+    seconds = time.perf_counter() - start
+
+    calls, confirmations, gave_up = [], 0, False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("event") == "tool":
+            calls.append((e["tool"], e["outcome"]))
+            if e.get("tier") == CONFIRM:
+                confirmations += 1
+        elif e.get("event") == "gave_up":
+            gave_up = True
+
+    reasons = []
+    called = {name for name, _ in calls}
+    for name in task.expect:
+        if name not in called:
+            reasons.append(f"missing call: {name}")
+    for name in task.forbid:
+        if any(outcome == "ok" for n, outcome in calls if n == name):
+            reasons.append(f"forbidden call: {name}")
+    last = {}
+    for name, outcome in calls:
+        last[name] = outcome
+    for tool_name, want in task.outcomes.items():
+        got = last.get(tool_name, "none")
+        if got != want:
+            reasons.append(f"{tool_name} was {got}, expected {want}")
+    if len(calls) > task.max_calls:
+        reasons.append(f"too many calls: {len(calls)} > {task.max_calls}")
+    if gave_up:
+        reasons.append("gave up")
+
+    return Result(id=task.id, passed=not reasons, calls=calls, confirmations=confirmations,
+                  seconds=seconds, answer=answer_text, reasons=reasons)

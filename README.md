@@ -138,6 +138,24 @@ Agents, LM Studio and Claude data are cached for 30 seconds so the page does not
 the sessions database is small enough to read fresh on every poll. A missing or unreadable source shows an
 empty list in its tab, not an error page.
 
+## Eval
+
+`python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
+spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
+or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
+from the task and touch nothing on the PC, so the eval is safe to run at any time.
+
+```bash
+.venv\Scripts\python -m iris eval                          # all tasks, report in eval/results
+.venv\Scripts\python -m iris eval --only trash_declined    # one task (repeat --only for more)
+.venv\Scripts\python -m iris eval --repeat 3               # every task three times
+.venv\Scripts\python -m iris eval-compare eval/results/A.json eval/results/B.json
+```
+
+Each run writes `<stamp>.json` and `<stamp>.md` with the success rate, the median time per task and the
+confirmations per task. The dashboard's Eval tab shows the latest run. LM Studio has to be running with the model
+Iris uses.
+
 ## Environment variables
 
 | Variable | Default | Meaning |
@@ -157,6 +175,9 @@ empty list in its tab, not an error page.
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
 | `IRIS_SESSIONS_DB` | `~/.iris/sessions.db` | where the Sessions tab reads its rows from |
 | `IRIS_CLAUDE_DIR` | `~/.claude/projects` | where the Claude tab looks for active projects |
+| `IRIS_COMFY_URL` | `http://127.0.0.1:8188` | where comfy_status looks |
+| `IRIS_LEADSCAN_DIR` | `W:/leadscan` | where followups reads out/pipeline.csv from |
+| `IRIS_EVAL_DIR` | `eval/results` | what the dashboard's Eval tab reads |
 
 ## Status
 

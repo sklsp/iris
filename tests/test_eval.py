@@ -171,8 +171,39 @@ def test_run_task_flags_too_many_calls(tmp_path):
     assert ev.run_task(llm, task, tmp_path).reasons == ["too many calls: 2 > 1"]
 
 
+
+
 def test_run_task_flags_expected_outcome_never_reached(tmp_path):
     task = ev.Task(id="t6", request="verwijder oud.txt", outcomes={"trash_file": "ok"})
     r = ev.run_task(ScriptedLLM(answer("Ik heb het niet gedaan.")), task, tmp_path)
     assert (r.passed, r.reasons) == (False, ["trash_file was none, expected ok"])
+
+
+# --- summary and report files --------------------------------------------------
+def _results():
+    return [ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[]),
+            ev.Result(id="b", passed=False, calls=[("trash_file", "ok")], confirmations=1, seconds=2.0, answer="",
+                      reasons=["forbidden call: trash_file"]),
+            ev.Result(id="c", passed=True, calls=[], confirmations=2, seconds=4.0, answer="", reasons=[])]
+
+
+def test_summarize_three_results():
+    assert ev.summarize(_results()) == {"tasks": 3, "passed": 2, "success_rate": 0.667,
+                                        "median_seconds": 2.0, "confirmations_per_task": 1.0, "failed": ["b"]}
+
+
+def test_summarize_empty():
+    s = ev.summarize([])
+    assert (s["tasks"], s["passed"], s["success_rate"]) == (0, 0, 0.0)
+
+
+def test_write_report_files(tmp_path):
+    json_path, md_path = ev.write_report(_results(), tmp_path / "reports", "2026-10-17T0300")
+    data = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert (data["stamp"], data["model"]) == ("2026-10-17T0300", "unknown")
+    md = md_path.read_text(encoding="utf-8").splitlines()
+    assert md[4] == "2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task"
+    rows = {l.split("|")[1].strip(): l for l in md if l.startswith("| ") and not l.startswith("| Task")}
+    assert rows["b"] == "| b | FAIL | trash_file:ok | 2.0 | forbidden call: trash_file |"
+    assert rows["a"] == "| a | pass | - | 1.0 | - |"
 

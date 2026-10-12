@@ -1,9 +1,10 @@
 """Measures how well the model behind Iris picks tools, with dry-run tools."""
 import json
+import statistics
 import tempfile
 import time
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from iris.agent import Agent, Journal
@@ -118,3 +119,37 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
 
     return Result(id=task.id, passed=not reasons, calls=calls, confirmations=confirmations,
                   seconds=seconds, answer=answer_text, reasons=reasons)
+
+
+def summarize(results: list[Result]) -> dict:
+    n = len(results)
+    if not results:
+        return {"tasks": 0, "passed": 0, "success_rate": 0.0, "median_seconds": 0.0,
+                "confirmations_per_task": 0.0, "failed": []}
+    p = sum(1 for r in results if r.passed)
+    return {"tasks": n, "passed": p, "success_rate": round(p / n, 3),
+            "median_seconds": round(statistics.median(r.seconds for r in results), 2),
+            "confirmations_per_task": round(sum(r.confirmations for r in results) / n, 2),
+            "failed": [r.id for r in results if not r.passed]}
+
+
+def write_report(results: list[Result], out_dir, stamp: str, model: str = "") -> tuple[Path, Path]:
+    """Write {stamp}.json and {stamp}.md into out_dir; returns (json path, md path)."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    s = summarize(results)
+    json_path = out_dir / f"{stamp}.json"
+    json_path.write_text(json.dumps({"stamp": stamp, "model": model or "unknown",
+                                     "summary": s, "results": [asdict(r) for r in results]}, indent=2),
+                         encoding="utf-8")
+    lines = [f"# Iris eval {stamp}", "", f"Model: {model or 'unknown'}", "",
+             f"{s['passed']}/{s['tasks']} passed ({s['success_rate'] * 100:.1f}%), "
+             f"median {s['median_seconds']:.1f} s, {s['confirmations_per_task']:.2f} confirmations per task", "",
+             "| Task | Result | Calls | Seconds | Reasons |", "|---|---|---|---|---|"]
+    for r in results:
+        lines.append(f"| {r.id} | {'pass' if r.passed else 'FAIL'} | "
+                     f"{', '.join(f'{t}:{o}' for t, o in r.calls) or '-'} | {r.seconds:.1f} | "
+                     f"{' ; '.join(r.reasons) or '-'} |")
+    md_path = out_dir / f"{stamp}.md"
+    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return json_path, md_path

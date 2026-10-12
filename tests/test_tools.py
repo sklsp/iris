@@ -204,3 +204,38 @@ def test_trash_refuses_paths_outside_home_and_w_and_system_dirs():
         assert t.tier_of({"path": bad}) == NEVER, bad
     assert t.tier_of({"path": str(Path.home() / "Documents" / "notes.txt")}) == CONFIRM
     assert t.tier_of({"path": "W:/Iris/scratch.txt"}) == CONFIRM
+
+
+# --- gpu_guard -----------------------------------------------------------------
+def test_gpu_guard_flags_low_free_vram():
+    data = {"gpus": [{"index": 0, "name": "NVIDIA GeForce RTX 3090", "load_percent": 97.0,
+                      "vram_used_mib": 23100.0, "vram_total_mib": 24576.0, "temp_c": 71.0}]}
+    [g] = tools.gpu_guard(data)
+    assert g["free_mib"] == 1476 and g["ok"] is False
+    assert g["reason"] == "only 1476 MiB free"
+
+
+def test_gpu_guard_passes_a_cool_gpu_with_room_to_spare():
+    data = {"gpus": [{"index": 1, "name": "NVIDIA GeForce RTX 3060", "load_percent": 3.0,
+                      "vram_used_mib": 400.0, "vram_total_mib": 12288.0, "temp_c": 41.0}]}
+    [g] = tools.gpu_guard(data)
+    assert g["free_mib"] == 11888 and g["ok"] is True and g["reason"] == ""
+
+
+def test_gpu_guard_flags_a_hot_gpu():
+    data = {"gpus": [{"index": 2, "name": "NVIDIA GeForce RTX 3090", "load_percent": 50.0,
+                      "vram_used_mib": 1000.0, "vram_total_mib": 24576.0, "temp_c": 84.0}]}
+    [g] = tools.gpu_guard(data)
+    assert g["ok"] is False and g["reason"] == "84 C, too hot"
+
+
+def test_gpu_guard_lists_both_reasons_in_order():
+    data = {"gpus": [{"index": 3, "name": "NVIDIA GeForce RTX 3090", "load_percent": 50.0,
+                      "vram_used_mib": 20000.0, "vram_total_mib": 24576.0, "temp_c": 85.0}]}
+    [g] = tools.gpu_guard(data)
+    assert g["ok"] is False and g["reason"] == "only 4576 MiB free; 85 C, too hot"
+
+
+def test_gpu_guard_with_no_gpus():
+    assert tools.gpu_guard({"gpus": []}) == []
+

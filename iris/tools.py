@@ -84,6 +84,21 @@ def system_status() -> str:
     return "\n".join(lines)
 
 
+def gpu_guard(data: dict, min_free_mib: float = 8000, max_temp_c: float = 80) -> list[dict]:
+    """Whether each GPU has enough free VRAM and is cool enough for heavy work. Pure function."""
+    out = []
+    for g in data["gpus"]:
+        free = g["vram_total_mib"] - g["vram_used_mib"]
+        reasons = []
+        if free < min_free_mib:
+            reasons.append(f"only {free:.0f} MiB free")
+        if g["temp_c"] >= max_temp_c:
+            reasons.append(f"{g['temp_c']:.0f} C, too hot")
+        out.append({"index": g["index"], "name": g["name"], "free_mib": free,
+                    "ok": not reasons, "reason": "; ".join(reasons)})
+    return out
+
+
 # --- windows (UI Automation) --------------------------------------------------
 def _desktop():
     from pywinauto import Desktop

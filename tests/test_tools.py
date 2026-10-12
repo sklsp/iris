@@ -422,3 +422,23 @@ def test_journal_today_missing_file(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "nope.jsonl"))
     assert tools.journal_today() == "Nothing in the journal yet."
 
+
+
+# --- registry guards -----------------------------------------------------------
+def test_every_tool_is_documented():
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    for name in tools.TOOLS:
+        assert f"| {name} |" in readme, f"{name} has no row in the README tools table"
+
+
+def test_every_tool_has_a_valid_tier():
+    for tool in tools.TOOLS.values():
+        assert tool.tier in (tools.SAFE, tools.CONFIRM, tools.NEVER), tool.name
+        assert tool.description.strip(), f"{tool.name} has an empty description"
+
+
+def test_read_only_tools_are_safe():
+    for name in ("system_status", "gpu_check", "comfy_status", "lmstudio_models",
+                 "followups", "journal_today", "agents_status"):
+        assert tools.TOOLS[name].tier == tools.SAFE, name
+

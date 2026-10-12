@@ -1,6 +1,6 @@
 # Iris night run 1
 
-- [ ] 8. iris night 1 item 8
+- [x] 8. iris night 1 item 8 (418d967, 151 passed in 12.81s)
 - [ ] 9. iris night 1 item 9
 - [ ] 10. iris night 1 item 10
 - [ ] 11. iris night 1 item 11

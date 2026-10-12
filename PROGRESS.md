@@ -10,7 +10,7 @@
 - [x] 15. iris night 1 item 15 (252eebd, 174 passed in 12.96s)
 - [x] 16. iris night 1 item 16 (38cfaea, 177 passed in 12.96s)
 - [x] 17. iris night 1 item 17 (a00188b, 183 passed in 12.90s)
-- [ ] 18. iris night 1 item 18
+- [x] 18. iris night 1 item 18 (411343c, 187 passed in 12.97s)
 - [ ] 19. iris night 1 item 19
 - [ ] 20. iris night 1 item 20
 - [ ] 21. iris night 1 item 21

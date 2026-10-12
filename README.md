@@ -143,7 +143,7 @@ empty list in its tab, not an error page.
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 50 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 
 ```bash
 .venv\Scripts\python -m iris eval                          # all tasks, report in eval/results

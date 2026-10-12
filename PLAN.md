@@ -57,7 +57,7 @@ Logging in, payments, messages to other people, and anything irreversible stay w
 - [x] **6. The agent manager:** `agents_status` (safe, read only) walks the repos in `iris/agents.toml` plus every Cline worktree and reports the branch, the last commit and how long ago, the uncommitted file count, whether BLOCKED.md exists, and STUCK when there are uncommitted changes but no commit for over an hour.
 - [x] **7. README and PLAN:** every tool documented with its tier, the wake word and how to run it; v1 ticked.
 - [x] **8. Read-only skills:** gpu_check (the GPU governor: free VRAM and temperature before a heavy job), comfy_status, lmstudio_models (never loads or unloads), followups from the leadscan CRM, journal_today.
-- [x] **9. Eval harness (v3 start):** 21 tasks in eval/tasks.toml, dry-run tools, `python -m iris eval` with --only and --repeat, reports in eval/results, eval-compare, and an Eval tab on the dashboard.
+- [x] **9. Eval harness (v3 start):** 50 tasks in eval/tasks.toml, dry-run tools, `python -m iris eval` with --only and --repeat, reports in eval/results, eval-compare, and an Eval tab on the dashboard.
 
-Next: run the eval on the real model and publish the number; grow the task set to 50; a custom "hey iris" wake word; the agent manager's prompt queue.
+Next: run the eval on the real model and publish the number; a custom "hey iris" wake word; the agent manager's prompt queue.
 

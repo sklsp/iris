@@ -269,3 +269,19 @@ def test_shipped_tasks_load():
     assert len(set(ids)) == len(ids)
     assert (ids[0], ids[-1]) == ("gpu_temp", "scroll")
 
+
+# --- comparing two runs --------------------------------------------------------
+def test_compare_broke_fixed_new_gone():
+    a = {"results": [{"id": "a1", "passed": True}, {"id": "a2", "passed": True},
+                     {"id": "a3", "passed": False}, {"id": "a4", "passed": True}]}
+    b = {"results": [{"id": "a1", "passed": True}, {"id": "a2", "passed": False},
+                     {"id": "a3", "passed": True}, {"id": "a5", "passed": True}]}
+    assert ev.compare(a, b) == ["3/4 -> 3/4 tasks passed", "broke: a2", "fixed: a3",
+                                "new: a5", "gone: a4", "same: 1"]
+
+
+def test_compare_repeat_counts_per_task_id():
+    a = {"results": [{"id": "x", "passed": True}, {"id": "x", "passed": False}]}
+    b = {"results": [{"id": "x", "passed": True}]}
+    assert ev.compare(a, b) == ["0/1 -> 1/1 tasks passed", "fixed: x", "same: 0"]
+

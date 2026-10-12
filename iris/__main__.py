@@ -19,6 +19,16 @@ def main() -> None:
         from iris.eval import main as eval_main
 
         raise SystemExit(eval_main(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "eval-compare":
+        import json as _json
+
+        from iris.eval import compare
+
+        a = _json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+        b = _json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
+        for line in compare(a, b):
+            print(line)
+        return
     if len(sys.argv) > 1 and sys.argv[1] == "dashboard":
         from iris.dashboard import serve
 

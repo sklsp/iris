@@ -160,6 +160,30 @@ def write_report(results: list[Result], out_dir, stamp: str, model: str = "") ->
     return json_path, md_path
 
 
+def _pass_by_id(results) -> dict[str, bool]:
+    """id -> passed; with --repeat a task has several results and it passes only when all of them did."""
+    out = {}
+    for r in results:
+        out[r["id"]] = out.get(r["id"], True) and r["passed"]
+    return out
+
+
+def compare(a: dict, b: dict) -> list[str]:
+    """Compare two loaded report JSONs (item 20), per task id."""
+    pa, pb = _pass_by_id(a["results"]), _pass_by_id(b["results"])
+    ids = [i for i in pa] + [i for i in pb if i not in pa]
+    lines = [f"{sum(pa.values())}/{len(pa)} -> {sum(pb.values())}/{len(pb)} tasks passed"]
+    broke = [i for i in ids if i in pa and i in pb and pa[i] and not pb[i]]
+    fixed = [i for i in ids if i in pa and i in pb and not pa[i] and pb[i]]
+    new = [i for i in ids if i not in pa]
+    gone = [i for i in ids if i not in pb]
+    lines += ([f"broke: {i}" for i in broke] + [f"fixed: {i}" for i in fixed]
+              + [f"new: {i}" for i in new] + [f"gone: {i}" for i in gone])
+    same = sum(1 for i in ids if i in pa and i in pb and pa[i] == pb[i])
+    lines.append(f"same: {same}")
+    return lines
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="iris eval", description=__doc__)
     ap.add_argument("--tasks", default="eval/tasks.toml")

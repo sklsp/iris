@@ -15,6 +15,10 @@ from iris.voice import is_yes, speak
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "eval":
+        from iris.eval import main as eval_main
+
+        raise SystemExit(eval_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "dashboard":
         from iris.dashboard import serve
 

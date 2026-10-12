@@ -1,4 +1,5 @@
 """Measures how well the model behind Iris picks tools, with dry-run tools."""
+import argparse
 import json
 import statistics
 import tempfile
@@ -8,6 +9,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from iris.agent import Agent, Journal
+from iris.llm import LMStudio, effective_model
 from iris.tools import CONFIRM, TOOLS, Tool
 
 
@@ -133,6 +135,11 @@ def summarize(results: list[Result]) -> dict:
             "failed": [r.id for r in results if not r.passed]}
 
 
+def _summary_line(s: dict) -> str:
+    return (f"{s['passed']}/{s['tasks']} passed ({s['success_rate'] * 100:.1f}%), "
+            f"median {s['median_seconds']:.1f} s, {s['confirmations_per_task']:.2f} confirmations per task")
+
+
 def write_report(results: list[Result], out_dir, stamp: str, model: str = "") -> tuple[Path, Path]:
     """Write {stamp}.json and {stamp}.md into out_dir; returns (json path, md path)."""
     out_dir = Path(out_dir)
@@ -142,9 +149,7 @@ def write_report(results: list[Result], out_dir, stamp: str, model: str = "") ->
     json_path.write_text(json.dumps({"stamp": stamp, "model": model or "unknown",
                                      "summary": s, "results": [asdict(r) for r in results]}, indent=2),
                          encoding="utf-8")
-    lines = [f"# Iris eval {stamp}", "", f"Model: {model or 'unknown'}", "",
-             f"{s['passed']}/{s['tasks']} passed ({s['success_rate'] * 100:.1f}%), "
-             f"median {s['median_seconds']:.1f} s, {s['confirmations_per_task']:.2f} confirmations per task", "",
+    lines = [f"# Iris eval {stamp}", "", f"Model: {model or 'unknown'}", "", _summary_line(s), "",
              "| Task | Result | Calls | Seconds | Reasons |", "|---|---|---|---|---|"]
     for r in results:
         lines.append(f"| {r.id} | {'pass' if r.passed else 'FAIL'} | "
@@ -153,3 +158,33 @@ def write_report(results: list[Result], out_dir, stamp: str, model: str = "") ->
     md_path = out_dir / f"{stamp}.md"
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path, md_path
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="iris eval", description=__doc__)
+    ap.add_argument("--tasks", default="eval/tasks.toml")
+    ap.add_argument("--out", default="eval/results")
+    ap.add_argument("--only", action="append", default=None, metavar="ID")
+    ap.add_argument("--repeat", type=int, default=1)
+    a = ap.parse_args(argv)
+
+    tasks = load_tasks(Path(a.tasks))
+    if a.only:
+        known = {t.id for t in tasks}
+        for tid in a.only:
+            if tid not in known:
+                print(f"unknown task: {tid}")
+                return 2
+        wanted = set(a.only)
+        tasks = [t for t in tasks if t.id in wanted]
+
+    llm = LMStudio()
+    results = []
+    for _ in range(a.repeat):
+        for task in tasks:
+            results.append(run_task(llm, task))
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    _, md_path = write_report(results, a.out, stamp, model=effective_model())
+    print(_summary_line(summarize(results)))
+    print(f"Report: {md_path}")
+    return 0

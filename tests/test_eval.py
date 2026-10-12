@@ -197,6 +197,8 @@ def test_summarize_empty():
     assert (s["tasks"], s["passed"], s["success_rate"]) == (0, 0, 0.0)
 
 
+
+
 def test_write_report_files(tmp_path):
     json_path, md_path = ev.write_report(_results(), tmp_path / "reports", "2026-10-17T0300")
     data = _json.loads(json_path.read_text(encoding="utf-8"))
@@ -206,4 +208,52 @@ def test_write_report_files(tmp_path):
     rows = {l.split("|")[1].strip(): l for l in md if l.startswith("| ") and not l.startswith("| Task")}
     assert rows["b"] == "| b | FAIL | trash_file:ok | 2.0 | forbidden call: trash_file |"
     assert rows["a"] == "| a | pass | - | 1.0 | - |"
+
+
+# --- the eval command ----------------------------------------------------------
+class _AlwaysAnswers:
+    def chat(self, messages, tools):
+        return answer("Klaar.")
+
+
+def _monkey(monkeypatch):
+    monkeypatch.setattr(ev, "LMStudio", _AlwaysAnswers)
+    monkeypatch.setattr(ev, "effective_model", lambda: "test-model")
+
+
+def test_eval_command_writes_reports(tmp_path, monkeypatch, capsys):
+    tasks_file = tmp_path / "tasks.toml"
+    tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n', encoding="utf-8")
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results")])
+    out = capsys.readouterr().out
+    assert rc == 0 and out.startswith("1/1 passed (100.0%)")
+    files = [p.name for p in (tmp_path / "results").iterdir()]
+    assert len([f for f in files if f.endswith(".json")]) == 1
+    assert len([f for f in files if f.endswith(".md")]) == 1
+
+
+def test_eval_command_repeat(tmp_path, monkeypatch, capsys):
+    tasks_file = tmp_path / "tasks.toml"
+    tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n', encoding="utf-8")
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--repeat", "2"])
+    out = capsys.readouterr().out
+    assert rc == 0 and out.startswith("2/2 passed (100.0%)")
+
+
+def test_eval_command_unknown_only_id(tmp_path, capsys):
+    tasks_file = tmp_path / "tasks.toml"
+    tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n', encoding="utf-8")
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--only", "x"])
+    assert rc == 2 and "unknown task: x" in capsys.readouterr().out
+
+
+def test_eval_command_json_model(tmp_path, monkeypatch):
+    tasks_file = tmp_path / "tasks.toml"
+    tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n', encoding="utf-8")
+    _monkey(monkeypatch)
+    ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results")])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    assert _json.loads(json_path.read_text(encoding="utf-8"))["model"] == "test-model"
 

@@ -239,3 +239,31 @@ def test_gpu_guard_lists_both_reasons_in_order():
 def test_gpu_guard_with_no_gpus():
     assert tools.gpu_guard({"gpus": []}) == []
 
+
+
+# --- gpu_check -----------------------------------------------------------------
+def _two_gpus():
+    return {"cpu_percent": 12.0, "ram_used_gb": 8.5, "ram_total_gb": 32.0,
+            "gpus": [{"index": 0, "name": "NVIDIA GeForce RTX 3090", "load_percent": 97.0,
+                      "vram_used_mib": 23100.0, "vram_total_mib": 24576.0, "temp_c": 71.0},
+                     {"index": 1, "name": "NVIDIA GeForce RTX 3060", "load_percent": 3.0,
+                      "vram_used_mib": 400.0, "vram_total_mib": 12288.0, "temp_c": 41.0}]}
+
+
+def test_gpu_check_reports_busy_and_ok_gpus(monkeypatch):
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())
+    assert tools.gpu_check() == ("GPU0 NVIDIA GeForce RTX 3090: busy, only 1476 MiB free\n"
+                                 "GPU1 NVIDIA GeForce RTX 3060: ok, 11888 MiB free")
+
+
+def test_gpu_check_with_a_lower_threshold(monkeypatch):
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())
+    out = tools.gpu_check(min_free_mib=1000)
+    assert out.splitlines()[0] == "GPU0 NVIDIA GeForce RTX 3090: ok, 1476 MiB free"
+
+
+def test_gpu_check_without_gpus(monkeypatch):
+    monkeypatch.setattr(tools, "system_data", lambda: {"cpu_percent": 5.0, "ram_used_gb": 8.0,
+                                                       "ram_total_gb": 32.0, "gpus": []})
+    assert tools.gpu_check() == "GPU: nvidia-smi not available"
+

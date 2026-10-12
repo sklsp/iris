@@ -99,6 +99,20 @@ def gpu_guard(data: dict, min_free_mib: float = 8000, max_temp_c: float = 80) ->
     return out
 
 
+def gpu_check(min_free_mib: int = 8000) -> str:
+    """Whether each GPU has room for a heavy job (ComfyUI, a big model): free VRAM and temperature."""
+    guards = gpu_guard(system_data(), min_free_mib)
+    if not guards:
+        return "GPU: nvidia-smi not available"
+    lines = []
+    for g in guards:
+        if g["ok"]:
+            lines.append(f"GPU{g['index']} {g['name']}: ok, {g['free_mib']:.0f} MiB free")
+        else:
+            lines.append(f"GPU{g['index']} {g['name']}: busy, {g['reason']}")
+    return "\n".join(lines)
+
+
 # --- windows (UI Automation) --------------------------------------------------
 def _desktop():
     from pywinauto import Desktop
@@ -319,6 +333,7 @@ def agents_status() -> str:
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
+    Tool("gpu_check", "Whether each GPU has room for a heavy job (ComfyUI, a big model): free VRAM against min_free_mib (default 8000) and temperature under 80 C. Read only.", {"min_free_mib": {"type": "integer"}}, [], SAFE, gpu_check),
     Tool("list_windows", "Titles of all open windows.", {}, [], SAFE, list_windows),
     Tool("read_window", "The named controls (buttons, fields, text) in a window. Title match is a substring.",
          {"title": S}, ["title"], SAFE, read_window),

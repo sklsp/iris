@@ -1,4 +1,6 @@
 """Tests for the eval task format and loader."""
+from pathlib import Path
+
 from iris import eval as ev
 
 
@@ -249,6 +251,8 @@ def test_eval_command_unknown_only_id(tmp_path, capsys):
     assert rc == 2 and "unknown task: x" in capsys.readouterr().out
 
 
+
+
 def test_eval_command_json_model(tmp_path, monkeypatch):
     tasks_file = tmp_path / "tasks.toml"
     tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n', encoding="utf-8")
@@ -256,4 +260,12 @@ def test_eval_command_json_model(tmp_path, monkeypatch):
     ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results")])
     (json_path,) = list((tmp_path / "results").glob("*.json"))
     assert _json.loads(json_path.read_text(encoding="utf-8"))["model"] == "test-model"
+
+
+def test_shipped_tasks_load():
+    tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
+    assert len(tasks) == 21
+    ids = [t.id for t in tasks]
+    assert len(set(ids)) == len(ids)
+    assert (ids[0], ids[-1]) == ("gpu_temp", "scroll")
 

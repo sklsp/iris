@@ -80,3 +80,33 @@ def test_unknown_outcome(tmp_path):
         raise AssertionError("expected ValueError")
     except ValueError as e:
         assert str(e) == "unknown outcome in task a: sideways"
+
+
+# --- dry-run tools -------------------------------------------------------------
+def test_dry_tool_returns_fixture():
+    assert ev.dry_tools({"list_windows": "WhatsApp"})["list_windows"].fn() == "WhatsApp"
+
+
+def test_dry_tool_default_note():
+    assert ev.dry_tools({})["open_app"].fn(name="notepad") == "ok (dry run of open_app)"
+
+
+def test_dry_never_calls_the_real_fn(monkeypatch):
+    import iris.tools as tools
+
+    def boom(**kwargs):
+        raise RuntimeError("the real fn ran")
+
+    monkeypatch.setattr(tools.TOOLS["open_app"], "fn", boom)
+    assert ev.dry_tools({})["open_app"].fn(name="notepad") == "ok (dry run of open_app)"
+
+
+def test_dry_tiers_stay_the_same():
+    import iris.tools as tools
+
+    click_args = {"window": "Afrekenen - Google Chrome", "control": "Nu betalen"}
+    assert ev.dry_tools({})["click"].tier_of(click_args) == "never"
+    trash_args = {"path": "C:/Windows"}
+    real_trash = tools.TOOLS["trash_file"]
+    assert ev.dry_tools({})["trash_file"].tier_of(trash_args) == real_trash.tier_of(trash_args)
+

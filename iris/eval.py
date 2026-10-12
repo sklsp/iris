@@ -2,7 +2,7 @@
 import tomllib
 from dataclasses import dataclass, field
 
-from iris.tools import TOOLS
+from iris.tools import TOOLS, Tool
 
 
 @dataclass
@@ -44,3 +44,14 @@ def load_tasks(path) -> list[Task]:
         tasks.append(Task(id=tid, request=req, expect=expect, forbid=forbid, confirm=confirm,
                           outcomes=outcomes, fixtures=fixtures, max_calls=int(t.get("max_calls", 6))))
     return tasks
+
+
+def dry_tools(fixtures: dict[str, str]) -> dict[str, Tool]:
+    """A copy of the registry where every tool returns its fixture or a dry-run note. Never calls the real fn."""
+    out = {}
+    for name, real in TOOLS.items():
+        def fn(_name=name, **kwargs):
+            return fixtures.get(_name, f"ok (dry run of {_name})")
+        out[name] = Tool(name=real.name, description=real.description, params=real.params,
+                         required=real.required, tier=real.tier, fn=fn, tier_for=real.tier_for)
+    return out

@@ -49,13 +49,13 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | restore_trash | safe | put the most recently trashed item back |
 | agents_status | safe | branch, last commit and age, uncommitted files, BLOCKED.md and STUCK per agent repo |
 | queue_list | safe | prompts waiting in Jay's agent queue, oldest first, optionally for one agent |
+| concept_sites | safe | Jay's concept websites from conceptkit: sites, ports and check findings |
 | press_keys | confirm | press shortcuts in a window, `^s` or `{TAB}` |
 | click | confirm | click a control by its name |
 | type_text | confirm | type into a window or a named field, optionally replacing what is there |
 | trash_file | confirm | move a file or folder to Iris's trash, always undoable |
 | queue_add | confirm | put a prompt in Jay's agent queue for one agent, asks first |
 | queue_take | confirm | take the oldest waiting prompt out of the queue so it can be pasted with type_text, asks first |
-| concept_sites | safe | Jay's concept websites from conceptkit: every site with its port and stops, plus check --all findings |
 
 The tiers are enforced in code, not in the prompt:
 
@@ -141,6 +141,7 @@ The page polls every 3 seconds and has three tabs:
   stay top-level, running sessions come first
 - Claude tab: `GET /api/claude` lists the folders in `~/.claude/projects` whose newest `.jsonl` was written
   within the last 10 minutes, with folder name and age only. It stats files but never reads them
+- The Queue tab shows the prompts waiting in the agent queue, read only.
 
 Agents, LM Studio and Claude data are cached for 30 seconds so the page does not hammer git or LM Studio;
 the sessions database is small enough to read fresh on every poll. A missing or unreadable source shows an
@@ -181,6 +182,7 @@ Iris uses.
 | `IRIS_TRASH_DIR` | `~/.iris/trash` | Iris's undoable trash |
 | `IRIS_AGENTS_TOML` | `iris/agents.toml` | which repos the agent manager watches |
 | `IRIS_QUEUE` | `~/.iris/queue.json` | the agent manager's prompt queue |
+| `IRIS_CONCEPTKIT_DIR` | `W:/conceptkit` | where concept_sites runs conceptkit |
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
 | `IRIS_SESSIONS_DB` | `~/.iris/sessions.db` | where the Sessions tab reads its rows from |
 | `IRIS_CLAUDE_DIR` | `~/.claude/projects` | where the Claude tab looks for active projects |

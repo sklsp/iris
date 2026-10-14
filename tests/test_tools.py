@@ -424,6 +424,38 @@ def test_journal_today_missing_file(tmp_path, monkeypatch):
 
 
 
+# --- concept_sites ---------------------------------------------------------------
+def test_concept_sites_without_repo(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_CONCEPTKIT_DIR", str(tmp_path))
+    assert tools.concept_sites() == f"conceptkit not found at {tmp_path}"
+
+
+def test_concept_sites_lists_and_checks(tmp_path, monkeypatch):
+    (tmp_path / ".venv" / "Scripts").mkdir(parents=True)
+    (tmp_path / ".venv" / "Scripts" / "python.exe").write_bytes(b"")
+
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+
+        class R:
+            pass
+
+        r = R()
+        r.stdout = ("lotus: Restaurant Lotus, poort 5191\n" if cmd[-1] == "list"
+                    else "Geen problemen gevonden.\n")
+        return r
+
+    monkeypatch.setattr(tools.subprocess, "run", fake_run)
+    monkeypatch.setenv("IRIS_CONCEPTKIT_DIR", str(tmp_path))
+    assert tools.concept_sites() == (
+        "Sites:\nlotus: Restaurant Lotus, poort 5191\n\nChecks:\nGeen problemen gevonden.")
+    assert calls[0][-3:] == ["-m", "conceptkit", "list"]
+    assert calls[1][-4:] == ["-m", "conceptkit", "check", "--all"]
+    assert tools.TOOLS["concept_sites"].tier == tools.SAFE
+
+
 # --- registry guards -----------------------------------------------------------
 def test_every_tool_is_documented():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
@@ -439,6 +471,6 @@ def test_every_tool_has_a_valid_tier():
 
 def test_read_only_tools_are_safe():
     for name in ("system_status", "gpu_check", "comfy_status", "lmstudio_models",
-                 "followups", "journal_today", "agents_status", "queue_list"):
+                 "followups", "journal_today", "agents_status", "queue_list", "concept_sites"):
         assert tools.TOOLS[name].tier == tools.SAFE, name
 

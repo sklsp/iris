@@ -55,6 +55,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | trash_file | confirm | move a file or folder to Iris's trash, always undoable |
 | queue_add | confirm | put a prompt in Jay's agent queue for one agent, asks first |
 | queue_take | confirm | take the oldest waiting prompt out of the queue so it can be pasted with type_text, asks first |
+| concept_sites | safe | Jay's concept websites from conceptkit: every site with its port and stops, plus check --all findings |
 
 The tiers are enforced in code, not in the prompt:
 

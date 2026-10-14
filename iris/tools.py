@@ -454,6 +454,26 @@ def queue_take(agent: str) -> str:
     return f"Next prompt for {p['agent']} (removed from the queue):\n{p['text']}"
 
 
+def concept_sites() -> str:
+    """Jay's concept websites from conceptkit: every site with its port and stops, plus check --all findings.
+
+    Read only: list and check never write."""
+    root = Path(os.environ.get("IRIS_CONCEPTKIT_DIR") or "W:/conceptkit")
+    python = root / ".venv" / "Scripts" / "python.exe"
+    if not python.exists():
+        return f"conceptkit not found at {root}"
+    try:
+        listed = subprocess.run(
+            [str(python), "-m", "conceptkit", "list"], cwd=root, capture_output=True,
+            text=True, encoding="utf-8", timeout=120)
+        checked = subprocess.run(
+            [str(python), "-m", "conceptkit", "check", "--all"], cwd=root, capture_output=True,
+            text=True, encoding="utf-8", timeout=120)
+    except subprocess.TimeoutExpired:
+        return "conceptkit took too long"
+    return ("Sites:\n" + listed.stdout.strip() + "\n\nChecks:\n" + checked.stdout.strip())
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -496,4 +516,5 @@ TOOLS = {t.name: t for t in [
           {"agent": S, "text": S}, ["agent", "text"], CONFIRM, queue_add),
     Tool("queue_take", "Take the oldest waiting prompt for one agent out of the queue and return its text, so it can be pasted with type_text. Asks Jay first.",
           {"agent": S}, ["agent"], CONFIRM, queue_take),
+    Tool("concept_sites", "Jay's concept websites from conceptkit: every site with its port and stops, and the findings of check --all. Read only.", {}, [], SAFE, concept_sites),
 ]}

@@ -439,6 +439,6 @@ def test_every_tool_has_a_valid_tier():
 
 def test_read_only_tools_are_safe():
     for name in ("system_status", "gpu_check", "comfy_status", "lmstudio_models",
-                 "followups", "journal_today", "agents_status"):
+                 "followups", "journal_today", "agents_status", "queue_list"):
         assert tools.TOOLS[name].tier == tools.SAFE, name
 

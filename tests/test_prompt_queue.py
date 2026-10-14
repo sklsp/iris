@@ -86,3 +86,17 @@ def test_queue_add_tool(monkeypatch, tmp_path):
     assert TOOLS["queue_add"].fn("leadscan", "Run de tests.") == "Added prompt 1 for leadscan."
     [p] = pending("leadscan")
     assert p["text"] == "Run de tests." and p["agent"] == "leadscan"
+
+
+def test_queue_take_tool(monkeypatch, tmp_path):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "queue.json"))
+    from iris.tools import CONFIRM
+
+    assert TOOLS["queue_take"].tier == CONFIRM
+    add("leadscan", "Run de tests.")
+    assert TOOLS["queue_take"].fn("LEADSCAN") == (
+        "Next prompt for leadscan (removed from the queue):\nRun de tests."
+    )
+    assert listing() == "The queue is empty."
+    with pytest.raises(LookupError):
+        TOOLS["queue_take"].fn("leadscan")

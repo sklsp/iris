@@ -446,6 +446,14 @@ def queue_add(agent: str, text: str) -> str:
     return f"Added prompt {pid} for {agent.strip()}."
 
 
+def queue_take(agent: str) -> str:
+    """Take the oldest waiting prompt for one agent out of the queue and return its text. Asks Jay first."""
+    from iris.prompt_queue import take as _take
+
+    p = _take(agent)
+    return f"Next prompt for {p['agent']} (removed from the queue):\n{p['text']}"
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -486,4 +494,6 @@ TOOLS = {t.name: t for t in [
           {"agent": S}, [], SAFE, queue_list),
     Tool("queue_add", "Put a prompt in Jay's agent queue for one agent (a repo or chat name). Asks Jay first.",
           {"agent": S, "text": S}, ["agent", "text"], CONFIRM, queue_add),
+    Tool("queue_take", "Take the oldest waiting prompt for one agent out of the queue and return its text, so it can be pasted with type_text. Asks Jay first.",
+          {"agent": S}, ["agent"], CONFIRM, queue_take),
 ]}

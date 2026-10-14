@@ -8,3 +8,8 @@
 - [x] 6. README (c9faea2; pytest: 238 passed in 13.86s)
 - [x] 7. PLAN (492ca6e; pytest: 238 passed in 14.20s)
 - [ ] 8. Final check
+
+## Run iris2 result
+
+- pytest twice in a row: both passed; final run `238 passed in 14.28s`, 238 tests
+- Blocked items: none blocked

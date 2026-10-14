@@ -53,6 +53,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | click | confirm | click a control by its name |
 | type_text | confirm | type into a window or a named field, optionally replacing what is there |
 | trash_file | confirm | move a file or folder to Iris's trash, always undoable |
+| queue_add | confirm | put a prompt in Jay's agent queue for one agent, asks first |
 
 The tiers are enforced in code, not in the prompt:
 

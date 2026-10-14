@@ -76,3 +76,13 @@ def test_listing_and_queue_list_tool(monkeypatch, tmp_path):
     assert listing("nobody") == "No prompts waiting for nobody."
     assert TOOLS["queue_list"].tier == SAFE
     assert TOOLS["queue_list"].fn() == listing()
+
+
+def test_queue_add_tool(monkeypatch, tmp_path):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "queue.json"))
+    from iris.tools import CONFIRM
+
+    assert TOOLS["queue_add"].tier == CONFIRM
+    assert TOOLS["queue_add"].fn("leadscan", "Run de tests.") == "Added prompt 1 for leadscan."
+    [p] = pending("leadscan")
+    assert p["text"] == "Run de tests." and p["agent"] == "leadscan"

@@ -438,6 +438,14 @@ def queue_list(agent: str = "") -> str:
     return listing(agent)
 
 
+def queue_add(agent: str, text: str) -> str:
+    """Put a prompt in Jay's agent queue for one agent (a repo or chat name). Asks Jay first."""
+    from iris.prompt_queue import add as _add
+
+    pid = _add(agent, text)
+    return f"Added prompt {pid} for {agent.strip()}."
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -476,4 +484,6 @@ TOOLS = {t.name: t for t in [
          {}, [], SAFE, agents_status),
     Tool("queue_list", "The prompts waiting in Jay's agent queue, oldest first, optionally for one agent. Read only.",
           {"agent": S}, [], SAFE, queue_list),
+    Tool("queue_add", "Put a prompt in Jay's agent queue for one agent (a repo or chat name). Asks Jay first.",
+          {"agent": S, "text": S}, ["agent", "text"], CONFIRM, queue_add),
 ]}

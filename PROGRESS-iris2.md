@@ -1,7 +1,7 @@
 # Run iris2
 
 - [x] 1. Start this run (ad7693e; pytest: 230 passed in 13.50s)
-- [ ] 2. Dashboard: the /api/queue route
+- [x] 2. Dashboard: the /api/queue route (486bd96; pytest: 234 passed in 14.06s)
 - [ ] 3. Dashboard: the Queue tab
 - [ ] 4. Tool: concept_sites
 - [ ] 5. Eval: two tasks for concept_sites

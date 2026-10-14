@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 
@@ -37,3 +38,37 @@ def save(data: dict, path=None) -> None:
     tmp = p.with_name(p.name + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, p)
+
+
+def add(agent: str, text: str, now: str = "", path=None) -> int:
+    agent = agent.strip()
+    text = text.strip()
+    if not agent or not text:
+        raise ValueError("agent and text are required")
+    data = load(path)
+    prompt_id = data["next_id"]
+    data["prompts"].append(
+        {"id": prompt_id, "agent": agent, "text": text, "added": now or time.strftime("%Y-%m-%d %H:%M")}
+    )
+    data["next_id"] += 1
+    save(data, path)
+    return prompt_id
+
+
+def pending(agent: str = "", path=None) -> list[dict]:
+    prompts = load(path)["prompts"]
+    if agent:
+        a = agent.strip().lower()
+        prompts = [p for p in prompts if str(p.get("agent", "")).strip().lower() == a]
+    return prompts
+
+
+def take(agent: str, path=None) -> dict:
+    data = load(path)
+    a = agent.strip().lower()
+    for i, p in enumerate(data["prompts"]):
+        if str(p.get("agent", "")).strip().lower() == a:
+            del data["prompts"][i]
+            save(data, path)
+            return p
+    raise LookupError(f"no prompts waiting for {agent.strip()}")

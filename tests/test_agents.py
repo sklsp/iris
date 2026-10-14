@@ -5,8 +5,16 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 from iris.agents import DEFAULT_REPOS, Config, _age, agents_status, discover, load_config, repo_status
 from iris.tools import SAFE, TOOLS
+
+
+@pytest.fixture(autouse=True)
+def _queue_in_tmp(tmp_path, monkeypatch):
+    """agents_status also reads the prompt queue; keep these tests away from the real one."""
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "queue.json"))
 
 
 def git(repo: Path, *args: str, when: str | None = None) -> None:
@@ -81,6 +89,24 @@ def test_spoken_answer_matches_the_documented_style(tmp_path):
     out = agents_status(str(write_config(tmp_path, repos=[str(repo), str(old)], worktrees=[])))
     assert "Acme Shop: last commit 12 minutes ago." in out
     assert "Beacon: stuck for 2 hours with 1 uncommitted." in out
+
+
+def test_agents_status_appends_the_queue_summary(tmp_path):
+    from iris.prompt_queue import add
+
+    repo = make_repo(tmp_path, "Acme Shop", minutes_ago=12)
+    cfg = str(write_config(tmp_path, repos=[str(repo)], worktrees=[]))
+    add("leadscan", "Run de tests.", now="2026-10-14 09:00")
+    out = agents_status(cfg)
+    assert out.endswith("Queue: 1 prompt waiting (leadscan 1).")
+
+
+def test_agents_status_reports_a_broken_queue_file(tmp_path):
+    repo = make_repo(tmp_path, "Acme Shop", minutes_ago=12)
+    cfg = str(write_config(tmp_path, repos=[str(repo)], worktrees=[]))
+    (tmp_path / "queue.json").write_text("{oops", encoding="utf-8")
+    out = agents_status(cfg)
+    assert out.endswith("Queue: the queue file is broken.")
 
 
 def write_config(tmp_path: Path, repos: list[str], worktrees: list[str], stuck: int = 60) -> Path:

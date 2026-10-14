@@ -2,7 +2,7 @@
 
 import pytest
 
-from iris.prompt_queue import add, listing, load, pending, queue_path, save, take
+from iris.prompt_queue import add, listing, load, pending, queue_path, save, summary, take
 from iris.tools import SAFE, TOOLS
 
 
@@ -100,3 +100,18 @@ def test_queue_take_tool(monkeypatch, tmp_path):
     assert listing() == "The queue is empty."
     with pytest.raises(LookupError):
         TOOLS["queue_take"].fn("leadscan")
+
+
+def test_summary_counts_prompts_per_agent_in_order_of_first_appearance(tmp_path):
+    path = tmp_path / "q" / "queue.json"
+    assert summary(path) == ""  # no file yet: an empty queue, not a crash
+    add("leadscan", "Run de tests en vertel me het resultaat.", now="2026-10-14 09:00", path=path)
+    add("Iris", "Lees PLAN.md.", now="2026-10-14 09:05", path=path)
+    add("leadscan", "Commit je werk.", now="2026-10-14 09:10", path=path)
+    assert summary(path) == "Queue: 3 prompts waiting (leadscan 2, Iris 1)."
+
+
+def test_summary_of_one_prompt(tmp_path):
+    path = tmp_path / "q" / "queue.json"
+    add("leadscan", "Run de tests.", now="2026-10-14 09:00", path=path)
+    assert summary(path) == "Queue: 1 prompt waiting (leadscan 1)."

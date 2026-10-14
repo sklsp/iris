@@ -154,7 +154,17 @@ def agents_status(config: Path | str | None = None) -> str:
         return "No agent repos are configured (iris/agents.toml)."
     stuck = [s for s in rows if s.stuck]
     out = "\n".join(s.spoken() for s in rows)
-    return f"{out}\n{len(stuck)} stuck." if stuck else out
+    if stuck:
+        out = f"{out}\n{len(stuck)} stuck."
+    from iris.prompt_queue import summary as _queue_summary
+
+    try:
+        queue_line = _queue_summary()  # only reading; the queue is never changed here
+    except ValueError:
+        queue_line = "Queue: the queue file is broken."
+    if queue_line:
+        out = f"{out}\n{queue_line}"
+    return out
 
 
 # (upper bound in seconds, seconds per unit, unit name)

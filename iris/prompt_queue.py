@@ -86,3 +86,17 @@ def listing(agent: str = "", path=None) -> str:
             text = text[:77] + "..."
         lines.append(f'{p["id"]}. {p.get("agent", "")}: {text}')
     return "\n".join(lines)
+
+
+def summary(path=None) -> str:
+    prompts = load(path)["prompts"]
+    if not prompts:
+        return ""
+    counts: dict[str, int] = {}
+    for p in prompts:
+        a = str(p.get("agent", "")).strip()
+        counts[a] = counts.get(a, 0) + 1
+    parts = ", ".join(f"{a} {n}" for a, n in counts.items())
+    if len(prompts) == 1:
+        return f"Queue: 1 prompt waiting ({parts})."
+    return f"Queue: {len(prompts)} prompts waiting ({parts})."

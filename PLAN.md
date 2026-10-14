@@ -58,6 +58,7 @@ Logging in, payments, messages to other people, and anything irreversible stay w
 - [x] **7. README and PLAN:** every tool documented with its tier, the wake word and how to run it; v1 ticked.
 - [x] **8. Read-only skills:** gpu_check (the GPU governor: free VRAM and temperature before a heavy job), comfy_status, lmstudio_models (never loads or unloads), followups from the leadscan CRM, journal_today.
 - [x] **9. Eval harness (v3 start):** 50 tasks in eval/tasks.toml, dry-run tools, `python -m iris eval` with --only and --repeat, reports in eval/results, eval-compare, and an Eval tab on the dashboard.
+- [x] **10. The prompt queue:** `queue_list` (safe), `queue_add` and `queue_take` (confirm) on a JSON queue (`IRIS_QUEUE`, default `~/.iris/queue.json`, saved atomically, a broken file is reported and never overwritten); `agents_status` ends with the queue line; four eval tasks (54 in total).
 
-Next: run the eval on the real model and publish the number; a custom "hey iris" wake word; the agent manager's prompt queue.
+Next: run the eval on the real model and publish the number; a custom "hey iris" wake word.
 

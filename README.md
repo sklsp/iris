@@ -106,6 +106,10 @@ A repo is flagged STUCK when it has uncommitted changes and nothing committed fo
 
 > Acme Shop: last commit 12 minutes ago. Beacon: stuck for 2 hours with 1 uncommitted.
 
+## The prompt queue
+
+Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first. Iris never pastes a prompt by itself: pasting it into a chat is `type_text`, which asks too. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
+
 ## Dashboard
 
 A mostly read-only status page for Iris and the machine it runs on:
@@ -175,6 +179,7 @@ Iris uses.
 | `IRIS_KOKORO_VOICE` | `af_heart` | Kokoro voice |
 | `IRIS_TRASH_DIR` | `~/.iris/trash` | Iris's undoable trash |
 | `IRIS_AGENTS_TOML` | `iris/agents.toml` | which repos the agent manager watches |
+| `IRIS_QUEUE` | `~/.iris/queue.json` | the agent manager's prompt queue |
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
 | `IRIS_SESSIONS_DB` | `~/.iris/sessions.db` | where the Sessions tab reads its rows from |
 | `IRIS_CLAUDE_DIR` | `~/.claude/projects` | where the Claude tab looks for active projects |

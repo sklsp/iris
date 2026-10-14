@@ -5,6 +5,6 @@
 - [x] 3. Dashboard: the Queue tab (a4acf9f; pytest: 235 passed in 13.73s)
 - [x] 4. Tool: concept_sites (c24bade; pytest: 237 passed in 14.27s)
 - [x] 5. Eval: two tasks for concept_sites (3954613; pytest: 238 passed in 14.61s)
-- [ ] 6. README
+- [x] 6. README (c9faea2; pytest: 238 passed in 13.86s)
 - [ ] 7. PLAN
 - [ ] 8. Final check

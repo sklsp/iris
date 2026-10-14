@@ -431,6 +431,13 @@ def agents_status() -> str:
     return _status()
 
 
+def queue_list(agent: str = "") -> str:
+    """The prompts waiting in Jay's agent queue, oldest first, optionally for one agent. Read only."""
+    from iris.prompt_queue import listing
+
+    return listing(agent)
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -467,4 +474,6 @@ TOOLS = {t.name: t for t in [
          "uncommitted file count, whether BLOCKED.md exists, and STUCK when there are uncommitted changes "
          "but no commit for over an hour. Read only.",
          {}, [], SAFE, agents_status),
+    Tool("queue_list", "The prompts waiting in Jay's agent queue, oldest first, optionally for one agent. Read only.",
+          {"agent": S}, [], SAFE, queue_list),
 ]}

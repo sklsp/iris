@@ -48,6 +48,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | scroll | safe | scroll up or down in a window |
 | restore_trash | safe | put the most recently trashed item back |
 | agents_status | safe | branch, last commit and age, uncommitted files, BLOCKED.md and STUCK per agent repo |
+| queue_list | safe | prompts waiting in Jay's agent queue, oldest first, optionally for one agent |
 | press_keys | confirm | press shortcuts in a window, `^s` or `{TAB}` |
 | click | confirm | click a control by its name |
 | type_text | confirm | type into a window or a named field, optionally replacing what is there |

@@ -72,3 +72,17 @@ def take(agent: str, path=None) -> dict:
             save(data, path)
             return p
     raise LookupError(f"no prompts waiting for {agent.strip()}")
+
+
+def listing(agent: str = "", path=None) -> str:
+    prompts = pending(agent, path)
+    if not prompts:
+        return f"No prompts waiting for {agent.strip()}." if agent else "The queue is empty."
+    n = len(prompts)
+    lines = ["1 prompt waiting:" if n == 1 else f"{n} prompts waiting:"]
+    for p in prompts:
+        text = str(p.get("text", ""))
+        if len(text) > 80:
+            text = text[:77] + "..."
+        lines.append(f'{p["id"]}. {p.get("agent", "")}: {text}')
+    return "\n".join(lines)

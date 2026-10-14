@@ -2,7 +2,8 @@
 
 import pytest
 
-from iris.prompt_queue import add, load, pending, queue_path, save, take
+from iris.prompt_queue import add, listing, load, pending, queue_path, save, take
+from iris.tools import SAFE, TOOLS
 
 
 def test_load_of_a_missing_file_gives_an_empty_queue(tmp_path):
@@ -60,3 +61,18 @@ def test_take_without_a_prompt_raises_lookup_error(tmp_path):
 def test_add_requires_agent_and_text():
     with pytest.raises(ValueError, match="agent and text are required"):
         add(" ", "x")
+
+
+def test_listing_and_queue_list_tool(monkeypatch, tmp_path):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "queue.json"))
+    assert listing() == "The queue is empty."
+    add("leadscan", "Run de tests en vertel me het resultaat.", now="2026-10-14 09:00")
+    add("Iris", "Lees PLAN.md.", now="2026-10-14 09:05")
+    add("leadscan", "Commit je werk.", now="2026-10-14 09:10")
+    add("Iris", "x" * 100, now="2026-10-14 09:15")
+    text = listing()
+    assert text.startswith("4 prompts waiting:")
+    assert ("4. Iris: " + "x" * 77 + "...") in text.splitlines()
+    assert listing("nobody") == "No prompts waiting for nobody."
+    assert TOOLS["queue_list"].tier == SAFE
+    assert TOOLS["queue_list"].fn() == listing()

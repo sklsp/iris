@@ -7,7 +7,7 @@
 - [x] 5. Eval: two tasks for concept_sites (3954613; pytest: 238 passed in 14.61s)
 - [x] 6. README (c9faea2; pytest: 238 passed in 13.86s)
 - [x] 7. PLAN (492ca6e; pytest: 238 passed in 14.20s)
-- [ ] 8. Final check
+- [x] 8. Final check (1880737; pytest: 238 passed in 14.28s)
 
 ## Run iris2 result
 

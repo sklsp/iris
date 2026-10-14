@@ -20,6 +20,7 @@ IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by th
                     (the IRIS_MODEL environment variable, then ~/.iris/settings.json)
     /api/eval     the newest eval report from eval/results (or IRIS_EVAL_DIR): its stamp,
                   model and summary, plus how many runs exist so far
+    /api/queue    the prompts waiting in the agent queue, oldest first (read only)
 
 POST (the only writes): /api/models/load {model}, /api/models/unload {model | "all"}
 and /api/iris/model {model}, which writes the model key of ~/.iris/settings.json.
@@ -475,6 +476,19 @@ def eval_payload(results_dir=None) -> dict:
             "runs": len(files)}
 
 
+# --- prompt queue ---------------------------------------------------------------
+
+
+def queue_payload() -> dict:
+    """The prompts waiting in the agent queue, oldest first (read only)."""
+    from iris import prompt_queue
+
+    try:
+        return {"ok": True, "prompts": prompt_queue.pending()}
+    except ValueError:  # a broken queue file must not take the dashboard down
+        return {"ok": False, "prompts": [], "error": "the queue file is broken"}
+
+
 # --- the server -----------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -526,6 +540,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(tools_payload())
         elif path == "/api/eval":
             self._json(eval_payload())
+        elif path == "/api/queue":
+            self._json(queue_payload())
         else:
             self._json({"error": "not found"}, code=404)
 

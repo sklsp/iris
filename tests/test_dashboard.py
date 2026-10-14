@@ -737,3 +737,38 @@ def test_page_contains_eval_tab_and_empty_state(server):
     assert "/api/eval" in page
     assert "No eval run yet. Run: python -m iris eval" in page
 
+
+# --- prompt queue (item 2) ---------------------------------------------------------
+
+
+def test_queue_payload_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    assert d.queue_payload() == {"ok": True, "prompts": []}
+
+
+def test_queue_payload_lists_pending_prompts(tmp_path, monkeypatch):
+    from iris import prompt_queue
+
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    prompt_queue.add("leadscan", "Run de tests.", now="2026-10-14 09:00")
+    assert d.queue_payload()["prompts"] == [
+        {"id": 1, "agent": "leadscan", "text": "Run de tests.", "added": "2026-10-14 09:00"}]
+
+
+def test_queue_payload_broken_file(tmp_path, monkeypatch):
+    (tmp_path / "q.json").write_text("{oops", encoding="utf-8")
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    assert d.queue_payload() == {"ok": False, "prompts": [], "error": "the queue file is broken"}
+
+
+def test_api_queue_route(server, tmp_path, monkeypatch):
+    from iris import prompt_queue
+
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    prompt_queue.add("leadscan", "Run de tests.", now="2026-10-14 09:00")
+    code, _headers, text = get(server + "/api/queue")
+    body = json.loads(text)
+    assert code == 200 and body["ok"] is True
+    assert body["prompts"] == [{"id": 1, "agent": "leadscan", "text": "Run de tests.",
+                                "added": "2026-10-14 09:00"}]
+

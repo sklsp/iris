@@ -772,3 +772,14 @@ def test_api_queue_route(server, tmp_path, monkeypatch):
     assert body["prompts"] == [{"id": 1, "agent": "leadscan", "text": "Run de tests.",
                                 "added": "2026-10-14 09:00"}]
 
+
+# --- queue tab (item 3) -----------------------------------------------------------
+
+
+def test_page_contains_queue_tab_and_empty_state(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    assert "/api/queue" in page
+    assert 'data-tab="queue"' in page
+    assert "The queue is empty." in page
+

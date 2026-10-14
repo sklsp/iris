@@ -175,6 +175,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <button type="button" class="tab" data-tab="repos">Repos</button>
   <button type="button" class="tab" data-tab="tools">Tools</button>
   <button type="button" class="tab" data-tab="eval">Eval</button>
+  <button type="button" class="tab" data-tab="queue">Queue</button>
 </nav>
 <main>
   <section id="overview-pane" class="pane">
@@ -237,6 +238,15 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
       <section class="panel wide">
         <h2>Eval</h2>
         <div id="eval-body"><div class="empty">loading...</div></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="queue-pane" class="pane hidden">
+    <div class="grid">
+      <section class="panel wide">
+        <h2>Queue</h2>
+        <div id="queue-body"><div class="empty">loading...</div></div>
       </section>
     </div>
   </section>
@@ -680,6 +690,30 @@ async function loadEval(){
   renderEval(await j("/api/eval"));   // fetched when the tab is shown, not on every poll
 }
 
+function renderQueue(d){
+  const body = $("queue-body");
+  body.textContent = "";
+  if (!d || !d.ok){
+    body.appendChild(el("div", "empty", d && d.error ? d.error : "Queue unavailable"));
+    return;
+  }
+  const prompts = Array.isArray(d.prompts) ? d.prompts : [];
+  if (!prompts.length){
+    body.appendChild(el("div", "empty", "The queue is empty."));
+    return;
+  }
+  for (const p of prompts){
+    const row = el("div", "crow");
+    row.appendChild(el("span", "num", "#" + p.id));
+    row.appendChild(el("span", null, p.agent || "-"));
+    row.appendChild(el("span", "c-folder", p.text || ""));
+    row.appendChild(el("span", "c-age num", p.added || ""));
+    body.appendChild(row);
+  }
+}
+
+async function loadQueue(){ renderQueue(await j("/api/queue")); }
+
 const RENDERERS = {
   "/api/system": renderSystem,
   "/api/agents": renderAgents,
@@ -704,12 +738,13 @@ tick();
 setInterval(tick, 3000);
 
 // --- tabs ------------------------------------------------------------------------
-const PANES = ["overview", "agents", "activity", "repos", "tools", "eval"];
+const PANES = ["overview", "agents", "activity", "repos", "tools", "eval", "queue"];
 function showTab(name){
   if (!PANES.includes(name)) name = "overview";
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   for (const p of PANES) $(p + "-pane").classList.toggle("hidden", p !== name);
   if (name === "eval") loadEval();   // the eval tab fetches when shown, not on every poll
+  if (name === "queue") loadQueue();   // the queue tab fetches when shown, not on every poll
 }
 document.querySelectorAll(".tab").forEach(b => { b.onclick = () => { location.hash = b.dataset.tab; }; });
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));

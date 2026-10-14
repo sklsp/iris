@@ -264,7 +264,7 @@ def test_eval_command_json_model(tmp_path, monkeypatch):
 
 def test_shipped_tasks_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 50
+    assert len(tasks) == 54
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
     assert (ids[0], ids[-1]) == ("gpu_temp", "nothing_to_do")
@@ -272,9 +272,15 @@ def test_shipped_tasks_load():
 
 def test_shipped_task_ids_unique_and_tools_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 50
+    assert len(tasks) == 54
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
+
+
+def test_shipped_task_ids_include_the_queue_tasks():
+    tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
+    ids = {t.id for t in tasks}
+    assert {"queue_list", "queue_add", "queue_take_declined", "stuck_and_queue"} <= ids
 
 
 # --- comparing two runs --------------------------------------------------------

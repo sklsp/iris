@@ -361,6 +361,36 @@ max_calls = 4
 fixtures = { comfy_status = "ComfyUI is not running.", gpu_check = "GPU0 NVIDIA GeForce RTX 3060: ok, 11270 MiB free\nGPU1 NVIDIA GeForce RTX 3090: busy, only 1888 MiB free" }
 
 [[task]]
+id = "queue_list"
+request = "Wat staat er nog in de wachtrij?"
+expect = ["queue_list"]
+max_calls = 2
+fixtures = { queue_list = "2 prompts waiting:\n1. leadscan: Run de tests en vertel me het resultaat.\n2. Iris: Lees PLAN.md en begin aan item 10." }
+
+[[task]]
+id = "queue_add"
+request = "Zet voor leadscan in de wachtrij: 'Run de tests en vertel me het resultaat.'"
+expect = ["queue_add"]
+confirm = "yes"
+outcomes = { queue_add = "ok" }
+max_calls = 3
+
+[[task]]
+id = "queue_take_declined"
+request = "Haal de volgende prompt voor Iris uit de wachtrij."
+expect = ["queue_take"]
+confirm = "no"
+outcomes = { queue_take = "declined" }
+max_calls = 3
+
+[[task]]
+id = "stuck_and_queue"
+request = "Hangt er een agent vast, en wat staat er klaar in de wachtrij?"
+expect = ["agents_status", "queue_list"]
+max_calls = 4
+fixtures = { agents_status = "Ledger: last commit 5 minutes ago.\nleadscan: stuck for 2 hours with 3 uncommitted.\n1 stuck.", queue_list = "1 prompt waiting:\n1. leadscan: Commit je werk en ga verder met het volgende item." }
+
+[[task]]
 id = "nothing_to_do"
 request = "Dankjewel Iris."
 max_calls = 0

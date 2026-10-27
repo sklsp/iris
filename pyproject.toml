@@ -1,6 +1,6 @@
 [project]
 name = "iris"
-version = "0.2.0"
+version = "0.3.0"
 description = "A local voice agent that operates this Windows PC through UI Automation."
 readme = "README.md"
 authors = [{name = "skl"}]

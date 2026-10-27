@@ -39,6 +39,7 @@ flowchart LR
 | system_status | safe |  |
 | gpu_check | safe |  |
 | comfy_status | safe |  |
+| comfy_workflows | safe |  |
 | lmstudio_models | safe |  |
 | lmstudio_load | confirm |  |
 | lmstudio_unload | confirm | the model is the one Iris runs on, or all |
@@ -94,6 +95,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | system_status | safe | CPU, RAM, and per-GPU load, VRAM and temperature |
 | gpu_check | safe | free VRAM and temperature per GPU against a threshold, before a heavy job |
 | comfy_status | safe | is ComfyUI running, its version and its queue |
+| comfy_workflows | safe | names of the saved ComfyUI workflows in the workflows folder, one per line |
 | lmstudio_models | safe | which LM Studio models are loaded; never loads or unloads |
 | lmstudio_load | confirm | load a model in LM Studio by its id, asks first |
 | lmstudio_unload | confirm | unload a model from LM Studio by its id, or all of them; never unloads the model Iris runs on |
@@ -249,6 +251,7 @@ Iris uses.
 | `IRIS_SESSIONS_DB` | `~/.iris/sessions.db` | where the Sessions tab reads its rows from |
 | `IRIS_CLAUDE_DIR` | `~/.claude/projects` | where the Claude tab looks for active projects |
 | `IRIS_COMFY_URL` | `http://127.0.0.1:8188` | where comfy_status looks |
+| `IRIS_COMFY_WORKFLOWS` | `~/.iris/workflows` | the folder comfy_workflows lists .json files from |
 | `IRIS_LEADSCAN_DIR` | `W:/leadscan` | where followups reads out/pipeline.csv from |
 | `IRIS_EVAL_DIR` | `eval/results` | what the dashboard's Eval tab reads |
 

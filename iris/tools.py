@@ -134,6 +134,17 @@ def comfy_status() -> str:
     return f"ComfyUI {version} is running. Queue: {running} running, {waiting} waiting."
 
 
+def comfy_workflows() -> str:
+    """Names of Jay's saved ComfyUI workflows in the workflows folder, one per line."""
+    folder = Path(os.environ.get("IRIS_COMFY_WORKFLOWS", "~/.iris/workflows")).expanduser()
+    if not folder.is_dir():
+        return f"No saved workflows in {folder}."
+    names = sorted(p.stem for p in folder.iterdir() if p.is_file() and p.suffix == ".json")
+    if not names:
+        return f"No saved workflows in {folder}."
+    return "\n".join(names)
+
+
 def lmstudio_models() -> str:
     """Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads."""
     from iris.dashboard import lmstudio_payload
@@ -529,6 +540,9 @@ TOOLS = {t.name: t for t in [
     Tool("comfy_status",
          "Whether ComfyUI is running on this PC, its version and how many jobs are running and waiting. Read only.",
          {}, [], SAFE, comfy_status),
+    Tool("comfy_workflows",
+         "Names of the saved ComfyUI workflows in the workflows folder, one per line. Read only.",
+         {}, [], SAFE, comfy_workflows),
     Tool("lmstudio_models",
          "Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads.",
          {}, [], SAFE, lmstudio_models),

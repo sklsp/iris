@@ -317,6 +317,47 @@ def test_comfy_status_honors_iris_comfy_url(monkeypatch):
     assert urls[1] == "http://10.0.0.5:8188/queue"
 
 
+# --- comfy_workflows -------------------------------------------------------------
+def _workflows_folder(tmp_path, names):
+    folder = tmp_path / "wf"
+    folder.mkdir()
+    for n in names:
+        (folder / n).write_text("{}", encoding="utf-8")
+    return folder
+
+
+def test_comfy_workflows_lists_names_without_json_sorted(tmp_path, monkeypatch):
+    folder = _workflows_folder(tmp_path, ["zeta.json", "alpha.json", "notes.txt"])
+    (folder / "nested").mkdir()  # a folder is not a workflow
+    monkeypatch.setenv("IRIS_COMFY_WORKFLOWS", str(folder))
+    assert tools.comfy_workflows() == "alpha\nzeta"
+
+
+def test_comfy_workflows_empty_folder(tmp_path, monkeypatch):
+    folder = _workflows_folder(tmp_path, [])
+    monkeypatch.setenv("IRIS_COMFY_WORKFLOWS", str(folder))
+    assert tools.comfy_workflows() == f"No saved workflows in {folder}."
+
+
+def test_comfy_workflows_missing_folder(tmp_path, monkeypatch):
+    folder = tmp_path / "nope"
+    monkeypatch.setenv("IRIS_COMFY_WORKFLOWS", str(folder))
+    assert tools.comfy_workflows() == f"No saved workflows in {folder}."
+
+
+def test_comfy_workflows_defaults_to_home_iris(tmp_path, monkeypatch):
+    folder = tmp_path / ".iris" / "workflows"
+    folder.mkdir(parents=True)
+    (folder / "anime.json").write_text("{}", encoding="utf-8")
+    monkeypatch.delenv("IRIS_COMFY_WORKFLOWS", raising=False)
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # where Path.home() looks on Windows
+    assert tools.comfy_workflows() == "anime"
+
+
+def test_comfy_workflows_tier_is_safe():
+    assert tools.TOOLS["comfy_workflows"].tier == tools.SAFE
+
+
 # --- lmstudio_models -----------------------------------------------------------
 def test_lmstudio_models_loaded(monkeypatch):
     monkeypatch.setattr("iris.dashboard.lmstudio_payload", lambda: {

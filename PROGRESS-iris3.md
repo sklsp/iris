@@ -61,11 +61,20 @@ TOTAL                         1554     69    96%
 - [x] P29. test names read as documentation (418 passed in 14.86s; tests/test_safety.py only, four renames - the tier-table tests named after their function now state the rule: test_click_tier -> test_click_escalates_to_never_when_the_control_says_send_pay_or_password, test_type_tier -> test_type_escalates_to_never_on_password_order_or_payment_fields, test_press_keys_tier -> test_pressing_enter_in_a_mail_or_chat_window_is_never, test_trash_tier -> test_trash_allows_files_under_the_roots_and_refuses_everything_else; the other 13 names already state their rule and are untouched; no bodies changed. SECURITY.md: the four old names were referenced in "What stops it" and "Known limits", so those references now use the new names - a change beyond the item's file list, disclosed here)
 - [x] P30. no dashes (418 passed in 14.36s; scanned every file in `git diff --name-only main..HEAD` for U+2014 and U+2013 with a Python script, counting per occurrence: 29 em dashes found on 28 lines, zero en dashes - AUDIT-public.md 7 (lines 9, 77, 78, 86, 96, 110, 129), EVAL.md 9 (field list lines 9-15 plus two on line 30), README.md 1 (line 20), SECURITY.md 12 (lines 9-12 and 18-24); all replaced with commas, semicolons or colons to fit the sentence; re-scan after the fixes reports total: 0 across all files this run changed)
 - [x] P31. all gates and coverage (ruff: All checks passed!; mypy: Success: no issues found in 10 source files; pytest+coverage last line: 418 passed in 15.65s, TOTAL line: 1574 stmts / 66 miss / 96%, "Required test coverage of 94.0% reached. Total coverage: 95.81%" - meets the item-7 floor fail_under = 94)
-- [ ] P32. final check
+- [x] P32. final check (see "Iris run result" below)
 
 ## Tool tiers (item 12)
 
 safe: system_status, gpu_check, comfy_status, lmstudio_models, followups, journal_today, list_windows, read_window, open_app, focus_window, scroll, open_url, restore_trash, agents_status, queue_list, concept_sites
 confirm: click, type_text, press_keys, trash_file, queue_add, queue_take
 never: (none)
+
+
+## Iris run result
+
+- Commits ahead of main: 32 (`git rev-list --count main..HEAD`)
+- Final pytest line: `418 passed in 14.57s`
+- xfail tests: none; skipped tests: none (the `-ra` summary lists neither)
+- AUDIT-public.md section lengths, heading included: 1 Personal paths = 32 lines, 2 Names of other projects and businesses = 29, 3 Phone numbers and e-mail addresses = 6, 4 Keys, tokens, secrets, passwords, api = 18, 5 Git history (`git log -p --all`) = 21
+- IDEAS.md lines added in this run (new file, all 4 lines): `# Ideas`, a blank line, `- Unknown tool calls (the model asks for a tool name that does not exist) return an error string but are never journaled; consider logging them as event="tool" with outcome="unknown" so every call the model makes is auditable.`, and `- Decide the license when Iris goes public: pyproject already declares MIT metadata, but there is no LICENSE file yet (Jay decides).`
 

@@ -1,10 +1,13 @@
 """The safety rules of Iris, as tests: tiers are enforced in code, not in the prompt."""
 
+import json
 from pathlib import Path
 
 import pytest
 
 from iris import tools
+from iris.agent import Agent, Journal
+from iris.llm import Reply, ToolCall
 
 ALL = sorted(tools.TOOLS.values(), key=lambda t: t.name)
 
@@ -99,4 +102,50 @@ TRASH_TIER = [
 def test_trash_tier(path, expected, monkeypatch):
     monkeypatch.delenv("IRIS_TRASH_DIR", raising=False)  # keep the default trash dir deterministic
     assert tools._trash_tier({"path": path}) == expected
+
+
+# --- a declined action never runs -------------------------------------------------
+class _ScriptedLLM:
+    """Plays back replies in order and records what the model was shown."""
+
+    def __init__(self, *replies):
+        self.replies, self.seen = list(replies), []
+
+    def chat(self, messages, schemas):
+        self.seen.append([dict(m) for m in messages])
+        return self.replies.pop(0)
+
+
+def _confirm_call(**args):
+    c = ToolCall("id-click", "click", args)
+    return Reply("", [c], {"role": "assistant", "content": "", "tool_calls": [
+        {"id": c.id, "type": "function", "function": {"name": "click", "arguments": json.dumps(args)}}]})
+
+
+def _answer(text):
+    return Reply(text, [], {"role": "assistant", "content": text})
+
+
+def _agent(tmp_path, llm, ran, confirm):
+    tool = tools.Tool("click", "", {}, [], tools.CONFIRM, lambda **kw: ran.append(kw) or "clicked")
+    return Agent(llm, confirm, Journal(tmp_path / "j.jsonl"), {"click": tool})
+
+
+def test_declined_confirm_tool_never_runs(tmp_path):
+    ran = []
+    llm = _ScriptedLLM(_confirm_call(window="Notepad", control="Bold"), _answer("Okay, I left it."))
+    _agent(tmp_path, llm, ran, lambda q: False).handle("make it bold")
+    assert ran == []  # the tool fn was never called
+    tool_msg = llm.seen[1][-1]
+    assert tool_msg["role"] == "tool" and "declined" in tool_msg["content"]
+    entries = [json.loads(line) for line in (tmp_path / "j.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [e.get("outcome") for e in entries if e["event"] == "tool"] == ["declined"]
+
+
+def test_confirmed_confirm_tool_runs_exactly_once(tmp_path):
+    ran = []
+    llm = _ScriptedLLM(_confirm_call(window="Notepad", control="Bold"), _answer("Done."))
+    _agent(tmp_path, llm, ran, lambda q: True).handle("make it bold")
+    assert ran == [{"window": "Notepad", "control": "Bold"}]
+
 

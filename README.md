@@ -31,6 +31,33 @@ flowchart LR
   Agent --> TTS[Speech] --> Speaker
 ```
 
+## Risk tiers
+
+| Tool | Tier | Escalates when |
+|---|---|---|
+| system_status | safe |  |
+| gpu_check | safe |  |
+| comfy_status | safe |  |
+| lmstudio_models | safe |  |
+| followups | safe |  |
+| journal_today | safe |  |
+| list_windows | safe |  |
+| read_window | safe |  |
+| open_app | safe |  |
+| click | confirm | the control is named like Send, Buy, Pay or Delete (never) |
+| type_text | confirm | it types into a field named after sending, paying, passwords or deleting (never) |
+| press_keys | confirm | {ENTER} in a mail/chat window such as Outlook or WhatsApp (never) |
+| focus_window | safe |  |
+| scroll | safe |  |
+| open_url | safe |  |
+| trash_file | confirm | the path is home or W:/ itself, outside them, or the Recycle Bin (never) |
+| restore_trash | safe |  |
+| agents_status | safe |  |
+| queue_list | safe |  |
+| queue_add | confirm |  |
+| queue_take | confirm |  |
+| concept_sites | safe |  |
+
 ## Run
 
 ```bash

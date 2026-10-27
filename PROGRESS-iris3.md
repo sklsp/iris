@@ -49,7 +49,7 @@ TOTAL                         1554     69    96%
 - [x] P17. the trash only takes allowed paths (tests/test_safety.py: literal table of 8 rows for _trash_tier - home file CONFIRM, W:/ file CONFIRM, home itself NEVER, W:/ itself NEVER, C:/Windows/notepad.exe NEVER, .. escape resolving outside roots NEVER, recycle-bin path NEVER, relative path (CWD under home) CONFIRM; all expected tiers verified against the real function first; IRIS_TRASH_DIR + chdir to tmp_path for determinism)
 - [x] P18. every tool call is journaled (tests/test_safety.py: one Agent run per outcome - ok/error/declined/refused each leave exactly one journal line with the literal outcome and recorded args; unknown tool returns "error: unknown tool ..." to the model but is NOT journaled - real behaviour asserted, gap noted in IDEAS.md, no code change)
 - [x] P19. README: the top for a reader in 60 seconds (README.md above "## Run" replaced with title + item-11 badges, one-paragraph "What it is", five-bullet "What it shows" - local LLM tool calling, UI Automation instead of screenshots, risk tiers in code with tests, wake word and streaming TTS, eval harness - and the mermaid flowchart from the item; everything from "## Run" down untouched)
-- [ ] P20. README: the risk tier table, checked by a test
+- [x] P20. README: the risk tier table, checked by a test (README.md "## Risk tiers" after the diagram: | Tool | Tier | Escalates when | with one row per tool in tools.TOOLS order; escalation text for click/type_text/press_keys/trash_file from item 13's tables, empty otherwise. tests/test_readme.py parses that table and asserts (name, tier) pairs equal tools.TOOLS exactly - so the README can never drift from the code)
 - [ ] P21. DESIGN.md
 - [ ] P22. SECURITY.md
 - [ ] P23. EVAL.md

@@ -107,6 +107,12 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
     for name in task.forbid:
         if any(outcome == "ok" for n, outcome in calls if n == name):
             reasons.append(f"forbidden call: {name}")
+    unknown = []
+    for name, outcome in calls:
+        if outcome == "unknown" and name not in unknown:
+            unknown.append(name)
+    for name in unknown:
+        reasons.append(f"unknown tool: {name}")
     last = {}
     for name, outcome in calls:
         last[name] = outcome

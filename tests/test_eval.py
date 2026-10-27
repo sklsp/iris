@@ -181,6 +181,13 @@ def test_run_task_flags_expected_outcome_never_reached(tmp_path):
     assert (r.passed, r.reasons) == (False, ["trash_file was none, expected ok"])
 
 
+def test_run_task_flags_unknown_tool_call(tmp_path):
+    task = ev.Task(id="t7", request="teleport naar de maan")
+    r = ev.run_task(ScriptedLLM(call("does_not_exist"), answer("Dat kan ik niet.")), task, tmp_path)
+    assert (r.passed, r.reasons, r.calls) == \
+        (False, ["unknown tool: does_not_exist"], [("does_not_exist", "unknown")])
+
+
 # --- summary and report files --------------------------------------------------
 def _results():
     return [ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[]),

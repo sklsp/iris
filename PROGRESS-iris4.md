@@ -1,5 +1,5 @@
 - [x] S1. unknown tool calls are journaled (418 passed in 17.87s)
-- [ ] S2. the eval counts unknown tool calls
+- [x] S2. the eval counts unknown tool calls (419 passed in 18.68s)
 - [ ] S3. a malformed tool call is journaled too
 - [ ] S4. a shared lms runner for tools
 - [ ] S5. lmstudio_load

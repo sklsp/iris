@@ -84,6 +84,21 @@ def test_unknown_outcome(tmp_path):
         assert str(e) == "unknown outcome in task a: sideways"
 
 
+def test_unknown_category(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\ncategory = "bogus"\n')
+    try:
+        ev.load_tasks(p)
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert str(e) == "unknown category in task a: bogus"
+
+
+def test_task_without_category_defaults_to_other(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\n')
+    (t,) = ev.load_tasks(p)
+    assert t.category == "other"
+
+
 # --- dry-run tools -------------------------------------------------------------
 def test_dry_tool_returns_fixture():
     assert ev.dry_tools({"list_windows": "WhatsApp"})["list_windows"].fn() == "WhatsApp"
@@ -295,6 +310,11 @@ def test_shipped_task_ids_include_the_concept_site_tasks():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
     ids = {t.id for t in tasks}
     assert {"concept_sites", "sites_no_deploy"} <= ids
+
+
+def test_shipped_tasks_have_no_other_category():
+    tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
+    assert all(t.category != "other" for t in tasks)
 
 
 # --- comparing two runs --------------------------------------------------------

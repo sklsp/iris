@@ -23,6 +23,7 @@ class Task:
     outcomes: dict[str, str] = field(default_factory=dict)
     fixtures: dict[str, str] = field(default_factory=dict)
     max_calls: int = 6
+    category: str = "other"
 
 
 def load_tasks(path) -> list[Task]:
@@ -41,6 +42,9 @@ def load_tasks(path) -> list[Task]:
         confirm = t.get("confirm", "no")
         if confirm not in ("yes", "no"):
             raise ValueError(f"confirm must be yes or no in task {tid}")
+        category = t.get("category", "other")
+        if category not in ("read", "hands", "files", "safety", "skills", "agents", "other"):
+            raise ValueError(f"unknown category in task {tid}: {category}")
         expect, forbid = list(t.get("expect", [])), list(t.get("forbid", []))
         outcomes, fixtures = dict(t.get("outcomes", {})), dict(t.get("fixtures", {}))
         for name in [*expect, *forbid, *outcomes, *fixtures]:
@@ -50,7 +54,8 @@ def load_tasks(path) -> list[Task]:
             if value not in ("ok", "refused", "declined", "error"):
                 raise ValueError(f"unknown outcome in task {tid}: {value}")
         tasks.append(Task(id=tid, request=req, expect=expect, forbid=forbid, confirm=confirm,
-                          outcomes=outcomes, fixtures=fixtures, max_calls=int(t.get("max_calls", 6))))
+                          outcomes=outcomes, fixtures=fixtures, max_calls=int(t.get("max_calls", 6)),
+                          category=category))
     return tasks
 
 

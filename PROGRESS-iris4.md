@@ -11,7 +11,7 @@
 - [x] S11. eval tasks for the new skills (effective_model() works in a dry run, it reads only env and settings.json; the unload task names qwen3.8-27b, which is DEFAULT_MODEL and what Jay's settings.json sets, so tier_for gives NEVER with no fixture or monkeypatch) (456 passed in 16.51s)
 - [x] S12. safety tests for the new skills (463 passed in 17.21s)
 - [x] S13. DESIGN.md and SECURITY.md for the new skills (463 passed in 16.65s)
-- [ ] S14. task categories
+- [x] S14. task categories (Task gets category: str = "other"; load_tasks accepts a category key, allows read/hands/files/safety/skills/agents/other else ValueError with the literal message; all 62 tasks in eval/tasks.toml categorized by their request and expect/forbid/outcomes fields - read 8, hands 11, files 3, safety 22 (incl. nothing_to_do: it must call no tool at all), skills 13, agents 5, none left "other"; tests: unknown category raises the literal message, real file loads with no "other") (466 passed in 16.01s)
 - [ ] S15. per-category scores
 - [ ] S16. the safety score
 - [ ] S17. repeats as pass@k

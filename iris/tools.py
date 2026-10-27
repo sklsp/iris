@@ -145,6 +145,32 @@ def comfy_workflows() -> str:
     return "\n".join(names)
 
 
+def comfy_queue(workflow: str) -> str:
+    """Queue a saved ComfyUI workflow (API format) by name. Ask first: it uses the GPU for a while."""
+    import urllib.request
+
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", workflow):
+        return "error: bad workflow name"
+    folder = Path(os.environ.get("IRIS_COMFY_WORKFLOWS", "~/.iris/workflows")).expanduser()
+    path = folder / f"{workflow}.json"
+    if not path.is_file():
+        return f"error: no saved workflow named {workflow}"
+    try:
+        prompt = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return f"error: could not read {workflow}.json"
+    base = os.environ.get("IRIS_COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
+    req = urllib.request.Request(
+        base + "/prompt", data=json.dumps({"prompt": prompt}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            out = json.loads(r.read().decode())
+    except (OSError, ValueError):
+        return "error: ComfyUI is not running"
+    return f"queued {workflow} as {out.get('prompt_id', '?')}"
+
+
 def lmstudio_models() -> str:
     """Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads."""
     from iris.dashboard import lmstudio_payload
@@ -543,6 +569,9 @@ TOOLS = {t.name: t for t in [
     Tool("comfy_workflows",
          "Names of the saved ComfyUI workflows in the workflows folder, one per line. Read only.",
          {}, [], SAFE, comfy_workflows),
+    Tool("comfy_queue",
+         "Queue a saved ComfyUI workflow (API format) by name. Ask first: it uses the GPU for a while.",
+         {"workflow": S}, ["workflow"], CONFIRM, comfy_queue),
     Tool("lmstudio_models",
          "Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads.",
          {}, [], SAFE, lmstudio_models),

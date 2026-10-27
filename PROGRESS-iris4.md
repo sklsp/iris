@@ -6,7 +6,7 @@
 - [x] S6. lmstudio_unload, never the model Iris runs on (436 passed in 17.63s)
 - [x] S7. the GPU check before a load (438 passed in 17.06s)
 - [x] S8. comfy workflows folder (446 passed in 17.12s)
-- [ ] S9. comfy_queue
+- [x] S9. comfy_queue (454 passed in 16.94s)
 - [ ] S10. comfy_queue checks the GPU first
 - [ ] S11. eval tasks for the new skills
 - [ ] S12. safety tests for the new skills

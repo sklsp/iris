@@ -40,6 +40,7 @@ flowchart LR
 | gpu_check | safe |  |
 | comfy_status | safe |  |
 | comfy_workflows | safe |  |
+| comfy_queue | confirm |  |
 | lmstudio_models | safe |  |
 | lmstudio_load | confirm |  |
 | lmstudio_unload | confirm | the model is the one Iris runs on, or all |
@@ -96,6 +97,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | gpu_check | safe | free VRAM and temperature per GPU against a threshold, before a heavy job |
 | comfy_status | safe | is ComfyUI running, its version and its queue |
 | comfy_workflows | safe | names of the saved ComfyUI workflows in the workflows folder, one per line |
+| comfy_queue | confirm | queue a saved ComfyUI workflow by name; asks first because it uses the GPU for a while |
 | lmstudio_models | safe | which LM Studio models are loaded; never loads or unloads |
 | lmstudio_load | confirm | load a model in LM Studio by its id, asks first |
 | lmstudio_unload | confirm | unload a model from LM Studio by its id, or all of them; never unloads the model Iris runs on |

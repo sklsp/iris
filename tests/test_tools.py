@@ -1,5 +1,7 @@
 """Tests for press_keys, focus_window, scroll and open_url with fakes only (no real desktop)."""
 
+import io
+import json
 from pathlib import Path
 
 import pytest
@@ -356,6 +358,73 @@ def test_comfy_workflows_defaults_to_home_iris(tmp_path, monkeypatch):
 
 def test_comfy_workflows_tier_is_safe():
     assert tools.TOOLS["comfy_workflows"].tier == tools.SAFE
+
+
+# --- comfy_queue ---------------------------------------------------------------
+def _queue_folder(tmp_path, monkeypatch):
+    folder = tmp_path / "wf"
+    folder.mkdir()
+    (folder / "anime.json").write_text('{"3": {"class_type": "KSampler"}}', encoding="utf-8")
+    monkeypatch.setenv("IRIS_COMFY_WORKFLOWS", str(folder))
+    return folder
+
+
+def test_comfy_queue_posts_the_workflow_and_returns_prompt_id(tmp_path, monkeypatch):
+    import urllib.request
+
+    _queue_folder(tmp_path, monkeypatch)
+    monkeypatch.delenv("IRIS_COMFY_URL", raising=False)
+    seen = {}
+
+    def fake(req, timeout=None):
+        seen["req"] = req
+        seen["timeout"] = timeout
+        return io.BytesIO(json.dumps({"prompt_id": "abc-123"}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    assert tools.comfy_queue("anime") == "queued anime as abc-123"
+    req = seen["req"]
+    assert req.full_url == "http://127.0.0.1:8188/prompt"
+    assert req.get_header("Content-type") == "application/json"
+    assert json.loads(req.data) == {"prompt": {"3": {"class_type": "KSampler"}}}
+    assert seen["timeout"] == 10
+
+
+def test_comfy_queue_bad_name_never_touches_disk_or_network(tmp_path, monkeypatch):
+    import urllib.request
+
+    def fake(*a, **k):
+        raise AssertionError("network must not be touched")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    # no workflows folder exists at all: a bad name must fail before any disk access
+    for name in ("../evil", "a b", "a/b", "a.b", ""):
+        assert tools.comfy_queue(name) == "error: bad workflow name"
+
+
+def test_comfy_queue_missing_workflow(tmp_path, monkeypatch):
+    _queue_folder(tmp_path, monkeypatch)
+    assert tools.comfy_queue("nope") == "error: no saved workflow named nope"
+
+
+def test_comfy_queue_when_not_running(tmp_path, monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    _queue_folder(tmp_path, monkeypatch)
+
+    def fake(req, timeout=None):
+        raise urllib.error.URLError("refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    assert tools.comfy_queue("anime") == "error: ComfyUI is not running"
+
+
+def test_comfy_queue_tier_and_description():
+    t = tools.TOOLS["comfy_queue"]
+    assert t.tier == tools.CONFIRM
+    assert t.description == ("Queue a saved ComfyUI workflow (API format) by name. "
+                             "Ask first: it uses the GPU for a while.")
 
 
 # --- lmstudio_models -----------------------------------------------------------

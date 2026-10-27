@@ -160,6 +160,16 @@ def test_shipped_config_watches_leadscan():
     assert "W:/leadscan" in cfg.repos
 
 
+def test_repos_come_from_the_env_var(monkeypatch, tmp_path):
+    monkeypatch.setenv("IRIS_REPOS", "X:/alpha; X:/beta")
+    assert load_config(tmp_path / "missing.toml").repos == ["X:/alpha", "X:/beta"]
+
+
+def test_repos_default_to_the_built_in_list_without_env(monkeypatch, tmp_path):
+    monkeypatch.delenv("IRIS_REPOS", raising=False)
+    assert load_config(tmp_path / "missing.toml").repos == DEFAULT_REPOS
+
+
 def test_agents_status_is_safe_and_never_writes(tmp_path):
     assert TOOLS["agents_status"].tier_of({}) == SAFE
     repo = make_repo(tmp_path, "iris")

@@ -366,7 +366,17 @@ def _trash_dir() -> Path:
     return d
 
 
-_TRASH_ROOTS = [Path.home(), Path("W:/")]
+def _trash_roots() -> list[Path]:
+    """Trash roots from IRIS_TRASH_ROOTS (';' separated); the home folder is always included."""
+    raw = os.environ.get("IRIS_TRASH_ROOTS")
+    if not raw:
+        return [Path.home(), Path("W:/")]
+    roots = [Path(s.strip()) for s in raw.split(";") if s.strip()]
+    if Path.home() not in roots:
+        roots.insert(0, Path.home())
+    return roots
+
+
 _SYSTEM_DIRS = [Path(os.environ.get("SystemRoot", "C:/Windows")), Path("C:/Program Files"),
                 Path("C:/Program Files (x86)"), Path("C:/ProgramData")]
 
@@ -379,9 +389,9 @@ def _under(p: Path, root: Path) -> bool:
 
 
 def _trash_tier(args: dict) -> str:
-    """Only files under the home folder or W:/ may be trashed; never a root itself, system dirs, or the trash."""
+    """Only files under the trash roots may be trashed; never a root itself, system dirs, or the trash."""
     p = Path(str(args.get("path", ""))).expanduser().resolve()
-    roots = [r.resolve() for r in _TRASH_ROOTS]
+    roots = [r.resolve() for r in _trash_roots()]
     if p in roots or not any(_under(p, r) for r in roots):
         return NEVER
     if any(_under(p, s) for s in _SYSTEM_DIRS) or _under(p, _trash_dir()):

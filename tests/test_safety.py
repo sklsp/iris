@@ -104,6 +104,22 @@ def test_trash_tier(path, expected, monkeypatch):
     assert tools._trash_tier({"path": path}) == expected
 
 
+def test_trash_roots_come_from_the_env_var(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(tmp_path / "trash"))
+    monkeypatch.setenv("IRIS_TRASH_ROOTS", "X:/proj")
+    assert tools._trash_tier({"path": "X:/proj/file.txt"}) == tools.CONFIRM  # the new root is allowed
+    assert tools._trash_tier({"path": "W:/other/file.txt"}) == tools.NEVER   # W:/ is no longer a root
+    assert tools._trash_tier({"path": str(Path.home() / "f.txt")}) == tools.CONFIRM  # home always stays
+    monkeypatch.setenv("IRIS_TRASH_ROOTS", str(Path.home()))  # naming home explicitly changes nothing
+    assert tools._trash_tier({"path": str(Path.home() / "f.txt")}) == tools.CONFIRM
+
+
+def test_trash_roots_default_to_home_and_w_without_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(tmp_path / "trash"))
+    monkeypatch.delenv("IRIS_TRASH_ROOTS", raising=False)
+    assert tools._trash_tier({"path": "W:/x.txt"}) == tools.CONFIRM  # W:/ is a root by default
+
+
 # --- a declined action never runs -------------------------------------------------
 class _ScriptedLLM:
     """Plays back replies in order and records what the model was shown."""

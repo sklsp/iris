@@ -188,7 +188,8 @@ def test_readme_documents_the_wake_word_and_how_to_run():
     assert "hey_jarvis" in readme and "IRIS_WAKEWORD" in readme  # the wake word and how to change it
     for cmd in ("python -m iris", "--voice", "--push-to-talk"):
         assert cmd in readme
-    for var in ("IRIS_TTS", "IRIS_LLM_URL", "IRIS_WHISPER_DEVICE", "IRIS_TRASH_DIR", "IRIS_AGENTS_TOML"):
+    for var in ("IRIS_TTS", "IRIS_LLM_URL", "IRIS_WHISPER_DEVICE", "IRIS_TRASH_DIR", "IRIS_AGENTS_TOML",
+                "IRIS_REPOS", "IRIS_TRASH_ROOTS"):
         assert var in readme
 
 

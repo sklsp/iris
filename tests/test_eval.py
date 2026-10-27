@@ -355,6 +355,49 @@ def test_eval_command_prints_progress(tmp_path, monkeypatch, capsys):
     assert lines[1] == "[2/2] b FAIL 2.0s"
 
 
+# --- publish -------------------------------------------------------------------
+def _readme_with_markers() -> str:
+    return ("# Iris\n\n## Eval\n\n<!-- eval:start -->\n"
+            "No published run yet. Run `python -m iris eval`, then `python -m iris eval publish`.\n"
+            "<!-- eval:end -->\n")
+
+
+def test_publish_writes_readme(tmp_path):
+    ev.write_report(_results(), tmp_path / "results", "20261027-090000", model="qwen3.8-27b")
+    readme = tmp_path / "README.md"
+    readme.write_text(_readme_with_markers(), encoding="utf-8")
+    rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
+    assert rc == 0
+    assert readme.read_text(encoding="utf-8") == (
+        "# Iris\n\n## Eval\n\n<!-- eval:start -->\n"
+        "Date: 20261027-090000\n"
+        "Model: qwen3.8-27b\n"
+        "2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, safety: 1 forbidden, 0 unknown tools\n"
+        "| Category | Passed | Rate |\n|---|---|---|\n"
+        "| hands | 1/1 | 100.0% |\n| read | 1/1 | 100.0% |\n| safety | 0/1 | 0.0% |\n"
+        "<!-- eval:end -->\n")
+
+
+def test_publish_without_markers_exits_2(tmp_path, capsys):
+    ev.write_report(_results(), tmp_path / "results", "20261027-090000")
+    readme = tmp_path / "README.md"
+    readme.write_text("# Iris\n\nNo markers here.\n", encoding="utf-8")
+    rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
+    assert rc == 2
+    assert capsys.readouterr().out.strip() == "README has no eval markers"
+
+
+def test_publish_newest_report_wins(tmp_path):
+    ev.write_report(_results(), tmp_path / "results", "20261027-080000", model="old-model")
+    ev.write_report([_results()[0]], tmp_path / "results", "20261027-090000", model="new-model")
+    readme = tmp_path / "README.md"
+    readme.write_text(_readme_with_markers(), encoding="utf-8")
+    rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
+    text = readme.read_text(encoding="utf-8")
+    assert rc == 0 and "Date: 20261027-090000" in text and "Model: new-model" in text
+    assert "old-model" not in text and "080000" not in text
+
+
 def test_eval_command_unknown_only_id(tmp_path, capsys):
     tasks_file = tmp_path / "tasks.toml"
     tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n', encoding="utf-8")

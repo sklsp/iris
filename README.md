@@ -63,6 +63,12 @@ flowchart LR
 | queue_take | confirm |  |
 | concept_sites | safe |  |
 
+## Eval
+
+<!-- eval:start -->
+No published run yet. Run `python -m iris eval`, then `python -m iris eval publish`.
+<!-- eval:end -->
+
 ## Run
 
 ```bash

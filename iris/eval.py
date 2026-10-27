@@ -184,6 +184,13 @@ def _summary_line(s: dict) -> str:
     return line
 
 
+def _category_table(s: dict) -> list[str]:
+    lines = ["| Category | Passed | Rate |", "|---|---|---|"]
+    for cat, c in s["by_category"].items():
+        lines.append(f"| {cat} | {c['passed']}/{c['tasks']} | {c['success_rate'] * 100:.1f}% |")
+    return lines
+
+
 def write_report(results: list[Result], out_dir, stamp: str, model: str = "", repeat: int = 1) -> tuple[Path, Path]:
     """Write {stamp}.json and {stamp}.md into out_dir; returns (json path, md path)."""
     out_dir = Path(out_dir)
@@ -194,9 +201,7 @@ def write_report(results: list[Result], out_dir, stamp: str, model: str = "", re
                                      "summary": s, "results": [asdict(r) for r in results]}, indent=2),
                          encoding="utf-8")
     lines = [f"# Iris eval {stamp}", "", f"Model: {model or 'unknown'}", "", _summary_line(s), ""]
-    lines += ["| Category | Passed | Rate |", "|---|---|---|"]
-    for cat, c in s["by_category"].items():
-        lines.append(f"| {cat} | {c['passed']}/{c['tasks']} | {c['success_rate'] * 100:.1f}% |")
+    lines += _category_table(s)
     lines += ["", "| Task | Result | Calls | Seconds | Reasons |", "|---|---|---|---|---|"]
     for r in results:
         lines.append(f"| {r.id} | {'pass' if r.passed else 'FAIL'} | "
@@ -231,13 +236,42 @@ def compare(a: dict, b: dict) -> list[str]:
     return lines
 
 
+def publish(results_dir, readme_path) -> int:
+    """Replace the eval block in the README with the newest report from results_dir."""
+    files = sorted(Path(results_dir).glob("*.json"))
+    if not files:
+        print(f"no reports in {results_dir}")
+        return 2
+    data = json.loads(files[-1].read_text(encoding="utf-8"))
+    s = data["summary"]
+    block = [f"Date: {data['stamp']}", f"Model: {data['model']}", _summary_line(s)] + _category_table(s)
+
+    text = Path(readme_path).read_text(encoding="utf-8")
+    start, end = "<!-- eval:start -->", "<!-- eval:end -->"
+    i, j = text.find(start), text.find(end)
+    if i < 0 or j < 0 or j < i:
+        print("README has no eval markers")
+        return 2
+    nl = text.find("\n", i + len(start))
+    head_end = nl if nl != -1 else len(text)
+    Path(readme_path).write_text(text[:head_end] + "\n" + "\n".join(block) + "\n" + text[j:], encoding="utf-8")
+    print(f"Published {files[-1].name} to {readme_path}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="iris eval", description=__doc__)
+    ap.add_argument("command", nargs="?", default="run", choices=("run", "publish"))
     ap.add_argument("--tasks", default="eval/tasks.toml")
     ap.add_argument("--out", default="eval/results")
     ap.add_argument("--only", action="append", default=None, metavar="ID")
     ap.add_argument("--repeat", type=int, default=1)
+    ap.add_argument("--results", default="eval/results")
+    ap.add_argument("--readme", default="README.md")
     a = ap.parse_args(argv)
+
+    if a.command == "publish":
+        return publish(a.results, a.readme)
 
     tasks = load_tasks(Path(a.tasks))
     if a.only:

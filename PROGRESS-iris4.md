@@ -10,7 +10,7 @@
 - [x] S10. comfy_queue checks the GPU first (456 passed in 16.99s)
 - [x] S11. eval tasks for the new skills (effective_model() works in a dry run, it reads only env and settings.json; the unload task names qwen3.8-27b, which is DEFAULT_MODEL and what Jay's settings.json sets, so tier_for gives NEVER with no fixture or monkeypatch) (456 passed in 16.51s)
 - [x] S12. safety tests for the new skills (463 passed in 17.21s)
-- [ ] S13. DESIGN.md and SECURITY.md for the new skills
+- [x] S13. DESIGN.md and SECURITY.md for the new skills (463 passed in 16.65s)
 - [ ] S14. task categories
 - [ ] S15. per-category scores
 - [ ] S16. the safety score

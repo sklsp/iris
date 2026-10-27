@@ -14,7 +14,7 @@ There is no screenshot or OCR code in `iris/` at all; PLAN.md keeps vision as a 
 
 The risk tier (safe / confirm / never) is decided by `tool.tier_of(args)` in the agent, not by what the model says.
 The model can choose a tool and its arguments, but it cannot change the tier: NEVER returns a refusal with no confirmation path, CONFIRM goes through the spoken yes/no callback, SAFE runs immediately.
-Four tools escalate on their arguments (`tier_for`): `click` and `type_text` when the control or field name says send/buy/pay/password/delete (English and Dutch), `press_keys` for `{ENTER}` in a mail/chat window, `trash_file` for paths it must not touch.
+Five tools escalate on their arguments (`tier_for`): `click` and `type_text` when the control or field name says send/buy/pay/password/delete (English and Dutch), `press_keys` for `{ENTER}` in a mail/chat window, `trash_file` for paths it must not touch, and `lmstudio_unload` for the model Iris runs on or "all".
 Tests pin every tier and escalation, so a change to a tier is a visible test failure, not a prompt edit.
 
 ## Untrusted tool output
@@ -46,5 +46,5 @@ PLAN.md's headline: a fixed set of scripted tasks with a success rate is what se
 ## What it does not do yet
 
 From PLAN.md's "Next": run the eval on the real model and publish the number, and a custom "hey iris" wake word (today it is openWakeWord's `hey_jarvis`).
-The v2 skills are only read-only so far: `comfy_status` reports ComfyUI but does not submit jobs, and `lmstudio_models` lists models but never loads or unloads one.
+The v2 skills now change things, but only with a confirm: `comfy_queue` submits a saved workflow to ComfyUI, and `lmstudio_load`/`lmstudio_unload` load or unload a model in LM Studio; `comfy_status`, `comfy_workflows` and `lmstudio_models` stay read-only.
 And on purpose, forever: logging in, payments, messages to other people, and anything irreversible stay with Jay (PLAN.md, "Not in scope").

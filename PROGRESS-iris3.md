@@ -20,7 +20,23 @@ Found 36 errors.
   - pyproject: mypy python_version 3.11 -> 3.12 to match the venv interpreter (numpy's stubs use PEP 695, which needs >=3.12); no `# type: ignore` needed anywhere
   - dashboard: _Server(ThreadingHTTPServer) subclass carries the annotated token attribute; eval: out: dict[str, bool]; voice: is_yes(str | None) with explicit None -> False, next_request/next_command narrowed to str (they never return None), _whisper: Any (lazy faster_whisper, no stubs), tuple-lambda replaced by a named function; __main__: hear/say annotated before the mode branches
 - [x] P6. mypy check_untyped_defs (option stays ON; only 2 new errors, both in voice.py: _stream and _kokoro annotated Any - lazy third-party objects without stubs; 300 passed in 15.73s)
-- [ ] P7. the coverage floor
+- [x] P7. the coverage floor (fail_under = 94; TOTAL was 96%, precise 95.56%; 300 passed in 15.34s)
+```
+Name                         Stmts   Miss  Cover
+------------------------------------------------
+iris\__init__.py                 0      0   100%
+iris\__main__.py                75      1    99%
+iris\agent.py                   64      5    92%
+iris\agents.py                 135      7    95%
+iris\dashboard\__init__.py     417     48    88%
+iris\eval.py                   165      6    96%
+iris\llm.py                     60      0   100%
+iris\prompt_queue.py            76      1    99%
+iris\tools.py                  323      0   100%
+iris\voice.py                  239      1    99%
+------------------------------------------------
+TOTAL                         1554     69    96%
+```
 - [ ] P8. the dashboard and eval under the gates
 - [ ] P9. GitHub Actions CI
 - [ ] P10. the suite without the voice extras

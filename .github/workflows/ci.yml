@@ -22,8 +22,8 @@ jobs:
           python-version: "3.12"
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
-      - name: Install (dev extras only, no voice or tts)
-        run: pip install -e ".[dev]"
+      - name: Install (dev extras plus numpy for the audio tests; no microphone, model or tts packages)
+        run: pip install -e ".[dev]" numpy
       - name: Ruff
         run: ruff check iris tests
       - name: Mypy

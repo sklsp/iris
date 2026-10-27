@@ -149,3 +149,30 @@ def test_confirmed_confirm_tool_runs_exactly_once(tmp_path):
     assert ran == [{"window": "Notepad", "control": "Bold"}]
 
 
+# --- a never action is never even asked -------------------------------------------
+def _assert_refused(tmp_path, llm, ran, asked):
+    assert ran == [] and asked == []  # fn never called, confirm never called either
+    tool_msg = llm.seen[1][-1]
+    assert tool_msg["role"] == "tool" and tool_msg["content"].startswith("<untrusted_data>\nrefused")
+    entries = [json.loads(line) for line in (tmp_path / "j.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [e.get("outcome") for e in entries if e["event"] == "tool"] == ["refused"]
+
+
+def test_never_tool_by_base_tier_is_refused_without_asking(tmp_path):
+    ran, asked = [], []
+    llm = _ScriptedLLM(_confirm_call(window="Mail", control="Send"), _answer("Do it yourself."))
+    tool = tools.Tool("click", "", {}, [], tools.NEVER, lambda **kw: ran.append(kw) or "clicked")
+    Agent(llm, lambda q: asked.append(q) or True, Journal(tmp_path / "j.jsonl"), {"click": tool}).handle("send it")
+    _assert_refused(tmp_path, llm, ran, asked)
+
+
+def test_never_tool_by_escalation_is_refused_without_asking(tmp_path):
+    ran, asked = [], []
+    llm = _ScriptedLLM(_confirm_call(window="Mail", control="Verzenden"), _answer("Do it yourself."))
+    tool = tools.Tool("click", "", {}, [], tools.CONFIRM, lambda **kw: ran.append(kw) or "clicked",
+                      tools._click_tier)  # CONFIRM base tier escalated to NEVER by the argument
+    Agent(llm, lambda q: asked.append(q) or True, Journal(tmp_path / "j.jsonl"), {"click": tool}).handle("verzenden")
+    _assert_refused(tmp_path, llm, ran, asked)
+
+
+

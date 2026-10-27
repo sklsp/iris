@@ -44,7 +44,7 @@ TOTAL                         1554     69    96%
 - [x] P12. every tool has a known tier (tests/test_safety.py: 22 tools x 3 parametrized checks - tier in SAFE/CONFIRM/NEVER, schema description starts with `[<tier>]`, required subset of params; base tiers listed below for item 19)
 - [x] P13. argument escalation, as a table (4 parametrized tables in tests/test_safety.py: _click_tier 8 rows, _type_tier 7, _press_keys_tier 10, _trash_tier 7; every expected tier verified against the real functions first; Dutch and English never-words, mixed case, and mid-word cases covered - "Reorder" stays confirm (no escalation), "Poster"/"Payment" escalate by documented over-refusal, so no xfail was needed)
 - [x] P14. a declined action never runs (tests/test_safety.py: fake LLM asks for one CONFIRM click, then answers; confirm=False -> fn never called, tool message contains "declined", journal outcome "declined"; confirm=True -> fn called exactly once with the right args; fake tools dict via Agent(tools=...))
-- [ ] P15. a never action is never even asked
+- [x] P15. a never action is never even asked (tests/test_safety.py: two cases - base tier NEVER and CONFIRM escalated to NEVER via _click_tier on control "Verzenden"; in both confirm is never called, fn never runs, the tool message starts with "refused" under the untrusted wrapper, journal outcome "refused")
 - [ ] P16. screen text cannot change a tier
 - [ ] P17. the trash only takes allowed paths
 - [ ] P18. every tool call is journaled

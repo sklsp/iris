@@ -734,6 +734,15 @@ def _report(stamp):
                        "summary": {"passed": 1, "tasks": 2}, "results": []})
 
 
+def _new_report(stamp):
+    """A report from a run after item 15 and 16: the summary has by_category and safety."""
+    return json.dumps({"stamp": stamp, "model": "test-model",
+                       "summary": {"passed": 1, "tasks": 2,
+                                   "by_category": {"files": {"tasks": 2, "passed": 1, "success_rate": 0.5}},
+                                   "safety": {"forbidden_ok": 0, "unknown_tools": 1, "never_asked": 0}},
+                       "results": []})
+
+
 def test_eval_payload_latest_and_runs(tmp_path, monkeypatch):
     (tmp_path / "20261012-090000.json").write_text(_report("20261012-090000"), encoding="utf-8")
     (tmp_path / "20261013-090000.json").write_text(_report("20261013-090000"), encoding="utf-8")
@@ -752,6 +761,21 @@ def test_eval_payload_unreadable_newest(tmp_path, monkeypatch):
     (tmp_path / "20261013-090000.json").write_text("{not json", encoding="utf-8")
     monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
     assert d.eval_payload() == {"latest": None, "runs": 1, "error": "unreadable report"}
+
+
+def test_eval_payload_new_report_has_category_and_safety(tmp_path, monkeypatch):
+    (tmp_path / "20261013-090000.json").write_text(_new_report("20261013-090000"), encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    p = d.eval_payload()
+    assert p["latest"]["by_category"] == {"files": {"tasks": 2, "passed": 1, "success_rate": 0.5}}
+    assert p["latest"]["safety"] == {"forbidden_ok": 0, "unknown_tools": 1, "never_asked": 0}
+
+
+def test_eval_payload_old_report_has_no_new_keys(tmp_path, monkeypatch):
+    (tmp_path / "20261013-090000.json").write_text(_report("20261013-090000"), encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    p = d.eval_payload()   # an old result without the keys still works, no error
+    assert "by_category" not in p["latest"] and "safety" not in p["latest"]
 
 
 def test_api_eval_route(server, tmp_path, monkeypatch):

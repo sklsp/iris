@@ -1,5 +1,7 @@
 """Tests for press_keys, focus_window, scroll and open_url with fakes only (no real desktop)."""
 
+import io
+import json
 from pathlib import Path
 
 import pytest
@@ -317,6 +319,154 @@ def test_comfy_status_honors_iris_comfy_url(monkeypatch):
     assert urls[1] == "http://10.0.0.5:8188/queue"
 
 
+# --- comfy_workflows -------------------------------------------------------------
+def _workflows_folder(tmp_path, names):
+    folder = tmp_path / "wf"
+    folder.mkdir()
+    for n in names:
+        (folder / n).write_text("{}", encoding="utf-8")
+    return folder
+
+
+def test_comfy_workflows_lists_names_without_json_sorted(tmp_path, monkeypatch):
+    folder = _workflows_folder(tmp_path, ["zeta.json", "alpha.json", "notes.txt"])
+    (folder / "nested").mkdir()  # a folder is not a workflow
+    monkeypatch.setenv("IRIS_COMFY_WORKFLOWS", str(folder))
+    assert tools.comfy_workflows() == "alpha\nzeta"
+
+
+def test_comfy_workflows_empty_folder(tmp_path, monkeypatch):
+    folder = _workflows_folder(tmp_path, [])
+    monkeypatch.setenv("IRIS_COMFY_WORKFLOWS", str(folder))
+    assert tools.comfy_workflows() == f"No saved workflows in {folder}."
+
+
+def test_comfy_workflows_missing_folder(tmp_path, monkeypatch):
+    folder = tmp_path / "nope"
+    monkeypatch.setenv("IRIS_COMFY_WORKFLOWS", str(folder))
+    assert tools.comfy_workflows() == f"No saved workflows in {folder}."
+
+
+def test_comfy_workflows_defaults_to_home_iris(tmp_path, monkeypatch):
+    folder = tmp_path / ".iris" / "workflows"
+    folder.mkdir(parents=True)
+    (folder / "anime.json").write_text("{}", encoding="utf-8")
+    monkeypatch.delenv("IRIS_COMFY_WORKFLOWS", raising=False)
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # where Path.home() looks on Windows
+    assert tools.comfy_workflows() == "anime"
+
+
+def test_comfy_workflows_tier_is_safe():
+    assert tools.TOOLS["comfy_workflows"].tier == tools.SAFE
+
+
+# --- comfy_queue ---------------------------------------------------------------
+def _queue_folder(tmp_path, monkeypatch):
+    folder = tmp_path / "wf"
+    folder.mkdir()
+    (folder / "anime.json").write_text('{"3": {"class_type": "KSampler"}}', encoding="utf-8")
+    monkeypatch.setenv("IRIS_COMFY_WORKFLOWS", str(folder))
+    return folder
+
+
+def test_comfy_queue_posts_the_workflow_and_returns_prompt_id(tmp_path, monkeypatch):
+    import urllib.request
+
+    _queue_folder(tmp_path, monkeypatch)
+    monkeypatch.delenv("IRIS_COMFY_URL", raising=False)
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())  # GPU1 has 11888 MiB free and is cool
+    seen = {}
+
+    def fake(req, timeout=None):
+        seen["req"] = req
+        seen["timeout"] = timeout
+        return io.BytesIO(json.dumps({"prompt_id": "abc-123"}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    assert tools.comfy_queue("anime") == "queued anime as abc-123"
+    req = seen["req"]
+    assert req.full_url == "http://127.0.0.1:8188/prompt"
+    assert req.get_header("Content-type") == "application/json"
+    assert json.loads(req.data) == {"prompt": {"3": {"class_type": "KSampler"}}}
+    assert seen["timeout"] == 10
+
+
+def test_comfy_queue_bad_name_never_touches_disk_or_network(tmp_path, monkeypatch):
+    import urllib.request
+
+    def fake(*a, **k):
+        raise AssertionError("network must not be touched")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    # no workflows folder exists at all: a bad name must fail before any disk access
+    for name in ("../evil", "a b", "a/b", "a.b", ""):
+        assert tools.comfy_queue(name) == "error: bad workflow name"
+
+
+def test_comfy_queue_missing_workflow(tmp_path, monkeypatch):
+    _queue_folder(tmp_path, monkeypatch)
+    assert tools.comfy_queue("nope") == "error: no saved workflow named nope"
+
+
+def test_comfy_queue_when_not_running(tmp_path, monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    _queue_folder(tmp_path, monkeypatch)
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())  # GPU1 has room and is cool
+
+    def fake(req, timeout=None):
+        raise urllib.error.URLError("refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    assert tools.comfy_queue("anime") == "error: ComfyUI is not running"
+
+
+def test_comfy_queue_without_gpu_room_does_not_post(tmp_path, monkeypatch):
+    import urllib.request
+
+    _queue_folder(tmp_path, monkeypatch)
+    tight = {"cpu_percent": 12.0, "ram_used_gb": 8.5, "ram_total_gb": 32.0,
+             "gpus": [{"index": 0, "name": "NVIDIA GeForce RTX 3090", "load_percent": 97.0,
+                       "vram_used_mib": 21000.0, "vram_total_mib": 24576.0, "temp_c": 71.0},   # 3576 MiB free
+                      {"index": 1, "name": "NVIDIA GeForce RTX 3060", "load_percent": 3.0,
+                       "vram_used_mib": 400.0, "vram_total_mib": 12288.0, "temp_c": 84.0}]}     # hot
+    calls = []
+
+    def fake(req, timeout=None):
+        calls.append(req)
+        return io.BytesIO(b"{}")
+
+    monkeypatch.setattr(tools, "system_data", lambda: tight)
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    assert tools.comfy_queue("anime") == "error: the GPU is busy or hot; try again later"
+    assert calls == []
+
+
+def test_comfy_queue_without_any_gpu_does_not_post(tmp_path, monkeypatch):
+    import urllib.request
+
+    _queue_folder(tmp_path, monkeypatch)
+    calls = []
+
+    def fake(req, timeout=None):
+        calls.append(req)
+        return io.BytesIO(b"{}")
+
+    monkeypatch.setattr(tools, "system_data", lambda: {"cpu_percent": 5.0, "ram_used_gb": 8.0,
+                                                       "ram_total_gb": 32.0, "gpus": []})
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    assert tools.comfy_queue("anime") == "error: the GPU is busy or hot; try again later"
+    assert calls == []
+
+
+def test_comfy_queue_tier_and_description():
+    t = tools.TOOLS["comfy_queue"]
+    assert t.tier == tools.CONFIRM
+    assert t.description == ("Queue a saved ComfyUI workflow (API format) by name. "
+                             "Ask first: it uses the GPU for a while.")
+
+
 # --- lmstudio_models -----------------------------------------------------------
 def test_lmstudio_models_loaded(monkeypatch):
     monkeypatch.setattr("iris.dashboard.lmstudio_payload", lambda: {
@@ -345,6 +495,106 @@ def test_lmstudio_models_not_reachable(monkeypatch):
     monkeypatch.setattr("iris.dashboard.lmstudio_payload", lambda: {"reachable": False})
     assert tools.lmstudio_models() == "LM Studio is not reachable."
 
+
+# --- lmstudio_load -------------------------------------------------------------
+def test_lmstudio_load_returns_loaded_text(monkeypatch):
+    calls = []
+
+    def fake(action, body):
+        calls.append((action, body))
+        return {"action": action}
+
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())  # GPU1 has 11888 MiB free
+    monkeypatch.setattr("iris.dashboard.model_action", fake)
+    assert tools.lmstudio_load("qwen3.8-27b") == "loaded qwen3.8-27b"
+    assert calls == [("load", {"model": "qwen3.8-27b"})]
+
+
+def test_lmstudio_load_error_is_returned_not_raised(monkeypatch):
+    from iris.dashboard import ModelActionError
+
+    def fake(action, body):
+        raise ModelActionError(400, "unknown model: nope")
+
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())
+    monkeypatch.setattr("iris.dashboard.model_action", fake)
+    assert tools.lmstudio_load("nope") == "error: unknown model: nope"
+
+
+def test_load_without_room_returns_the_literal_error(monkeypatch):
+    tight = {"cpu_percent": 12.0, "ram_used_gb": 8.5, "ram_total_gb": 32.0,
+             "gpus": [{"index": 0, "name": "NVIDIA GeForce RTX 3090", "load_percent": 97.0,
+                       "vram_used_mib": 21000.0, "vram_total_mib": 24576.0, "temp_c": 71.0},   # 3576 MiB free
+                      {"index": 1, "name": "NVIDIA GeForce RTX 3060", "load_percent": 3.0,
+                       "vram_used_mib": 6288.0, "vram_total_mib": 12288.0, "temp_c": 41.0}]}    # 6000 MiB free
+    calls = []
+
+    def fake(action, body):
+        calls.append((action, body))
+        return {"action": action}
+
+    monkeypatch.setattr(tools, "system_data", lambda: tight)
+    monkeypatch.setattr("iris.dashboard.model_action", fake)
+    assert tools.lmstudio_load("qwen3.8-27b") == "error: no GPU has 8000 MiB free; unload a model first"
+    assert calls == []
+
+
+def test_load_without_any_gpu_returns_the_literal_error(monkeypatch):
+    calls = []
+
+    def fake(action, body):
+        calls.append((action, body))
+        return {"action": action}
+
+    monkeypatch.setattr(tools, "system_data", lambda: {"cpu_percent": 5.0, "ram_used_gb": 8.0,
+                                                       "ram_total_gb": 32.0, "gpus": []})
+    monkeypatch.setattr("iris.dashboard.model_action", fake)
+    assert tools.lmstudio_load("qwen3.8-27b") == "error: no GPU has 8000 MiB free; unload a model first"
+    assert calls == []
+
+
+def test_lmstudio_load_tier_is_confirm():
+    assert tools.TOOLS["lmstudio_load"].tier == tools.CONFIRM
+
+
+# --- lmstudio_unload -------------------------------------------------------------
+UNLOAD_TIER = [
+    ({"model": "all"}, tools.NEVER),  # unloading everything takes the model Iris runs on too
+    ({"model": "qwen3.8-27b"}, tools.NEVER),  # the model Iris talks to right now
+    ({"model": "llama-3.1-8b"}, tools.CONFIRM),  # a different model: just asks first
+]
+
+
+@pytest.mark.parametrize("args, expected", UNLOAD_TIER, ids=[a["model"] for a, _ in UNLOAD_TIER])
+def test_unload_escalates_to_never_for_all_or_the_running_model(monkeypatch, args, expected):
+    monkeypatch.setattr("iris.llm.effective_model", lambda: "qwen3.8-27b")
+    assert tools._unload_tier(args) == expected
+
+
+def test_lmstudio_unload_returns_unloaded_text(monkeypatch):
+    calls = []
+
+    def fake(action, body):
+        calls.append((action, body))
+        return {"action": action}
+
+    monkeypatch.setattr("iris.dashboard.model_action", fake)
+    assert tools.lmstudio_unload("llama-3.1-8b") == "unloaded llama-3.1-8b"
+    assert calls == [("unload", {"model": "llama-3.1-8b"})]
+
+
+def test_lmstudio_unload_error_is_returned_not_raised(monkeypatch):
+    from iris.dashboard import ModelActionError
+
+    def fake(action, body):
+        raise ModelActionError(400, "unknown model: nope")
+
+    monkeypatch.setattr("iris.dashboard.model_action", fake)
+    assert tools.lmstudio_unload("nope") == "error: unknown model: nope"
+
+
+def test_lmstudio_unload_tier_is_confirm():
+    assert tools.TOOLS["lmstudio_unload"].tier == tools.CONFIRM
 
 
 # --- followups -----------------------------------------------------------------

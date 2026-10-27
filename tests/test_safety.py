@@ -191,6 +191,17 @@ def test_never_tool_by_escalation_is_refused_without_asking(tmp_path):
     _assert_refused(tmp_path, llm, ran, asked)
 
 
+def test_unloading_the_model_iris_runs_on_is_refused_without_asking(tmp_path, monkeypatch):
+    monkeypatch.setattr("iris.llm.effective_model", lambda: "qwen3.8-27b")  # the model Iris talks to right now
+    ran, asked = [], []
+    llm = _ScriptedLLM(_confirm_call("lmstudio_unload", model="qwen3.8-27b"), _answer("Do it yourself."))
+    tool = tools.TOOLS["lmstudio_unload"]  # the real tool: CONFIRM base tier, escalated by its argument
+    agent = Agent(llm, lambda q: asked.append(q) or True, Journal(tmp_path / "j.jsonl"),
+                  {"lmstudio_unload": tool})
+    agent.handle("unload it")
+    _assert_refused(tmp_path, llm, ran, asked)
+
+
 # --- screen text cannot change a tier ---------------------------------------------
 def test_screen_text_cannot_change_a_tier(tmp_path):
     ran, asked = [], []
@@ -288,15 +299,72 @@ def test_every_tool_call_is_journaled(tmp_path, outcome, tier, fn):
     assert line["outcome"] == outcome and line["tool"] == "act" and line["args"] == {"what": "x"}
 
 
-def test_unknown_tool_returns_an_error_and_is_not_journaled(tmp_path):
+def test_unknown_tool_returns_an_error_and_is_journaled(tmp_path):
     llm = _ScriptedLLM(_confirm_call("teleport", to="the moon"), _answer("I cannot do that."))
     act = tools.Tool("act", "", {}, [], tools.SAFE, _fn_ok)
     Agent(llm, _confirm_yes, Journal(tmp_path / "j.jsonl"), {"act": act}).handle("go")
     tool_msg = llm.seen[1][-1]
     assert tool_msg["role"] == "tool" and tool_msg["content"].startswith(
         "<untrusted_data>\nerror: unknown tool 'teleport'")
-    # real behaviour (as of this commit): the call is NOT journaled - noted in IDEAS.md
-    assert _tool_lines(tmp_path) == []
+    # journaled now with tier and outcome "unknown" (timestamp stripped)
+    lines = _tool_lines(tmp_path)
+    assert len(lines) == 1
+    line = dict(lines[0])
+    line.pop("t")
+    assert line == {"event": "tool", "tool": "teleport", "args": {"to": "the moon"},
+                    "tier": "unknown", "outcome": "unknown"}
+
+
+def test_bad_arguments_are_journaled_as_error_with_bad_args(tmp_path):
+    ran = []
+
+    def fn(what):
+        ran.append(what)
+        return "noted"
+
+    llm = _ScriptedLLM(_confirm_call("act"), _answer("I cannot do that."))
+    tool = tools.Tool("act", "", {"what": "string"}, ["what"], tools.SAFE, fn)
+    Agent(llm, _confirm_yes, Journal(tmp_path / "j.jsonl"), {"act": tool}).handle("do it")
+    assert ran == []  # the tool fn was never called
+    lines = _tool_lines(tmp_path)
+    line = dict(lines[0])
+    line.pop("t")
+    assert line["outcome"] == "error" and line["error_kind"] == "bad_args"
+
+
+# --- the new skills: base tiers and declined confirms ------------------------------
+NEW_SKILL_TIERS = [
+    ("comfy_workflows", tools.SAFE),
+    ("comfy_queue", tools.CONFIRM),
+    ("lmstudio_load", tools.CONFIRM),
+    ("lmstudio_unload", tools.CONFIRM),
+]
+
+
+@pytest.mark.parametrize("name, tier", NEW_SKILL_TIERS)
+def test_each_new_skill_tool_has_its_base_tier(name, tier):
+    assert tools.TOOLS[name].tier == tier
+
+
+# Plain CONFIRM tools with fake fns: the decline path is identical for every skill.
+NEW_SKILL_ARGS = {
+    "lmstudio_load": {"model": "qwen3.8-27b"},
+    "lmstudio_unload": {"model": "some-other-model"},  # not the effective model, so no escalation
+    "comfy_queue": {"workflow": "anime"},
+}
+
+
+@pytest.mark.parametrize("name", sorted(NEW_SKILL_ARGS))
+def test_declined_skill_tool_never_runs(tmp_path, name):
+    ran = []
+    llm = _ScriptedLLM(_confirm_call(name, **NEW_SKILL_ARGS[name]), _answer("Okay, I left it."))
+    tool = tools.Tool(name, "", {}, [], tools.CONFIRM, lambda **kw: ran.append(kw) or "ran")
+    Agent(llm, lambda q: False, Journal(tmp_path / "j.jsonl"), {name: tool}).handle("do it")
+    assert ran == []  # the fake fn was never called
+    tool_msg = llm.seen[1][-1]
+    assert tool_msg["role"] == "tool" and "declined" in tool_msg["content"]
+    lines = _tool_lines(tmp_path)
+    assert [e.get("outcome") for e in lines] == ["declined"]
 
 
 

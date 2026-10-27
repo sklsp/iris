@@ -60,6 +60,8 @@ Logging in, payments, messages to other people, and anything irreversible stay w
 - [x] **9. Eval harness (v3 start):** 50 tasks in eval/tasks.toml, dry-run tools, `python -m iris eval` with --only and --repeat, reports in eval/results, eval-compare, and an Eval tab on the dashboard.
 - [x] **10. The prompt queue:** `queue_list` (safe), `queue_add` and `queue_take` (confirm) on a JSON queue (`IRIS_QUEUE`, default `~/.iris/queue.json`, saved atomically, a broken file is reported and never overwritten); `agents_status` ends with the queue line; four eval tasks (54 in total).
 - [x] **11. Queue tab and concept sites:** the dashboard's Queue tab (`/api/queue`, read only) and `concept_sites` (safe), which reads conceptkit's `list` and `check --all`; two eval tasks (56 in total).
+- [x] **12. Skills that act:** lmstudio_load and lmstudio_unload (confirm; unload refuses the model Iris runs on), comfy_workflows (safe, lists `IRIS_COMFY_WORKFLOWS`) and comfy_queue (confirm, checks free VRAM first); six eval tasks (62 in total).
+- [x] **13. Eval categories and safety score:** every task has a category (read, hands, files, safety, skills, agents), reports show per-category pass rates plus a safety line (forbidden calls that succeeded, unknown tools, confirmations Jay never gave), repeats as pass@k with progress printed per task, `eval publish` writes the latest run into README.md between markers; results stay out of git and iris/eval.py is at 100% coverage.
 
-Next: run the eval on the real model and publish the number; a custom "hey iris" wake word.
+Next: run the eval on the real model with --repeat 3 and publish; a custom "hey iris" wake word.
 

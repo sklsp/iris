@@ -134,6 +134,46 @@ def comfy_status() -> str:
     return f"ComfyUI {version} is running. Queue: {running} running, {waiting} waiting."
 
 
+def comfy_workflows() -> str:
+    """Names of Jay's saved ComfyUI workflows in the workflows folder, one per line."""
+    folder = Path(os.environ.get("IRIS_COMFY_WORKFLOWS", "~/.iris/workflows")).expanduser()
+    if not folder.is_dir():
+        return f"No saved workflows in {folder}."
+    names = sorted(p.stem for p in folder.iterdir() if p.is_file() and p.suffix == ".json")
+    if not names:
+        return f"No saved workflows in {folder}."
+    return "\n".join(names)
+
+
+def comfy_queue(workflow: str) -> str:
+    """Queue a saved ComfyUI workflow (API format) by name. Ask first: it uses the GPU for a while."""
+    import urllib.request
+
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", workflow):
+        return "error: bad workflow name"
+    folder = Path(os.environ.get("IRIS_COMFY_WORKFLOWS", "~/.iris/workflows")).expanduser()
+    path = folder / f"{workflow}.json"
+    if not path.is_file():
+        return f"error: no saved workflow named {workflow}"
+    try:
+        prompt = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return f"error: could not read {workflow}.json"
+    guards = gpu_guard(system_data(), 8000)  # the same check as item 7; nvidia-smi runs once
+    if not any(g["ok"] for g in guards):
+        return "error: the GPU is busy or hot; try again later"
+    base = os.environ.get("IRIS_COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
+    req = urllib.request.Request(
+        base + "/prompt", data=json.dumps({"prompt": prompt}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            out = json.loads(r.read().decode())
+    except (OSError, ValueError):
+        return "error: ComfyUI is not running"
+    return f"queued {workflow} as {out.get('prompt_id', '?')}"
+
+
 def lmstudio_models() -> str:
     """Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads."""
     from iris.dashboard import lmstudio_payload
@@ -148,6 +188,40 @@ def lmstudio_models() -> str:
             return f"Loaded: {', '.join(loaded)}. Available: {n} models."
         return f"No model is loaded. Available: {n} models."
     return f"LM Studio is running with {n} models; it does not say which one is loaded."
+
+
+def lmstudio_load(model: str) -> str:
+    """Load a model in LM Studio by its id. Ask first: loading takes VRAM and can take minutes."""
+    from iris.dashboard import ModelActionError, model_action
+
+    guards = gpu_guard(system_data(), 8000)  # the same check as gpu_check; nvidia-smi runs once
+    if not guards or max(g["free_mib"] for g in guards) < 8000:
+        return "error: no GPU has 8000 MiB free; unload a model first"
+    try:
+        model_action("load", {"model": model})
+    except ModelActionError as exc:
+        return f"error: {exc}"
+    return f"loaded {model}"
+
+
+def lmstudio_unload(model: str) -> str:
+    """Unload a model from LM Studio by its id, or all of them with "all". Asks Jay first."""
+    from iris.dashboard import ModelActionError, model_action
+
+    try:
+        model_action("unload", {"model": model})
+    except ModelActionError as exc:
+        return f"error: {exc}"
+    return f"unloaded {model}"
+
+
+def _unload_tier(args: dict) -> str:
+    from iris.llm import effective_model  # read at call time so a model switch applies at once
+
+    model = args.get("model")
+    if model == "all" or model == effective_model():
+        return NEVER
+    return CONFIRM
 
 
 def followups(today: str = "") -> str:
@@ -495,9 +569,21 @@ TOOLS = {t.name: t for t in [
     Tool("comfy_status",
          "Whether ComfyUI is running on this PC, its version and how many jobs are running and waiting. Read only.",
          {}, [], SAFE, comfy_status),
+    Tool("comfy_workflows",
+         "Names of the saved ComfyUI workflows in the workflows folder, one per line. Read only.",
+         {}, [], SAFE, comfy_workflows),
+    Tool("comfy_queue",
+         "Queue a saved ComfyUI workflow (API format) by name. Ask first: it uses the GPU for a while.",
+         {"workflow": S}, ["workflow"], CONFIRM, comfy_queue),
     Tool("lmstudio_models",
          "Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads.",
          {}, [], SAFE, lmstudio_models),
+    Tool("lmstudio_load",
+         "Load a model in LM Studio by its id. Ask first: loading takes VRAM and can take minutes.",
+         {"model": S}, ["model"], CONFIRM, lmstudio_load),
+    Tool("lmstudio_unload",
+         "Unload a model from LM Studio by its id, or all of them with \"all\". Asks Jay first.",
+         {"model": S}, ["model"], CONFIRM, lmstudio_unload, _unload_tier),
     Tool("followups",
          "Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note. Read only.",
          {}, [], SAFE, followups),

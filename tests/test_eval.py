@@ -84,6 +84,21 @@ def test_unknown_outcome(tmp_path):
         assert str(e) == "unknown outcome in task a: sideways"
 
 
+def test_unknown_category(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\ncategory = "bogus"\n')
+    try:
+        ev.load_tasks(p)
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert str(e) == "unknown category in task a: bogus"
+
+
+def test_task_without_category_defaults_to_other(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\n')
+    (t,) = ev.load_tasks(p)
+    assert t.category == "other"
+
+
 # --- dry-run tools -------------------------------------------------------------
 def test_dry_tool_returns_fixture():
     assert ev.dry_tools({"list_windows": "WhatsApp"})["list_windows"].fn() == "WhatsApp"
@@ -181,22 +196,112 @@ def test_run_task_flags_expected_outcome_never_reached(tmp_path):
     assert (r.passed, r.reasons) == (False, ["trash_file was none, expected ok"])
 
 
+def test_run_task_flags_unknown_tool_call(tmp_path):
+    task = ev.Task(id="t7", request="teleport naar de maan")
+    r = ev.run_task(ScriptedLLM(call("does_not_exist"), answer("Dat kan ik niet.")), task, tmp_path)
+    assert (r.passed, r.reasons, r.calls) == \
+        (False, ["unknown tool: does_not_exist"], [("does_not_exist", "unknown")])
+
+
+def test_run_task_result_carries_category(tmp_path):
+    task = ev.Task(id="t8", request="verwijder oud.txt", category="files")
+    r = ev.run_task(ScriptedLLM(answer("Klaar.")), task, tmp_path)
+    assert (r.category, r.passed) == ("files", True)
+
+
+def test_run_task_skips_broken_journal_lines(tmp_path):
+    task = ev.Task(id="t10", request="open kladblok")
+    # Journal appends, so the broken line from a crashed run stays in the file:
+    (tmp_path / "t10.jsonl").write_text("not json from a crashed run\n", encoding="utf-8")
+    r = ev.run_task(ScriptedLLM(call("open_app"), answer("Klaar.")), task, tmp_path)
+    assert (r.passed, r.calls) == (True, [("open_app", "ok")])
+
+
+def test_run_task_gives_up_after_max_steps(tmp_path):
+    task = ev.Task(id="t11", request="doe iets", max_calls=12)
+    llm = ScriptedLLM(*[call("open_app")] * 12)   # never answers: hits MAX_STEPS
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["gave up"])
+
+
 # --- summary and report files --------------------------------------------------
 def _results():
-    return [ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[]),
+    return [ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                      category="read"),
             ev.Result(id="b", passed=False, calls=[("trash_file", "ok")], confirmations=1, seconds=2.0, answer="",
-                      reasons=["forbidden call: trash_file"]),
-            ev.Result(id="c", passed=True, calls=[], confirmations=2, seconds=4.0, answer="", reasons=[])]
+                      reasons=["forbidden call: trash_file"], category="safety"),
+            ev.Result(id="c", passed=True, calls=[], confirmations=2, seconds=4.0, answer="", reasons=[],
+                      category="hands")]
 
 
 def test_summarize_three_results():
     assert ev.summarize(_results()) == {"tasks": 3, "passed": 2, "success_rate": 0.667,
-                                        "median_seconds": 2.0, "confirmations_per_task": 1.0, "failed": ["b"]}
+                                        "median_seconds": 2.0, "confirmations_per_task": 1.0, "failed": ["b"],
+                                        "by_category": {"hands": {"tasks": 1, "passed": 1, "success_rate": 1.0},
+                                                        "read": {"tasks": 1, "passed": 1, "success_rate": 1.0},
+                                                        "safety": {"tasks": 1, "passed": 0, "success_rate": 0.0}},
+                                        "safety": {"forbidden_ok": 1, "unknown_tools": 0, "never_asked": 0}}
 
 
 def test_summarize_empty():
     s = ev.summarize([])
     assert (s["tasks"], s["passed"], s["success_rate"]) == (0, 0, 0.0)
+    assert s["by_category"] == {}
+    assert s["safety"] == {"forbidden_ok": 0, "unknown_tools": 0, "never_asked": 0}
+
+
+def _safety_results():
+    return [ev.Result(id="x", passed=False, calls=[("trash_file", "ok"), ("ghost_tool", "unknown")],
+                      confirmations=1, seconds=1.0, answer="", reasons=["forbidden call: trash_file"],
+                      category="safety", confirm="no", confirmed_ok=1),
+            ev.Result(id="y", passed=True, calls=[("open_url", "ok"), ("ghost2", "unknown")],
+                      confirmations=0, seconds=2.0, answer="", reasons=[], category="read")]
+
+
+def test_summarize_safety_counts():
+    assert ev.summarize(_safety_results())["safety"] == {"forbidden_ok": 1, "unknown_tools": 2, "never_asked": 1}
+
+
+def test_summary_line_includes_safety():
+    line = ev._summary_line(ev.summarize(_results()))
+    assert line == ("2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
+                    "safety: 1 forbidden, 0 unknown tools")
+
+
+def _repeat_results():
+    # two tasks x three repeats: "a" passes every run, "b" only the second
+    return [ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[]),
+            ev.Result(id="b", passed=False, calls=[], confirmations=0, seconds=2.0, answer="",
+                      reasons=["gave up"]),
+            ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=3.0, answer="", reasons=[]),
+            ev.Result(id="b", passed=True, calls=[], confirmations=0, seconds=4.0, answer="", reasons=[]),
+            ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=5.0, answer="", reasons=[]),
+            ev.Result(id="b", passed=False, calls=[], confirmations=0, seconds=6.0, answer="",
+                      reasons=["gave up"])]
+
+
+def test_summarize_repeat_pass_at_k():
+    s = ev.summarize(_repeat_results(), repeat=3)
+    assert (s["tasks"], s["passed"], s["success_rate"]) == (6, 4, round(4 / 6, 3))
+    assert s["per_task"] == {"a": 3, "b": 1}
+    assert (s["repeat"], s["pass_all"], s["pass_any"]) == (3, 1, 2)
+
+
+def test_summarize_without_repeat_has_no_pass_keys():
+    s = ev.summarize(_repeat_results())
+    for key in ("repeat", "per_task", "pass_all", "pass_any"):
+        assert key not in s
+
+
+def test_summarize_empty_with_repeat():
+    s = ev.summarize([], repeat=2)
+    assert (s["repeat"], s["per_task"], s["pass_all"], s["pass_any"]) == (2, {}, 0, 0)
+
+
+def test_summary_line_repeat_suffix():
+    line = ev._summary_line(ev.summarize(_repeat_results(), repeat=3))
+    assert line == ("4/6 passed (66.7%), median 3.5 s, 0.00 confirmations per task, "
+                    "safety: 0 forbidden, 0 unknown tools, 1/2 pass every time")
 
 
 
@@ -206,11 +311,16 @@ def test_write_report_files(tmp_path):
     data = _json.loads(json_path.read_text(encoding="utf-8"))
     assert (data["stamp"], data["model"]) == ("2026-10-17T0300", "unknown")
     md = md_path.read_text(encoding="utf-8").splitlines()
-    assert md[4] == "2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task"
+    assert md[4] == ("2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
+                     "safety: 1 forbidden, 0 unknown tools")
     rows = {line.split("|")[1].strip(): line for line in md
             if line.startswith("| ") and not line.startswith("| Task")}
     assert rows["b"] == "| b | FAIL | trash_file:ok | 2.0 | forbidden call: trash_file |"
     assert rows["a"] == "| a | pass | - | 1.0 | - |"
+    assert md[6] == "| Category | Passed | Rate |"
+    assert rows["read"] == "| read | 1/1 | 100.0% |"
+    assert rows["safety"] == "| safety | 0/1 | 0.0% |"
+    assert rows["hands"] == "| hands | 1/1 | 100.0% |"
 
 
 # --- the eval command ----------------------------------------------------------
@@ -230,7 +340,7 @@ def test_eval_command_writes_reports(tmp_path, monkeypatch, capsys):
     _monkey(monkeypatch)
     rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results")])
     out = capsys.readouterr().out
-    assert rc == 0 and out.startswith("1/1 passed (100.0%)")
+    assert rc == 0 and "1/1 passed (100.0%)" in out
     files = [p.name for p in (tmp_path / "results").iterdir()]
     assert len([f for f in files if f.endswith(".json")]) == 1
     assert len([f for f in files if f.endswith(".md")]) == 1
@@ -242,7 +352,70 @@ def test_eval_command_repeat(tmp_path, monkeypatch, capsys):
     _monkey(monkeypatch)
     rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--repeat", "2"])
     out = capsys.readouterr().out
-    assert rc == 0 and out.startswith("2/2 passed (100.0%)")
+    assert rc == 0 and "2/2 passed (100.0%)" in out
+    assert ", 1/1 pass every time" in out
+
+
+def test_eval_command_prints_progress(tmp_path, monkeypatch, capsys):
+    tasks_file = tmp_path / "tasks.toml"
+    tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n\n'
+                          '[[task]]\nid = "b"\nrequest = "Open Kladblok."\nexpect = ["open_app"]\n', encoding="utf-8")
+    _monkey(monkeypatch)
+    counter = iter([0.0, 1.5, 2.0, 4.0])
+    monkeypatch.setattr(ev.time, "perf_counter", lambda: next(counter))
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results")])
+    lines = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert lines[0] == "[1/2] a pass 1.5s"
+    assert lines[1] == "[2/2] b FAIL 2.0s"
+
+
+# --- publish -------------------------------------------------------------------
+def _readme_with_markers() -> str:
+    return ("# Iris\n\n## Eval\n\n<!-- eval:start -->\n"
+            "No published run yet. Run `python -m iris eval`, then `python -m iris eval publish`.\n"
+            "<!-- eval:end -->\n")
+
+
+def test_publish_writes_readme(tmp_path):
+    ev.write_report(_results(), tmp_path / "results", "20261027-090000", model="qwen3.8-27b")
+    readme = tmp_path / "README.md"
+    readme.write_text(_readme_with_markers(), encoding="utf-8")
+    rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
+    assert rc == 0
+    assert readme.read_text(encoding="utf-8") == (
+        "# Iris\n\n## Eval\n\n<!-- eval:start -->\n"
+        "Date: 20261027-090000\n"
+        "Model: qwen3.8-27b\n"
+        "2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, safety: 1 forbidden, 0 unknown tools\n"
+        "| Category | Passed | Rate |\n|---|---|---|\n"
+        "| hands | 1/1 | 100.0% |\n| read | 1/1 | 100.0% |\n| safety | 0/1 | 0.0% |\n"
+        "<!-- eval:end -->\n")
+
+
+def test_publish_without_markers_exits_2(tmp_path, capsys):
+    ev.write_report(_results(), tmp_path / "results", "20261027-090000")
+    readme = tmp_path / "README.md"
+    readme.write_text("# Iris\n\nNo markers here.\n", encoding="utf-8")
+    rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
+    assert rc == 2
+    assert capsys.readouterr().out.strip() == "README has no eval markers"
+
+
+def test_publish_newest_report_wins(tmp_path):
+    ev.write_report(_results(), tmp_path / "results", "20261027-080000", model="old-model")
+    ev.write_report([_results()[0]], tmp_path / "results", "20261027-090000", model="new-model")
+    readme = tmp_path / "README.md"
+    readme.write_text(_readme_with_markers(), encoding="utf-8")
+    rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
+    text = readme.read_text(encoding="utf-8")
+    assert rc == 0 and "Date: 20261027-090000" in text and "Model: new-model" in text
+    assert "old-model" not in text and "080000" not in text
+
+
+def test_publish_without_reports(tmp_path, capsys):
+    rc = ev.main(["publish", "--results", str(tmp_path / "empty"), "--readme", str(tmp_path / "README.md")])
+    assert rc == 2 and "no reports" in capsys.readouterr().out
 
 
 def test_eval_command_unknown_only_id(tmp_path, capsys):
@@ -250,6 +423,18 @@ def test_eval_command_unknown_only_id(tmp_path, capsys):
     tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n', encoding="utf-8")
     rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--only", "x"])
     assert rc == 2 and "unknown task: x" in capsys.readouterr().out
+
+
+def test_eval_command_only_filters_tasks(tmp_path, monkeypatch):
+    tasks_file = tmp_path / "tasks.toml"
+    text = ('[[task]]\nid = "a"\nrequest = "Hoi"\n\n'
+            '[[task]]\nid = "b"\nrequest = "Hallo"\n')
+    tasks_file.write_text(text, encoding="utf-8")
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--only", "a"])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a"]
 
 
 
@@ -265,7 +450,7 @@ def test_eval_command_json_model(tmp_path, monkeypatch):
 
 def test_shipped_tasks_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 56
+    assert len(tasks) == 62
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
     assert (ids[0], ids[-1]) == ("gpu_temp", "nothing_to_do")
@@ -273,7 +458,7 @@ def test_shipped_tasks_load():
 
 def test_shipped_task_ids_unique_and_tools_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 56
+    assert len(tasks) == 62
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
 
@@ -290,6 +475,11 @@ def test_shipped_task_ids_include_the_concept_site_tasks():
     assert {"concept_sites", "sites_no_deploy"} <= ids
 
 
+def test_shipped_tasks_have_no_other_category():
+    tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
+    assert all(t.category != "other" for t in tasks)
+
+
 # --- comparing two runs --------------------------------------------------------
 def test_compare_broke_fixed_new_gone():
     a = {"results": [{"id": "a1", "passed": True}, {"id": "a2", "passed": True},
@@ -304,4 +494,9 @@ def test_compare_repeat_counts_per_task_id():
     a = {"results": [{"id": "x", "passed": True}, {"id": "x", "passed": False}]}
     b = {"results": [{"id": "x", "passed": True}]}
     assert ev.compare(a, b) == ["0/1 -> 1/1 tasks passed", "fixed: x", "same: 0"]
+
+
+def test_results_folder_is_git_ignored():
+    ignore = Path(__file__).resolve().parents[1] / ".gitignore"
+    assert "eval/results/" in ignore.read_text(encoding="utf-8").splitlines()
 

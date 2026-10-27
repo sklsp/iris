@@ -1,6 +1,6 @@
 # Security notes
 
-What an attacker can do against Iris, what stops it (with the test that proves each stop), and where the protection is known to be thin. Every claim comes from `iris/` or [tests/test_safety.py](tests/test_safety.py).
+What an attacker can do against Iris, what stops it (with the test that proves each stop), and where the protection is known to be thin. Every claim comes from `iris/`, [tests/test_safety.py](tests/test_safety.py) or [tests/test_tools.py](tests/test_tools.py).
 
 ## Threat model
 
@@ -21,6 +21,8 @@ The attacker does not control the code: tiers, word lists, path roots and the jo
 - **Trash roots.** Only files under the home folder or `W:/` can be trashed (as confirm); the roots themselves, system dirs, `..` escapes and the trash dir are NEVER; proven by `test_trash_allows_files_under_the_roots_and_refuses_everything_else` and `test_trash_only_takes_allowed_paths`.
 - **Untrusted data wrapping.** Every tool result is wrapped in `<untrusted_data>` before it reaches the model; screen text that promises approval still gets the tier the code gives it; proven by `test_screen_text_cannot_change_a_tier`, which replays an injection and asserts both the wrapping and the unchanged tier.
 - **Confirm by voice.** CONFIRM tools ask Jay out loud and wait for a yes/no (English or Dutch); a "no" means the function never runs and the call is journaled as declined; proven by `test_declined_confirm_tool_never_runs` and `test_confirmed_confirm_tool_runs_exactly_once`.
+- **The unload rule.** Unloading the model Iris is running on right now, or everything at once with "all", escalates `lmstudio_unload` to NEVER and is refused without asking; any other model stays confirm; proven by `test_unload_escalates_to_never_for_all_or_the_running_model` and end-to-end by `test_unloading_the_model_iris_runs_on_is_refused_without_asking`.
+- **The GPU check.** `comfy_queue` refuses to post while every GPU is busy or hot, and `lmstudio_load` refuses unless some GPU has 8000 MiB free; both run the same `gpu_guard` before they touch anything; proven by `test_comfy_queue_without_gpu_room_does_not_post`, `test_comfy_queue_without_any_gpu_does_not_post`, `test_load_without_room_returns_the_literal_error` and `test_load_without_any_gpu_returns_the_literal_error`.
 - **The journal.** Every tool call lands in `~/.iris/journal.jsonl` with tier, args and outcome (ok/error/declined/refused); proven by `test_every_tool_call_is_journaled`.
 
 ## Known limits

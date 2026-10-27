@@ -22,5 +22,5 @@ select = ["E", "F", "W", "I", "B", "UP"]
 
 [tool.mypy]
 files = ["iris"]
-python_version = "3.11"
+python_version = "3.12"
 ignore_missing_imports = true

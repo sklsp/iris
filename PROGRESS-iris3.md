@@ -16,7 +16,9 @@ Found 36 errors.
 - [x] P2. safe ruff fixes (299 passed in 14.80s)
 - [x] P3. the remaining ruff errors (299 passed in 14.51s)
 - [x] P4. a test that the voice module imports without numpy (300 passed in 14.30s; all optional deps already lazy, no code changed)
-- [ ] P5. mypy passes
+- [x] P5. mypy passes (Success: no issues found in 10 source files; 300 passed in 14.27s)
+  - pyproject: mypy python_version 3.11 -> 3.12 to match the venv interpreter (numpy's stubs use PEP 695, which needs >=3.12); no `# type: ignore` needed anywhere
+  - dashboard: _Server(ThreadingHTTPServer) subclass carries the annotated token attribute; eval: out: dict[str, bool]; voice: is_yes(str | None) with explicit None -> False, next_request/next_command narrowed to str (they never return None), _whisper: Any (lazy faster_whisper, no stubs), tuple-lambda replaced by a named function; __main__: hear/say annotated before the mode branches
 - [ ] P6. mypy check_untyped_defs
 - [ ] P7. the coverage floor
 - [ ] P8. the dashboard and eval under the gates

@@ -162,7 +162,7 @@ def write_report(results: list[Result], out_dir, stamp: str, model: str = "") ->
 
 def _pass_by_id(results) -> dict[str, bool]:
     """id -> passed; with --repeat a task has several results and it passes only when all of them did."""
-    out = {}
+    out: dict[str, bool] = {}
     for r in results:
         out[r["id"]] = out.get(r["id"], True) and r["passed"]
     return out

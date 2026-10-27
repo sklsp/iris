@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import argparse
 import sys
+import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from iris.agent import Agent, Journal
@@ -47,6 +49,8 @@ def main() -> None:
     Path(a.journal).parent.mkdir(parents=True, exist_ok=True)
 
     session = None
+    hear: Callable[[], str]
+    say: Callable[[str], bool | threading.Thread | None]  # the three modes return different things; none is used
     if not (a.voice or a.push_to_talk):
         hear = lambda: input("\nYou: ")  # noqa: E731
         say = lambda t: print(f"Iris: {t}")  # noqa: E731

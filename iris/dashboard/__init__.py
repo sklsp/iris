@@ -595,9 +595,13 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+class _Server(ThreadingHTTPServer):
+    token: str = ""  # set by make_server; injected into the page and required on every POST
+
+
 def make_server(host: str = HOST, port: int = PORT) -> ThreadingHTTPServer:
     """A dashboard server on `host`:`port`. Port 0 lets the OS pick a free one (tests)."""
-    server = ThreadingHTTPServer((host, port), Handler)
+    server = _Server((host, port), Handler)
     server.token = secrets.token_urlsafe(32)   # injected into the page; required on every POST
     return server
 

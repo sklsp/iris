@@ -37,7 +37,7 @@ iris\voice.py                  239      1    99%
 ------------------------------------------------
 TOTAL                         1554     69    96%
 ```
-- [ ] P8. the dashboard and eval under the gates
+- [x] P8. the dashboard and eval under the gates (verified, nothing to fix: iris/dashboard has __init__.py; mypy -v "Found source" lists all 10 files incl. iris\dashboard\__init__.py as module iris.dashboard, ruff --show-files includes it too; 300 passed in 14.71s)
 - [ ] P9. GitHub Actions CI
 - [ ] P10. the suite without the voice extras
 - [ ] P11. README badges and the CI line

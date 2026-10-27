@@ -40,6 +40,7 @@ flowchart LR
 | gpu_check | safe |  |
 | comfy_status | safe |  |
 | lmstudio_models | safe |  |
+| lmstudio_load | confirm |  |
 | followups | safe |  |
 | journal_today | safe |  |
 | list_windows | safe |  |
@@ -93,6 +94,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | gpu_check | safe | free VRAM and temperature per GPU against a threshold, before a heavy job |
 | comfy_status | safe | is ComfyUI running, its version and its queue |
 | lmstudio_models | safe | which LM Studio models are loaded; never loads or unloads |
+| lmstudio_load | confirm | load a model in LM Studio by its id, asks first |
 | followups | safe | leads from the leadscan CRM due for a follow-up today |
 | journal_today | safe | today's requests and tool calls by outcome, from the journal |
 | list_windows | safe | titles of the open windows |

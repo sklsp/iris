@@ -346,6 +346,33 @@ def test_lmstudio_models_not_reachable(monkeypatch):
     assert tools.lmstudio_models() == "LM Studio is not reachable."
 
 
+# --- lmstudio_load -------------------------------------------------------------
+def test_lmstudio_load_returns_loaded_text(monkeypatch):
+    calls = []
+
+    def fake(action, body):
+        calls.append((action, body))
+        return {"action": action}
+
+    monkeypatch.setattr("iris.dashboard.model_action", fake)
+    assert tools.lmstudio_load("qwen3.8-27b") == "loaded qwen3.8-27b"
+    assert calls == [("load", {"model": "qwen3.8-27b"})]
+
+
+def test_lmstudio_load_error_is_returned_not_raised(monkeypatch):
+    from iris.dashboard import ModelActionError
+
+    def fake(action, body):
+        raise ModelActionError(400, "unknown model: nope")
+
+    monkeypatch.setattr("iris.dashboard.model_action", fake)
+    assert tools.lmstudio_load("nope") == "error: unknown model: nope"
+
+
+def test_lmstudio_load_tier_is_confirm():
+    assert tools.TOOLS["lmstudio_load"].tier == tools.CONFIRM
+
+
 
 # --- followups -----------------------------------------------------------------
 PIPELINE_CSV = """osm,name,status,note,next,tier,since,demo,updated

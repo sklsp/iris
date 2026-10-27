@@ -150,6 +150,17 @@ def lmstudio_models() -> str:
     return f"LM Studio is running with {n} models; it does not say which one is loaded."
 
 
+def lmstudio_load(model: str) -> str:
+    """Load a model in LM Studio by its id. Ask first: loading takes VRAM and can take minutes."""
+    from iris.dashboard import ModelActionError, model_action
+
+    try:
+        model_action("load", {"model": model})
+    except ModelActionError as exc:
+        return f"error: {exc}"
+    return f"loaded {model}"
+
+
 def followups(today: str = "") -> str:
     """Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note."""
     import csv
@@ -498,6 +509,9 @@ TOOLS = {t.name: t for t in [
     Tool("lmstudio_models",
          "Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads.",
          {}, [], SAFE, lmstudio_models),
+    Tool("lmstudio_load",
+         "Load a model in LM Studio by its id. Ask first: loading takes VRAM and can take minutes.",
+         {"model": S}, ["model"], CONFIRM, lmstudio_load),
     Tool("followups",
          "Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note. Read only.",
          {}, [], SAFE, followups),

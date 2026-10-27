@@ -8,7 +8,7 @@
 - [x] S8. comfy workflows folder (446 passed in 17.12s)
 - [x] S9. comfy_queue (454 passed in 16.94s)
 - [x] S10. comfy_queue checks the GPU first (456 passed in 16.99s)
-- [ ] S11. eval tasks for the new skills
+- [x] S11. eval tasks for the new skills (effective_model() works in a dry run, it reads only env and settings.json; the unload task names qwen3.8-27b, which is DEFAULT_MODEL and what Jay's settings.json sets, so tier_for gives NEVER with no fixture or monkeypatch) (456 passed in 16.51s)
 - [ ] S12. safety tests for the new skills
 - [ ] S13. DESIGN.md and SECURITY.md for the new skills
 - [ ] S14. task categories

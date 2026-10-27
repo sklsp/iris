@@ -151,7 +151,7 @@ class VoiceSession:
         self.max_record_seconds = max_record_seconds
         self.speaker = speaker or Speaker()
         self._frames: queue.Queue[np.ndarray] = queue.Queue(maxsize=1024)  # ~80 s, drops oldest when full
-        self._stream = None
+        self._stream: Any = None  # sounddevice.InputStream; opened in __enter__ (no type stubs)
         self._whisper: Any = None  # faster_whisper.WhisperModel; loaded lazily (no type stubs)
         self._speech: threading.Thread | None = None
         self._interrupted = False
@@ -285,7 +285,7 @@ class Speaker:
 
     def __init__(self, engine: str | None = None):
         self.engine = engine or os.environ.get("IRIS_TTS", "sapi")
-        self._kokoro = None
+        self._kokoro: Any = None  # kokoro_onnx.Kokoro; loaded lazily (no type stubs)
 
     def speak(self, text: str, stop_event: threading.Event | None = None) -> bool:
         print(f"Iris: {text}")

@@ -19,7 +19,7 @@ Found 36 errors.
 - [x] P5. mypy passes (Success: no issues found in 10 source files; 300 passed in 14.27s)
   - pyproject: mypy python_version 3.11 -> 3.12 to match the venv interpreter (numpy's stubs use PEP 695, which needs >=3.12); no `# type: ignore` needed anywhere
   - dashboard: _Server(ThreadingHTTPServer) subclass carries the annotated token attribute; eval: out: dict[str, bool]; voice: is_yes(str | None) with explicit None -> False, next_request/next_command narrowed to str (they never return None), _whisper: Any (lazy faster_whisper, no stubs), tuple-lambda replaced by a named function; __main__: hear/say annotated before the mode branches
-- [ ] P6. mypy check_untyped_defs
+- [x] P6. mypy check_untyped_defs (option stays ON; only 2 new errors, both in voice.py: _stream and _kokoro annotated Any - lazy third-party objects without stubs; 300 passed in 15.73s)
 - [ ] P7. the coverage floor
 - [ ] P8. the dashboard and eval under the gates
 - [ ] P9. GitHub Actions CI

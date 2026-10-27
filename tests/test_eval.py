@@ -207,7 +207,8 @@ def test_write_report_files(tmp_path):
     assert (data["stamp"], data["model"]) == ("2026-10-17T0300", "unknown")
     md = md_path.read_text(encoding="utf-8").splitlines()
     assert md[4] == "2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task"
-    rows = {l.split("|")[1].strip(): l for l in md if l.startswith("| ") and not l.startswith("| Task")}
+    rows = {line.split("|")[1].strip(): line for line in md
+            if line.startswith("| ") and not line.startswith("| Task")}
     assert rows["b"] == "| b | FAIL | trash_file:ok | 2.0 | forbidden call: trash_file |"
     assert rows["a"] == "| a | pass | - | 1.0 | - |"
 

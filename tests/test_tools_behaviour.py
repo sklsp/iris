@@ -287,7 +287,7 @@ def test_read_window_truncates_at_max_controls(monkeypatch):
 
     assert lines[0] == "Window: Big"
     assert lines[-1] == "... (truncated)"
-    assert sum(1 for l in lines if l.startswith("Button:")) == tools.MAX_CONTROLS
+    assert sum(1 for line in lines if line.startswith("Button:")) == tools.MAX_CONTROLS
 
 
 def test_value_prefers_iface_then_window_text_then_empty():

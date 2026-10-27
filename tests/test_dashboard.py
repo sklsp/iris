@@ -64,7 +64,9 @@ def fake_v0(monkeypatch, models):
 # --- safety --------------------------------------------------------------------
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
-@pytest.mark.parametrize("path", ["/", "/api/system", "/api/agents", "/api/lmstudio", "/api/journal", "/api/tools", "/api/eval"])
+@pytest.mark.parametrize(
+    "path", ["/", "/api/system", "/api/agents", "/api/lmstudio", "/api/journal", "/api/tools", "/api/eval"]
+)
 def test_non_get_methods_are_refused_with_405(server, method, path):
     req = urllib.request.Request(server + path, data=b"{}", method=method)
     with pytest.raises(urllib.error.HTTPError) as exc:
@@ -160,7 +162,10 @@ def test_api_journal_newest_first_limited_and_counted_today(tmp_path, monkeypatc
 
     data = journal_payload()
     assert len(data["entries"]) == 50  # the limit, newest first
-    reqs = [e.get("text") for e in data["entries"] if e.get("event") == "request" and str(e.get("text", "")).startswith("r")]
+    reqs = [
+        e.get("text") for e in data["entries"]
+        if e.get("event") == "request" and str(e.get("text", "")).startswith("r")
+    ]
     assert reqs == [f"r{i}" for i in range(59, 14, -1)]
     assert data["today"] == {"requests": 60, "confirmations": 1, "refusals": 1, "errors": 1}
 

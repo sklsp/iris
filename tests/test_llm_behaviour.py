@@ -91,7 +91,7 @@ def test_chat_parses_tool_calls_with_json_arguments(monkeypatch):
         "id": "c1",
         "function": {"name": "open_app", "arguments": "{\"app\": \"notepad\"}"},
     }
-    seen = _fake_urlopen(
+    _fake_urlopen(
         monkeypatch,
         {"choices": [{"message": {"content": None, "tool_calls": [tool_call]}}]},
     )

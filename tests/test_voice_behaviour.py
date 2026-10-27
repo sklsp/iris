@@ -323,7 +323,7 @@ def test_session_enter_survives_a_race_between_drop_and_reput(monkeypatch):
     s = VoiceSession(speaker=_StubSpeaker())
     with s:
         q = s._frames
-        for i in range(1024):  # fill to capacity so put_nowait raises Full
+        for _ in range(1024):  # fill to capacity so put_nowait raises Full
             q.put(np.zeros(FRAME, dtype="float32"))
 
         def racy_get():

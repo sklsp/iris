@@ -41,7 +41,7 @@ def agent(tmp_path, llm, ran, confirm=lambda q: True):
 
 
 def journal(tmp_path):
-    return [json.loads(l) for l in (tmp_path / "j.jsonl").read_text(encoding="utf-8").splitlines()]
+    return [json.loads(line) for line in (tmp_path / "j.jsonl").read_text(encoding="utf-8").splitlines()]
 
 
 def test_safe_tool_runs_without_asking_and_result_is_marked_untrusted(tmp_path):
@@ -105,5 +105,6 @@ def test_is_yes():
 
 def test_describe_asks_clearer_questions_for_trash_and_keys():
     assert _describe("trash_file", {"path": "W:/tmp/oud.txt"}) == "Move W:/tmp/oud.txt to the trash?"
-    assert _describe("press_keys", {"window": "Naamloos - Kladblok", "keys": "^s"}) == "Press ^s in Naamloos - Kladblok?"
+    keys_desc = _describe("press_keys", {"window": "Naamloos - Kladblok", "keys": "^s"})
+    assert keys_desc == "Press ^s in Naamloos - Kladblok?"
     assert _describe("scroll", {"window": "Chrome"}) == "Run scroll with {'window': 'Chrome'}?"

@@ -9,6 +9,10 @@ import re
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
 
 WHISPER_MODEL = os.environ.get("IRIS_WHISPER", "small")
 WHISPER_DEVICE = os.environ.get("IRIS_WHISPER_DEVICE", "cpu")  # "cuda" to use a GPU
@@ -313,7 +317,8 @@ class Speaker:
                 async for chunk, sr in model.create_stream(text, voice=KOKORO_VOICE):
                     if stop_event is not None and stop_event.is_set():
                         return False
-                    sd.play(chunk.astype("float32"), sr)  # blocks per chunk: streaming with an interrupt point between chunks
+                    # blocks per chunk: streaming with an interrupt point between chunks
+                    sd.play(chunk.astype("float32"), sr)
                 return True
 
             return asyncio.run(play())

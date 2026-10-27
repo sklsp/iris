@@ -342,7 +342,7 @@ def load_sessions(db_path: Path | str | None = None) -> list[dict]:
             " interactive, provider, model, cwd, is_subagent, parent_session_id, updated_at"
             " FROM sessions")
         cols = [c[0] for c in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
     except (sqlite3.Error, OSError):
         return []   # no db yet or a different schema: the tab shows empty, not an error page
     finally:

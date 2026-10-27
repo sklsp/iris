@@ -25,4 +25,20 @@
 - [x] S25. PLAN.md progress (PLAN.md Progress gains two lines in the style of items 1 to 11: item 12 "Skills that act" naming lmstudio_load/lmstudio_unload with the never-unloads-itself rule, comfy_workflows and comfy_queue with the VRAM check, six eval tasks bringing the total to 62 (counted literally in eval/tasks.toml); item 13 "Eval categories and safety score" covering the six categories, per-category rates, the safety line, pass@k repeats with progress lines, publish into README.md between markers, results out of git and iris/eval.py at 100%; Next: now reads "run the eval on the real model with --repeat 3 and publish; a custom \"hey iris\" wake word." No test pins PLAN.md content (the only PLAN hits in tests are queue prompts). 484 passed in 15.14s)
 - [x] S26. CHANGELOG 0.3.0 (CHANGELOG.md gains a "## 0.3.0" section on top in the plain-line style of 0.2.0, grouped as: Skills that act (lmstudio_load/unload with the never-unloads-itself rule and VRAM check before load, comfy_workflows + IRIS_COMFY_WORKFLOWS, comfy_queue with GPU first, side-effect-free dashboard import, six new eval tasks bringing the total to 62); Journal and eval safety (unknown/malformed calls journaled as "unknown" - closing the gap noted in 0.2.0 - and counted by the eval); Eval categories and safety score (six categories with per-category rates in reports and the dashboard, the safety line, pass@k repeats with progress lines); Eval publish (publish into README.md between markers, results out of git); Docs (DESIGN/SECURITY sections, EVAL sample report, README bullet, PLAN items 12-13); Coverage (iris/eval.py 97% to 100%, suite at 484 tests). pyproject.toml version bumped 0.2.0 to 0.3.0. 484 passed in 15.74s)
 - [x] S27. no dashes (git diff --name-only portfolio..HEAD lists 24 files: this run's 21 plus .github/workflows/ci.yml, tests/conftest.py and tests/test_agent.py, which come from two commits on a side branch that shares the same base commit a53072d - portfolio is not an ancestor of HEAD. conftest.py does not exist in this branch so it was skipped; the other 23 files were scanned for U+2014 and U+2013 with Python (two independent passes, per-file counts): zero occurrences anywhere, nothing to fix)
-- [ ] S28. final check
+- [x] S28. final check (all gates green; without the voice extras only the two numpy modules skip)
+
+## Iris skills run result
+
+Commits ahead of portfolio: 29 (`git rev-list --count portfolio..HEAD`, before this commit; 30 after it). Portfolio is not an ancestor of HEAD: it branched from a53072d with two extra commits of its own (a tests/conftest.py journal fixture and a CI numpy install), so the count is this run's commits only.
+
+Gates, last line of each:
+- ruff check iris tests: All checks passed!
+- mypy: Success: no issues found in 10 source files
+- pytest -q -p no:cacheprovider: 484 passed in 15.21s
+
+Suite without the voice extras (scratch sitecustomize.py in a temp folder setting numpy, sounddevice, faster_whisper, openwakeword, pyttsx3 and kokoro_onnx to None in sys.modules; scratch deleted after):
+- pytest line: 447 passed, 2 skipped in 14.22s
+
+Xfail and skipped tests:
+- normal run: none (no xfail, no skip)
+- without extras: 2 skipped - tests/test_voice.py:12 and tests/test_voice_behaviour.py:16, both with the reason "could not import 'numpy': import of numpy halted; None in sys.modules"; no xfail anywhere.

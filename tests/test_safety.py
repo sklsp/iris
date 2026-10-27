@@ -230,6 +230,60 @@ def test_trash_only_takes_allowed_paths(tmp_path, monkeypatch):
         assert tools._trash_tier({"path": path}) == expected, f"{path!r} should be {expected}"
 
 
+# --- every tool call is journaled -------------------------------------------------
+def _fn_ok(**kw):
+    return "noted"
+
+
+def _fn_error(**kw):
+    raise ValueError("boom")
+
+
+def _confirm_yes(q):
+    return True
+
+
+def _confirm_no(q):
+    return False
+
+
+JOURNAL_CASES = [
+    ("ok", tools.SAFE, _fn_ok),          # fn succeeds
+    ("error", tools.SAFE, _fn_error),    # fn raises -> the failure is journaled as data
+    ("declined", tools.CONFIRM, _fn_ok), # confirm says no -> fn never runs
+    ("refused", tools.NEVER, _fn_ok),    # refused before confirm is even asked
+]
+
+
+def _tool_lines(tmp_path):
+    entries = [json.loads(line) for line in (tmp_path / "j.jsonl").read_text(encoding="utf-8").splitlines()]
+    return [e for e in entries if e["event"] == "tool"]
+
+
+@pytest.mark.parametrize("outcome, tier, fn", JOURNAL_CASES)
+def test_every_tool_call_is_journaled(tmp_path, outcome, tier, fn):
+    llm = _ScriptedLLM(_confirm_call("act", what="x"), _answer("Done."))
+    confirm = _confirm_no if outcome == "declined" else _confirm_yes
+    tool = tools.Tool("act", "", {}, [], tier, fn)
+    Agent(llm, confirm, Journal(tmp_path / "j.jsonl"), {"act": tool}).handle("do it")
+    lines = _tool_lines(tmp_path)
+    assert len(lines) == 1
+    line = lines[0]
+    assert line["outcome"] == outcome and line["tool"] == "act" and line["args"] == {"what": "x"}
+
+
+def test_unknown_tool_returns_an_error_and_is_not_journaled(tmp_path):
+    llm = _ScriptedLLM(_confirm_call("teleport", to="the moon"), _answer("I cannot do that."))
+    act = tools.Tool("act", "", {}, [], tools.SAFE, _fn_ok)
+    Agent(llm, _confirm_yes, Journal(tmp_path / "j.jsonl"), {"act": act}).handle("go")
+    tool_msg = llm.seen[1][-1]
+    assert tool_msg["role"] == "tool" and tool_msg["content"].startswith(
+        "<untrusted_data>\nerror: unknown tool 'teleport'")
+    # real behaviour (as of this commit): the call is NOT journaled - noted in IDEAS.md
+    assert _tool_lines(tmp_path) == []
+
+
+
 
 
 

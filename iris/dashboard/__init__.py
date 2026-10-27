@@ -39,7 +39,6 @@ from __future__ import annotations
 
 import json
 import os
-import psutil
 import secrets
 import sqlite3
 import subprocess
@@ -50,6 +49,8 @@ from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+import psutil
 
 HOST = "127.0.0.1"  # loopback only; never 0.0.0.0
 PORT = 8765

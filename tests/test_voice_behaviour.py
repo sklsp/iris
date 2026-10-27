@@ -13,7 +13,6 @@ import numpy as np
 
 from iris.voice import FRAME, RATE, Speaker, Voice, VoiceSession, WakeWord
 
-
 # --- openwakeword fake -------------------------------------------------------
 
 

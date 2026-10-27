@@ -196,7 +196,7 @@ def test_readme_documents_the_wake_word_and_how_to_run():
 def test_trash_refuses_paths_outside_home_and_w_and_system_dirs():
     from pathlib import Path
 
-    from iris.tools import NEVER, CONFIRM, TOOLS
+    from iris.tools import CONFIRM, NEVER, TOOLS
 
     t = TOOLS["trash_file"]
     for bad in ("C:/Windows/System32/drivers", "C:/Program Files/LM Studio", "C:/ProgramData",

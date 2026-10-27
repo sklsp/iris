@@ -13,7 +13,7 @@
 Found 36 errors.
 [*] 11 fixable with the `--fix` option (3 hidden fixes can be enabled with the `--unsafe-fixes` option).
 ```
-- [ ] P2. safe ruff fixes
+- [x] P2. safe ruff fixes (299 passed in 14.80s)
 - [ ] P3. the remaining ruff errors
 - [ ] P4. a test that the voice module imports without numpy
 - [ ] P5. mypy passes

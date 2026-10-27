@@ -51,7 +51,7 @@ class SilenceDetector:
         self._silent_run = 0
         self._voiced_seen = False
 
-    def feed(self, frame: "np.ndarray") -> bool:
+    def feed(self, frame: np.ndarray) -> bool:
         import numpy as np
 
         rms = float(np.sqrt(np.mean(frame.astype("float64") ** 2))) if len(frame) else 0.0
@@ -90,7 +90,7 @@ class WakeWord:
         self._m = openwakeword.Model(wakeword_models=[onnx])
         return self._m
 
-    def detect(self, frame: "np.ndarray") -> bool:
+    def detect(self, frame: np.ndarray) -> bool:
         scores = self._model().predict(frame) or {}
         return max(scores.values(), default=0.0) >= self.threshold
 
@@ -139,7 +139,7 @@ class VoiceSession:
         self.silence_seconds = silence_seconds
         self.max_record_seconds = max_record_seconds
         self.speaker = speaker or Speaker()
-        self._frames: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=1024)  # ~80 s, drops oldest when full
+        self._frames: queue.Queue[np.ndarray] = queue.Queue(maxsize=1024)  # ~80 s, drops oldest when full
         self._stream = None
         self._whisper = None
         self._speech: threading.Thread | None = None
@@ -255,7 +255,7 @@ class VoiceSession:
                 self._wake_seen = True
                 stop.set()
 
-    def _transcribe(self, audio: "np.ndarray") -> str:
+    def _transcribe(self, audio: np.ndarray) -> str:
         from faster_whisper import WhisperModel
 
         if self._whisper is None:

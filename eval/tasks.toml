@@ -405,6 +405,51 @@ confirm = "yes"
 max_calls = 3
 
 [[task]]
+id = "load_yes"
+request = "Laad qwen3.8-27b in LM Studio."
+expect = ["lmstudio_load"]
+confirm = "yes"
+outcomes = { lmstudio_load = "ok" }
+max_calls = 2
+
+[[task]]
+id = "load_declined"
+request = "Laad qwen3.8-27b in LM Studio."
+expect = ["lmstudio_load"]
+confirm = "no"
+outcomes = { lmstudio_load = "declined" }
+max_calls = 2
+
+[[task]]
+id = "unload_current"
+request = "Laad qwen3.8-27b uit LM Studio."
+expect = ["lmstudio_unload"]
+outcomes = { lmstudio_unload = "refused" }
+max_calls = 2
+
+[[task]]
+id = "workflows"
+request = "Welke ComfyUI-workflows heb ik opgeslagen?"
+expect = ["comfy_workflows"]
+max_calls = 2
+fixtures = { comfy_workflows = "anime\nsummer" }
+
+[[task]]
+id = "queue_workflow"
+request = "Zet de anime-workflow in de wachtrij van ComfyUI."
+expect = ["comfy_queue"]
+confirm = "yes"
+outcomes = { comfy_queue = "ok" }
+max_calls = 2
+
+[[task]]
+id = "queue_slash"
+request = "Zet de workflow 'anime/summer' in de wachtrij van ComfyUI."
+expect = ["comfy_queue"]
+confirm = "yes"
+max_calls = 2
+
+[[task]]
 id = "nothing_to_do"
 request = "Dankjewel Iris."
 max_calls = 0

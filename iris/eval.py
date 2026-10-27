@@ -79,6 +79,7 @@ class Result:
     seconds: float
     answer: str
     reasons: list[str]
+    category: str = "other"
 
 
 def run_task(llm, task: Task, journal_dir=None) -> Result:
@@ -131,19 +132,25 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
         reasons.append("gave up")
 
     return Result(id=task.id, passed=not reasons, calls=calls, confirmations=confirmations,
-                  seconds=seconds, answer=answer_text, reasons=reasons)
+                  seconds=seconds, answer=answer_text, reasons=reasons, category=task.category)
 
 
 def summarize(results: list[Result]) -> dict:
     n = len(results)
     if not results:
         return {"tasks": 0, "passed": 0, "success_rate": 0.0, "median_seconds": 0.0,
-                "confirmations_per_task": 0.0, "failed": []}
+                "confirmations_per_task": 0.0, "failed": [], "by_category": {}}
     p = sum(1 for r in results if r.passed)
+    by: dict[str, list[Result]] = {}
+    for r in results:
+        by.setdefault(r.category, []).append(r)
     return {"tasks": n, "passed": p, "success_rate": round(p / n, 3),
             "median_seconds": round(statistics.median(r.seconds for r in results), 2),
             "confirmations_per_task": round(sum(r.confirmations for r in results) / n, 2),
-            "failed": [r.id for r in results if not r.passed]}
+            "failed": [r.id for r in results if not r.passed],
+            "by_category": {c: {"tasks": len(rs), "passed": sum(1 for r in rs if r.passed),
+                                "success_rate": round(sum(1 for r in rs if r.passed) / len(rs), 3)}
+                            for c, rs in sorted(by.items())}}
 
 
 def _summary_line(s: dict) -> str:
@@ -160,8 +167,11 @@ def write_report(results: list[Result], out_dir, stamp: str, model: str = "") ->
     json_path.write_text(json.dumps({"stamp": stamp, "model": model or "unknown",
                                      "summary": s, "results": [asdict(r) for r in results]}, indent=2),
                          encoding="utf-8")
-    lines = [f"# Iris eval {stamp}", "", f"Model: {model or 'unknown'}", "", _summary_line(s), "",
-             "| Task | Result | Calls | Seconds | Reasons |", "|---|---|---|---|---|"]
+    lines = [f"# Iris eval {stamp}", "", f"Model: {model or 'unknown'}", "", _summary_line(s), ""]
+    lines += ["| Category | Passed | Rate |", "|---|---|---|"]
+    for cat, c in s["by_category"].items():
+        lines.append(f"| {cat} | {c['passed']}/{c['tasks']} | {c['success_rate'] * 100:.1f}% |")
+    lines += ["", "| Task | Result | Calls | Seconds | Reasons |", "|---|---|---|---|---|"]
     for r in results:
         lines.append(f"| {r.id} | {'pass' if r.passed else 'FAIL'} | "
                      f"{', '.join(f'{t}:{o}' for t, o in r.calls) or '-'} | {r.seconds:.1f} | "

@@ -203,22 +203,34 @@ def test_run_task_flags_unknown_tool_call(tmp_path):
         (False, ["unknown tool: does_not_exist"], [("does_not_exist", "unknown")])
 
 
+def test_run_task_result_carries_category(tmp_path):
+    task = ev.Task(id="t8", request="verwijder oud.txt", category="files")
+    r = ev.run_task(ScriptedLLM(answer("Klaar.")), task, tmp_path)
+    assert (r.category, r.passed) == ("files", True)
+
+
 # --- summary and report files --------------------------------------------------
 def _results():
-    return [ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[]),
+    return [ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                      category="read"),
             ev.Result(id="b", passed=False, calls=[("trash_file", "ok")], confirmations=1, seconds=2.0, answer="",
-                      reasons=["forbidden call: trash_file"]),
-            ev.Result(id="c", passed=True, calls=[], confirmations=2, seconds=4.0, answer="", reasons=[])]
+                      reasons=["forbidden call: trash_file"], category="safety"),
+            ev.Result(id="c", passed=True, calls=[], confirmations=2, seconds=4.0, answer="", reasons=[],
+                      category="hands")]
 
 
 def test_summarize_three_results():
     assert ev.summarize(_results()) == {"tasks": 3, "passed": 2, "success_rate": 0.667,
-                                        "median_seconds": 2.0, "confirmations_per_task": 1.0, "failed": ["b"]}
+                                        "median_seconds": 2.0, "confirmations_per_task": 1.0, "failed": ["b"],
+                                        "by_category": {"hands": {"tasks": 1, "passed": 1, "success_rate": 1.0},
+                                                        "read": {"tasks": 1, "passed": 1, "success_rate": 1.0},
+                                                        "safety": {"tasks": 1, "passed": 0, "success_rate": 0.0}}}
 
 
 def test_summarize_empty():
     s = ev.summarize([])
     assert (s["tasks"], s["passed"], s["success_rate"]) == (0, 0, 0.0)
+    assert s["by_category"] == {}
 
 
 
@@ -233,6 +245,10 @@ def test_write_report_files(tmp_path):
             if line.startswith("| ") and not line.startswith("| Task")}
     assert rows["b"] == "| b | FAIL | trash_file:ok | 2.0 | forbidden call: trash_file |"
     assert rows["a"] == "| a | pass | - | 1.0 | - |"
+    assert md[6] == "| Category | Passed | Rate |"
+    assert rows["read"] == "| read | 1/1 | 100.0% |"
+    assert rows["safety"] == "| safety | 0/1 | 0.0% |"
+    assert rows["hands"] == "| hands | 1/1 | 100.0% |"
 
 
 # --- the eval command ----------------------------------------------------------

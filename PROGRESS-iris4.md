@@ -12,7 +12,7 @@
 - [x] S12. safety tests for the new skills (463 passed in 17.21s)
 - [x] S13. DESIGN.md and SECURITY.md for the new skills (463 passed in 16.65s)
 - [x] S14. task categories (Task gets category: str = "other"; load_tasks accepts a category key, allows read/hands/files/safety/skills/agents/other else ValueError with the literal message; all 62 tasks in eval/tasks.toml categorized by their request and expect/forbid/outcomes fields - read 8, hands 11, files 3, safety 22 (incl. nothing_to_do: it must call no tool at all), skills 13, agents 5, none left "other"; tests: unknown category raises the literal message, real file loads with no "other") (466 passed in 16.01s)
-- [ ] S15. per-category scores
+- [x] S15. per-category scores (Result gains category: str = "other" and run_task fills it from the task; summarize adds by_category {category: {"tasks", "passed", "success_rate"}} sorted by category, empty dict for no results; write_report renders a "| Category | Passed | Rate |" table directly under the summary line with rows like "| safety | 0/1 | 0.0% |"; tests use literal fake Results across read/safety/hands and assert the exact by_category dict, the empty case, run_task carrying the category, and the literal md header plus rows) (467 passed in 16.14s)
 - [ ] S16. the safety score
 - [ ] S17. repeats as pass@k
 - [ ] S18. the eval prints progress

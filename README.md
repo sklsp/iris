@@ -13,6 +13,7 @@ and answers out loud. No cloud, no cost per command. See [PLAN.md](PLAN.md) for 
 ## What it shows
 
 - Local LLM tool calling: Qwen 3.8 27B in LM Studio picks the tools and fills their arguments
+- Model control: Iris loads LM Studio models and queues ComfyUI jobs, always after a spoken confirm, and never unloads the model it runs on
 - Windows UI Automation instead of screenshots: Iris reads named controls, not pixels
 - Risk tiers enforced in code with tests: safe / confirm / never, escalating with the arguments
 - Wake word and streaming TTS: openWakeWord and faster-whisper in, SAPI or Kokoro out

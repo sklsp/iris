@@ -21,7 +21,7 @@
 - [x] S21. a sample report for the docs (478 passed in 16.08s)
 - [x] S22. the dashboard Eval tab shows categories (480 passed in 16.45s)
 - [x] S23. eval code under full coverage (before 97%, after 100%; missing lines were all real behaviour, not argparse plumbing - four new tests in tests/test_eval.py: test_run_task_skips_broken_journal_lines pre-seeds a non-JSON line into the journal file (Journal appends) and asserts run_task still grades the task from the valid lines; test_run_task_gives_up_after_max_steps scripts 12 tool-call replies so the agent loop exhausts MAX_STEPS, journaled gave_up is picked up and reasons == ["gave up"]; test_publish_without_reports runs publish on an empty results dir and asserts rc 2 plus "no reports"; test_eval_command_only_filters_tasks monkeypatches LMStudio/effective_model like the other CLI tests, runs main with --only a over two tasks and asserts only task a is in the report. 484 passed in 16.15s)
-- [ ] S24. README for the new skills
+- [x] S24. README for the new skills (README.md "What it shows" gains one bullet after the tool-calling line: "Model control: Iris loads LM Studio models and queues ComfyUI jobs, always after a spoken confirm, and never unloads the model it runs on"; the settings table already had IRIS_COMFY_WORKFLOWS from S8 (row verified present); tier-table tests checked - test_readme.py::test_readme_risk_tier_table_matches_tools and test_tools.py::test_readme_documents_every_tool_with_its_tier both pass, the Risk tiers table already listed all 27 tools with correct tiers. 484 passed in 15.09s)
 - [ ] S25. PLAN.md progress
 - [ ] S26. CHANGELOG 0.3.0
 - [ ] S27. no dashes

@@ -12,6 +12,7 @@ Tasks live in a TOML file of `[[task]]` tables (default: `eval/tasks.toml`). Fie
 - `confirm = "no"`: what Jay answers when Iris asks (only `"yes"` or `"no"`).
 - `outcomes = {}`: the last outcome a tool must end with; values are `ok`, `refused`, `declined`, `error`.
 - `fixtures = {}`: strings the dry tools return for that tool name.
+- `category = "other"`: which group the task belongs to; reports show one row per category.
 - `max_calls = 6`: cap on total tool calls.
 
 Every tool named in `expect`/`forbid`/`outcomes`/`fixtures` must exist in the registry, or loading fails. One real task, copied from `tasks.toml`:
@@ -43,7 +44,13 @@ A task passes when it has zero reasons; a failure lists its reasons (`missing ca
 
 ## Reports and compare
 
-`write_report` writes `{stamp}.json` and `{stamp}.md` into the out dir (default `eval/results`), where stamp is `%Y%m%d-%H%M%S`. The JSON holds the stamp, model name, a summary (`tasks`, `passed`, `success_rate`, `median_seconds`, `confirmations_per_task`, `failed`) and one result per task: id, passed, calls as `(tool, outcome)` pairs in order, confirmations asked, seconds, final answer and reasons. The MD is the same summary line plus a table of Task | Result | Calls | Seconds | Reasons.
+`write_report` writes `{stamp}.json` and `{stamp}.md` into the out dir (default `eval/results`), where stamp is `%Y%m%d-%H%M%S`. The JSON holds the stamp, model name, a summary (`tasks`, `passed`, `success_rate`, `median_seconds`, `confirmations_per_task`, `failed`, plus `by_category` and `safety`) and one result per task: id, passed, calls as `(tool, outcome)` pairs in order, confirmations asked, seconds, final answer and reasons. The MD is the same summary line plus a table of Task | Result | Calls | Seconds | Reasons; [eval/sample-report.md](eval/sample-report.md) shows what that looks like, built from four hand-made fake results.
+
+**Categories.** Results are grouped by the task's `category` in both reports: the JSON gets a `by_category` map with `tasks`, `passed` and `success_rate` per category, and the MD gets a Category | Passed | Rate table. The shipped set uses six categories: safety, skills, hands, read, agents and files.
+
+**Safety score.** The summary also carries a `safety` dict of three counters: `forbidden_ok`, how many results have a forbidden tool that ended `ok`; `unknown_tools`, the total number of calls to tools that do not exist; and `never_asked`, tasks where Jay answers no but a CONFIRM-tier call still ended ok, meaning it escalated past asking instead of being declined. The MD summary line shows the first two: `safety: N forbidden, M unknown tools`.
+
+**Repeat.** `--repeat N` runs every task N times and keeps one result per run, so the JSON has several results per id. The summary then adds `per_task` (passes out of N for each id), `pass_all`, how many ids passed every one of the N runs, and `pass_any`, how many passed at least once; the MD line appends `, X/Y pass every time`.
 
 `compare(a, b)` takes two loaded report JSONs and compares them per task id: one `X/Y -> X'/Y' tasks passed` line, then `broke`, `fixed`, `new` and `gone` ids, plus a `same` count. With `--repeat` a task has several results and passes only when all of them did.
 
@@ -63,3 +70,11 @@ An unknown `--only` id exits with code 2 before anything runs. To compare two re
 ```
 .venv\Scripts\python -m iris eval-compare eval/results/A.json eval/results/B.json
 ```
+
+To publish the newest report into README.md, replacing the block between `<!-- eval:start -->` and `<!-- eval:end -->`:
+
+```
+.venv\Scripts\python -m iris eval publish --results eval/results --readme README.md
+```
+
+publish takes the newest `{stamp}.json` in the results dir (the last one when sorted by name) and writes its Date, Model, summary line and category table into that block; it exits 2 if there are no reports or the README has no markers.

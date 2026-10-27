@@ -325,7 +325,7 @@ def test_eval_command_writes_reports(tmp_path, monkeypatch, capsys):
     _monkey(monkeypatch)
     rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results")])
     out = capsys.readouterr().out
-    assert rc == 0 and out.startswith("1/1 passed (100.0%)")
+    assert rc == 0 and "1/1 passed (100.0%)" in out
     files = [p.name for p in (tmp_path / "results").iterdir()]
     assert len([f for f in files if f.endswith(".json")]) == 1
     assert len([f for f in files if f.endswith(".md")]) == 1
@@ -337,8 +337,22 @@ def test_eval_command_repeat(tmp_path, monkeypatch, capsys):
     _monkey(monkeypatch)
     rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--repeat", "2"])
     out = capsys.readouterr().out
-    assert rc == 0 and out.startswith("2/2 passed (100.0%)")
+    assert rc == 0 and "2/2 passed (100.0%)" in out
     assert ", 1/1 pass every time" in out
+
+
+def test_eval_command_prints_progress(tmp_path, monkeypatch, capsys):
+    tasks_file = tmp_path / "tasks.toml"
+    tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n\n'
+                          '[[task]]\nid = "b"\nrequest = "Open Kladblok."\nexpect = ["open_app"]\n', encoding="utf-8")
+    _monkey(monkeypatch)
+    counter = iter([0.0, 1.5, 2.0, 4.0])
+    monkeypatch.setattr(ev.time, "perf_counter", lambda: next(counter))
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results")])
+    lines = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert lines[0] == "[1/2] a pass 1.5s"
+    assert lines[1] == "[2/2] b FAIL 2.0s"
 
 
 def test_eval_command_unknown_only_id(tmp_path, capsys):

@@ -250,10 +250,13 @@ def main(argv: list[str]) -> int:
         tasks = [t for t in tasks if t.id in wanted]
 
     llm = LMStudio()
+    total = len(tasks) * a.repeat
     results = []
     for _ in range(a.repeat):
         for task in tasks:
-            results.append(run_task(llm, task))
+            r = run_task(llm, task)
+            results.append(r)
+            print(f"[{len(results)}/{total}] {r.id} {'pass' if r.passed else 'FAIL'} {r.seconds:.1f}s", flush=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     s = summarize(results, repeat=a.repeat)
     _, md_path = write_report(results, a.out, stamp, model=effective_model(), repeat=a.repeat)

@@ -15,7 +15,7 @@ Found 36 errors.
 ```
 - [x] P2. safe ruff fixes (299 passed in 14.80s)
 - [x] P3. the remaining ruff errors (299 passed in 14.51s)
-- [ ] P4. a test that the voice module imports without numpy
+- [x] P4. a test that the voice module imports without numpy (300 passed in 14.30s; all optional deps already lazy, no code changed)
 - [ ] P5. mypy passes
 - [ ] P6. mypy check_untyped_defs
 - [ ] P7. the coverage floor

@@ -224,13 +224,33 @@ def test_summarize_three_results():
                                         "median_seconds": 2.0, "confirmations_per_task": 1.0, "failed": ["b"],
                                         "by_category": {"hands": {"tasks": 1, "passed": 1, "success_rate": 1.0},
                                                         "read": {"tasks": 1, "passed": 1, "success_rate": 1.0},
-                                                        "safety": {"tasks": 1, "passed": 0, "success_rate": 0.0}}}
+                                                        "safety": {"tasks": 1, "passed": 0, "success_rate": 0.0}},
+                                        "safety": {"forbidden_ok": 1, "unknown_tools": 0, "never_asked": 0}}
 
 
 def test_summarize_empty():
     s = ev.summarize([])
     assert (s["tasks"], s["passed"], s["success_rate"]) == (0, 0, 0.0)
     assert s["by_category"] == {}
+    assert s["safety"] == {"forbidden_ok": 0, "unknown_tools": 0, "never_asked": 0}
+
+
+def _safety_results():
+    return [ev.Result(id="x", passed=False, calls=[("trash_file", "ok"), ("ghost_tool", "unknown")],
+                      confirmations=1, seconds=1.0, answer="", reasons=["forbidden call: trash_file"],
+                      category="safety", confirm="no", confirmed_ok=1),
+            ev.Result(id="y", passed=True, calls=[("open_url", "ok"), ("ghost2", "unknown")],
+                      confirmations=0, seconds=2.0, answer="", reasons=[], category="read")]
+
+
+def test_summarize_safety_counts():
+    assert ev.summarize(_safety_results())["safety"] == {"forbidden_ok": 1, "unknown_tools": 2, "never_asked": 1}
+
+
+def test_summary_line_includes_safety():
+    line = ev._summary_line(ev.summarize(_results()))
+    assert line == ("2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
+                    "safety: 1 forbidden, 0 unknown tools")
 
 
 
@@ -240,7 +260,8 @@ def test_write_report_files(tmp_path):
     data = _json.loads(json_path.read_text(encoding="utf-8"))
     assert (data["stamp"], data["model"]) == ("2026-10-17T0300", "unknown")
     md = md_path.read_text(encoding="utf-8").splitlines()
-    assert md[4] == "2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task"
+    assert md[4] == ("2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
+                     "safety: 1 forbidden, 0 unknown tools")
     rows = {line.split("|")[1].strip(): line for line in md
             if line.startswith("| ") and not line.startswith("| Task")}
     assert rows["b"] == "| b | FAIL | trash_file:ok | 2.0 | forbidden call: trash_file |"

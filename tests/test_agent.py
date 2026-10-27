@@ -108,3 +108,9 @@ def test_describe_asks_clearer_questions_for_trash_and_keys():
     keys_desc = _describe("press_keys", {"window": "Naamloos - Kladblok", "keys": "^s"})
     assert keys_desc == "Press ^s in Naamloos - Kladblok?"
     assert _describe("scroll", {"window": "Chrome"}) == "Run scroll with {'window': 'Chrome'}?"
+
+
+def test_journal_creates_its_folder(tmp_path):
+    path = tmp_path / "fresh" / "journal.jsonl"
+    Journal(path).log(event="request", text="hoi")
+    assert json.loads(path.read_text(encoding="utf-8"))["text"] == "hoi"

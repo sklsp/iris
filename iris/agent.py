@@ -26,6 +26,7 @@ class Journal:
 
     def log(self, **entry) -> None:
         entry["t"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        self.path.parent.mkdir(parents=True, exist_ok=True)  # a fresh PC has no ~/.iris yet
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 

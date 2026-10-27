@@ -38,7 +38,7 @@ iris\voice.py                  239      1    99%
 TOTAL                         1554     69    96%
 ```
 - [x] P8. the dashboard and eval under the gates (verified, nothing to fix: iris/dashboard has __init__.py; mypy -v "Found source" lists all 10 files incl. iris\dashboard\__init__.py as module iris.dashboard, ruff --show-files includes it too; 300 passed in 14.71s)
-- [ ] P9. GitHub Actions CI
+- [x] P9. GitHub Actions CI (one job test on windows-latest, py3.12, dev extras only; YAML validated with a parse check via the already-installed yaml module 6.0.3 - triggers, permissions, concurrency and all seven steps asserted; 300 passed in 14.68s)
 - [ ] P10. the suite without the voice extras
 - [ ] P11. README badges and the CI line
 - [ ] P12. every tool has a known tier

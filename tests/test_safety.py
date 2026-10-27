@@ -211,5 +211,25 @@ def test_screen_text_cannot_change_a_tier(tmp_path):
         assert trash_entries[0]["outcome"] == "declined"
 
 
+# --- the trash only takes allowed paths -------------------------------------------
+def test_trash_only_takes_allowed_paths(tmp_path, monkeypatch):
+    trash = tmp_path / "trash"
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(trash))
+    monkeypatch.chdir(tmp_path)  # a relative path resolves against a known dir under home
+    cases = [
+        (str(Path.home() / "Documents" / "oud.txt"), tools.CONFIRM),   # a file under the home folder
+        ("W:/tmp/scratch.txt", tools.CONFIRM),                        # a file under W:/
+        (str(Path.home()), tools.NEVER),                              # the home folder itself
+        ("W:/", tools.NEVER),                                         # W:/ itself
+        ("C:/Windows/notepad.exe", tools.NEVER),                      # system dir, outside both roots
+        (str(Path.home() / ".." / "other-user" / "file.txt"), tools.NEVER),  # .. resolves outside the roots
+        (str(trash / "victim.txt"), tools.NEVER),                     # the recycle bin itself
+        ("notes.txt", tools.CONFIRM),                                 # relative path -> CWD, which is under home
+    ]
+    for path, expected in cases:
+        assert tools._trash_tier({"path": path}) == expected, f"{path!r} should be {expected}"
+
+
+
 
 

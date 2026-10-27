@@ -46,7 +46,7 @@ TOTAL                         1554     69    96%
 - [x] P14. a declined action never runs (tests/test_safety.py: fake LLM asks for one CONFIRM click, then answers; confirm=False -> fn never called, tool message contains "declined", journal outcome "declined"; confirm=True -> fn called exactly once with the right args; fake tools dict via Agent(tools=...))
 - [x] P15. a never action is never even asked (tests/test_safety.py: two cases - base tier NEVER and CONFIRM escalated to NEVER via _click_tier on control "Verzenden"; in both confirm is never called, fn never runs, the tool message starts with "refused" under the untrusted wrapper, journal outcome "refused")
 - [x] P16. screen text cannot change a tier (tests/test_safety.py: fake SAFE read_screen returns an injection string, the scripted LLM then asks for trash_file on C:/Windows; asserts the result went back wrapped in <untrusted_data>, the journal records exactly the tier _trash_tier gives that path, confirm called/not per that tier, and the fn never ran with confirm=no)
-- [ ] P17. the trash only takes allowed paths
+- [x] P17. the trash only takes allowed paths (tests/test_safety.py: literal table of 8 rows for _trash_tier - home file CONFIRM, W:/ file CONFIRM, home itself NEVER, W:/ itself NEVER, C:/Windows/notepad.exe NEVER, .. escape resolving outside roots NEVER, recycle-bin path NEVER, relative path (CWD under home) CONFIRM; all expected tiers verified against the real function first; IRIS_TRASH_DIR + chdir to tmp_path for determinism)
 - [ ] P18. every tool call is journaled
 - [ ] P19. README: the top for a reader in 60 seconds
 - [ ] P20. README: the risk tier table, checked by a test

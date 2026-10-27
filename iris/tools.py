@@ -154,6 +154,9 @@ def lmstudio_load(model: str) -> str:
     """Load a model in LM Studio by its id. Ask first: loading takes VRAM and can take minutes."""
     from iris.dashboard import ModelActionError, model_action
 
+    guards = gpu_guard(system_data(), 8000)  # the same check as gpu_check; nvidia-smi runs once
+    if not guards or max(g["free_mib"] for g in guards) < 8000:
+        return "error: no GPU has 8000 MiB free; unload a model first"
     try:
         model_action("load", {"model": model})
     except ModelActionError as exc:

@@ -4,7 +4,7 @@
 - [x] S4. a shared lms runner for tools (importing iris.dashboard starts no server and opens no sockets: top level holds only constants, locks and defs; model_action stays put) (420 passed in 20.23s)
 - [x] S5. lmstudio_load (426 passed in 20.48s)
 - [x] S6. lmstudio_unload, never the model Iris runs on (436 passed in 17.63s)
-- [ ] S7. the GPU check before a load
+- [x] S7. the GPU check before a load (438 passed in 17.06s)
 - [ ] S8. comfy workflows folder
 - [ ] S9. comfy_queue
 - [ ] S10. comfy_queue checks the GPU first

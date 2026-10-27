@@ -354,6 +354,7 @@ def test_lmstudio_load_returns_loaded_text(monkeypatch):
         calls.append((action, body))
         return {"action": action}
 
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())  # GPU1 has 11888 MiB free
     monkeypatch.setattr("iris.dashboard.model_action", fake)
     assert tools.lmstudio_load("qwen3.8-27b") == "loaded qwen3.8-27b"
     assert calls == [("load", {"model": "qwen3.8-27b"})]
@@ -365,8 +366,41 @@ def test_lmstudio_load_error_is_returned_not_raised(monkeypatch):
     def fake(action, body):
         raise ModelActionError(400, "unknown model: nope")
 
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())
     monkeypatch.setattr("iris.dashboard.model_action", fake)
     assert tools.lmstudio_load("nope") == "error: unknown model: nope"
+
+
+def test_load_without_room_returns_the_literal_error(monkeypatch):
+    tight = {"cpu_percent": 12.0, "ram_used_gb": 8.5, "ram_total_gb": 32.0,
+             "gpus": [{"index": 0, "name": "NVIDIA GeForce RTX 3090", "load_percent": 97.0,
+                       "vram_used_mib": 21000.0, "vram_total_mib": 24576.0, "temp_c": 71.0},   # 3576 MiB free
+                      {"index": 1, "name": "NVIDIA GeForce RTX 3060", "load_percent": 3.0,
+                       "vram_used_mib": 6288.0, "vram_total_mib": 12288.0, "temp_c": 41.0}]}    # 6000 MiB free
+    calls = []
+
+    def fake(action, body):
+        calls.append((action, body))
+        return {"action": action}
+
+    monkeypatch.setattr(tools, "system_data", lambda: tight)
+    monkeypatch.setattr("iris.dashboard.model_action", fake)
+    assert tools.lmstudio_load("qwen3.8-27b") == "error: no GPU has 8000 MiB free; unload a model first"
+    assert calls == []
+
+
+def test_load_without_any_gpu_returns_the_literal_error(monkeypatch):
+    calls = []
+
+    def fake(action, body):
+        calls.append((action, body))
+        return {"action": action}
+
+    monkeypatch.setattr(tools, "system_data", lambda: {"cpu_percent": 5.0, "ram_used_gb": 8.0,
+                                                       "ram_total_gb": 32.0, "gpus": []})
+    monkeypatch.setattr("iris.dashboard.model_action", fake)
+    assert tools.lmstudio_load("qwen3.8-27b") == "error: no GPU has 8000 MiB free; unload a model first"
+    assert calls == []
 
 
 def test_lmstudio_load_tier_is_confirm():

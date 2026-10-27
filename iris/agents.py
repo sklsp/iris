@@ -24,6 +24,14 @@ DEFAULT_STUCK_MINUTES = 60
 GIT_TIMEOUT = 10  # seconds; a repo on a spinning disk must not hang the voice loop
 
 
+def _default_repos() -> list[str]:
+    """Repo paths from IRIS_REPOS (';' separated); the built-in defaults when unset."""
+    raw = os.environ.get("IRIS_REPOS")
+    if not raw:
+        return list(DEFAULT_REPOS)
+    return [s.strip() for s in raw.split(";") if s.strip()]
+
+
 @dataclass
 class RepoStatus:
     name: str
@@ -60,7 +68,7 @@ class RepoStatus:
 
 @dataclass
 class Config:
-    repos: list[str] = field(default_factory=lambda: list(DEFAULT_REPOS))
+    repos: list[str] = field(default_factory=_default_repos)
     worktrees: list[str] = field(default_factory=lambda: list(DEFAULT_WORKTREES))
     stuck_minutes: int = DEFAULT_STUCK_MINUTES
 

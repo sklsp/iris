@@ -13,9 +13,9 @@ import re
 import shutil
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 SAFE, CONFIRM, NEVER = "safe", "confirm", "never"
 
@@ -366,7 +366,17 @@ def _trash_dir() -> Path:
     return d
 
 
-_TRASH_ROOTS = [Path.home(), Path("W:/")]
+def _trash_roots() -> list[Path]:
+    """Trash roots from IRIS_TRASH_ROOTS (';' separated); the home folder is always included."""
+    raw = os.environ.get("IRIS_TRASH_ROOTS")
+    if not raw:
+        return [Path.home(), Path("W:/")]
+    roots = [Path(s.strip()) for s in raw.split(";") if s.strip()]
+    if Path.home() not in roots:
+        roots.insert(0, Path.home())
+    return roots
+
+
 _SYSTEM_DIRS = [Path(os.environ.get("SystemRoot", "C:/Windows")), Path("C:/Program Files"),
                 Path("C:/Program Files (x86)"), Path("C:/ProgramData")]
 
@@ -379,9 +389,9 @@ def _under(p: Path, root: Path) -> bool:
 
 
 def _trash_tier(args: dict) -> str:
-    """Only files under the home folder or W:/ may be trashed; never a root itself, system dirs, or the trash."""
+    """Only files under the trash roots may be trashed; never a root itself, system dirs, or the trash."""
     p = Path(str(args.get("path", ""))).expanduser().resolve()
-    roots = [r.resolve() for r in _TRASH_ROOTS]
+    roots = [r.resolve() for r in _trash_roots()]
     if p in roots or not any(_under(p, r) for r in roots):
         return NEVER
     if any(_under(p, s) for s in _SYSTEM_DIRS) or _under(p, _trash_dir()):
@@ -477,11 +487,23 @@ def concept_sites() -> str:
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
-    Tool("gpu_check", "Whether each GPU has room for a heavy job (ComfyUI, a big model): free VRAM against min_free_mib (default 8000) and temperature under 80 C. Read only.", {"min_free_mib": {"type": "integer"}}, [], SAFE, gpu_check),
-    Tool("comfy_status", "Whether ComfyUI is running on this PC, its version and how many jobs are running and waiting. Read only.", {}, [], SAFE, comfy_status),
-    Tool("lmstudio_models", "Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads.", {}, [], SAFE, lmstudio_models),
-    Tool("followups", "Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note. Read only.", {}, [], SAFE, followups),
-    Tool("journal_today", "How many requests and tool calls Iris handled today, by outcome. Read only.", {}, [], SAFE, journal_today),
+    Tool("gpu_check",
+         "Whether each GPU has room for a heavy job (ComfyUI, a big model): free VRAM against min_free_mib"
+         " (default 8000) and temperature under 80 C."
+         " Read only.",
+         {"min_free_mib": {"type": "integer"}}, [], SAFE, gpu_check),
+    Tool("comfy_status",
+         "Whether ComfyUI is running on this PC, its version and how many jobs are running and waiting. Read only.",
+         {}, [], SAFE, comfy_status),
+    Tool("lmstudio_models",
+         "Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads.",
+         {}, [], SAFE, lmstudio_models),
+    Tool("followups",
+         "Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note. Read only.",
+         {}, [], SAFE, followups),
+    Tool("journal_today",
+         "How many requests and tool calls Iris handled today, by outcome. Read only.",
+         {}, [], SAFE, journal_today),
     Tool("list_windows", "Titles of all open windows.", {}, [], SAFE, list_windows),
     Tool("read_window", "The named controls (buttons, fields, text) in a window. Title match is a substring.",
          {"title": S}, ["title"], SAFE, read_window),
@@ -491,7 +513,8 @@ TOOLS = {t.name: t for t in [
          {"window": S, "control": S}, ["window", "control"], CONFIRM, click, _click_tier),
     Tool("type_text", "Type text into a window, optionally into the named field `into`. "
          "replace=true clears the field first.",
-         {"window": S, "text": S, "into": S, "replace": {"type": "boolean"}}, ["window", "text"], CONFIRM, type_text, _type_tier),
+         {"window": S, "text": S, "into": S, "replace": {"type": "boolean"}},
+         ["window", "text"], CONFIRM, type_text, _type_tier),
     Tool("press_keys", "Press keyboard shortcuts in a window. pywinauto syntax: ^s = Ctrl+S, {TAB}, {ENTER}. "
           "Never used to send messages or emails.",
          {"window": S, "keys": S}, ["window", "keys"], CONFIRM, press_keys, _press_keys_tier),
@@ -502,9 +525,11 @@ TOOLS = {t.name: t for t in [
           "amount": {"type": "integer"}}, ["window", "direction"], SAFE, scroll),
     Tool("open_url", "Open an http or https URL in the default browser. file:, javascript: and data: are refused.",
          {"url": S}, ["url"], SAFE, open_url),
-    Tool("trash_file", "Move a file or folder to Iris's trash (undoable with restore_trash). Never deletes permanently.",
+    Tool("trash_file",
+         "Move a file or folder to Iris's trash (undoable with restore_trash). Never deletes permanently.",
          {"path": S}, ["path"], CONFIRM, trash_file, _trash_tier),
-    Tool("restore_trash", "Put the most recently trashed item back where it came from. `name` filters by filename substring.",
+    Tool("restore_trash",
+         "Put the most recently trashed item back where it came from. `name` filters by filename substring.",
          {"name": S}, [], SAFE, restore_trash),
     Tool("agents_status", "Status of every repo listed in iris/agents.toml: branch, last commit and how long ago, "
          "uncommitted file count, whether BLOCKED.md exists, and STUCK when there are uncommitted changes "
@@ -514,7 +539,13 @@ TOOLS = {t.name: t for t in [
           {"agent": S}, [], SAFE, queue_list),
     Tool("queue_add", "Put a prompt in Jay's agent queue for one agent (a repo or chat name). Asks Jay first.",
           {"agent": S, "text": S}, ["agent", "text"], CONFIRM, queue_add),
-    Tool("queue_take", "Take the oldest waiting prompt for one agent out of the queue and return its text, so it can be pasted with type_text. Asks Jay first.",
+    Tool("queue_take",
+         "Take the oldest waiting prompt for one agent out of the queue and return its text,"
+         " so it can be pasted with type_text."
+         " Asks Jay first.",
           {"agent": S}, ["agent"], CONFIRM, queue_take),
-    Tool("concept_sites", "Jay's concept websites from conceptkit: every site with its port and stops, and the findings of check --all. Read only.", {}, [], SAFE, concept_sites),
+    Tool("concept_sites",
+         "Jay's concept websites from conceptkit: every site with its port and stops, and the findings of check --all."
+         " Read only.",
+         {}, [], SAFE, concept_sites),
 ]}

@@ -5,9 +5,11 @@ import threading
 import time
 import types
 
-import numpy as np
+import pytest
 
 from iris.voice import FRAME, RATE, SilenceDetector, Speaker, VoiceSession, WakeWord
+
+np = pytest.importorskip("numpy")  # synthetic-audio tests need real numpy; CI installs only [dev]
 
 
 def frames_of(audio):

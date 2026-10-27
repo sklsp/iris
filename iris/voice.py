@@ -9,6 +9,10 @@ import re
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import numpy as np
 
 WHISPER_MODEL = os.environ.get("IRIS_WHISPER", "small")
 WHISPER_DEVICE = os.environ.get("IRIS_WHISPER_DEVICE", "cpu")  # "cuda" to use a GPU
@@ -36,7 +40,9 @@ _KOKORO_FILES = {
 _YES = re.compile(r"\b(yes|yeah|yep|sure|do it|go ahead|ja|jazeker|doe maar|ga je gang|prima|oké|oke|okay)\b", re.I)
 
 
-def is_yes(text: str) -> bool:
+def is_yes(text: str | None) -> bool:
+    if text is None:
+        return False  # no answer at all is a "no"
     return bool(_YES.search(text)) and not re.search(r"\b(no|nee|niet|stop|cancel)\b", text, re.I)
 
 
@@ -51,7 +57,7 @@ class SilenceDetector:
         self._silent_run = 0
         self._voiced_seen = False
 
-    def feed(self, frame: "np.ndarray") -> bool:
+    def feed(self, frame: np.ndarray) -> bool:
         import numpy as np
 
         rms = float(np.sqrt(np.mean(frame.astype("float64") ** 2))) if len(frame) else 0.0
@@ -90,7 +96,7 @@ class WakeWord:
         self._m = openwakeword.Model(wakeword_models=[onnx])
         return self._m
 
-    def detect(self, frame: "np.ndarray") -> bool:
+    def detect(self, frame: np.ndarray) -> bool:
         scores = self._model().predict(frame) or {}
         return max(scores.values(), default=0.0) >= self.threshold
 
@@ -114,8 +120,13 @@ class Voice:
             chunks.append(indata.copy())
 
         print(prompt)
+
+        def _stop_on_enter():
+            input()
+            stop.set()
+
         with sd.InputStream(samplerate=RATE, channels=1, dtype="float32", callback=cb):
-            threading.Thread(target=lambda: (input(), stop.set()), daemon=True).start()
+            threading.Thread(target=_stop_on_enter, daemon=True).start()
             stop.wait()
         if not chunks:
             return ""
@@ -139,9 +150,9 @@ class VoiceSession:
         self.silence_seconds = silence_seconds
         self.max_record_seconds = max_record_seconds
         self.speaker = speaker or Speaker()
-        self._frames: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=1024)  # ~80 s, drops oldest when full
-        self._stream = None
-        self._whisper = None
+        self._frames: queue.Queue[np.ndarray] = queue.Queue(maxsize=1024)  # ~80 s, drops oldest when full
+        self._stream: Any = None  # sounddevice.InputStream; opened in __enter__ (no type stubs)
+        self._whisper: Any = None  # faster_whisper.WhisperModel; loaded lazily (no type stubs)
         self._speech: threading.Thread | None = None
         self._interrupted = False
         self._wake_seen = False  # a wake word landed while Iris was talking (barge-in)
@@ -187,7 +198,7 @@ class VoiceSession:
             self._speech.join()
         return self._interrupted
 
-    def next_request(self) -> str | None:
+    def next_request(self) -> str:
         """Block until the user says the wake word and then an utterance; returns the transcript."""
         self.wait_for_speech()  # never race the wake watcher for frames
         if self._wake_seen:  # barge-in: Jay said the wake word while Iris was talking
@@ -199,7 +210,7 @@ class VoiceSession:
                 break
         return self.next_command()
 
-    def next_command(self) -> str | None:
+    def next_command(self) -> str:
         """The wake word was already heard (barge-in); record and transcribe what follows."""
         import numpy as np
 
@@ -255,7 +266,7 @@ class VoiceSession:
                 self._wake_seen = True
                 stop.set()
 
-    def _transcribe(self, audio: "np.ndarray") -> str:
+    def _transcribe(self, audio: np.ndarray) -> str:
         from faster_whisper import WhisperModel
 
         if self._whisper is None:
@@ -274,7 +285,7 @@ class Speaker:
 
     def __init__(self, engine: str | None = None):
         self.engine = engine or os.environ.get("IRIS_TTS", "sapi")
-        self._kokoro = None
+        self._kokoro: Any = None  # kokoro_onnx.Kokoro; loaded lazily (no type stubs)
 
     def speak(self, text: str, stop_event: threading.Event | None = None) -> bool:
         print(f"Iris: {text}")
@@ -313,7 +324,8 @@ class Speaker:
                 async for chunk, sr in model.create_stream(text, voice=KOKORO_VOICE):
                     if stop_event is not None and stop_event.is_set():
                         return False
-                    sd.play(chunk.astype("float32"), sr)  # blocks per chunk: streaming with an interrupt point between chunks
+                    # blocks per chunk: streaming with an interrupt point between chunks
+                    sd.play(chunk.astype("float32"), sr)
                 return True
 
             return asyncio.run(play())

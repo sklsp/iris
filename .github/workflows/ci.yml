@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest  # pywinauto needs Windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+      - name: Install (dev extras plus numpy for the audio tests; no microphone, model or tts packages)
+        run: pip install -e ".[dev]" numpy
+      - name: Ruff
+        run: ruff check iris tests
+      - name: Mypy
+        run: mypy
+      - name: Tests with coverage
+        run: pytest -q --cov=iris --cov-report=term

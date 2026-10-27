@@ -9,10 +9,11 @@ import sys
 import threading
 import types
 
-import numpy as np
+import pytest
 
 from iris.voice import FRAME, RATE, Speaker, Voice, VoiceSession, WakeWord
 
+np = pytest.importorskip("numpy")  # synthetic-audio tests need real numpy; CI installs only [dev]
 
 # --- openwakeword fake -------------------------------------------------------
 
@@ -324,7 +325,7 @@ def test_session_enter_survives_a_race_between_drop_and_reput(monkeypatch):
     s = VoiceSession(speaker=_StubSpeaker())
     with s:
         q = s._frames
-        for i in range(1024):  # fill to capacity so put_nowait raises Full
+        for _ in range(1024):  # fill to capacity so put_nowait raises Full
             q.put(np.zeros(FRAME, dtype="float32"))
 
         def racy_get():

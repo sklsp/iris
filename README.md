@@ -1,8 +1,63 @@
 # Iris
 
+[![CI](https://github.com/sklsp/Iris/actions/workflows/ci.yml/badge.svg)](https://github.com/sklsp/Iris/actions/workflows/ci.yml)
+
+Python 3.11+ . Windows . 300 tests . 96% coverage
+
+## What it is
+
 A local voice agent that operates this Windows PC. You say what you want; Iris reads the screen through
 Windows UI Automation, picks tools with a local LLM (Qwen in LM Studio), asks before it changes anything,
 and answers out loud. No cloud, no cost per command. See [PLAN.md](PLAN.md) for where it is going.
+
+## What it shows
+
+- Local LLM tool calling: Qwen 3.8 27B in LM Studio picks the tools and fills their arguments
+- Windows UI Automation instead of screenshots: Iris reads named controls, not pixels
+- Risk tiers enforced in code with tests: safe / confirm / never, escalating with the arguments
+- Wake word and streaming TTS: openWakeWord and faster-whisper in, SAPI or Kokoro out
+- An eval harness: 50 dry-run tasks that measure how well the model picks tools
+- The design decisions, with reasons: [DESIGN.md](DESIGN.md), UI Automation over pixels, tiers in code, untrusted screen text, barge-in
+
+```mermaid
+flowchart LR
+  Mic[Microphone] --> Wake[Wake word] --> STT[faster-whisper]
+  STT --> Agent
+  Agent <--> LLM[Qwen in LM Studio]
+  Agent --> Tiers{Risk tier}
+  Tiers -->|safe| Tools
+  Tiers -->|confirm| Ask[Ask Jay] --> Tools
+  Tiers -->|never| Refuse[Refuse]
+  Tools --> UIA[Windows UI Automation]
+  Agent --> TTS[Speech] --> Speaker
+```
+
+## Risk tiers
+
+| Tool | Tier | Escalates when |
+|---|---|---|
+| system_status | safe |  |
+| gpu_check | safe |  |
+| comfy_status | safe |  |
+| lmstudio_models | safe |  |
+| followups | safe |  |
+| journal_today | safe |  |
+| list_windows | safe |  |
+| read_window | safe |  |
+| open_app | safe |  |
+| click | confirm | the control is named like Send, Buy, Pay or Delete (never) |
+| type_text | confirm | it types into a field named after sending, paying, passwords or deleting (never) |
+| press_keys | confirm | {ENTER} in a mail/chat window such as Outlook or WhatsApp (never) |
+| focus_window | safe |  |
+| scroll | safe |  |
+| open_url | safe |  |
+| trash_file | confirm | the path is home or W:/ itself, outside them, or the Recycle Bin (never) |
+| restore_trash | safe |  |
+| agents_status | safe |  |
+| queue_list | safe |  |
+| queue_add | confirm |  |
+| queue_take | confirm |  |
+| concept_sites | safe |  |
 
 ## Run
 
@@ -180,10 +235,13 @@ Iris uses.
 | `IRIS_KOKORO_DIR` | `~/.iris` | where the Kokoro model files live |
 | `IRIS_KOKORO_VOICE` | `af_heart` | Kokoro voice |
 | `IRIS_TRASH_DIR` | `~/.iris/trash` | Iris's undoable trash |
+| `IRIS_TRASH_ROOTS` | home and W:/ | roots trash_file may move files from, ';' separated; the home folder is always included |
 | `IRIS_AGENTS_TOML` | `iris/agents.toml` | which repos the agent manager watches |
+| `IRIS_REPOS` | the four built-in repo paths | repo paths for the agent manager, ';' separated; used when agents.toml has no repos |
 | `IRIS_QUEUE` | `~/.iris/queue.json` | the agent manager's prompt queue |
 | `IRIS_CONCEPTKIT_DIR` | `W:/conceptkit` | where concept_sites runs conceptkit |
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
+| `IRIS_LMS_BIN` | lms on PATH | where the model control finds the LM Studio CLI |
 | `IRIS_SESSIONS_DB` | `~/.iris/sessions.db` | where the Sessions tab reads its rows from |
 | `IRIS_CLAUDE_DIR` | `~/.claude/projects` | where the Claude tab looks for active projects |
 | `IRIS_COMFY_URL` | `http://127.0.0.1:8188` | where comfy_status looks |

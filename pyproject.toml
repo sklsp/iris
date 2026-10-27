@@ -1,14 +1,47 @@
 [project]
 name = "iris"
-version = "0.1.0"
+version = "0.2.0"
 description = "A local voice agent that operates this Windows PC through UI Automation."
+readme = "README.md"
+authors = [{name = "skl"}]
+license = {text = "MIT"}
+keywords = ["voice agent", "ui automation", "local llm", "windows", "agents"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: Microsoft :: Windows",
+    "License :: OSI Approved :: MIT License",
+]
 requires-python = ">=3.11"
 dependencies = ["pywinauto>=0.6.9", "psutil>=5.9"]
+
+[project.urls]
+Repository = "https://github.com/sklsp/Iris"
 
 [project.optional-dependencies]
 voice = ["faster-whisper>=1.0", "sounddevice>=0.4", "numpy", "pyttsx3>=2.90", "openwakeword>=0.6"]
 tts = ["kokoro-onnx>=0.6"]  # optional Kokoro TTS (IRIS_TTS=kokoro); SAPI is the default and needs nothing
-dev = ["pytest"]
+dev = ["pytest", "pytest-cov", "ruff", "mypy"]
 
 [tool.setuptools]
 packages = ["iris"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.mypy]
+files = ["iris"]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[tool.coverage.run]
+source = ["iris"]
+
+[tool.coverage.report]
+fail_under = 94
+show_missing = true

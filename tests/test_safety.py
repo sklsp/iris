@@ -47,7 +47,7 @@ CLICK_TIER = [
 
 
 @pytest.mark.parametrize("args, expected", CLICK_TIER, ids=[str(a["control"]) for a, _ in CLICK_TIER])
-def test_click_tier(args, expected):
+def test_click_escalates_to_never_when_the_control_says_send_pay_or_password(args, expected):
     assert tools._click_tier(args) == expected
 
 
@@ -63,7 +63,7 @@ TYPE_TIER = [
 
 
 @pytest.mark.parametrize("args, expected", TYPE_TIER, ids=[str(a["into"]) for a, _ in TYPE_TIER])
-def test_type_tier(args, expected):
+def test_type_escalates_to_never_on_password_order_or_payment_fields(args, expected):
     assert tools._type_tier(args) == expected
 
 
@@ -83,7 +83,7 @@ PRESS_KEYS_TIER = [
 
 @pytest.mark.parametrize("args, expected", PRESS_KEYS_TIER,
                          ids=[f"{a['keys']}@{a['window']}" for a, _ in PRESS_KEYS_TIER])
-def test_press_keys_tier(args, expected):
+def test_pressing_enter_in_a_mail_or_chat_window_is_never(args, expected):
     assert tools._press_keys_tier(args) == expected
 
 
@@ -99,7 +99,7 @@ TRASH_TIER = [
 
 
 @pytest.mark.parametrize("path, expected", TRASH_TIER, ids=[p.replace("\\", "/") for p, _ in TRASH_TIER])
-def test_trash_tier(path, expected, monkeypatch):
+def test_trash_allows_files_under_the_roots_and_refuses_everything_else(path, expected, monkeypatch):
     monkeypatch.delenv("IRIS_TRASH_DIR", raising=False)  # keep the default trash dir deterministic
     assert tools._trash_tier({"path": path}) == expected
 

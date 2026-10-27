@@ -304,6 +304,23 @@ def test_unknown_tool_returns_an_error_and_is_journaled(tmp_path):
                     "tier": "unknown", "outcome": "unknown"}
 
 
+def test_bad_arguments_are_journaled_as_error_with_bad_args(tmp_path):
+    ran = []
+
+    def fn(what):
+        ran.append(what)
+        return "noted"
+
+    llm = _ScriptedLLM(_confirm_call("act"), _answer("I cannot do that."))
+    tool = tools.Tool("act", "", {"what": "string"}, ["what"], tools.SAFE, fn)
+    Agent(llm, _confirm_yes, Journal(tmp_path / "j.jsonl"), {"act": tool}).handle("do it")
+    assert ran == []  # the tool fn was never called
+    lines = _tool_lines(tmp_path)
+    line = dict(lines[0])
+    line.pop("t")
+    assert line["outcome"] == "error" and line["error_kind"] == "bad_args"
+
+
 
 
 

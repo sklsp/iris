@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import time
 from collections.abc import Callable
@@ -65,6 +66,11 @@ class Agent:
         if tier == CONFIRM and not self.confirm(_describe(call.name, call.args)):
             self.journal.log(**entry, outcome="declined")
             return "declined: Jay said no. Do not retry this action."
+        try:
+            inspect.signature(tool.fn).bind(**call.args)
+        except TypeError as exc:  # wrong or missing keywords: fn is never called
+            self.journal.log(**entry, outcome="error", error=repr(exc), error_kind="bad_args")
+            return f"error: {exc}"
         try:
             result = tool.fn(**call.args)
             self.journal.log(**entry, outcome="ok", result=result[:500])

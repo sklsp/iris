@@ -1,6 +1,6 @@
 - [x] S1. unknown tool calls are journaled (418 passed in 17.87s)
 - [x] S2. the eval counts unknown tool calls (419 passed in 18.68s)
-- [ ] S3. a malformed tool call is journaled too
+- [x] S3. a malformed tool call is journaled too (420 passed in 20.36s)
 - [ ] S4. a shared lms runner for tools
 - [ ] S5. lmstudio_load
 - [ ] S6. lmstudio_unload, never the model Iris runs on

@@ -209,6 +209,21 @@ def test_run_task_result_carries_category(tmp_path):
     assert (r.category, r.passed) == ("files", True)
 
 
+def test_run_task_skips_broken_journal_lines(tmp_path):
+    task = ev.Task(id="t10", request="open kladblok")
+    # Journal appends, so the broken line from a crashed run stays in the file:
+    (tmp_path / "t10.jsonl").write_text("not json from a crashed run\n", encoding="utf-8")
+    r = ev.run_task(ScriptedLLM(call("open_app"), answer("Klaar.")), task, tmp_path)
+    assert (r.passed, r.calls) == (True, [("open_app", "ok")])
+
+
+def test_run_task_gives_up_after_max_steps(tmp_path):
+    task = ev.Task(id="t11", request="doe iets", max_calls=12)
+    llm = ScriptedLLM(*[call("open_app")] * 12)   # never answers: hits MAX_STEPS
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["gave up"])
+
+
 # --- summary and report files --------------------------------------------------
 def _results():
     return [ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
@@ -398,11 +413,28 @@ def test_publish_newest_report_wins(tmp_path):
     assert "old-model" not in text and "080000" not in text
 
 
+def test_publish_without_reports(tmp_path, capsys):
+    rc = ev.main(["publish", "--results", str(tmp_path / "empty"), "--readme", str(tmp_path / "README.md")])
+    assert rc == 2 and "no reports" in capsys.readouterr().out
+
+
 def test_eval_command_unknown_only_id(tmp_path, capsys):
     tasks_file = tmp_path / "tasks.toml"
     tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n', encoding="utf-8")
     rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--only", "x"])
     assert rc == 2 and "unknown task: x" in capsys.readouterr().out
+
+
+def test_eval_command_only_filters_tasks(tmp_path, monkeypatch):
+    tasks_file = tmp_path / "tasks.toml"
+    text = ('[[task]]\nid = "a"\nrequest = "Hoi"\n\n'
+            '[[task]]\nid = "b"\nrequest = "Hallo"\n')
+    tasks_file.write_text(text, encoding="utf-8")
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--only", "a"])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a"]
 
 
 

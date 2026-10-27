@@ -20,7 +20,7 @@
 - [x] S20. eval results stay out of git (478 passed in 16.40s; found: the eval/results/ folder does not exist on disk and nothing under it is tracked - `git ls-files` shows only eval/tasks.toml under eval/, so no .gitkeep exception was needed; added the line `eval/results/` to .gitignore (line 7) and verified with git check-ignore against a fake report path, which reports .gitignore:7 as the matching rule; tests/test_eval.py gains test_results_folder_is_git_ignored, which asserts the exact line is present in .gitignore using the same Path(__file__).resolve().parents[1] repo-root pattern as test_shipped_tasks_load)
 - [x] S21. a sample report for the docs (478 passed in 16.08s)
 - [x] S22. the dashboard Eval tab shows categories (480 passed in 16.45s)
-- [ ] S23. eval code under full coverage
+- [x] S23. eval code under full coverage (before 97%, after 100%; missing lines were all real behaviour, not argparse plumbing - four new tests in tests/test_eval.py: test_run_task_skips_broken_journal_lines pre-seeds a non-JSON line into the journal file (Journal appends) and asserts run_task still grades the task from the valid lines; test_run_task_gives_up_after_max_steps scripts 12 tool-call replies so the agent loop exhausts MAX_STEPS, journaled gave_up is picked up and reasons == ["gave up"]; test_publish_without_reports runs publish on an empty results dir and asserts rc 2 plus "no reports"; test_eval_command_only_filters_tasks monkeypatches LMStudio/effective_model like the other CLI tests, runs main with --only a over two tasks and asserts only task a is in the report. 484 passed in 16.15s)
 - [ ] S24. README for the new skills
 - [ ] S25. PLAN.md progress
 - [ ] S26. CHANGELOG 0.3.0

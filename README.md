@@ -1,5 +1,9 @@
 # Iris
 
+[![CI](https://github.com/sklsp/Iris/actions/workflows/ci.yml/badge.svg)](https://github.com/sklsp/Iris/actions/workflows/ci.yml)
+
+Python 3.11+ . Windows . 300 tests . 96% coverage
+
 A local voice agent that operates this Windows PC. You say what you want; Iris reads the screen through
 Windows UI Automation, picks tools with a local LLM (Qwen in LM Studio), asks before it changes anything,
 and answers out loud. No cloud, no cost per command. See [PLAN.md](PLAN.md) for where it is going.

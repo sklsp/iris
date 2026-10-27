@@ -161,6 +161,26 @@ def lmstudio_load(model: str) -> str:
     return f"loaded {model}"
 
 
+def lmstudio_unload(model: str) -> str:
+    """Unload a model from LM Studio by its id, or all of them with "all". Asks Jay first."""
+    from iris.dashboard import ModelActionError, model_action
+
+    try:
+        model_action("unload", {"model": model})
+    except ModelActionError as exc:
+        return f"error: {exc}"
+    return f"unloaded {model}"
+
+
+def _unload_tier(args: dict) -> str:
+    from iris.llm import effective_model  # read at call time so a model switch applies at once
+
+    model = args.get("model")
+    if model == "all" or model == effective_model():
+        return NEVER
+    return CONFIRM
+
+
 def followups(today: str = "") -> str:
     """Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note."""
     import csv
@@ -512,6 +532,9 @@ TOOLS = {t.name: t for t in [
     Tool("lmstudio_load",
          "Load a model in LM Studio by its id. Ask first: loading takes VRAM and can take minutes.",
          {"model": S}, ["model"], CONFIRM, lmstudio_load),
+    Tool("lmstudio_unload",
+         "Unload a model from LM Studio by its id, or all of them with \"all\". Asks Jay first.",
+         {"model": S}, ["model"], CONFIRM, lmstudio_unload, _unload_tier),
     Tool("followups",
          "Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note. Read only.",
          {}, [], SAFE, followups),

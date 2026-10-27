@@ -3,7 +3,7 @@
 - [x] S3. a malformed tool call is journaled too (420 passed in 20.36s)
 - [x] S4. a shared lms runner for tools (importing iris.dashboard starts no server and opens no sockets: top level holds only constants, locks and defs; model_action stays put) (420 passed in 20.23s)
 - [x] S5. lmstudio_load (426 passed in 20.48s)
-- [ ] S6. lmstudio_unload, never the model Iris runs on
+- [x] S6. lmstudio_unload, never the model Iris runs on (436 passed in 17.63s)
 - [ ] S7. the GPU check before a load
 - [ ] S8. comfy workflows folder
 - [ ] S9. comfy_queue

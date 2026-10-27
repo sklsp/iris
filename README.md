@@ -41,6 +41,7 @@ flowchart LR
 | comfy_status | safe |  |
 | lmstudio_models | safe |  |
 | lmstudio_load | confirm |  |
+| lmstudio_unload | confirm | the model is the one Iris runs on, or all |
 | followups | safe |  |
 | journal_today | safe |  |
 | list_windows | safe |  |
@@ -95,6 +96,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | comfy_status | safe | is ComfyUI running, its version and its queue |
 | lmstudio_models | safe | which LM Studio models are loaded; never loads or unloads |
 | lmstudio_load | confirm | load a model in LM Studio by its id, asks first |
+| lmstudio_unload | confirm | unload a model from LM Studio by its id, or all of them; never unloads the model Iris runs on |
 | followups | safe | leads from the leadscan CRM due for a follow-up today |
 | journal_today | safe | today's requests and tool calls by outcome, from the journal |
 | list_windows | safe | titles of the open windows |

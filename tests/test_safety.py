@@ -191,6 +191,17 @@ def test_never_tool_by_escalation_is_refused_without_asking(tmp_path):
     _assert_refused(tmp_path, llm, ran, asked)
 
 
+def test_unloading_the_model_iris_runs_on_is_refused_without_asking(tmp_path, monkeypatch):
+    monkeypatch.setattr("iris.llm.effective_model", lambda: "qwen3.8-27b")  # the model Iris talks to right now
+    ran, asked = [], []
+    llm = _ScriptedLLM(_confirm_call("lmstudio_unload", model="qwen3.8-27b"), _answer("Do it yourself."))
+    tool = tools.TOOLS["lmstudio_unload"]  # the real tool: CONFIRM base tier, escalated by its argument
+    agent = Agent(llm, lambda q: asked.append(q) or True, Journal(tmp_path / "j.jsonl"),
+                  {"lmstudio_unload": tool})
+    agent.handle("unload it")
+    _assert_refused(tmp_path, llm, ran, asked)
+
+
 # --- screen text cannot change a tier ---------------------------------------------
 def test_screen_text_cannot_change_a_tier(tmp_path):
     ran, asked = [], []

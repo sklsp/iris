@@ -373,6 +373,45 @@ def test_lmstudio_load_tier_is_confirm():
     assert tools.TOOLS["lmstudio_load"].tier == tools.CONFIRM
 
 
+# --- lmstudio_unload -------------------------------------------------------------
+UNLOAD_TIER = [
+    ({"model": "all"}, tools.NEVER),  # unloading everything takes the model Iris runs on too
+    ({"model": "qwen3.8-27b"}, tools.NEVER),  # the model Iris talks to right now
+    ({"model": "llama-3.1-8b"}, tools.CONFIRM),  # a different model: just asks first
+]
+
+
+@pytest.mark.parametrize("args, expected", UNLOAD_TIER, ids=[a["model"] for a, _ in UNLOAD_TIER])
+def test_unload_escalates_to_never_for_all_or_the_running_model(monkeypatch, args, expected):
+    monkeypatch.setattr("iris.llm.effective_model", lambda: "qwen3.8-27b")
+    assert tools._unload_tier(args) == expected
+
+
+def test_lmstudio_unload_returns_unloaded_text(monkeypatch):
+    calls = []
+
+    def fake(action, body):
+        calls.append((action, body))
+        return {"action": action}
+
+    monkeypatch.setattr("iris.dashboard.model_action", fake)
+    assert tools.lmstudio_unload("llama-3.1-8b") == "unloaded llama-3.1-8b"
+    assert calls == [("unload", {"model": "llama-3.1-8b"})]
+
+
+def test_lmstudio_unload_error_is_returned_not_raised(monkeypatch):
+    from iris.dashboard import ModelActionError
+
+    def fake(action, body):
+        raise ModelActionError(400, "unknown model: nope")
+
+    monkeypatch.setattr("iris.dashboard.model_action", fake)
+    assert tools.lmstudio_unload("nope") == "error: unknown model: nope"
+
+
+def test_lmstudio_unload_tier_is_confirm():
+    assert tools.TOOLS["lmstudio_unload"].tier == tools.CONFIRM
+
 
 # --- followups -----------------------------------------------------------------
 PIPELINE_CSV = """osm,name,status,note,next,tier,since,demo,updated

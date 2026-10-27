@@ -7,7 +7,7 @@
 - [x] S7. the GPU check before a load (438 passed in 17.06s)
 - [x] S8. comfy workflows folder (446 passed in 17.12s)
 - [x] S9. comfy_queue (454 passed in 16.94s)
-- [ ] S10. comfy_queue checks the GPU first
+- [x] S10. comfy_queue checks the GPU first (456 passed in 16.99s)
 - [ ] S11. eval tasks for the new skills
 - [ ] S12. safety tests for the new skills
 - [ ] S13. DESIGN.md and SECURITY.md for the new skills

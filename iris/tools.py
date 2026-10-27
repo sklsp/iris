@@ -159,6 +159,9 @@ def comfy_queue(workflow: str) -> str:
         prompt = json.loads(path.read_text(encoding="utf-8"))
     except ValueError:
         return f"error: could not read {workflow}.json"
+    guards = gpu_guard(system_data(), 8000)  # the same check as item 7; nvidia-smi runs once
+    if not any(g["ok"] for g in guards):
+        return "error: the GPU is busy or hot; try again later"
     base = os.environ.get("IRIS_COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
     req = urllib.request.Request(
         base + "/prompt", data=json.dumps({"prompt": prompt}).encode(),

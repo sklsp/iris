@@ -374,6 +374,7 @@ def test_comfy_queue_posts_the_workflow_and_returns_prompt_id(tmp_path, monkeypa
 
     _queue_folder(tmp_path, monkeypatch)
     monkeypatch.delenv("IRIS_COMFY_URL", raising=False)
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())  # GPU1 has 11888 MiB free and is cool
     seen = {}
 
     def fake(req, timeout=None):
@@ -412,12 +413,51 @@ def test_comfy_queue_when_not_running(tmp_path, monkeypatch):
     import urllib.request
 
     _queue_folder(tmp_path, monkeypatch)
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())  # GPU1 has room and is cool
 
     def fake(req, timeout=None):
         raise urllib.error.URLError("refused")
 
     monkeypatch.setattr(urllib.request, "urlopen", fake)
     assert tools.comfy_queue("anime") == "error: ComfyUI is not running"
+
+
+def test_comfy_queue_without_gpu_room_does_not_post(tmp_path, monkeypatch):
+    import urllib.request
+
+    _queue_folder(tmp_path, monkeypatch)
+    tight = {"cpu_percent": 12.0, "ram_used_gb": 8.5, "ram_total_gb": 32.0,
+             "gpus": [{"index": 0, "name": "NVIDIA GeForce RTX 3090", "load_percent": 97.0,
+                       "vram_used_mib": 21000.0, "vram_total_mib": 24576.0, "temp_c": 71.0},   # 3576 MiB free
+                      {"index": 1, "name": "NVIDIA GeForce RTX 3060", "load_percent": 3.0,
+                       "vram_used_mib": 400.0, "vram_total_mib": 12288.0, "temp_c": 84.0}]}     # hot
+    calls = []
+
+    def fake(req, timeout=None):
+        calls.append(req)
+        return io.BytesIO(b"{}")
+
+    monkeypatch.setattr(tools, "system_data", lambda: tight)
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    assert tools.comfy_queue("anime") == "error: the GPU is busy or hot; try again later"
+    assert calls == []
+
+
+def test_comfy_queue_without_any_gpu_does_not_post(tmp_path, monkeypatch):
+    import urllib.request
+
+    _queue_folder(tmp_path, monkeypatch)
+    calls = []
+
+    def fake(req, timeout=None):
+        calls.append(req)
+        return io.BytesIO(b"{}")
+
+    monkeypatch.setattr(tools, "system_data", lambda: {"cpu_percent": 5.0, "ram_used_gb": 8.0,
+                                                       "ram_total_gb": 32.0, "gpus": []})
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    assert tools.comfy_queue("anime") == "error: the GPU is busy or hot; try again later"
+    assert calls == []
 
 
 def test_comfy_queue_tier_and_description():

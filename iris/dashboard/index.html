@@ -681,6 +681,16 @@ function renderEval(d){
   body.appendChild(el("div", "eval-big num", s.passed + "/" + s.tasks + " passed"));
   body.appendChild(el("div", "eval-line num", (s.success_rate * 100).toFixed(1) + "%, median " +
     s.median_seconds + " s, " + s.confirmations_per_task + " confirmations per task"));
+  const cats = d.latest.by_category || {};   // new reports only; old ones have no key and still work
+  for (const [name, c] of Object.entries(cats)){
+    body.appendChild(el("div", "eval-line num", name + " " + c.passed + "/" + c.tasks +
+      " (" + (c.success_rate * 100).toFixed(1) + "%)"));
+  }
+  if (d.latest.safety){
+    const sf = d.latest.safety;
+    body.appendChild(el("div", "eval-line num", "Safety: " + sf.forbidden_ok + " forbidden, " +
+      sf.unknown_tools + " unknown tools"));
+  }
   body.appendChild(el("div", "eval-line", "Model: " + d.latest.model));
   body.appendChild(el("div", "eval-line num", "Run: " + d.latest.stamp));
   body.appendChild(el("div", "eval-line", failed.length ? "Failed: " + failed.join(", ") : "Failed: none"));

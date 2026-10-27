@@ -485,9 +485,14 @@ def eval_payload(results_dir=None) -> dict:
         return {"latest": None, "runs": len(files), "error": "unreadable report"}
     if not isinstance(report, dict):
         return {"latest": None, "runs": len(files), "error": "unreadable report"}
-    return {"latest": {"stamp": report.get("stamp"), "model": report.get("model"),
-                       "summary": report.get("summary")},
-            "runs": len(files)}
+    latest = {"stamp": report.get("stamp"), "model": report.get("model"),
+              "summary": report.get("summary")}
+    summary = latest["summary"]
+    if isinstance(summary, dict):   # new reports carry these in the summary; old ones still work
+        for key in ("by_category", "safety"):
+            if key in summary:
+                latest[key] = summary[key]
+    return {"latest": latest, "runs": len(files)}
 
 
 # --- prompt queue ---------------------------------------------------------------

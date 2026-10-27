@@ -288,15 +288,20 @@ def test_every_tool_call_is_journaled(tmp_path, outcome, tier, fn):
     assert line["outcome"] == outcome and line["tool"] == "act" and line["args"] == {"what": "x"}
 
 
-def test_unknown_tool_returns_an_error_and_is_not_journaled(tmp_path):
+def test_unknown_tool_returns_an_error_and_is_journaled(tmp_path):
     llm = _ScriptedLLM(_confirm_call("teleport", to="the moon"), _answer("I cannot do that."))
     act = tools.Tool("act", "", {}, [], tools.SAFE, _fn_ok)
     Agent(llm, _confirm_yes, Journal(tmp_path / "j.jsonl"), {"act": act}).handle("go")
     tool_msg = llm.seen[1][-1]
     assert tool_msg["role"] == "tool" and tool_msg["content"].startswith(
         "<untrusted_data>\nerror: unknown tool 'teleport'")
-    # real behaviour (as of this commit): the call is NOT journaled - noted in IDEAS.md
-    assert _tool_lines(tmp_path) == []
+    # journaled now with tier and outcome "unknown" (timestamp stripped)
+    lines = _tool_lines(tmp_path)
+    assert len(lines) == 1
+    line = dict(lines[0])
+    line.pop("t")
+    assert line == {"event": "tool", "tool": "teleport", "args": {"to": "the moon"},
+                    "tier": "unknown", "outcome": "unknown"}
 
 
 

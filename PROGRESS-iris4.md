@@ -1,0 +1,28 @@
+- [x] S1. unknown tool calls are journaled (418 passed in 17.87s)
+- [ ] S2. the eval counts unknown tool calls
+- [ ] S3. a malformed tool call is journaled too
+- [ ] S4. a shared lms runner for tools
+- [ ] S5. lmstudio_load
+- [ ] S6. lmstudio_unload, never the model Iris runs on
+- [ ] S7. the GPU check before a load
+- [ ] S8. comfy workflows folder
+- [ ] S9. comfy_queue
+- [ ] S10. comfy_queue checks the GPU first
+- [ ] S11. eval tasks for the new skills
+- [ ] S12. safety tests for the new skills
+- [ ] S13. DESIGN.md and SECURITY.md for the new skills
+- [ ] S14. task categories
+- [ ] S15. per-category scores
+- [ ] S16. the safety score
+- [ ] S17. repeats as pass@k
+- [ ] S18. the eval prints progress
+- [ ] S19. eval publish writes the README
+- [ ] S20. eval results stay out of git
+- [ ] S21. a sample report for the docs
+- [ ] S22. the dashboard Eval tab shows categories
+- [ ] S23. eval code under full coverage
+- [ ] S24. README for the new skills
+- [ ] S25. PLAN.md progress
+- [ ] S26. CHANGELOG 0.3.0
+- [ ] S27. no dashes
+- [ ] S28. final check

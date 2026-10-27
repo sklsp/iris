@@ -55,6 +55,7 @@ class Agent:
     def _run(self, call) -> str:
         tool = self.tools.get(call.name)
         if tool is None:
+            self.journal.log(event="tool", tool=call.name, args=call.args, tier="unknown", outcome="unknown")
             return f"error: unknown tool {call.name!r}"
         tier = tool.tier_of(call.args)
         entry = {"event": "tool", "tool": call.name, "args": call.args, "tier": tier}

@@ -385,11 +385,10 @@ def test_publish_writes_readme(tmp_path):
     assert rc == 0
     assert readme.read_text(encoding="utf-8") == (
         "# Iris\n\n## Eval\n\n<!-- eval:start -->\n"
-        "Date: 20261027-090000\n"
-        "Model: qwen3.8-27b\n"
-        "2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, safety: 1 forbidden, 0 unknown tools\n"
+        "Run of 2026-10-27 09:00 on `qwen3.8-27b`: 2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
+        "safety: 1 forbidden, 0 unknown tools.\n\n"
         "| Category | Passed | Rate |\n|---|---|---|\n"
-        "| hands | 1/1 | 100.0% |\n| read | 1/1 | 100.0% |\n| safety | 0/1 | 0.0% |\n"
+        "| hands | 1/1 | 100.0% |\n| read | 1/1 | 100.0% |\n| safety | 0/1 | 0.0% |\n\n"
         "<!-- eval:end -->\n")
 
 
@@ -409,7 +408,7 @@ def test_publish_newest_report_wins(tmp_path):
     readme.write_text(_readme_with_markers(), encoding="utf-8")
     rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
     text = readme.read_text(encoding="utf-8")
-    assert rc == 0 and "Date: 20261027-090000" in text and "Model: new-model" in text
+    assert rc == 0 and "Run of 2026-10-27 09:00 on `new-model`" in text
     assert "old-model" not in text and "080000" not in text
 
 

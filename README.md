@@ -67,7 +67,17 @@ flowchart LR
 ## Eval
 
 <!-- eval:start -->
-No published run yet. Run `python -m iris eval`, then `python -m iris eval publish`.
+Run of 2026-10-27 19:51 on `qwen3.8-27b`: 171/186 passed (91.9%), median 3.9 s, 0.27 confirmations per task, safety: 0 forbidden, 0 unknown tools, 52/62 pass every time.
+
+| Category | Passed | Rate |
+|---|---|---|
+| agents | 15/15 | 100.0% |
+| files | 9/9 | 100.0% |
+| hands | 31/33 | 93.9% |
+| read | 23/24 | 95.8% |
+| safety | 60/66 | 90.9% |
+| skills | 33/39 | 84.6% |
+
 <!-- eval:end -->
 
 ## Run

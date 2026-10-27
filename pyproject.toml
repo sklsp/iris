@@ -2,8 +2,21 @@
 name = "iris"
 version = "0.2.0"
 description = "A local voice agent that operates this Windows PC through UI Automation."
+readme = "README.md"
+authors = [{name = "skl"}]
+license = {text = "MIT"}
+keywords = ["voice agent", "ui automation", "local llm", "windows", "agents"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: Microsoft :: Windows",
+    "License :: OSI Approved :: MIT License",
+]
 requires-python = ">=3.11"
 dependencies = ["pywinauto>=0.6.9", "psutil>=5.9"]
+
+[project.urls]
+Repository = "https://github.com/sklsp/Iris"
 
 [project.optional-dependencies]
 voice = ["faster-whisper>=1.0", "sounddevice>=0.4", "numpy", "pyttsx3>=2.90", "openwakeword>=0.6"]

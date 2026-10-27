@@ -39,7 +39,7 @@ TOTAL                         1554     69    96%
 ```
 - [x] P8. the dashboard and eval under the gates (verified, nothing to fix: iris/dashboard has __init__.py; mypy -v "Found source" lists all 10 files incl. iris\dashboard\__init__.py as module iris.dashboard, ruff --show-files includes it too; 300 passed in 14.71s)
 - [x] P9. GitHub Actions CI (one job test on windows-latest, py3.12, dev extras only; YAML validated with a parse check via the already-installed yaml module 6.0.3 - triggers, permissions, concurrency and all seven steps asserted; 300 passed in 14.68s)
-- [ ] P10. the suite without the voice extras
+- [x] P10. the suite without the voice extras (only numpy was imported at module level - test_voice.py and test_voice_behaviour.py; both now use `np = pytest.importorskip("numpy")` after their import blocks so ruff E402 stays quiet; normal: 300 passed in 14.27s, without extras (sitecustomize setting the six to None): 263 passed, 2 skipped in 13.38s)
 - [ ] P11. README badges and the CI line
 - [ ] P12. every tool has a known tier
 - [ ] P13. argument escalation, as a table

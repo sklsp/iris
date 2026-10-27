@@ -9,9 +9,11 @@ import sys
 import threading
 import types
 
-import numpy as np
+import pytest
 
 from iris.voice import FRAME, RATE, Speaker, Voice, VoiceSession, WakeWord
+
+np = pytest.importorskip("numpy")  # synthetic-audio tests need real numpy; CI installs only [dev]
 
 # --- openwakeword fake -------------------------------------------------------
 

@@ -244,7 +244,10 @@ def publish(results_dir, readme_path) -> int:
         return 2
     data = json.loads(files[-1].read_text(encoding="utf-8"))
     s = data["summary"]
-    block = [f"Date: {data['stamp']}", f"Model: {data['model']}", _summary_line(s)] + _category_table(s)
+    st = data["stamp"]  # YYYYMMDD-HHMMSS
+    when = f"{st[:4]}-{st[4:6]}-{st[6:8]} {st[9:11]}:{st[11:13]}"
+    # blank lines around the table: GitHub only renders a table that does not touch a paragraph
+    block = [f"Run of {when} on `{data['model']}`: {_summary_line(s)}.", ""] + _category_table(s) + [""]
 
     text = Path(readme_path).read_text(encoding="utf-8")
     start, end = "<!-- eval:start -->", "<!-- eval:end -->"

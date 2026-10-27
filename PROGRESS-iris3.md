@@ -41,7 +41,7 @@ TOTAL                         1554     69    96%
 - [x] P9. GitHub Actions CI (one job test on windows-latest, py3.12, dev extras only; YAML validated with a parse check via the already-installed yaml module 6.0.3 - triggers, permissions, concurrency and all seven steps asserted; 300 passed in 14.68s)
 - [x] P10. the suite without the voice extras (only numpy was imported at module level - test_voice.py and test_voice_behaviour.py; both now use `np = pytest.importorskip("numpy")` after their import blocks so ruff E402 stays quiet; normal: 300 passed in 14.27s, without extras (sitecustomize setting the six to None): 263 passed, 2 skipped in 13.38s)
 - [x] P11. README badges and the CI line (badge links to the actions page; line reads `Python 3.11+ . Windows . 300 tests . 96% coverage` - 300 from the current suite, 96% TOTAL from item 7; " . " separators only)
-- [ ] P12. every tool has a known tier
+- [x] P12. every tool has a known tier (tests/test_safety.py: 22 tools x 3 parametrized checks - tier in SAFE/CONFIRM/NEVER, schema description starts with `[<tier>]`, required subset of params; base tiers listed below for item 19)
 - [ ] P13. argument escalation, as a table
 - [ ] P14. a declined action never runs
 - [ ] P15. a never action is never even asked
@@ -62,3 +62,10 @@ TOTAL                         1554     69    96%
 - [ ] P30. no dashes
 - [ ] P31. all gates and coverage
 - [ ] P32. final check
+
+## Tool tiers (item 12)
+
+safe: system_status, gpu_check, comfy_status, lmstudio_models, followups, journal_today, list_windows, read_window, open_app, focus_window, scroll, open_url, restore_trash, agents_status, queue_list, concept_sites
+confirm: click, type_text, press_keys, trash_file, queue_add, queue_take
+never: (none)
+

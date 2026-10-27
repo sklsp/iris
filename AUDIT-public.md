@@ -6,7 +6,7 @@ history with `git log -p --all -S "api_key" / "token" / "secret"` (branches main
 plus one local Cline checkpoint ref). Nothing in this file was changed by this item; it is a list
 for Jay to decide on.
 
-**Bottom line: no real secret values were found anywhere — not in the working tree, not in any
+**Bottom line: no real secret values were found anywhere, not in the working tree, not in any
 commit.** Every key/token/secret/password/api hit below is a mechanism description, an LLM request
 parameter, or a fake test value. So there is nothing for BLOCKED-iris3.md.
 
@@ -74,8 +74,8 @@ tests/test_agents.py:63, 87, 91, 123, 128, 133; tests/test_dashboard.py:185, 190
 ## 3. Phone numbers and e-mail addresses
 
 - No phone numbers found (searched `+31`, the Dutch mobile pattern `06` + eight digits, and `tel:`).
-- eval/tasks.toml:217 — `mark@example.com` in a mail-task fixture ("Aan" field of an Outlook window).
-- tests/test_agents.py:32 — `iris@test.local` (git `user.email` set on a throwaway test repo).
+- eval/tasks.toml:217, `mark@example.com` in a mail-task fixture ("Aan" field of an Outlook window).
+- tests/test_agents.py:32, `iris@test.local` (git `user.email` set on a throwaway test repo).
 
 ## 4. Keys, tokens, secrets, passwords, api
 
@@ -83,7 +83,7 @@ No real secret values anywhere in the working tree or history. Every hit is one 
 
 1. **Dashboard token mechanism** (generated at runtime, never stored):
    iris/dashboard/__init__.py:254 (`secrets.compare_digest`), :605
-   (`server.token = secrets.token_urlsafe(32)` — a fresh random value on every start, injected into
+   (`server.token = secrets.token_urlsafe(32)`, a fresh random value on every start, injected into
    the page and required on every POST); placeholder `__IRIS_TOKEN__` in iris/dashboard/index.html;
    tests use the fake `"not-the-token"` (tests/test_dashboard.py:309).
 2. **LLM request parameter** `max_tokens: 4096`: body dict in iris/llm.py; tests/test_llm_behaviour.py.
@@ -93,7 +93,7 @@ No real secret values anywhere in the working tree or history. Every hit is one 
    regex at iris/tools.py:26; docs DESIGN.md:17, PLAN.md:22, README.md:49, 117, 210, SECURITY.md:19;
    eval task ids eval/tasks.toml:145, 349.
 5. **Fake fixture values**: "stuck on the API key" (tests/test_agents.py:75);
-   `file:///C:/secret.txt` (tests/test_tools.py:87 — a fake path in an unsafe-URL test).
+   `file:///C:/secret.txt` (tests/test_tools.py:87, a fake path in an unsafe-URL test).
 
 ## 5. Git history (`git log -p --all`)
 
@@ -107,7 +107,7 @@ No real secret values anywhere in the working tree or history. Every hit is one 
 | 7c7950b | iris/dashboard/__init__.py, PROGRESS-iris3.md | the `token: str = ""` type annotation on `_Server`; a note in the run log |
 | 0cdf363 | tests/test_llm_behaviour.py | `"max_tokens": 4096` request parameter |
 | a2631ce | hermes/llm.py | `max_tokens: 4096` (pre-rename name of the package, hermes → iris) |
-| 3138ae5 | .probe_iris_model.py, .probe_js.js | scratch probe files; the token is read from the page at runtime. Reachable only via the local ref `refs/cline/checkpoints/session_*/1` — not on any branch, so it will not be pushed when main/portfolio go public |
+| 3138ae5 | .probe_iris_model.py, .probe_js.js | scratch probe files; the token is read from the page at runtime. Reachable only via the local ref `refs/cline/checkpoints/session_*/1`; not on any branch, so it will not be pushed when main/portfolio go public |
 
 - `-S "secret"`: two commits:
 
@@ -126,7 +126,7 @@ No real secret values anywhere in the working tree or history. Every hit is one 
   `Repository = https://github.com/sklsp/Iris`; MIT is declared but there is no LICENSE file yet
   (IDEAS.md says Jay decides the license when Iris goes public).
 - **PROGRESS-iris3.md** is this run's log, committed to the repo; it contains `W:/` paths and other
-  project names — Jay may want to delete or clean it before publishing.
+  project names; Jay may want to delete or clean it before publishing.
 
 ## Left on purpose (item 28)
 

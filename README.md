@@ -17,7 +17,7 @@ and answers out loud. No cloud, no cost per command. See [PLAN.md](PLAN.md) for 
 - Risk tiers enforced in code with tests: safe / confirm / never, escalating with the arguments
 - Wake word and streaming TTS: openWakeWord and faster-whisper in, SAPI or Kokoro out
 - An eval harness: 50 dry-run tasks that measure how well the model picks tools
-- The design decisions, with reasons: [DESIGN.md](DESIGN.md) — UI Automation over pixels, tiers in code, untrusted screen text, barge-in
+- The design decisions, with reasons: [DESIGN.md](DESIGN.md), UI Automation over pixels, tiers in code, untrusted screen text, barge-in
 
 ```mermaid
 flowchart LR

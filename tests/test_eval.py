@@ -463,3 +463,8 @@ def test_compare_repeat_counts_per_task_id():
     b = {"results": [{"id": "x", "passed": True}]}
     assert ev.compare(a, b) == ["0/1 -> 1/1 tasks passed", "fixed: x", "same: 0"]
 
+
+def test_results_folder_is_git_ignored():
+    ignore = Path(__file__).resolve().parents[1] / ".gitignore"
+    assert "eval/results/" in ignore.read_text(encoding="utf-8").splitlines()
+

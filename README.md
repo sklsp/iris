@@ -4,9 +4,32 @@
 
 Python 3.11+ . Windows . 300 tests . 96% coverage
 
+## What it is
+
 A local voice agent that operates this Windows PC. You say what you want; Iris reads the screen through
 Windows UI Automation, picks tools with a local LLM (Qwen in LM Studio), asks before it changes anything,
 and answers out loud. No cloud, no cost per command. See [PLAN.md](PLAN.md) for where it is going.
+
+## What it shows
+
+- Local LLM tool calling: Qwen 3.8 27B in LM Studio picks the tools and fills their arguments
+- Windows UI Automation instead of screenshots: Iris reads named controls, not pixels
+- Risk tiers enforced in code with tests: safe / confirm / never, escalating with the arguments
+- Wake word and streaming TTS: openWakeWord and faster-whisper in, SAPI or Kokoro out
+- An eval harness: 50 dry-run tasks that measure how well the model picks tools
+
+```mermaid
+flowchart LR
+  Mic[Microphone] --> Wake[Wake word] --> STT[faster-whisper]
+  STT --> Agent
+  Agent <--> LLM[Qwen in LM Studio]
+  Agent --> Tiers{Risk tier}
+  Tiers -->|safe| Tools
+  Tiers -->|confirm| Ask[Ask Jay] --> Tools
+  Tiers -->|never| Refuse[Refuse]
+  Tools --> UIA[Windows UI Automation]
+  Agent --> TTS[Speech] --> Speaker
+```
 
 ## Run
 

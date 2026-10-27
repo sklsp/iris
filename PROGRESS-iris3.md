@@ -48,7 +48,7 @@ TOTAL                         1554     69    96%
 - [x] P16. screen text cannot change a tier (tests/test_safety.py: fake SAFE read_screen returns an injection string, the scripted LLM then asks for trash_file on C:/Windows; asserts the result went back wrapped in <untrusted_data>, the journal records exactly the tier _trash_tier gives that path, confirm called/not per that tier, and the fn never ran with confirm=no)
 - [x] P17. the trash only takes allowed paths (tests/test_safety.py: literal table of 8 rows for _trash_tier - home file CONFIRM, W:/ file CONFIRM, home itself NEVER, W:/ itself NEVER, C:/Windows/notepad.exe NEVER, .. escape resolving outside roots NEVER, recycle-bin path NEVER, relative path (CWD under home) CONFIRM; all expected tiers verified against the real function first; IRIS_TRASH_DIR + chdir to tmp_path for determinism)
 - [x] P18. every tool call is journaled (tests/test_safety.py: one Agent run per outcome - ok/error/declined/refused each leave exactly one journal line with the literal outcome and recorded args; unknown tool returns "error: unknown tool ..." to the model but is NOT journaled - real behaviour asserted, gap noted in IDEAS.md, no code change)
-- [ ] P19. README: the top for a reader in 60 seconds
+- [x] P19. README: the top for a reader in 60 seconds (README.md above "## Run" replaced with title + item-11 badges, one-paragraph "What it is", five-bullet "What it shows" - local LLM tool calling, UI Automation instead of screenshots, risk tiers in code with tests, wake word and streaming TTS, eval harness - and the mermaid flowchart from the item; everything from "## Run" down untouched)
 - [ ] P20. README: the risk tier table, checked by a test
 - [ ] P21. DESIGN.md
 - [ ] P22. SECURITY.md

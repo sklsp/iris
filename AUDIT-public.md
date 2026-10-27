@@ -128,3 +128,12 @@ No real secret values anywhere in the working tree or history. Every hit is one 
 - **PROGRESS-iris3.md** is this run's log, committed to the repo; it contains `W:/` paths and other
   project names — Jay may want to delete or clean it before publishing.
 
+## Left on purpose (item 28)
+
+No personal names remain in `iris/dashboard/` text, so nothing there is left on
+purpose. The only personal value found in the dashboard was the default of
+`IRIS_LMS_BIN` (`C:/Users/Jayde/.lmstudio/bin/lms.exe`, `__init__.py:139`); it was
+replaced by a PATH lookup for `lms`, which resolves to the same executable on Jay's
+PC, so behaviour is unchanged. The setting itself (env var name and its new default)
+is documented in the README settings table.
+

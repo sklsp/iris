@@ -27,7 +27,8 @@ and /api/iris/model {model}, which writes the model key of ~/.iris/settings.json
 Every POST must carry the X-Iris-Token header (a random token generated at server start
 and injected into the served page) and an Origin or Referer of this very dashboard;
 anything else is a 403. The model id must be one LM Studio reports right now, else 400.
-lms.exe runs as an argument list with no shell and a 600 s timeout; only one action
+lms.exe runs as an argument list with no shell and a 600 s timeout; the executable
+comes from IRIS_LMS_BIN or PATH. Only one action
 runs at a time (a second request gets 409); every action is logged to the journal.
 
 GET stays read-only everywhere: it never runs a tool or confirms an action, it opens
@@ -40,6 +41,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import shutil
 import sqlite3
 import subprocess
 import threading
@@ -136,7 +138,15 @@ def lmstudio_payload() -> dict:
 
 # --- model control (the only write the dashboard performs) ----------------------
 
-LMS_EXE = os.environ.get("IRIS_LMS_BIN", "C:/Users/Jayde/.lmstudio/bin/lms.exe")
+def _lms_exe() -> str:
+    """The lms executable, read at call time: IRIS_LMS_BIN when set, else lms on PATH.
+    Empty means none was found."""
+    exe = os.environ.get("IRIS_LMS_BIN", "").strip()
+    if not exe:
+        exe = shutil.which("lms") or ""
+    return exe
+
+
 LMS_TIMEOUT_SECONDS = 600   # big models can take minutes to load
 WRITE_ROUTES = ("/api/models/load", "/api/models/unload", "/api/iris/model")   # the only POST routes
 
@@ -154,7 +164,10 @@ class ModelActionError(Exception):
 
 def run_lms(args: list[str]) -> tuple[int, str]:
     """Run lms with an argument list. No shell, no user text in a command line."""
-    proc = subprocess.run([LMS_EXE] + args, capture_output=True, text=True,
+    exe = _lms_exe()
+    if not exe:
+        raise ModelActionError(503, "no lms executable found: set IRIS_LMS_BIN or put lms on PATH")
+    proc = subprocess.run([exe] + args, capture_output=True, text=True,
                           timeout=LMS_TIMEOUT_SECONDS)
     return proc.returncode, (proc.stderr or proc.stdout or "").strip()
 

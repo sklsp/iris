@@ -423,6 +423,32 @@ def test_lms_timeout_is_reported(srv, monkeypatch):
     assert code == 502 and "timed out" in body["error"]
 
 
+def test_lms_exe_comes_from_the_env_var(monkeypatch):
+    monkeypatch.setenv("IRIS_LMS_BIN", "C:/fake/lms.exe")
+    assert d._lms_exe() == "C:/fake/lms.exe"
+
+
+def test_lms_exe_falls_back_to_path_when_unset(monkeypatch):
+    monkeypatch.delenv("IRIS_LMS_BIN", raising=False)
+    monkeypatch.setattr(d.shutil, "which", lambda name: "C:/on/path/lms.exe")
+    assert d._lms_exe() == "C:/on/path/lms.exe"
+
+
+def test_lms_exe_is_empty_when_neither_env_var_nor_path(monkeypatch):
+    monkeypatch.delenv("IRIS_LMS_BIN", raising=False)
+    monkeypatch.setattr(d.shutil, "which", lambda name: None)
+    assert d._lms_exe() == ""
+
+
+def test_model_action_without_an_lms_executable_is_503(srv, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
+    monkeypatch.delenv("IRIS_LMS_BIN", raising=False)
+    monkeypatch.setattr(d.shutil, "which", lambda name: None)
+    code, body = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, origin=base)
+    assert code == 503 and "IRIS_LMS_BIN" in body["error"]
+
+
 def test_post_to_any_other_route_stays_405(srv):
     base = f"http://{HOST}:{srv.server_address[1]}"
     for path in ("/", "/api/system", "/api/journal"):

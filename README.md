@@ -241,6 +241,7 @@ Iris uses.
 | `IRIS_QUEUE` | `~/.iris/queue.json` | the agent manager's prompt queue |
 | `IRIS_CONCEPTKIT_DIR` | `W:/conceptkit` | where concept_sites runs conceptkit |
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
+| `IRIS_LMS_BIN` | lms on PATH | where the model control finds the LM Studio CLI |
 | `IRIS_SESSIONS_DB` | `~/.iris/sessions.db` | where the Sessions tab reads its rows from |
 | `IRIS_CLAUDE_DIR` | `~/.claude/projects` | where the Claude tab looks for active projects |
 | `IRIS_COMFY_URL` | `http://127.0.0.1:8188` | where comfy_status looks |

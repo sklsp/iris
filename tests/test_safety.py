@@ -332,6 +332,41 @@ def test_bad_arguments_are_journaled_as_error_with_bad_args(tmp_path):
     assert line["outcome"] == "error" and line["error_kind"] == "bad_args"
 
 
+# --- the new skills: base tiers and declined confirms ------------------------------
+NEW_SKILL_TIERS = [
+    ("comfy_workflows", tools.SAFE),
+    ("comfy_queue", tools.CONFIRM),
+    ("lmstudio_load", tools.CONFIRM),
+    ("lmstudio_unload", tools.CONFIRM),
+]
+
+
+@pytest.mark.parametrize("name, tier", NEW_SKILL_TIERS)
+def test_each_new_skill_tool_has_its_base_tier(name, tier):
+    assert tools.TOOLS[name].tier == tier
+
+
+# Plain CONFIRM tools with fake fns: the decline path is identical for every skill.
+NEW_SKILL_ARGS = {
+    "lmstudio_load": {"model": "qwen3.8-27b"},
+    "lmstudio_unload": {"model": "some-other-model"},  # not the effective model, so no escalation
+    "comfy_queue": {"workflow": "anime"},
+}
+
+
+@pytest.mark.parametrize("name", sorted(NEW_SKILL_ARGS))
+def test_declined_skill_tool_never_runs(tmp_path, name):
+    ran = []
+    llm = _ScriptedLLM(_confirm_call(name, **NEW_SKILL_ARGS[name]), _answer("Okay, I left it."))
+    tool = tools.Tool(name, "", {}, [], tools.CONFIRM, lambda **kw: ran.append(kw) or "ran")
+    Agent(llm, lambda q: False, Journal(tmp_path / "j.jsonl"), {name: tool}).handle("do it")
+    assert ran == []  # the fake fn was never called
+    tool_msg = llm.seen[1][-1]
+    assert tool_msg["role"] == "tool" and "declined" in tool_msg["content"]
+    lines = _tool_lines(tmp_path)
+    assert [e.get("outcome") for e in lines] == ["declined"]
+
+
 
 
 

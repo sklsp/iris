@@ -140,40 +140,55 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
                   confirm=task.confirm, confirmed_ok=confirmed_ok)
 
 
-def summarize(results: list[Result]) -> dict:
+def summarize(results: list[Result], repeat: int = 1) -> dict:
     n = len(results)
     if not results:
-        return {"tasks": 0, "passed": 0, "success_rate": 0.0, "median_seconds": 0.0,
-                "confirmations_per_task": 0.0, "failed": [], "by_category": {},
-                "safety": {"forbidden_ok": 0, "unknown_tools": 0, "never_asked": 0}}
+        s = {"tasks": 0, "passed": 0, "success_rate": 0.0, "median_seconds": 0.0,
+             "confirmations_per_task": 0.0, "failed": [], "by_category": {},
+             "safety": {"forbidden_ok": 0, "unknown_tools": 0, "never_asked": 0}}
+        if repeat > 1:
+            s.update({"repeat": repeat, "per_task": {}, "pass_all": 0, "pass_any": 0})
+        return s
     p = sum(1 for r in results if r.passed)
     by: dict[str, list[Result]] = {}
     for r in results:
         by.setdefault(r.category, []).append(r)
-    return {"tasks": n, "passed": p, "success_rate": round(p / n, 3),
-            "median_seconds": round(statistics.median(r.seconds for r in results), 2),
-            "confirmations_per_task": round(sum(r.confirmations for r in results) / n, 2),
-            "failed": [r.id for r in results if not r.passed],
-            "by_category": {c: {"tasks": len(rs), "passed": sum(1 for r in rs if r.passed),
-                                "success_rate": round(sum(1 for r in rs if r.passed) / len(rs), 3)}
-                            for c, rs in sorted(by.items())},
-            "safety": {"forbidden_ok": sum(1 for r in results for reason in r.reasons
-                                           if reason.startswith("forbidden call:")),
-                        "unknown_tools": sum(1 for r in results for _t, o in r.calls if o == "unknown"),
-                        "never_asked": sum(1 for r in results if r.confirm == "no" and r.confirmed_ok > 0)}}
+    s = {"tasks": n, "passed": p, "success_rate": round(p / n, 3),
+         "median_seconds": round(statistics.median(r.seconds for r in results), 2),
+         "confirmations_per_task": round(sum(r.confirmations for r in results) / n, 2),
+         "failed": [r.id for r in results if not r.passed],
+         "by_category": {c: {"tasks": len(rs), "passed": sum(1 for r in rs if r.passed),
+                             "success_rate": round(sum(1 for r in rs if r.passed) / len(rs), 3)}
+                         for c, rs in sorted(by.items())},
+         "safety": {"forbidden_ok": sum(1 for r in results for reason in r.reasons
+                                        if reason.startswith("forbidden call:")),
+                     "unknown_tools": sum(1 for r in results for _t, o in r.calls if o == "unknown"),
+                     "never_asked": sum(1 for r in results if r.confirm == "no" and r.confirmed_ok > 0)}}
+    if repeat > 1:
+        runs: dict[str, list[bool]] = {}
+        for r in results:
+            runs.setdefault(r.id, []).append(r.passed)
+        s["repeat"] = repeat
+        s["per_task"] = {tid: sum(v) for tid, v in sorted(runs.items())}
+        s["pass_all"] = sum(1 for v in runs.values() if all(v))
+        s["pass_any"] = sum(1 for v in runs.values() if any(v))
+    return s
 
 
 def _summary_line(s: dict) -> str:
-    return (f"{s['passed']}/{s['tasks']} passed ({s['success_rate'] * 100:.1f}%), "
+    line = (f"{s['passed']}/{s['tasks']} passed ({s['success_rate'] * 100:.1f}%), "
             f"median {s['median_seconds']:.1f} s, {s['confirmations_per_task']:.2f} confirmations per task, "
             f"safety: {s['safety']['forbidden_ok']} forbidden, {s['safety']['unknown_tools']} unknown tools")
+    if s.get("repeat", 1) > 1:
+        line += f", {s['pass_all']}/{len(s['per_task'])} pass every time"
+    return line
 
 
-def write_report(results: list[Result], out_dir, stamp: str, model: str = "") -> tuple[Path, Path]:
+def write_report(results: list[Result], out_dir, stamp: str, model: str = "", repeat: int = 1) -> tuple[Path, Path]:
     """Write {stamp}.json and {stamp}.md into out_dir; returns (json path, md path)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    s = summarize(results)
+    s = summarize(results, repeat=repeat)
     json_path = out_dir / f"{stamp}.json"
     json_path.write_text(json.dumps({"stamp": stamp, "model": model or "unknown",
                                      "summary": s, "results": [asdict(r) for r in results]}, indent=2),
@@ -240,7 +255,8 @@ def main(argv: list[str]) -> int:
         for task in tasks:
             results.append(run_task(llm, task))
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    _, md_path = write_report(results, a.out, stamp, model=effective_model())
-    print(_summary_line(summarize(results)))
+    s = summarize(results, repeat=a.repeat)
+    _, md_path = write_report(results, a.out, stamp, model=effective_model(), repeat=a.repeat)
+    print(_summary_line(s))
     print(f"Report: {md_path}")
     return 0

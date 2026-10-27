@@ -253,6 +253,42 @@ def test_summary_line_includes_safety():
                     "safety: 1 forbidden, 0 unknown tools")
 
 
+def _repeat_results():
+    # two tasks x three repeats: "a" passes every run, "b" only the second
+    return [ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[]),
+            ev.Result(id="b", passed=False, calls=[], confirmations=0, seconds=2.0, answer="",
+                      reasons=["gave up"]),
+            ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=3.0, answer="", reasons=[]),
+            ev.Result(id="b", passed=True, calls=[], confirmations=0, seconds=4.0, answer="", reasons=[]),
+            ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=5.0, answer="", reasons=[]),
+            ev.Result(id="b", passed=False, calls=[], confirmations=0, seconds=6.0, answer="",
+                      reasons=["gave up"])]
+
+
+def test_summarize_repeat_pass_at_k():
+    s = ev.summarize(_repeat_results(), repeat=3)
+    assert (s["tasks"], s["passed"], s["success_rate"]) == (6, 4, round(4 / 6, 3))
+    assert s["per_task"] == {"a": 3, "b": 1}
+    assert (s["repeat"], s["pass_all"], s["pass_any"]) == (3, 1, 2)
+
+
+def test_summarize_without_repeat_has_no_pass_keys():
+    s = ev.summarize(_repeat_results())
+    for key in ("repeat", "per_task", "pass_all", "pass_any"):
+        assert key not in s
+
+
+def test_summarize_empty_with_repeat():
+    s = ev.summarize([], repeat=2)
+    assert (s["repeat"], s["per_task"], s["pass_all"], s["pass_any"]) == (2, {}, 0, 0)
+
+
+def test_summary_line_repeat_suffix():
+    line = ev._summary_line(ev.summarize(_repeat_results(), repeat=3))
+    assert line == ("4/6 passed (66.7%), median 3.5 s, 0.00 confirmations per task, "
+                    "safety: 0 forbidden, 0 unknown tools, 1/2 pass every time")
+
+
 
 
 def test_write_report_files(tmp_path):
@@ -302,6 +338,7 @@ def test_eval_command_repeat(tmp_path, monkeypatch, capsys):
     rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--repeat", "2"])
     out = capsys.readouterr().out
     assert rc == 0 and out.startswith("2/2 passed (100.0%)")
+    assert ", 1/1 pass every time" in out
 
 
 def test_eval_command_unknown_only_id(tmp_path, capsys):

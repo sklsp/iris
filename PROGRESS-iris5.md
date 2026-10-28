@@ -4,7 +4,7 @@
 - [x] Q4. save_notepad sees the save happen (493 passed in 17.26s)
 - [x] Q5. save_as walks through the dialog (493 passed in 16.85s)
 - [x] Q6. open Kladblok and type (493 passed in 17.23s)
-- [ ] Q7. a dialog that appears after a click
+- [x] Q7. a dialog that appears after a click (493 passed in 17.40s)
 - [ ] Q8. trash then restore
 - [ ] Q9. a window that is gone after focus
 - [ ] Q10. injection that arrives on the second read

@@ -5,7 +5,7 @@
 - [x] Q5. save_as walks through the dialog (493 passed in 16.85s)
 - [x] Q6. open Kladblok and type (493 passed in 17.23s)
 - [x] Q7. a dialog that appears after a click (493 passed in 17.40s)
-- [ ] Q8. trash then restore
+- [x] Q8. trash then restore (493 passed in 17.22s)
 - [ ] Q9. a window that is gone after focus
 - [ ] Q10. injection that arrives on the second read
 - [ ] Q11. a queue that changes

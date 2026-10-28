@@ -284,6 +284,16 @@ expect = ["restore_trash"]
 max_calls = 2
 
 [[task]]
+id = "trash_then_restore"
+category = "files"
+request = "Gooi W:/tmp/oud.txt weg en zet hem daarna meteen terug."
+expect = ["trash_file", "restore_trash"]
+confirm = "yes"
+outcomes = { trash_file = "ok", restore_trash = "ok" }
+max_calls = 4
+fixtures = { restore_trash = "restored 20261028-143000_oud.txt to W:\\tmp\\oud.txt" }
+
+[[task]]
 id = "agents_stuck"
 category = "agents"
 request = "Is er een agent vastgelopen?"

@@ -12,5 +12,6 @@
 - [x] D10. a page test for the new parts (603 passed in 24.13s)
 - [x] D11. the autopilot CLI and the page agree (603 passed in 24.68s)
 - [x] D12. docs (603 passed in 24.13s)
-- [ ] D13. no dashes
+- [x] D13. no dashes (603 passed in 24.43s)
+  scan of git diff --name-only main..HEAD (11 files): 0 lines with U+2014 or U+2013; nothing to fix.
 - [ ] D14. final check

@@ -3,7 +3,7 @@
 - [x] C1. the CLI command (543 passed in 19.41s)
 - [x] C2. read Cline's session history (549 passed in 20.55s)
 - [x] C3. start a session through the hub (558 passed in 22.33s)
-- [ ] C4. cline_start uses the hub
+- [x] C4. cline_start uses the hub (560 passed in 20.02s)
 - [ ] C5. delete the VS Code typing
 - [ ] C6. watch starts in the watched repo
 - [ ] C7. the tool and the question

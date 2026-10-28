@@ -2,7 +2,7 @@
 
 A run is the newest PROGRESS-*.md in a repo root (by modification time). It counts as done when
 every checklist line is ticked or BLOCKED, the tree is clean and the last commit has been quiet
-for a few minutes. run_done only reads; cline_start types into VS Code and is asked for first.
+for a few minutes. run_done only reads; cline_start starts a Cline session in the background hub and is asked for first.
 """
 
 from __future__ import annotations
@@ -166,7 +166,7 @@ def paste_into_cline(text: str, window=None, sleep: Callable[[float], None] = ti
 
 
 def cline_start(agent: str, repo: str = "") -> str:
-    """Open a new Cline task and type this agent's next queued prompt into it. The tool layer asks Jay first."""
+    """Start this agent's next queued prompt as a Cline session in the background hub. The tool layer asks Jay first."""
     if repo:
         done, reason = run_done(Path(repo))
         if not done:
@@ -174,11 +174,12 @@ def cline_start(agent: str, repo: str = "") -> str:
     waiting = prompt_queue.pending(agent)
     if not waiting:
         return f"error: no prompts waiting for {agent.strip()}"
+    cwd = repo or cline_cwd()
     try:
-        result = paste_into_cline(waiting[0]["text"])
-    except LookupError:
-        return "error: VS Code is not open"  # nothing was typed; the queue stays untouched
-    prompt_queue.take(agent)  # only after the paste succeeded, so a failure leaves the queue unchanged
+        result = start_in_hub(waiting[0]["text"], cwd)
+    except (LookupError, RuntimeError) as exc:
+        return f"error: {exc}"  # the session did not start; the queue stays untouched
+    prompt_queue.take(agent)  # only after the hub started the session, so a failure leaves the queue unchanged
     return result
 
 

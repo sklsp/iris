@@ -496,35 +496,67 @@ def _waiting(path: Path) -> list[str]:
     return [p["text"] for p in pq.pending("", path)]
 
 
-def test_cline_start_pastes_the_oldest_prompt_and_shrinks_the_queue(tmp_path, monkeypatch):
+def test_cline_start_starts_the_oldest_prompt_in_the_hub_and_shrinks_the_queue(tmp_path, monkeypatch):
     import iris.autopilot as autopilot
 
+    _clear_cli_env(monkeypatch)
     path = _queue_file(tmp_path)
     monkeypatch.setenv("IRIS_QUEUE", str(path))
-    typed: list[str] = []
+    started: list[tuple[str, str]] = []
 
-    def fake_paste(text: str) -> str:
-        typed.append(text)
-        return f"started a Cline task with: {text[:60]}"
+    def fake_start(text: str, cwd: str) -> str:
+        started.append((text, cwd))
+        return f"started Cline session abc in {cwd}"
 
-    monkeypatch.setattr(autopilot, "paste_into_cline", fake_paste)
-    assert cline_start("cline") == "started a Cline task with: first prompt"
-    assert typed == ["first prompt"]  # the oldest waiting prompt was pasted
+    monkeypatch.setattr(autopilot, "start_in_hub", fake_start)
+    assert cline_start("cline") == "started Cline session abc in W:/Iris"
+    assert started == [("first prompt", "W:/Iris")]  # the oldest waiting prompt was started in cline_cwd()
     assert _waiting(path) == ["second prompt"]  # the queue shrank by exactly one
 
 
-def test_cline_start_leaves_the_queue_when_the_paste_fails(tmp_path, monkeypatch):
+def test_cline_start_leaves_the_queue_when_the_cli_is_missing(tmp_path, monkeypatch):
     import iris.autopilot as autopilot
 
     path = _queue_file(tmp_path)
     monkeypatch.setenv("IRIS_QUEUE", str(path))
 
-    def broken(text: str) -> str:
-        raise LookupError("no window whose title contains 'Visual Studio Code'")
+    def broken(text: str, cwd: str) -> str:
+        raise LookupError("Cline CLI not found at W:/Cline/cline-cli.exe")
 
-    monkeypatch.setattr(autopilot, "paste_into_cline", broken)
-    assert cline_start("cline") == "error: VS Code is not open"
+    monkeypatch.setattr(autopilot, "start_in_hub", broken)
+    assert cline_start("cline") == "error: Cline CLI not found at W:/Cline/cline-cli.exe"
     assert _waiting(path) == ["first prompt", "second prompt"]  # unchanged
+
+
+def test_cline_start_leaves_the_queue_when_the_hub_fails(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+
+    def broken(text: str, cwd: str) -> str:
+        raise RuntimeError("Cline did not start a session: hub timed out after 120s")
+
+    monkeypatch.setattr(autopilot, "start_in_hub", broken)
+    assert cline_start("cline") == "error: Cline did not start a session: hub timed out after 120s"
+    assert _waiting(path) == ["first prompt", "second prompt"]  # unchanged
+
+
+def test_cline_start_falls_back_to_cline_cwd_for_the_hub(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    monkeypatch.setattr(autopilot, "cline_cwd", lambda: "W:/Fallback")
+    seen: list[str] = []
+
+    def fake_start(text: str, cwd: str) -> str:
+        seen.append(cwd)
+        return f"started Cline session abc in {cwd}"
+
+    monkeypatch.setattr(autopilot, "start_in_hub", fake_start)
+    assert cline_start("cline") == "started Cline session abc in W:/Fallback"
+    assert seen == ["W:/Fallback"]  # no repo given: the hub starts in cline_cwd()
 
 
 def test_cline_start_refuses_when_the_repo_run_is_not_done(tmp_path, monkeypatch):

@@ -30,6 +30,16 @@ fixtures = { list_windows = "WhatsApp\nVerkenner", read_window = "Edit 'Typ een 
 
 `dry_tools(fixtures)` builds a copy of the registry where every tool's function returns its fixture string, or `ok (dry run of {name})` when no fixture is set; it never calls the real function. Tiers and argument escalation are copied from the real tools, so refusal behaves exactly as in production: that is why `trash_system` can forbid `trash_file` even with `confirm = "yes"`, `C:/Windows/Temp` escalates to NEVER before any confirmation happens.
 
+## Fixtures that change
+
+A fixture value can be a list of strings instead of one string: the tool's first call returns the first item, its second call the next, and so on; once the list runs out, the last item repeats. That models a screen that changes after an action — in `save_as`, `list_windows` is played before the save dialog opens, while it is open, and after the file is saved:
+
+```toml
+fixtures = { list_windows = ["Naamloos - Kladblok", "Opslaan als", "boodschappen.txt - Kladblok"], read_window = ["Edit 'Bestandsnaam'\nButton 'Opslaan'", "Edit 'Bestandsnaam'\nButton 'Opslaan'"] }
+```
+
+Sequence state is fresh per task, so two tasks never share it.
+
 ## What counts as a pass
 
 `run_task` runs one task through the real agent loop (`Agent` + `Journal`) with dry tools, then grades it from that journal:

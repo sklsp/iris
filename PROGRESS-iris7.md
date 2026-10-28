@@ -11,7 +11,7 @@
 - [x] A9. eval: start the next run (538 passed in 21.19s)
 - [x] A10. eval: Jay says no (538 passed in 20.40s)
 - [x] A11. eval: a run that is not done (538 passed in 21.09s)
-- [ ] A12. eval: a window cannot start a run
+- [x] A12. eval: a window cannot start a run (538 passed in 20.46s)
 - [ ] A13. docs
 - [ ] A14. README test
 - [ ] A15. no dashes

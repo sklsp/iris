@@ -13,6 +13,8 @@ import os
 import subprocess
 import time
 from collections.abc import Callable
+from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 from iris import prompt_queue
@@ -84,6 +86,61 @@ def cline_sessions(run=subprocess.run) -> list[dict]:
     if not isinstance(data, list):
         return []
     return [item for item in data if isinstance(item, dict)]
+
+
+def _started_at_epoch(value: object) -> float | None:
+    """The epoch seconds of an ISO timestamp (a trailing Z means UTC); None when it cannot be parsed."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except ValueError:
+        return None
+
+
+def start_in_hub(text: str, cwd: str, run=subprocess.run, sessions=None, now=None) -> str:
+    """Start a Cline session in the background hub and prove it started from the history.
+
+    A timeout of the CLI call is not an error by itself (the session may still have started). FileNotFoundError
+    raises LookupError; no matching `cline-cli-zen` entry with this prompt raises RuntimeError carrying the last
+    non-empty stderr line, or "no output"."""
+    if sessions is None:
+        sessions = partial(cline_sessions, run=run)
+    if now is None:
+        now = time.time
+    t0 = now()
+    stderr = ""
+    try:
+        result = run(
+            cline_command(text, cwd),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=120,
+            stdin=subprocess.DEVNULL,
+            check=False,
+        )
+    except FileNotFoundError:
+        raise LookupError(f"Cline CLI not found at {cline_cli()}") from None
+    except subprocess.TimeoutExpired:
+        pass  # the session may still have started; step 2 decides
+    else:
+        stderr = result.stderr or ""
+
+    needle = text.strip()[:60]
+    for session in sessions():
+        if session.get("source") != "cline-cli-zen":
+            continue
+        started_at = _started_at_epoch(session.get("startedAt"))
+        if started_at is None or started_at < t0 - 5:
+            continue
+        prompt = session.get("prompt")
+        if not isinstance(prompt, str) or needle not in prompt:
+            continue
+        return f"started Cline session {session['sessionId']} in {cwd}"
+
+    detail = next((line.strip() for line in reversed(stderr.splitlines()) if line.strip()), "no output")
+    raise RuntimeError(f"Cline did not start a session: {detail}")
 
 
 def cline_keys(text: str) -> list[str]:

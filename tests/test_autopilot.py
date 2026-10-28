@@ -2,6 +2,8 @@
 
 import os
 import subprocess
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,6 +21,7 @@ from iris.autopilot import (
     new_task_command,
     paste_into_cline,
     run_done,
+    start_in_hub,
     vscode_title,
     watch,
 )
@@ -265,6 +268,135 @@ def test_cline_sessions_passes_the_exact_argv_and_kwargs(monkeypatch):
         "stdin": subprocess.DEVNULL,
         "check": False,
     }
+
+
+HUB_NOW = 1_750_000_000.0
+
+
+def _iso(epoch: float) -> str:
+    return datetime.fromtimestamp(epoch, tz=UTC).isoformat().replace("+00:00", "Z")
+
+
+def test_start_in_hub_success_with_timeout_text_on_stderr(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    out = start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+    assert out == "started Cline session abc in W:/Iris"
+
+
+def test_start_in_hub_success_after_timeout(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=argv, timeout=120)
+
+    out = start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+    assert out == "started Cline session abc in W:/Iris"
+
+
+def test_start_in_hub_ignores_a_session_started_before_the_window(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    # started 6 seconds before t0: outside the 5-second grace window
+    sessions = [
+        {"sessionId": "old", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW - 6), "prompt": "fix the bug"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    with pytest.raises(RuntimeError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+
+
+def test_start_in_hub_ignores_a_session_with_another_prompt(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "some other prompt"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    with pytest.raises(RuntimeError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+
+
+def test_start_in_hub_ignores_a_session_from_another_source(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "vscode", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    with pytest.raises(RuntimeError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+
+
+def test_start_in_hub_missing_cli_raises_lookup_error(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        raise FileNotFoundError("no such file")
+
+    with pytest.raises(LookupError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW)
+    assert str(exc.value) == "Cline CLI not found at W:/Cline/cline-cli.exe"
+
+
+def test_start_in_hub_error_carries_the_last_stderr_line(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="first line\nsecond line\nhub timed out after 120s\n", returncode=1)
+
+    with pytest.raises(RuntimeError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW)
+    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+
+
+def test_start_in_hub_error_says_no_output_when_stderr_is_empty(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="   \n", returncode=1)
+
+    with pytest.raises(RuntimeError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW)
+    assert str(exc.value) == "Cline did not start a session: no output"
+
+
+def test_start_in_hub_defaults_to_cline_sessions_and_the_clock(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    started_at = datetime.fromtimestamp(time.time() + 1, tz=UTC).isoformat().replace("+00:00", "Z")
+    history = (
+        f'[{{"sessionId": "abc", "source": "cline-cli-zen", '
+        f'"startedAt": "{started_at}", "prompt": "fix the bug"}}]'
+    )
+
+    def fake_run(argv, **kwargs):
+        if argv[1] == "history":  # cline_sessions' call
+            return SimpleNamespace(stdout=history)
+        assert argv == [
+            "W:/Cline/cline-cli.exe", "-z", "-c", "W:/Iris", "-P", "lmstudio", "-m", "qwen3.8-27b", "fix the bug"
+        ]
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    out = start_in_hub("fix the bug", "W:/Iris", run=fake_run)
+    assert out == "started Cline session abc in W:/Iris"
 
 
 def test_cline_keys_is_the_exact_sequence(monkeypatch):

@@ -261,6 +261,14 @@ def test_run_task_does_not_flag_forbidden_refused_or_declined(tmp_path):
         (True, [], [("click", "refused"), ("trash_file", "declined")])
 
 
+def test_run_task_confirmed_error_is_not_counted_as_confirmed_ok(tmp_path):
+    task = ev.Task(id="t16", request="sla het op", confirm="yes",
+                   fixtures={"press_keys": "error: x"})
+    llm = ScriptedLLM(call("press_keys", window="Naamloos - Kladblok", keys="^s"), answer("Opgeslagen."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.confirmations, r.confirmed_ok, r.calls) == (1, 0, [("press_keys", "error")])
+
+
 def test_run_task_flags_missing_call(tmp_path):
     task = ev.Task(id="t4", request="wat staat open?", expect=["list_windows"])
     r = ev.run_task(ScriptedLLM(answer("Ik zie niets.")), task, tmp_path)

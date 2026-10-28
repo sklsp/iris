@@ -5,7 +5,7 @@ Gates before every commit: ruff check, mypy, pytest with coverage floor.
 
 - [x] E1. a returned error is journaled as an error (494 passed)
 - [x] E2. the eval counts a forbidden call that reached the tool (497 passed)
-- [ ] E3. confirmed_ok stays honest
+- [x] E3. confirmed_ok stays honest (498 passed)
 - [ ] E4. existing tasks that return error text
 - [ ] E5. focus_gone may open the app
 - [ ] E6. click_then_dialog gets one more call

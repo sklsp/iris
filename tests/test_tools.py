@@ -674,6 +674,29 @@ def test_journal_today_missing_file(tmp_path, monkeypatch):
     assert tools.journal_today() == "Nothing in the journal yet."
 
 
+def test_journal_today_counts_a_returned_error(tmp_path, monkeypatch):
+    from iris.agent import Agent, Journal
+    from iris.llm import Reply, ToolCall
+
+    p = tmp_path / "journal.jsonl"
+    monkeypatch.setenv("IRIS_JOURNAL", str(p))
+    boom = tools.Tool("boom", "", {}, [], tools.SAFE, lambda **kw: "error: x")
+    replies = [
+        Reply("", [ToolCall("id-boom", "boom", {})], {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "id-boom", "type": "function", "function": {"name": "boom", "arguments": "{}"}}]}),
+        Reply("Klaar.", [], {"role": "assistant", "content": "Klaar."}),
+    ]
+
+    class LLM:
+        def chat(self, messages, tools):
+            return replies.pop(0)
+
+    Agent(LLM(), lambda q: True, Journal(p), {"boom": boom}).handle("do it")
+    day = json.loads(p.read_text(encoding="utf-8").splitlines()[0])["t"][:10]
+    assert tools.journal_today(today=day) == (
+        "Today: 1 requests, 1 tool calls (0 ok, 0 refused, 0 declined, 1 errors).")
+
+
 
 # --- concept_sites ---------------------------------------------------------------
 def test_concept_sites_without_repo(tmp_path, monkeypatch):

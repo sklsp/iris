@@ -12,7 +12,7 @@ Gates before every commit: ruff check, mypy, pytest with coverage floor.
 - [x] E7. an app that will not open (498 passed)
 - [x] E8. ComfyUI is down (498 passed)
 - [x] E9. a model load that fails must not unload on its own (498 passed)
-- [ ] E10. journal_today counts returned errors
+- [x] E10. journal_today counts returned errors (499 passed)
 - [ ] E11. the dashboard counts returned errors
 - [ ] E12. docs
 - [ ] E13. README task count

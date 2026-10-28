@@ -2,7 +2,7 @@
 
 A run is the newest PROGRESS-*.md in a repo root (by modification time). It counts as done when
 every checklist line is ticked or BLOCKED, the tree is clean and the last commit has been quiet
-for a few minutes. run_done only reads; cline_start starts a Cline session in the background hub and is asked for first.
+for a few minutes. run_done only reads; cline_start starts a session through the Cline CLI and is asked for first.
 """
 
 from __future__ import annotations
@@ -20,18 +20,7 @@ from pathlib import Path
 from iris import prompt_queue
 from iris.agent import Journal
 from iris.agents import _age, _git
-from iris.tools import _escape_keys, _window
 from iris.voice import is_yes
-
-
-def new_task_command() -> str:
-    """The command palette entry that opens a Cline task; IRIS_CLINE_NEW_TASK overrides it."""
-    return os.environ.get("IRIS_CLINE_NEW_TASK", "Cline: New Task")
-
-
-def vscode_title() -> str:
-    """The VS Code window title to focus before typing; IRIS_VSCODE_TITLE overrides it."""
-    return os.environ.get("IRIS_VSCODE_TITLE", "Visual Studio Code")
 
 
 def cline_cli() -> str:
@@ -141,28 +130,6 @@ def start_in_hub(text: str, cwd: str, run=subprocess.run, sessions=None, now=Non
 
     detail = next((line.strip() for line in reversed(stderr.splitlines()) if line.strip()), "no output")
     raise RuntimeError(f"Cline did not start a session: {detail}")
-
-
-def cline_keys(text: str) -> list[str]:
-    """The exact key strings that open a Cline task and type `text` into it, in order.
-
-    A newline would send the prompt early, so only one line is allowed."""
-    if "\n" in text or "\r" in text:
-        raise ValueError("one line only")
-    return ["^+p", _escape_keys(new_task_command()), "{ENTER}", _escape_keys(text), "{ENTER}"]
-
-
-def paste_into_cline(text: str, window=None, sleep: Callable[[float], None] = time.sleep) -> str:
-    """Open a Cline task in VS Code and type `text` into it. `window` is injectable for tests."""
-    if window is None:
-        window = _window(vscode_title())
-    window.set_focus()
-    keys = cline_keys(text)
-    command_enter = keys.index("{ENTER}")  # the {ENTER} right after the command, not the one that sends it
-    for i, k in enumerate(keys):
-        window.type_keys(k, with_spaces=True)
-        sleep(2 if i == command_enter else 0.3)  # after the command's {ENTER} the new task must open
-    return f"started a Cline task with: {text[:60]}"
 
 
 def cline_start(agent: str, repo: str = "") -> str:

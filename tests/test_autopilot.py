@@ -13,16 +13,12 @@ from iris.autopilot import (
     cline_cli,
     cline_command,
     cline_cwd,
-    cline_keys,
     cline_model,
     cline_provider,
     cline_sessions,
     cline_start,
-    new_task_command,
-    paste_into_cline,
     run_done,
     start_in_hub,
-    vscode_title,
     watch,
 )
 
@@ -119,17 +115,6 @@ def test_a_repo_without_commits_is_reported_not_done(tmp_path, monkeypatch):
 
     monkeypatch.setattr(autopilot, "_git", fake_git)
     assert run_done(repo, now=FIXED + 3600) == (False, "no commits yet")
-
-
-def test_commands_default_and_read_the_env_when_called(monkeypatch):
-    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
-    monkeypatch.delenv("IRIS_VSCODE_TITLE", raising=False)
-    assert new_task_command() == "Cline: New Task"
-    assert vscode_title() == "Visual Studio Code"
-    monkeypatch.setenv("IRIS_CLINE_NEW_TASK", "Cline: New Cline Task")
-    monkeypatch.setenv("IRIS_VSCODE_TITLE", "Code - Workspaces")
-    assert new_task_command() == "Cline: New Cline Task"  # read when called, not at import
-    assert vscode_title() == "Code - Workspaces"
 
 
 def _clear_cli_env(monkeypatch) -> None:
@@ -397,85 +382,6 @@ def test_start_in_hub_defaults_to_cline_sessions_and_the_clock(monkeypatch):
 
     out = start_in_hub("fix the bug", "W:/Iris", run=fake_run)
     assert out == "started Cline session abc in W:/Iris"
-
-
-def test_cline_keys_is_the_exact_sequence(monkeypatch):
-    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
-    text = "add 2+3 (with {braces})"
-    assert cline_keys(text) == [
-        "^+p",
-        "Cline: New Task",
-        "{ENTER}",
-        "add 2{+}3 {(}with {{}braces{}}{)}",
-        "{ENTER}",
-    ]
-
-
-def test_cline_keys_escapes_the_command_too(monkeypatch):
-    monkeypatch.setenv("IRIS_CLINE_NEW_TASK", "Cline: New Task (beta)")
-    assert cline_keys("x") == ["^+p", "Cline: New Task {(}beta{)}", "{ENTER}", "x", "{ENTER}"]
-
-
-def test_cline_keys_rejects_a_newline(monkeypatch):
-    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
-    with pytest.raises(ValueError) as exc:
-        cline_keys("first\nsecond")
-    assert str(exc.value) == "one line only"
-
-
-class FakeWindow:
-    """Records set_focus and every type_keys call; no real window is ever touched."""
-
-    def __init__(self) -> None:
-        self.focus_calls = 0
-        self.keys: list[tuple[str, dict]] = []
-
-    def set_focus(self) -> None:
-        self.focus_calls += 1
-
-    def type_keys(self, keys: str, **kwargs) -> None:
-        self.keys.append((keys, kwargs))
-
-
-def test_paste_into_cline_types_the_exact_sequence(monkeypatch):
-    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
-    window = FakeWindow()
-    sleeps: list[float] = []
-    text = "add 2+3 (with {braces})"
-    out = paste_into_cline(text, window=window, sleep=sleeps.append)
-    assert window.focus_calls == 1
-    assert [k for k, _ in window.keys] == [
-        "^+p",
-        "Cline: New Task",
-        "{ENTER}",
-        "add 2{+}3 {(}with {{}braces{}}{)}",
-        "{ENTER}",
-    ]
-    assert all(kwargs == {"with_spaces": True} for _, kwargs in window.keys)
-    # two seconds after the command's {ENTER}, a short pause after every other step
-    assert sleeps == [0.3, 0.3, 2, 0.3, 0.3]
-    assert out == "started a Cline task with: add 2+3 (with {braces})"
-
-
-def test_paste_into_cline_truncates_the_reported_text(monkeypatch):
-    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
-    window = FakeWindow()
-    text = "x" * 80
-    out = paste_into_cline(text, window=window, sleep=lambda s: None)
-    assert out == "started a Cline task with: " + "x" * 60
-
-
-def test_paste_into_cline_without_vs_code_raises(monkeypatch):
-    import iris.autopilot as autopilot
-
-    monkeypatch.delenv("IRIS_VSCODE_TITLE", raising=False)
-
-    def no_window(title: str):
-        raise LookupError(f"no window whose title contains {title!r}")
-
-    monkeypatch.setattr(autopilot, "_window", no_window)
-    with pytest.raises(LookupError, match="Visual Studio Code"):
-        paste_into_cline("hello")
 
 
 def _queue_file(

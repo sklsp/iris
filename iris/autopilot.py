@@ -30,6 +30,35 @@ def vscode_title() -> str:
     return os.environ.get("IRIS_VSCODE_TITLE", "Visual Studio Code")
 
 
+def cline_cli() -> str:
+    """The Cline CLI executable that starts a session in the background hub; IRIS_CLINE_CLI overrides it."""
+    return os.environ.get("IRIS_CLINE_CLI", "W:/Cline/cline-cli.exe")
+
+
+def cline_provider() -> str:
+    """The provider passed with -P to the Cline CLI; IRIS_CLINE_PROVIDER overrides it."""
+    return os.environ.get("IRIS_CLINE_PROVIDER", "lmstudio")
+
+
+def cline_model() -> str:
+    """The model passed with -m to the Cline CLI; IRIS_CLINE_MODEL overrides it."""
+    return os.environ.get("IRIS_CLINE_MODEL", "qwen3.8-27b")
+
+
+def cline_cwd() -> str:
+    """The working directory a Cline session starts in by default; IRIS_CLINE_CWD overrides it."""
+    return os.environ.get("IRIS_CLINE_CWD", "W:/Iris")
+
+
+def cline_command(text: str, cwd: str) -> list[str]:
+    """The argv that starts a Cline CLI session with `text` in `cwd`.
+
+    A multi-line text is allowed; it stays one argv item. Empty or whitespace-only text raises ValueError."""
+    if not text.strip():
+        raise ValueError("empty prompt")
+    return [cline_cli(), "-z", "-c", cwd, "-P", cline_provider(), "-m", cline_model(), text]
+
+
 def cline_keys(text: str) -> list[str]:
     """The exact key strings that open a Cline task and type `text` into it, in order.
 

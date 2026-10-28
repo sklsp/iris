@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 
 from iris.autopilot import (
+    cline_cli,
+    cline_command,
+    cline_cwd,
     cline_keys,
+    cline_model,
+    cline_provider,
     cline_start,
     new_task_command,
     paste_into_cline,
@@ -120,6 +125,75 @@ def test_commands_default_and_read_the_env_when_called(monkeypatch):
     monkeypatch.setenv("IRIS_VSCODE_TITLE", "Code - Workspaces")
     assert new_task_command() == "Cline: New Cline Task"  # read when called, not at import
     assert vscode_title() == "Code - Workspaces"
+
+
+def _clear_cli_env(monkeypatch) -> None:
+    for var in ("IRIS_CLINE_CLI", "IRIS_CLINE_PROVIDER", "IRIS_CLINE_MODEL", "IRIS_CLINE_CWD"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_cline_accessors_default_and_read_the_env_when_called(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    assert cline_cli() == "W:/Cline/cline-cli.exe"
+    assert cline_provider() == "lmstudio"
+    assert cline_model() == "qwen3.8-27b"
+    assert cline_cwd() == "W:/Iris"
+    monkeypatch.setenv("IRIS_CLINE_CLI", "D:/tools/cline.exe")
+    monkeypatch.setenv("IRIS_CLINE_PROVIDER", "openrouter")
+    monkeypatch.setenv("IRIS_CLINE_MODEL", "gpt-5.2")
+    monkeypatch.setenv("IRIS_CLINE_CWD", "W:/Other")
+    assert cline_cli() == "D:/tools/cline.exe"  # read when called, not at import
+    assert cline_provider() == "openrouter"
+    assert cline_model() == "gpt-5.2"
+    assert cline_cwd() == "W:/Other"
+
+
+def test_cline_command_is_the_exact_argv(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    assert cline_command("fix the bug", "W:/Iris") == [
+        "W:/Cline/cline-cli.exe",
+        "-z",
+        "-c",
+        "W:/Iris",
+        "-P",
+        "lmstudio",
+        "-m",
+        "qwen3.8-27b",
+        "fix the bug",
+    ]
+
+
+def test_cline_command_uses_the_env(monkeypatch):
+    monkeypatch.setenv("IRIS_CLINE_CLI", "D:/tools/cline.exe")
+    monkeypatch.setenv("IRIS_CLINE_PROVIDER", "openrouter")
+    monkeypatch.setenv("IRIS_CLINE_MODEL", "gpt-5.2")
+    assert cline_command("go", "W:/Other") == [
+        "D:/tools/cline.exe",
+        "-z",
+        "-c",
+        "W:/Other",
+        "-P",
+        "openrouter",
+        "-m",
+        "gpt-5.2",
+        "go",
+    ]
+
+
+def test_cline_command_rejects_empty_or_blank_text(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    for text in ("", "   ", "\n\t  "):
+        with pytest.raises(ValueError) as exc:
+            cline_command(text, "W:/Iris")
+        assert str(exc.value) == "empty prompt"
+
+
+def test_cline_command_keeps_a_multiline_text_as_one_item(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    text = "first line\nsecond line"
+    argv = cline_command(text, "W:/Iris")
+    assert len(argv) == 9
+    assert argv[-1] == text
 
 
 def test_cline_keys_is_the_exact_sequence(monkeypatch):

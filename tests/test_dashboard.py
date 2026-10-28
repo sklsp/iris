@@ -939,6 +939,167 @@ def test_api_queue_route(server, tmp_path, monkeypatch):
                                 "added": "2026-10-14 09:00"}]
 
 
+# --- prompt queue writes (item 4) --------------------------------------------------
+
+
+def _journal_queue_events(path):
+    """The {"event": "queue"} lines from a journal file, oldest first."""
+    events = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        entry = json.loads(line)
+        if entry.get("event") == "queue":
+            events.append(entry)
+    return events
+
+
+def test_queue_add_ok_returns_new_state_and_logs(srv, tmp_path, monkeypatch):
+    queue, journal = tmp_path / "q.json", tmp_path / "journal.jsonl"
+    monkeypatch.setenv("IRIS_QUEUE", str(queue))
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+
+    code, body = post(base + "/api/queue/add", {"agent": "leadscan", "text": "Run de tests."},
+                      token=srv.token, origin=base)
+    assert code == 200 and body["ok"] is True
+    p = body["prompts"][0]
+    assert p["id"] == 1 and p["agent"] == "leadscan" and p["text"] == "Run de tests."
+    assert isinstance(p["added"], str) and p["added"]
+
+    events = _journal_queue_events(journal)   # the journal line exists after add
+    assert events[-1]["action"] == "add" and events[-1]["agent"] == "leadscan" and events[-1]["id"] == 1
+
+
+def test_queue_delete_ok_returns_new_state_and_logs(srv, tmp_path, monkeypatch):
+    from iris import prompt_queue
+
+    queue, journal = tmp_path / "q.json", tmp_path / "journal.jsonl"
+    monkeypatch.setenv("IRIS_QUEUE", str(queue))
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+
+    prompt_queue.add("leadscan", "first")   # id 1
+    prompt_queue.add("cline", "second")     # id 2
+    code, body = post(base + "/api/queue/delete", {"id": 1}, token=srv.token, origin=base)
+    assert code == 200 and body["ok"] is True
+    assert [p["id"] for p in body["prompts"]] == [2]
+
+    events = _journal_queue_events(journal)
+    assert events[-1]["action"] == "delete" and events[-1]["agent"] == "leadscan" and events[-1]["id"] == 1
+
+
+def test_queue_move_ok_returns_new_state_and_logs(srv, tmp_path, monkeypatch):
+    from iris import prompt_queue
+
+    queue, journal = tmp_path / "q.json", tmp_path / "journal.jsonl"
+    monkeypatch.setenv("IRIS_QUEUE", str(queue))
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+
+    prompt_queue.add("leadscan", "first")   # id 1
+    prompt_queue.add("cline", "second")     # id 2
+    code, body = post(base + "/api/queue/move", {"id": 1, "step": 1}, token=srv.token, origin=base)
+    assert code == 200 and body["ok"] is True
+    assert [p["id"] for p in body["prompts"]] == [2, 1]   # the two prompts swapped
+
+    events = _journal_queue_events(journal)
+    assert events[-1]["action"] == "move" and events[-1]["id"] == 1
+
+
+@pytest.mark.parametrize("route", ["/api/queue/add", "/api/queue/delete", "/api/queue/move"])
+def test_queue_write_without_a_token_is_403(srv, route):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + route, {"agent": "a", "text": "t"}, origin=base)   # no token
+    assert code == 403 and "forbidden" in body["error"]
+
+
+@pytest.mark.parametrize("route", ["/api/queue/add", "/api/queue/delete", "/api/queue/move"])
+def test_queue_write_from_a_foreign_origin_is_403(srv, route):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, _ = post(base + route, {"agent": "a", "text": "t"}, token=srv.token, origin="http://evil.example")
+    assert code == 403
+
+
+def test_queue_write_with_bad_json_is_400(srv):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    req = urllib.request.Request(base + "/api/queue/add", data=b"{not json", method="POST",
+                                 headers={"Content-Type": "application/json"})
+    req.add_header("X-Iris-Token", srv.token)   # auth passes, then the body fails to parse
+    req.add_header("Origin", base)
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req, timeout=10)
+    assert exc.value.code == 400
+
+
+@pytest.mark.parametrize("agent", ["", "   ", "x" * 41])
+def test_queue_add_bad_agent_is_400(srv, tmp_path, monkeypatch, agent):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/queue/add", {"agent": agent, "text": "ok"}, token=srv.token, origin=base)
+    assert code == 400 and "agent" in body["error"]
+
+
+@pytest.mark.parametrize("text", ["", "   ", "x" * 8001])
+def test_queue_add_bad_text_is_400(srv, tmp_path, monkeypatch, text):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/queue/add", {"agent": "leadscan", "text": text}, token=srv.token, origin=base)
+    assert code == 400 and "text" in body["error"]
+
+
+def test_queue_delete_bad_id_is_400(srv, tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/queue/delete", {"id": "nope"}, token=srv.token, origin=base)
+    assert code == 400 and "id" in body["error"]
+
+
+def test_queue_move_bad_id_is_400(srv, tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/queue/move", {"id": None, "step": 1}, token=srv.token, origin=base)
+    assert code == 400 and "id" in body["error"]
+
+
+@pytest.mark.parametrize("step", [0, 2, -2, "1"])
+def test_queue_move_bad_step_is_400(srv, tmp_path, monkeypatch, step):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/queue/move", {"id": 1, "step": step}, token=srv.token, origin=base)
+    assert code == 400 and "step" in body["error"]
+
+
+def test_queue_delete_unknown_id_is_404(srv, tmp_path, monkeypatch):
+    from iris import prompt_queue
+
+    queue = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(queue))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    prompt_queue.add("leadscan", "first")   # id 1 exists; 99 does not
+    code, body = post(base + "/api/queue/delete", {"id": 99}, token=srv.token, origin=base)
+    assert code == 404 and "no prompt" in body["error"]
+
+
+def test_queue_move_unknown_id_is_404(srv, tmp_path, monkeypatch):
+    from iris import prompt_queue
+
+    queue = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(queue))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    prompt_queue.add("leadscan", "first")   # id 1 exists; 99 does not
+    code, body = post(base + "/api/queue/move", {"id": 99, "step": 1}, token=srv.token, origin=base)
+    assert code == 404 and "no prompt" in body["error"]
+
+
+@pytest.mark.parametrize("route", ["/api/queue/add", "/api/queue/delete", "/api/queue/move"])
+def test_get_on_a_queue_write_route_is_405(srv, route):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(base + route, timeout=5)
+    assert exc.value.code == 405
+
+
 # --- queue tab (item 3) -----------------------------------------------------------
 
 

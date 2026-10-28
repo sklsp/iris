@@ -169,7 +169,10 @@ def _lms_exe() -> str:
 
 
 LMS_TIMEOUT_SECONDS = 600   # big models can take minutes to load
-WRITE_ROUTES = ("/api/models/load", "/api/models/unload", "/api/iris/model")   # the only POST routes
+WRITE_ROUTES = (
+    "/api/models/load", "/api/models/unload", "/api/iris/model",
+    "/api/queue/add", "/api/queue/delete", "/api/queue/move",
+)   # the only POST routes: model control and the prompt queue
 
 _model_action_lock = threading.Lock()   # one load or unload at a time, full stop
 
@@ -529,6 +532,60 @@ def queue_payload() -> dict:
         return {"ok": False, "prompts": [], "error": "the queue file is broken"}
 
 
+def _log_queue_event(action: str, agent: str | None = None, prompt_id: int | None = None) -> None:
+    """One journal line per queue change; the same writer the model routes use."""
+    from iris.agent import Journal
+
+    Journal(journal_path()).log(event="queue", action=action, agent=agent, id=prompt_id)
+
+
+def queue_action(action: str, body: dict) -> dict:
+    """Run one add, delete or move on the prompt queue and return the new queue state.
+
+    action is "add" ({agent, text}), "delete" ({id}) or "move" ({id, step}). Raises
+    ModelActionError with the HTTP code; a broken queue file comes back as a 500."""
+    from iris import prompt_queue
+
+    if not isinstance(body, dict):
+        raise ModelActionError(400, "the body must be a JSON object")
+    try:
+        if action == "add":
+            agent = str(body.get("agent", "")).strip()
+            text = str(body.get("text", "")).strip()
+            if not 1 <= len(agent) <= 40:
+                raise ModelActionError(400, "agent must be 1 to 40 characters")
+            if not 1 <= len(text) <= 8000:
+                raise ModelActionError(400, "text must be 1 to 8000 characters")
+            prompt_id = prompt_queue.add(agent, text)
+            _log_queue_event("add", agent=agent, prompt_id=prompt_id)
+        elif action == "delete":
+            raw_id = body.get("id")
+            if not isinstance(raw_id, int):
+                raise ModelActionError(400, "id must be an integer")
+            try:
+                removed = prompt_queue.remove(raw_id)
+            except LookupError:
+                raise ModelActionError(404, f"no prompt with id {raw_id}") from None
+            _log_queue_event("delete", agent=str(removed.get("agent", "")), prompt_id=raw_id)
+        elif action == "move":
+            raw_id = body.get("id")
+            step = body.get("step")
+            if not isinstance(raw_id, int):
+                raise ModelActionError(400, "id must be an integer")
+            if step not in (-1, 1):
+                raise ModelActionError(400, "step must be -1 or 1")
+            try:
+                prompt_queue.move(raw_id, step)
+            except LookupError:
+                raise ModelActionError(404, f"no prompt with id {raw_id}") from None
+            _log_queue_event("move", agent=None, prompt_id=raw_id)
+        else:  # pragma: no cover - do_POST only routes the three known actions here
+            raise ModelActionError(400, "unknown queue action")
+    except ValueError as exc:  # a broken queue file must not take the dashboard down
+        raise ModelActionError(500, str(exc)) from None
+    return queue_payload()
+
+
 # --- the server -----------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -591,7 +648,7 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path not in WRITE_ROUTES:
             self._drain_body()
-            self._json({"error": "read only: POST is allowed on the model routes only"}, code=405)
+            self._json({"error": "read only: this route does not accept POST"}, code=405)
             return
         if not _authorized(self):
             self._drain_body()
@@ -606,6 +663,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/iris/model":
                 payload = set_iris_model(body)
+            elif path in ("/api/queue/add", "/api/queue/delete", "/api/queue/move"):
+                action = path.rsplit("/", 1)[1]   # "add" | "delete" | "move"
+                payload = queue_action(action, body)
             else:
                 action = "load" if path.endswith("/load") else "unload"
                 payload = model_action(action, body)
@@ -616,7 +676,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _method_not_allowed(self):  # PUT, DELETE, PATCH, OPTIONS and HEAD alike
         self._drain_body()
-        self._json({"error": "read only: GET or POST on the model routes"}, code=405)
+        self._json({"error": "read only: use GET, or POST on a write route"}, code=405)
 
     do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_HEAD = _method_not_allowed
 

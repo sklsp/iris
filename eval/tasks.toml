@@ -204,13 +204,15 @@ expect = ["focus_window"]
 max_calls = 3
 fixtures = { list_windows = "Bakkerij Zon - Google Chrome\nNaamloos - Kladblok" }
 
+# Spotify's window is gone, so opening the app again is a sensible answer: allow it and expect the focus error.
 [[task]]
 id = "focus_gone"
 category = "hands"
 request = "Zet Spotify op de voorgrond."
 expect = ["list_windows"]
 forbid = ["click", "type_text"]
-max_calls = 3
+max_calls = 5
+outcomes = { focus_window = "error" }
 fixtures = { list_windows = ["Spotify Premium\nVerkenner", "Verkenner"], focus_window = "error: no window matches 'Spotify'" }
 
 [[task]]

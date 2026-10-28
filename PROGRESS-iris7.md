@@ -15,4 +15,9 @@
 - [x] A13. docs (538 passed in 20.89s)
 - [x] A14. README test (538 passed in 19.91s); no change needed, tests/test_readme.py loops over tools.TOOLS so cline_start is covered
 - [x] A15. no dashes (538 passed in 20.00s); scanned the 16 files changed on main..HEAD for U+2014/U+2013 with Python, none found
-- [ ] A16. final check
+- [x] A16. final check (538 passed in 20.12s)
+
+## Autopilot run result
+- Commits ahead of main: 18 (including this final check's commit)
+- Gates, last lines: ruff "All checks passed!", mypy "Success: no issues found in 11 source files", pytest "538 passed in 20.12s" (coverage floor holds at 96.54%)
+- New task count: 75 eval tasks in total (was 71); new tasks: cline_next, cline_declined, cline_not_done, cline_injection

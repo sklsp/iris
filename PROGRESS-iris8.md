@@ -9,5 +9,5 @@
 - [x] C7. the tool and the question (553 passed in 20.01s)
 - [x] C8. eval fixtures say session (553 passed in 19.31s)
 - [x] C9. docs (553 passed in 20.61s)
-- [ ] C10. no VS Code left, no dashes
+- [x] C10. no VS Code left, no dashes (553 passed in 20.81s); searched iris/, tests/ (.py plus agents.toml and dashboard/index.html), README.md, SECURITY.md, PLAN.md for "VS Code", "vscode", "paste_into_cline", "cline_keys", "IRIS_VSCODE_TITLE": two hits kept on purpose (tests/test_autopilot.py:323 uses source "vscode" as a non-cline-cli-zen session in test_start_in_hub_ignores_a_session_from_another_source; tests/test_tools.py:52 lists "VS Code" as an example window title for press_keys), no leftovers of the typing code; scanned the 11 files changed on main..HEAD with Python for U+2014/U+2013, none found
 - [ ] C11. final check

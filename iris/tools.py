@@ -539,7 +539,9 @@ def queue_take(agent: str) -> str:
 
 
 def cline_start(agent: str, repo: str = "") -> str:
-    """Open a new Cline task in VS Code and type the next queued prompt for this agent. Asks Jay first."""
+    """Start a new Cline session for this agent with the next queued prompt, in repo (default W:/Iris).
+
+    Asks Jay first."""
     from iris.autopilot import cline_start as _start
 
     return _start(agent, repo)
@@ -638,7 +640,8 @@ TOOLS = {t.name: t for t in [
          " Asks Jay first.",
           {"agent": S}, ["agent"], CONFIRM, queue_take),
     Tool("cline_start",
-         "Open a new Cline task in VS Code and type the next queued prompt for this agent. Asks Jay first.",
+         "Start a new Cline session for this agent with the next queued prompt, in repo (default W:/Iris)."
+         " Asks Jay first.",
          {"agent": S, "repo": S}, ["agent"], CONFIRM, cline_start),
     Tool("concept_sites",
          "Jay's concept websites from conceptkit: every site with its port and stops, and the findings of check --all."

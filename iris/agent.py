@@ -98,5 +98,6 @@ def _describe(name: str, args: dict) -> str:
     if name == "press_keys":
         return f"Press {args.get('keys')} in {args.get('window')}?"
     if name == "cline_start":
-        return f"Start a new Cline task for {args.get('agent')} with the next queued prompt?"
+        repo = args.get("repo") or ""
+        return f"Start a new Cline session for {args.get('agent')} in {repo or 'W:/Iris'} with the next queued prompt?"
     return f"Run {name} with {args}?"

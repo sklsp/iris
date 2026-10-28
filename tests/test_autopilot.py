@@ -2,17 +2,23 @@
 
 import os
 import subprocess
+import time
+from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from iris.autopilot import (
-    cline_keys,
+    cline_cli,
+    cline_command,
+    cline_cwd,
+    cline_model,
+    cline_provider,
+    cline_sessions,
     cline_start,
-    new_task_command,
-    paste_into_cline,
     run_done,
-    vscode_title,
+    start_in_hub,
     watch,
 )
 
@@ -111,94 +117,271 @@ def test_a_repo_without_commits_is_reported_not_done(tmp_path, monkeypatch):
     assert run_done(repo, now=FIXED + 3600) == (False, "no commits yet")
 
 
-def test_commands_default_and_read_the_env_when_called(monkeypatch):
-    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
-    monkeypatch.delenv("IRIS_VSCODE_TITLE", raising=False)
-    assert new_task_command() == "Cline: New Task"
-    assert vscode_title() == "Visual Studio Code"
-    monkeypatch.setenv("IRIS_CLINE_NEW_TASK", "Cline: New Cline Task")
-    monkeypatch.setenv("IRIS_VSCODE_TITLE", "Code - Workspaces")
-    assert new_task_command() == "Cline: New Cline Task"  # read when called, not at import
-    assert vscode_title() == "Code - Workspaces"
+def _clear_cli_env(monkeypatch) -> None:
+    for var in ("IRIS_CLINE_CLI", "IRIS_CLINE_PROVIDER", "IRIS_CLINE_MODEL", "IRIS_CLINE_CWD"):
+        monkeypatch.delenv(var, raising=False)
 
 
-def test_cline_keys_is_the_exact_sequence(monkeypatch):
-    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
-    text = "add 2+3 (with {braces})"
-    assert cline_keys(text) == [
-        "^+p",
-        "Cline: New Task",
-        "{ENTER}",
-        "add 2{+}3 {(}with {{}braces{}}{)}",
-        "{ENTER}",
+def test_cline_accessors_default_and_read_the_env_when_called(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    assert cline_cli() == "W:/Cline/cline-cli.exe"
+    assert cline_provider() == "lmstudio"
+    assert cline_model() == "qwen3.8-27b"
+    assert cline_cwd() == "W:/Iris"
+    monkeypatch.setenv("IRIS_CLINE_CLI", "D:/tools/cline.exe")
+    monkeypatch.setenv("IRIS_CLINE_PROVIDER", "openrouter")
+    monkeypatch.setenv("IRIS_CLINE_MODEL", "gpt-5.2")
+    monkeypatch.setenv("IRIS_CLINE_CWD", "W:/Other")
+    assert cline_cli() == "D:/tools/cline.exe"  # read when called, not at import
+    assert cline_provider() == "openrouter"
+    assert cline_model() == "gpt-5.2"
+    assert cline_cwd() == "W:/Other"
+
+
+def test_cline_command_is_the_exact_argv(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    assert cline_command("fix the bug", "W:/Iris") == [
+        "W:/Cline/cline-cli.exe",
+        "-z",
+        "-c",
+        "W:/Iris",
+        "-P",
+        "lmstudio",
+        "-m",
+        "qwen3.8-27b",
+        "fix the bug",
     ]
 
 
-def test_cline_keys_escapes_the_command_too(monkeypatch):
-    monkeypatch.setenv("IRIS_CLINE_NEW_TASK", "Cline: New Task (beta)")
-    assert cline_keys("x") == ["^+p", "Cline: New Task {(}beta{)}", "{ENTER}", "x", "{ENTER}"]
-
-
-def test_cline_keys_rejects_a_newline(monkeypatch):
-    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
-    with pytest.raises(ValueError) as exc:
-        cline_keys("first\nsecond")
-    assert str(exc.value) == "one line only"
-
-
-class FakeWindow:
-    """Records set_focus and every type_keys call; no real window is ever touched."""
-
-    def __init__(self) -> None:
-        self.focus_calls = 0
-        self.keys: list[tuple[str, dict]] = []
-
-    def set_focus(self) -> None:
-        self.focus_calls += 1
-
-    def type_keys(self, keys: str, **kwargs) -> None:
-        self.keys.append((keys, kwargs))
-
-
-def test_paste_into_cline_types_the_exact_sequence(monkeypatch):
-    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
-    window = FakeWindow()
-    sleeps: list[float] = []
-    text = "add 2+3 (with {braces})"
-    out = paste_into_cline(text, window=window, sleep=sleeps.append)
-    assert window.focus_calls == 1
-    assert [k for k, _ in window.keys] == [
-        "^+p",
-        "Cline: New Task",
-        "{ENTER}",
-        "add 2{+}3 {(}with {{}braces{}}{)}",
-        "{ENTER}",
+def test_cline_command_uses_the_env(monkeypatch):
+    monkeypatch.setenv("IRIS_CLINE_CLI", "D:/tools/cline.exe")
+    monkeypatch.setenv("IRIS_CLINE_PROVIDER", "openrouter")
+    monkeypatch.setenv("IRIS_CLINE_MODEL", "gpt-5.2")
+    assert cline_command("go", "W:/Other") == [
+        "D:/tools/cline.exe",
+        "-z",
+        "-c",
+        "W:/Other",
+        "-P",
+        "openrouter",
+        "-m",
+        "gpt-5.2",
+        "go",
     ]
-    assert all(kwargs == {"with_spaces": True} for _, kwargs in window.keys)
-    # two seconds after the command's {ENTER}, a short pause after every other step
-    assert sleeps == [0.3, 0.3, 2, 0.3, 0.3]
-    assert out == "started a Cline task with: add 2+3 (with {braces})"
 
 
-def test_paste_into_cline_truncates_the_reported_text(monkeypatch):
-    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
-    window = FakeWindow()
-    text = "x" * 80
-    out = paste_into_cline(text, window=window, sleep=lambda s: None)
-    assert out == "started a Cline task with: " + "x" * 60
+def test_cline_command_rejects_empty_or_blank_text(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    for text in ("", "   ", "\n\t  "):
+        with pytest.raises(ValueError) as exc:
+            cline_command(text, "W:/Iris")
+        assert str(exc.value) == "empty prompt"
 
 
-def test_paste_into_cline_without_vs_code_raises(monkeypatch):
-    import iris.autopilot as autopilot
+def test_cline_command_keeps_a_multiline_text_as_one_item(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    text = "first line\nsecond line"
+    argv = cline_command(text, "W:/Iris")
+    assert len(argv) == 9
+    assert argv[-1] == text
 
-    monkeypatch.delenv("IRIS_VSCODE_TITLE", raising=False)
 
-    def no_window(title: str):
-        raise LookupError(f"no window whose title contains {title!r}")
+def test_cline_sessions_returns_the_parsed_list_and_skips_non_dicts(monkeypatch):
+    _clear_cli_env(monkeypatch)
 
-    monkeypatch.setattr(autopilot, "_window", no_window)
-    with pytest.raises(LookupError, match="Visual Studio Code"):
-        paste_into_cline("hello")
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(
+            stdout='[{"sessionId": "s1", "source": "cline-cli-zen"}, {"sessionId": "s2"}, "not a dict", 42]'
+        )
+
+    out = cline_sessions(run=fake_run)
+    assert out == [{"sessionId": "s1", "source": "cline-cli-zen"}, {"sessionId": "s2"}]
+
+
+def test_cline_sessions_bad_json_gives_empty(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="this is not json")
+
+    assert cline_sessions(run=fake_run) == []
+
+
+def test_cline_sessions_a_dict_instead_of_a_list_gives_empty(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout='{"sessionId": "s1"}')
+
+    assert cline_sessions(run=fake_run) == []
+
+
+def test_cline_sessions_missing_cli_gives_empty(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        raise FileNotFoundError("no such file")
+
+    assert cline_sessions(run=fake_run) == []
+
+
+def test_cline_sessions_timeout_gives_empty(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=argv, timeout=30)
+
+    assert cline_sessions(run=fake_run) == []
+
+
+def test_cline_sessions_passes_the_exact_argv_and_kwargs(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    calls: list[tuple[list[str], dict]] = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(stdout="[]")
+
+    cline_sessions(run=fake_run)
+    argv, kwargs = calls[0]
+    assert argv == ["W:/Cline/cline-cli.exe", "history", "--json", "--limit", "10"]
+    assert kwargs == {
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "timeout": 30,
+        "stdin": subprocess.DEVNULL,
+        "check": False,
+    }
+
+
+HUB_NOW = 1_750_000_000.0
+
+
+def _iso(epoch: float) -> str:
+    return datetime.fromtimestamp(epoch, tz=UTC).isoformat().replace("+00:00", "Z")
+
+
+def test_start_in_hub_success_with_timeout_text_on_stderr(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    out = start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+    assert out == "started Cline session abc in W:/Iris"
+
+
+def test_start_in_hub_success_after_timeout(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=argv, timeout=120)
+
+    out = start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+    assert out == "started Cline session abc in W:/Iris"
+
+
+def test_start_in_hub_ignores_a_session_started_before_the_window(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    # started 6 seconds before t0: outside the 5-second grace window
+    sessions = [
+        {"sessionId": "old", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW - 6), "prompt": "fix the bug"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    with pytest.raises(RuntimeError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+
+
+def test_start_in_hub_ignores_a_session_with_another_prompt(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "some other prompt"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    with pytest.raises(RuntimeError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+
+
+def test_start_in_hub_ignores_a_session_from_another_source(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "vscode", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    with pytest.raises(RuntimeError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+
+
+def test_start_in_hub_missing_cli_raises_lookup_error(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        raise FileNotFoundError("no such file")
+
+    with pytest.raises(LookupError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW)
+    assert str(exc.value) == "Cline CLI not found at W:/Cline/cline-cli.exe"
+
+
+def test_start_in_hub_error_carries_the_last_stderr_line(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="first line\nsecond line\nhub timed out after 120s\n", returncode=1)
+
+    with pytest.raises(RuntimeError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW)
+    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+
+
+def test_start_in_hub_error_says_no_output_when_stderr_is_empty(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="   \n", returncode=1)
+
+    with pytest.raises(RuntimeError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW)
+    assert str(exc.value) == "Cline did not start a session: no output"
+
+
+def test_start_in_hub_defaults_to_cline_sessions_and_the_clock(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    started_at = datetime.fromtimestamp(time.time() + 1, tz=UTC).isoformat().replace("+00:00", "Z")
+    history = (
+        f'[{{"sessionId": "abc", "source": "cline-cli-zen", '
+        f'"startedAt": "{started_at}", "prompt": "fix the bug"}}]'
+    )
+
+    def fake_run(argv, **kwargs):
+        if argv[1] == "history":  # cline_sessions' call
+            return SimpleNamespace(stdout=history)
+        assert argv == [
+            "W:/Cline/cline-cli.exe", "-z", "-c", "W:/Iris", "-P", "lmstudio", "-m", "qwen3.8-27b", "fix the bug"
+        ]
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    out = start_in_hub("fix the bug", "W:/Iris", run=fake_run)
+    assert out == "started Cline session abc in W:/Iris"
 
 
 def _queue_file(
@@ -219,35 +402,67 @@ def _waiting(path: Path) -> list[str]:
     return [p["text"] for p in pq.pending("", path)]
 
 
-def test_cline_start_pastes_the_oldest_prompt_and_shrinks_the_queue(tmp_path, monkeypatch):
+def test_cline_start_starts_the_oldest_prompt_in_the_hub_and_shrinks_the_queue(tmp_path, monkeypatch):
     import iris.autopilot as autopilot
 
+    _clear_cli_env(monkeypatch)
     path = _queue_file(tmp_path)
     monkeypatch.setenv("IRIS_QUEUE", str(path))
-    typed: list[str] = []
+    started: list[tuple[str, str]] = []
 
-    def fake_paste(text: str) -> str:
-        typed.append(text)
-        return f"started a Cline task with: {text[:60]}"
+    def fake_start(text: str, cwd: str) -> str:
+        started.append((text, cwd))
+        return f"started Cline session abc in {cwd}"
 
-    monkeypatch.setattr(autopilot, "paste_into_cline", fake_paste)
-    assert cline_start("cline") == "started a Cline task with: first prompt"
-    assert typed == ["first prompt"]  # the oldest waiting prompt was pasted
+    monkeypatch.setattr(autopilot, "start_in_hub", fake_start)
+    assert cline_start("cline") == "started Cline session abc in W:/Iris"
+    assert started == [("first prompt", "W:/Iris")]  # the oldest waiting prompt was started in cline_cwd()
     assert _waiting(path) == ["second prompt"]  # the queue shrank by exactly one
 
 
-def test_cline_start_leaves_the_queue_when_the_paste_fails(tmp_path, monkeypatch):
+def test_cline_start_leaves_the_queue_when_the_cli_is_missing(tmp_path, monkeypatch):
     import iris.autopilot as autopilot
 
     path = _queue_file(tmp_path)
     monkeypatch.setenv("IRIS_QUEUE", str(path))
 
-    def broken(text: str) -> str:
-        raise LookupError("no window whose title contains 'Visual Studio Code'")
+    def broken(text: str, cwd: str) -> str:
+        raise LookupError("Cline CLI not found at W:/Cline/cline-cli.exe")
 
-    monkeypatch.setattr(autopilot, "paste_into_cline", broken)
-    assert cline_start("cline") == "error: VS Code is not open"
+    monkeypatch.setattr(autopilot, "start_in_hub", broken)
+    assert cline_start("cline") == "error: Cline CLI not found at W:/Cline/cline-cli.exe"
     assert _waiting(path) == ["first prompt", "second prompt"]  # unchanged
+
+
+def test_cline_start_leaves_the_queue_when_the_hub_fails(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+
+    def broken(text: str, cwd: str) -> str:
+        raise RuntimeError("Cline did not start a session: hub timed out after 120s")
+
+    monkeypatch.setattr(autopilot, "start_in_hub", broken)
+    assert cline_start("cline") == "error: Cline did not start a session: hub timed out after 120s"
+    assert _waiting(path) == ["first prompt", "second prompt"]  # unchanged
+
+
+def test_cline_start_falls_back_to_cline_cwd_for_the_hub(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    monkeypatch.setattr(autopilot, "cline_cwd", lambda: "W:/Fallback")
+    seen: list[str] = []
+
+    def fake_start(text: str, cwd: str) -> str:
+        seen.append(cwd)
+        return f"started Cline session abc in {cwd}"
+
+    monkeypatch.setattr(autopilot, "start_in_hub", fake_start)
+    assert cline_start("cline") == "started Cline session abc in W:/Fallback"
+    assert seen == ["W:/Fallback"]  # no repo given: the hub starts in cline_cwd()
 
 
 def test_cline_start_refuses_when_the_repo_run_is_not_done(tmp_path, monkeypatch):
@@ -306,16 +521,16 @@ def test_watch_sleeps_until_done_then_asks_once(tmp_path, monkeypatch):
         asked.append(question)
         return True
 
-    started: list[str] = []
+    started: list[tuple[str, str]] = []
 
-    def fake_start(agent_name: str) -> str:
-        started.append(agent_name)
+    def fake_start(agent_name: str, repo: str) -> str:
+        started.append((agent_name, repo))
         return "started the next prompt"
 
     out = watch("acme", "cline", fake_confirm, sleep=fake_sleep, start=fake_start)
     assert sleeps == [60, 60]  # not done twice: two waits before the third check finds it done
     assert asked == ["acme is done (PROGRESS-iris6.md done: 15 items). Start the next cline prompt?"]
-    assert started == ["cline"]
+    assert started == [("cline", "acme")]  # the new session runs in the repo that just finished
     assert out == "started the next prompt"
 
 
@@ -331,10 +546,10 @@ def test_watch_a_no_never_starts(tmp_path, monkeypatch):
         asked.append(question)
         return False
 
-    started: list[str] = []
+    started: list[tuple[str, str]] = []
 
-    def fake_start(agent_name: str) -> str:
-        started.append(agent_name)
+    def fake_start(agent_name: str, repo: str) -> str:
+        started.append((agent_name, repo))
         return "should not happen"
 
     journal = FakeJournal()
@@ -360,7 +575,14 @@ def test_watch_with_an_empty_queue_never_asks(tmp_path, monkeypatch):
         return True
 
     journal = FakeJournal()
-    out = watch("acme", "cline", fake_confirm, sleep=lambda s: None, start=lambda agent_name: "nope", journal=journal)
+    out = watch(
+        "acme",
+        "cline",
+        fake_confirm,
+        sleep=lambda s: None,
+        start=lambda agent_name, repo: "nope",
+        journal=journal,
+    )
     assert out == "nothing queued for cline"
     assert asked == []  # nothing waiting means no question at all
     assert journal.entries == [
@@ -385,7 +607,7 @@ def test_watch_max_checks_stops_the_loop(tmp_path, monkeypatch):
     def fake_sleep(seconds: float) -> None:
         sleeps.append(seconds)
 
-    out = watch("acme", "cline", lambda q: True, sleep=fake_sleep, start=lambda agent_name: "nope", max_checks=2)
+    out = watch("acme", "cline", lambda q: True, sleep=fake_sleep, start=lambda agent_name, repo: "nope", max_checks=2)
     assert out == "still running after 2 checks"
     assert checks == 2
     assert sleeps == [60]
@@ -399,15 +621,15 @@ def test_watch_logs_an_autopilot_event(tmp_path, monkeypatch):
     monkeypatch.setattr(autopilot, "run_done", lambda repo: (True, "PROGRESS-iris6.md done: 15 items"))
     journal = FakeJournal()
 
-    out = watch(
-        "acme",
-        "cline",
-        lambda q: True,
-        sleep=lambda s: None,
-        start=lambda agent_name: "started the next prompt",
-        journal=journal,
-    )
+    seen: list[tuple[str, str]] = []
+
+    def fake_start(agent_name: str, repo: str) -> str:
+        seen.append((agent_name, repo))
+        return "started the next prompt"
+
+    out = watch("acme", "cline", lambda q: True, sleep=lambda s: None, start=fake_start, journal=journal)
     assert out == "started the next prompt"
+    assert seen == [("cline", "acme")]  # started in the repo that just finished
     assert journal.entries == [
         {"event": "autopilot", "repo": "acme", "agent": "cline", "answer": True, "result": "started the next prompt"}
     ]
@@ -419,15 +641,15 @@ def test_watch_defaults_to_cline_start(tmp_path, monkeypatch):
     path = _queue_file(tmp_path)
     monkeypatch.setenv("IRIS_QUEUE", str(path))
     monkeypatch.setattr(autopilot, "run_done", lambda repo: (True, "PROGRESS-iris6.md done: 15 items"))
-    started: list[str] = []
+    started: list[tuple[str, str]] = []
 
-    def fake_cline_start(agent_name: str) -> str:
-        started.append(agent_name)
+    def fake_cline_start(agent_name: str, repo: str) -> str:
+        started.append((agent_name, repo))
         return "started via the default"
 
     monkeypatch.setattr(autopilot, "cline_start", fake_cline_start)
     out = watch("acme", "cline", lambda q: True, sleep=lambda s: None)  # no start given: cline_start is the default
     assert out == "started via the default"
-    assert started == ["cline"]
+    assert started == [("cline", "acme")]  # the default receives (agent, repo) too
 
 

@@ -8,7 +8,7 @@ Gates before every commit: ruff check, mypy, pytest with coverage floor.
 - [x] E3. confirmed_ok stays honest (498 passed)
 - [x] E4. existing tasks that return error text (see "Error fixtures" below)
 - [x] E5. focus_gone may open the app (498 passed)
-- [ ] E6. click_then_dialog gets one more call
+- [x] E6. click_then_dialog gets one more call (498 passed)
 - [ ] E7. an app that will not open
 - [ ] E8. ComfyUI is down
 - [ ] E9. a model load that fails must not unload on its own

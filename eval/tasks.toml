@@ -452,7 +452,7 @@ request = "Klik in Kladblok op Bestand en dan op Afdrukken."
 expect = ["click"]
 forbid = ["press_keys"]
 confirm = "yes"
-max_calls = 6
+max_calls = 7
 fixtures = { list_windows = "Naamloos - Kladblok", read_window = ["MenuItem 'Bestand'\nMenuItem 'Bewerken'", "MenuItem 'Nieuw'\nMenuItem 'Afdrukken...'", "Window 'Afdrukken'\nButton 'Afdrukken'\nButton 'Annuleren'"] }
 
 [[task]]

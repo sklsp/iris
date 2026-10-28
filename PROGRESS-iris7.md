@@ -3,7 +3,7 @@
 - [x] A1. a run is done when its checklist is (508 passed in 19.37s)
 - [x] A2. the keys that open a Cline task (512 passed in 19.52s)
 - [x] A3. type into VS Code through a fake (515 passed in 18.95s)
-- [ ] A4. the cline_start tool
+- [x] A4. the cline_start tool (523 passed in 20.41s)
 - [ ] A5. the confirm question says what will be typed
 - [ ] A6. autopilot waits, asks once, starts once
 - [ ] A7. python -m iris autopilot

@@ -1110,3 +1110,94 @@ def test_page_contains_queue_tab_and_empty_state(server):
     assert 'data-tab="queue"' in page
     assert "The queue is empty." in page
 
+
+# --- cline start (item 5) ---------------------------------------------------------
+
+
+def _journal_autopilot_events(path):
+    """The {"event": "autopilot"} lines from a journal file, oldest first."""
+    events = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        entry = json.loads(line)
+        if entry.get("event") == "autopilot":
+            events.append(entry)
+    return events
+
+
+def test_cline_start_ok_returns_result_and_queue(srv, tmp_path, monkeypatch):
+    from iris import autopilot as ap
+    from iris import prompt_queue
+
+    queue, journal = tmp_path / "q.json", tmp_path / "journal.jsonl"
+    monkeypatch.setenv("IRIS_QUEUE", str(queue))
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    calls: list[tuple[str, str]] = []
+
+    def fake(agent, repo=""):
+        calls.append((agent, repo))
+        return "started session abc"
+
+    monkeypatch.setattr(ap, "cline_start", fake)
+    prompt_queue.add("leadscan", "first")   # id 1; the fake does not take it, so it stays
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/cline/start", {"agent": "leadscan"}, token=srv.token, origin=base)
+    assert code == 200 and body["ok"] is True
+    assert body["result"] == "started session abc"
+    assert [p["id"] for p in body["queue"]] == [1]   # the new queue state comes back
+    assert calls == [("leadscan", "")]               # looked up on the module, called with (agent, repo)
+
+    events = _journal_autopilot_events(journal)      # a success is journaled too
+    assert events[-1]["event"] == "autopilot" and events[-1]["result"] == "started session abc"
+
+
+def test_cline_start_error_result_is_409_and_logged(srv, tmp_path, monkeypatch):
+    import iris.autopilot as ap
+
+    journal = tmp_path / "journal.jsonl"
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    monkeypatch.setattr(ap, "cline_start", lambda a, r="": "error: no prompts waiting for leadscan")
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/cline/start", {"agent": "leadscan"}, token=srv.token, origin=base)
+    assert code == 409 and body["error"] == "no prompts waiting for leadscan"
+
+    events = _journal_autopilot_events(journal)      # the error result is journaled as well
+    assert len(events) == 1
+    e = events[0]
+    assert (e["event"], e["source"]) == ("autopilot", "dashboard")
+    assert (e["agent"], e["repo"], e["answer"]) == ("leadscan", "", True)
+    assert e["result"] == "error: no prompts waiting for leadscan"
+
+
+@pytest.mark.parametrize("body", [{}, {"agent": ""}, {"agent": "   "}, {"agent": "x" * 41}])
+def test_cline_start_bad_agent_is_400(srv, body):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, b = post(base + "/api/cline/start", body, token=srv.token, origin=base)
+    assert code == 400 and "agent" in b["error"]
+
+
+def test_cline_start_without_a_token_is_403(srv):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/cline/start", {"agent": "leadscan"}, origin=base)   # no token
+    assert code == 403 and "forbidden" in body["error"]
+
+
+def test_cline_start_while_one_runs_is_409(srv, monkeypatch):
+    import iris.autopilot as ap
+
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(ap, "cline_start", lambda a, r="": calls.append((a, r)) or "started")
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    with d._cline_start_lock:   # hold the lock for the whole request
+        code, body = post(base + "/api/cline/start", {"agent": "leadscan"}, token=srv.token, origin=base)
+    assert code == 409 and "already running" in body["error"]
+    assert calls == []   # cline_start was never reached while the lock is held
+
+
+def test_get_on_cline_start_is_405(srv):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(base + "/api/cline/start", timeout=5)
+    assert exc.value.code == 405
+

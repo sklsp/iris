@@ -172,9 +172,11 @@ LMS_TIMEOUT_SECONDS = 600   # big models can take minutes to load
 WRITE_ROUTES = (
     "/api/models/load", "/api/models/unload", "/api/iris/model",
     "/api/queue/add", "/api/queue/delete", "/api/queue/move",
-)   # the only POST routes: model control and the prompt queue
+    "/api/cline/start",
+)   # the only POST routes: model control, the prompt queue and starting a Cline session
 
 _model_action_lock = threading.Lock()   # one load or unload at a time, full stop
+_cline_start_lock = threading.Lock()    # one Cline start at a time, full stop
 
 
 class ModelActionError(Exception):
@@ -586,6 +588,48 @@ def queue_action(action: str, body: dict) -> dict:
     return queue_payload()
 
 
+# --- autopilot start -------------------------------------------------------------
+
+
+def _log_autopilot_event(repo: str, agent: str, result: str) -> None:
+    """One journal line per dashboard start; the same writer the model routes use."""
+    from iris.agent import Journal
+
+    Journal(journal_path()).log(
+        event="autopilot", source="dashboard", repo=repo, agent=agent, answer=True, result=result
+    )
+
+
+def cline_start_action(body: dict) -> dict:
+    """Start the agent's next queued prompt as a Cline session, one at a time.
+
+    Body is {agent, repo}: agent required (1 to 40 chars), repo optional. Calls
+    iris.autopilot.cline_start(agent, repo), looked up on the module so tests can
+    monkeypatch it. A result starting with "error:" comes back as a 409; otherwise
+    200 with the new queue state. Either way an autopilot event is journaled."""
+    from iris import autopilot
+
+    if not isinstance(body, dict):
+        raise ModelActionError(400, "the body must be a JSON object")
+    agent = str(body.get("agent", "")).strip()
+    if not 1 <= len(agent) <= 40:
+        raise ModelActionError(400, "agent must be 1 to 40 characters")
+    repo_raw = body.get("repo")
+    repo = "" if repo_raw is None else str(repo_raw).strip()
+
+    if not _cline_start_lock.acquire(blocking=False):
+        raise ModelActionError(409, "a start is already running")
+    try:
+        result = autopilot.cline_start(agent, repo)
+    finally:
+        _cline_start_lock.release()
+
+    _log_autopilot_event(repo, agent, result)
+    if result.startswith("error:"):
+        raise ModelActionError(409, result.removeprefix("error: "))
+    return {"ok": True, "result": result, "queue": queue_payload()["prompts"]}
+
+
 # --- the server -----------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -666,6 +710,8 @@ class Handler(BaseHTTPRequestHandler):
             elif path in ("/api/queue/add", "/api/queue/delete", "/api/queue/move"):
                 action = path.rsplit("/", 1)[1]   # "add" | "delete" | "move"
                 payload = queue_action(action, body)
+            elif path == "/api/cline/start":
+                payload = cline_start_action(body)
             else:
                 action = "load" if path.endswith("/load") else "unload"
                 payload = model_action(action, body)

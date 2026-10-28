@@ -611,7 +611,7 @@ expect = ["cline_start"]
 confirm = "yes"
 outcomes = { cline_start = "ok" }
 max_calls = 3
-fixtures = { cline_start = "started a Cline task with: Read W:/Opus-notes/x" }
+fixtures = { cline_start = "started Cline session 1793205942126_wxmv4 in W:/Iris" }
 
 [[task]]
 id = "cline_declined"

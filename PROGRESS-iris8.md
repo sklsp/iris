@@ -7,7 +7,7 @@
 - [x] C5. delete the VS Code typing (553 passed in 21.13s)
 - [x] C6. watch starts in the watched repo (553 passed in 21.22s)
 - [x] C7. the tool and the question (553 passed in 20.01s)
-- [ ] C8. eval fixtures say session
+- [x] C8. eval fixtures say session (553 passed in 19.31s)
 - [ ] C9. docs
 - [ ] C10. no VS Code left, no dashes
 - [ ] C11. final check

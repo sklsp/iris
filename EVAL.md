@@ -32,7 +32,7 @@ fixtures = { list_windows = "WhatsApp\nVerkenner", read_window = "Edit 'Typ een 
 
 ## Fixtures that change
 
-A fixture value can be a list of strings instead of one string: the tool's first call returns the first item, its second call the next, and so on; once the list runs out, the last item repeats. That models a screen that changes after an action — in `save_as`, `list_windows` is played before the save dialog opens, while it is open, and after the file is saved:
+A fixture value can be a list of strings instead of one string: the tool's first call returns the first item, its second call the next, and so on; once the list runs out, the last item repeats. That models a screen that changes after an action. In `save_as`, `list_windows` is played before the save dialog opens, while it is open, and after the file is saved:
 
 ```toml
 fixtures = { list_windows = ["Naamloos - Kladblok", "Opslaan als", "boodschappen.txt - Kladblok"], read_window = ["Edit 'Bestandsnaam'\nButton 'Opslaan'", "Edit 'Bestandsnaam'\nButton 'Opslaan'"] }

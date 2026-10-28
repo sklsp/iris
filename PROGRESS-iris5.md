@@ -10,5 +10,6 @@
 - [x] Q10. injection that arrives on the second read (493 passed in 17.14s)
 - [x] Q11. a queue that changes (493 passed in 16.96s)
 - [x] Q12. EVAL.md documents sequences (493 passed in 16.87s)
-- [ ] Q13. no dashes
+- [x] Q13. no dashes (493 passed in 17.23s)
+  - Scanned `git diff --name-only main..HEAD` (EVAL.md, PROGRESS-iris5.md, eval/tasks.toml, iris/eval.py, tests/test_eval.py) for U+2014/U+2013: one em dash found in EVAL.md ("Fixtures that change" section), fixed by rewording; all five files clean afterwards.
 - [ ] Q14. final check

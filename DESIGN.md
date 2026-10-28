@@ -14,6 +14,7 @@ There is no screenshot or OCR code in `iris/` at all; PLAN.md keeps vision as a 
 
 The risk tier (safe / confirm / never) is decided by `tool.tier_of(args)` in the agent, not by what the model says.
 The model can choose a tool and its arguments, but it cannot change the tier: NEVER returns a refusal with no confirmation path, CONFIRM goes through the spoken yes/no callback, SAFE runs immediately.
+When a tool does run and fails (its function returns a string starting with `error:` or raises), the call is journaled as outcome `error` and the error text goes back to the model, so it can retry another way or tell Jay what went wrong.
 Five tools escalate on their arguments (`tier_for`): `click` and `type_text` when the control or field name says send/buy/pay/password/delete (English and Dutch), `press_keys` for `{ENTER}` in a mail/chat window, `trash_file` for paths it must not touch, and `lmstudio_unload` for the model Iris runs on or "all".
 Tests pin every tier and escalation, so a change to a tier is a visible test failure, not a prompt edit.
 

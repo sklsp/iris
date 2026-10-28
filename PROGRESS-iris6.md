@@ -15,7 +15,7 @@ Gates before every commit: ruff check, mypy, pytest with coverage floor.
 - [x] E10. journal_today counts returned errors (499 passed)
 - [x] E11. the dashboard counts returned errors (500 passed)
 - [x] E12. docs (500 passed)
-- [ ] E13. README task count
+- [x] E13. README task count (500 passed)
 - [ ] E14. no dashes
 - [ ] E15. final check
 

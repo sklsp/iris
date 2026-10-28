@@ -8,7 +8,7 @@
 - [x] D6. the Autopilot tab: runs (601 passed in 23.21s)
 - [x] D7. the Autopilot tab: start the next prompt (601 passed in 23.54s)
 - [x] D8. the Autopilot tab: the queue (601 passed in 24.70s)
-- [ ] D9. tell Jay when a run is done
+- [x] D9. tell Jay when a run is done (601 passed in 23.93s)
 - [ ] D10. a page test for the new parts
 - [ ] D11. the autopilot CLI and the page agree
 - [ ] D12. docs

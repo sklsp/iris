@@ -202,6 +202,11 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   .srow{grid-template-columns:minmax(0,1fr) auto}
   .s-head,.s-model,.b-prov{display:none}
 }
+/* done banner + notify */
+.done-banner{display:none;align-items:center;gap:10px;margin:8px 14px;padding:9px 12px;border-radius:6px;background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.4);color:#e6e6e6;font-size:13px}
+.done-banner.show{display:flex}
+.btn-notify{appearance:none;background:#1a1d22;border:1px solid #23262c;color:#8a9099;font-family:inherit;font-size:11px;padding:2px 7px;border-radius:4px;cursor:pointer;line-height:1.5;margin-left:8px}
+.btn-notify:hover{color:#e6e6e6;border-color:#3a3f47}
 </style>
 </head>
 <body>
@@ -218,6 +223,11 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <button type="button" class="tab" data-tab="eval">Eval</button>
   <button type="button" class="tab" data-tab="queue">Autopilot</button>
 </nav>
+<div id="done-banner" class="done-banner">
+  <span id="done-banner-text"></span>
+  <button type="button" id="done-banner-go" class="btn-start">Open Autopilot</button>
+  <button type="button" id="done-banner-close" class="qbtn">close</button>
+</div>
 <main>
   <section id="overview-pane" class="pane">
     <div class="grid">
@@ -286,7 +296,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <section id="queue-pane" class="pane hidden">
     <div class="grid">
       <section class="panel wide">
-        <h2>Runs</h2>
+        <h2>Runs<button type="button" id="notify-me" class="btn-notify">Notify me</button></h2>
         <div id="runs-body"><div class="empty">loading...</div></div>
       </section>
       <section class="panel wide">
@@ -1016,6 +1026,82 @@ function stopRunsPolling(){
   clearInterval(runsTimer);
   runsTimer = null;
 }
+
+// --- done banner: tell Jay when a run finishes ---------------------------------
+const NORMAL_TITLE = document.title;   // captured once so we can restore it after "(done)"
+let RUNS_BASELINE = null;              // previous /api/runs done-state map; null before the first poll
+
+function runsDoneMap(d){
+  const m = {};
+  if (d && Array.isArray(d.runs)){
+    for (const r of d.runs){
+      const key = String(r.repo || "") + "::" + String(r.name || "");
+      m[key] = {done: r.done === true, name: String(r.name || ""), repo: String(r.repo || "")};
+    }
+  }
+  return m;
+}
+
+function showDoneBanner(name){
+  const banner = $("done-banner");
+  if (!banner) return;
+  const text = name + " is done. Start the next prompt?";
+  const t = $("done-banner-text");
+  if (t) t.textContent = text;
+  banner.classList.add("show");
+  document.title = "(done) " + NORMAL_TITLE;
+  try {
+    if ("Notification" in window && Notification.permission === "granted"){
+      new Notification(text);   // same text as the banner, when notifications are allowed
+    }
+  } catch (err) {}
+}
+
+function closeDoneBanner(){
+  const banner = $("done-banner");
+  if (banner) banner.classList.remove("show");
+  document.title = NORMAL_TITLE;   // restore the normal title once the banner is closed
+}
+
+async function pollRunsForDone(){
+  const d = await j("/api/runs");
+  const now = runsDoneMap(d);
+  if (RUNS_BASELINE){   // the first poll only sets the baseline and never alerts
+    for (const key of Object.keys(now)){
+      const cur = now[key];
+      const prev = RUNS_BASELINE[key];
+      if (cur.done && prev && !prev.done) showDoneBanner(cur.name);   // not done -> done
+    }
+  }
+  RUNS_BASELINE = now;
+}
+
+function wireNotifyMe(){
+  const btn = $("notify-me");
+  if (!btn) return;
+  try {
+    if ("Notification" in window && (Notification.permission === "granted" || Notification.permission === "denied")){
+      btn.style.display = "none";   // already decided, no need to ask again
+      return;
+    }
+  } catch (err) {}
+  btn.addEventListener("click", async () => {
+    try { if ("Notification" in window) await Notification.requestPermission(); } catch (err) {}
+    let state = "default";
+    try { if ("Notification" in window) state = Notification.permission; } catch (err) {}
+    if (state === "granted" || state === "denied") btn.style.display = "none";   // hide once granted or denied
+  });
+}
+
+(function wireDoneBanner(){
+  const go = $("done-banner-go");
+  if (go) go.addEventListener("click", () => showTab("queue"));   // switch to the Autopilot tab
+  const close = $("done-banner-close");
+  if (close) close.addEventListener("click", closeDoneBanner);
+  wireNotifyMe();
+  pollRunsForDone();          // first poll sets the baseline (never alerts)
+  setInterval(pollRunsForDone, 30000);   // keep polling every 30 s even on other tabs
+})();
 
 const RENDERERS = {
   "/api/system": renderSystem,

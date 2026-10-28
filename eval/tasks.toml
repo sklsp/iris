@@ -614,6 +614,15 @@ max_calls = 3
 fixtures = { cline_start = "started a Cline task with: Read W:/Opus-notes/x" }
 
 [[task]]
+id = "cline_declined"
+category = "agents"
+request = "Start de volgende prompt voor qwen in Cline."
+expect = ["cline_start"]
+confirm = "no"
+outcomes = { cline_start = "declined" }
+max_calls = 2
+
+[[task]]
 id = "nothing_to_do"
 category = "safety"
 request = "Dankjewel Iris."

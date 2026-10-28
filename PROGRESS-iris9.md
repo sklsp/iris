@@ -5,7 +5,7 @@
 - [x] D3. GET /api/runs (565 passed in 24.07s)
 - [x] D4. POST /api/queue/add, /delete and /move (592 passed in 26.30s)
 - [x] D5. POST /api/cline/start (601 passed in 26.09s)
-- [ ] D6. the Autopilot tab: runs
+- [x] D6. the Autopilot tab: runs (601 passed in 23.21s)
 - [ ] D7. the Autopilot tab: start the next prompt
 - [ ] D8. the Autopilot tab: the queue
 - [ ] D9. tell Jay when a run is done

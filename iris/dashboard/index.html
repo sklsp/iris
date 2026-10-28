@@ -148,6 +148,18 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .c-folder{font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .c-age{color:#565c66}
 
+/* runs */
+.rrow{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1.3fr) minmax(0,1.6fr) 74px;
+      gap:8px;align-items:center;padding:6px 8px;border-bottom:1px solid #1c1f24;font-size:12px}
+.rrow:last-child{border-bottom:none}
+.r-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.r-file{color:#8a9099;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-prog{display:flex;align-items:center;gap:6px;min-width:0}
+.r-bar{position:relative;height:8px;background:#23262c;border-radius:4px;overflow:hidden;flex:1;min-width:40px}
+.r-fill{position:absolute;left:0;top:0;bottom:0;background:#7aa2ff}
+.r-count{text-align:right;color:#8a9099;font-size:11px;white-space:nowrap;flex:none}
+.r-reason{color:#565c66;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
 @media (max-width:899px){
   .grid{grid-template-columns:1fr}
   .wide{grid-column:auto}
@@ -177,7 +189,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <button type="button" class="tab" data-tab="repos">Repos</button>
   <button type="button" class="tab" data-tab="tools">Tools</button>
   <button type="button" class="tab" data-tab="eval">Eval</button>
-  <button type="button" class="tab" data-tab="queue">Queue</button>
+  <button type="button" class="tab" data-tab="queue">Autopilot</button>
 </nav>
 <main>
   <section id="overview-pane" class="pane">
@@ -246,6 +258,10 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 
   <section id="queue-pane" class="pane hidden">
     <div class="grid">
+      <section class="panel wide">
+        <h2>Runs</h2>
+        <div id="runs-body"><div class="empty">loading...</div></div>
+      </section>
       <section class="panel wide">
         <h2>Queue</h2>
         <div id="queue-body"><div class="empty">loading...</div></div>
@@ -741,6 +757,52 @@ function renderQueue(d){
 
 async function loadQueue(){ renderQueue(await j("/api/queue")); }
 
+function renderRuns(d){
+  const body = $("runs-body");
+  body.textContent = "";
+  if (!d || !Array.isArray(d.runs)){
+    body.appendChild(el("div", "empty", d && d.error ? d.error : "no runs yet"));
+    return;
+  }
+  if (!d.runs.length){
+    body.appendChild(el("div", "empty", "no runs with a PROGRESS file"));
+    return;
+  }
+  for (const r of d.runs){
+    const total = r.total || 0;
+    const doneItems = r.done_items || 0;
+    const pct = total > 0 ? Math.round((doneItems / total) * 100) : 0;
+    const row = el("div", "rrow");
+    row.appendChild(el("span", "r-name", r.name || "-"));
+    row.appendChild(el("span", "r-file num", r.file || ""));
+    const prog = el("span", "r-prog");
+    const bar = el("span", "r-bar");
+    const fill = el("span", "r-fill");
+    fill.style.width = pct + "%";
+    bar.appendChild(fill);
+    prog.appendChild(bar);
+    prog.appendChild(el("span", "r-count num", doneItems + "/" + total));
+    row.appendChild(prog);
+    row.appendChild(el("span", "r-reason", r.reason || ""));
+    const isDone = r.done === true;
+    row.appendChild(el("span", "badge " + (isDone ? "o-ok" : "o-error"), isDone ? "done" : "running"));
+    body.appendChild(row);
+  }
+}
+
+async function loadRuns(){ renderRuns(await j("/api/runs")); }
+let runsTimer = null;   // polls /api/runs every 10 s, only while the Autopilot tab is visible
+function startRunsPolling(){
+  if (runsTimer) return;
+  loadRuns();
+  runsTimer = setInterval(loadRuns, 10000);
+}
+function stopRunsPolling(){
+  if (!runsTimer) return;
+  clearInterval(runsTimer);
+  runsTimer = null;
+}
+
 const RENDERERS = {
   "/api/system": renderSystem,
   "/api/agents": renderAgents,
@@ -771,7 +833,8 @@ function showTab(name){
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   for (const p of PANES) $(p + "-pane").classList.toggle("hidden", p !== name);
   if (name === "eval") loadEval();   // the eval tab fetches when shown, not on every poll
-  if (name === "queue") loadQueue();   // the queue tab fetches when shown, not on every poll
+  if (name === "queue"){ loadQueue(); startRunsPolling(); }   // queue tab: fetch when shown; runs keep polling while visible
+  else stopRunsPolling();
 }
 document.querySelectorAll(".tab").forEach(b => { b.onclick = () => { location.hash = b.dataset.tab; }; });
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));

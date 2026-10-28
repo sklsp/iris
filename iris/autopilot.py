@@ -2,7 +2,7 @@
 
 A run is the newest PROGRESS-*.md in a repo root (by modification time). It counts as done when
 every checklist line is ticked or BLOCKED, the tree is clean and the last commit has been quiet
-for a few minutes. Nothing here starts anything; it only reports what git says. Read only.
+for a few minutes. run_done only reads; cline_start types into VS Code and is asked for first.
 """
 
 from __future__ import annotations
@@ -67,7 +67,6 @@ def cline_start(agent: str, repo: str = "") -> str:
         return "error: VS Code is not open"  # nothing was typed; the queue stays untouched
     prompt_queue.take(agent)  # only after the paste succeeded, so a failure leaves the queue unchanged
     return result
-
 
 
 def watch(

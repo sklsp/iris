@@ -176,6 +176,29 @@ def test_api_journal_missing_file_is_empty(tmp_path, monkeypatch):
     assert data["entries"] == [] and data["today"]["requests"] == 0
 
 
+def test_api_journal_counts_a_returned_error(tmp_path, monkeypatch):
+    from iris.agent import Agent, Journal
+    from iris.llm import Reply, ToolCall
+    from iris.tools import SAFE, Tool
+
+    journal = tmp_path / "journal.jsonl"
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    boom = Tool("boom", "", {}, [], SAFE, lambda **kw: "error: x")
+    replies = [
+        Reply("", [ToolCall("id-boom", "boom", {})], {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "id-boom", "type": "function", "function": {"name": "boom", "arguments": "{}"}}]}),
+        Reply("Klaar.", [], {"role": "assistant", "content": "Klaar."}),
+    ]
+
+    class LLM:
+        def chat(self, messages, tools):
+            return replies.pop(0)
+
+    Agent(LLM(), lambda q: True, Journal(journal), {"boom": boom}).handle("do it")
+    data = journal_payload()
+    assert data["today"] == {"requests": 1, "confirmations": 0, "refusals": 0, "errors": 1}
+
+
 def test_api_agents_stuck_rows_first(tmp_path, monkeypatch):
     import iris.agents as agents_mod
     from tests.test_agents import make_repo, write_config

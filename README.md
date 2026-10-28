@@ -62,6 +62,7 @@ flowchart LR
 | queue_list | safe |  |
 | queue_add | confirm |  |
 | queue_take | confirm |  |
+| cline_start | confirm |  |
 | concept_sites | safe |  |
 
 ## Eval
@@ -136,6 +137,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | trash_file | confirm | move a file or folder to Iris's trash, always undoable |
 | queue_add | confirm | put a prompt in Jay's agent queue for one agent, asks first |
 | queue_take | confirm | take the oldest waiting prompt out of the queue so it can be pasted with type_text, asks first |
+| cline_start | confirm | open a new Cline task in VS Code and type the next queued prompt for this agent into it, asks first |
 
 The tiers are enforced in code, not in the prompt:
 
@@ -189,7 +191,7 @@ A repo is flagged STUCK when it has uncommitted changes and nothing committed fo
 
 ## The prompt queue
 
-Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first. Iris never pastes a prompt by itself: pasting it into a chat is `type_text`, which asks too. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
+Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first. To hand one to Cline, say so and Iris runs `cline_start`: it opens a new Cline task in VS Code and types the oldest queued prompt for that agent into it — this asks first too, and if the paste fails (say, VS Code is not open) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
 
 ## Dashboard
 

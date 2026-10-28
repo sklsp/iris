@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from iris.autopilot import cline_keys, new_task_command, paste_into_cline, run_done, vscode_title
+from iris.autopilot import cline_keys, cline_start, new_task_command, paste_into_cline, run_done, vscode_title
 
 FIXED = 1_700_000_000  # a fixed epoch; every age in these tests is computed from it, never the clock
 
@@ -191,5 +191,78 @@ def test_paste_into_cline_without_vs_code_raises(monkeypatch):
     monkeypatch.setattr(autopilot, "_window", no_window)
     with pytest.raises(LookupError, match="Visual Studio Code"):
         paste_into_cline("hello")
+
+
+def _queue_file(
+    tmp_path: Path, texts: tuple[str, ...] = ("first prompt", "second prompt"), agent: str = "cline"
+) -> Path:
+    """A queue file under tmp_path with these prompts waiting for `agent`, oldest first."""
+    import iris.prompt_queue as pq
+
+    path = tmp_path / "queue.json"
+    for text in texts:
+        pq.add(agent, text, path=path)
+    return path
+
+
+def _waiting(path: Path) -> list[str]:
+    import iris.prompt_queue as pq
+
+    return [p["text"] for p in pq.pending("", path)]
+
+
+def test_cline_start_pastes_the_oldest_prompt_and_shrinks_the_queue(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    typed: list[str] = []
+
+    def fake_paste(text: str) -> str:
+        typed.append(text)
+        return f"started a Cline task with: {text[:60]}"
+
+    monkeypatch.setattr(autopilot, "paste_into_cline", fake_paste)
+    assert cline_start("cline") == "started a Cline task with: first prompt"
+    assert typed == ["first prompt"]  # the oldest waiting prompt was pasted
+    assert _waiting(path) == ["second prompt"]  # the queue shrank by exactly one
+
+
+def test_cline_start_leaves_the_queue_when_the_paste_fails(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+
+    def broken(text: str) -> str:
+        raise LookupError("no window whose title contains 'Visual Studio Code'")
+
+    monkeypatch.setattr(autopilot, "paste_into_cline", broken)
+    assert cline_start("cline") == "error: VS Code is not open"
+    assert _waiting(path) == ["first prompt", "second prompt"]  # unchanged
+
+
+def test_cline_start_refuses_when_the_repo_run_is_not_done(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    repo = tmp_path / "repo"
+    monkeypatch.setattr(autopilot, "run_done", lambda r: (False, "no commits yet"))
+    assert cline_start("cline", repo=str(repo)) == f"error: the run in {repo} is not done: no commits yet"
+    assert _waiting(path) == ["first prompt", "second prompt"]  # unchanged
+
+
+def test_cline_start_with_nothing_waiting(tmp_path, monkeypatch):
+    path = _queue_file(tmp_path, texts=())
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    assert cline_start("cline") == "error: no prompts waiting for cline"
+    assert _waiting(path) == []
+
+
+def test_cline_start_is_a_confirm_tool():
+    from iris.tools import CONFIRM, TOOLS
+
+    assert TOOLS["cline_start"].tier == CONFIRM
 
 

@@ -12,6 +12,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from iris import prompt_queue
 from iris.agents import _age, _git
 from iris.tools import _escape_keys, _window
 
@@ -46,6 +47,23 @@ def paste_into_cline(text: str, window=None, sleep: Callable[[float], None] = ti
         window.type_keys(k, with_spaces=True)
         sleep(2 if i == command_enter else 0.3)  # after the command's {ENTER} the new task must open
     return f"started a Cline task with: {text[:60]}"
+
+
+def cline_start(agent: str, repo: str = "") -> str:
+    """Open a new Cline task and type this agent's next queued prompt into it. The tool layer asks Jay first."""
+    if repo:
+        done, reason = run_done(Path(repo))
+        if not done:
+            return f"error: the run in {repo} is not done: {reason}"
+    waiting = prompt_queue.pending(agent)
+    if not waiting:
+        return f"error: no prompts waiting for {agent.strip()}"
+    try:
+        result = paste_into_cline(waiting[0]["text"])
+    except LookupError:
+        return "error: VS Code is not open"  # nothing was typed; the queue stays untouched
+    prompt_queue.take(agent)  # only after the paste succeeded, so a failure leaves the queue unchanged
+    return result
 
 
 

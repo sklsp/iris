@@ -2,7 +2,7 @@
 
 - [x] D1. remove and move queued prompts (560 passed in 21.33s)
 - [x] D2. run progress for one repo (563 passed in 22.12s)
-- [ ] D3. GET /api/runs
+- [x] D3. GET /api/runs (565 passed in 24.07s)
 - [ ] D4. POST /api/queue/add, /delete and /move
 - [ ] D5. POST /api/cline/start
 - [ ] D6. the Autopilot tab: runs

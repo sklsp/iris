@@ -246,6 +246,63 @@ def test_api_agents_stuck_rows_first(tmp_path, monkeypatch):
     assert rows[0]["uncommitted"] == 1 and rows[0]["branch"] == "main"
 
 
+def _runs_repos(tmp_path):
+    """alpha and zeta are not done, beta is done, gamma has no PROGRESS file at all."""
+    from tests.test_autopilot import checklist, make_repo
+
+    alpha = make_repo(tmp_path, "alpha", checklist(open_at=(4, 9)))   # two items open: not done
+    zeta = make_repo(tmp_path, "zeta", checklist(open_at=(7,)))       # one item open: not done
+    beta = make_repo(tmp_path, "beta", checklist())                   # all ticked, old commit: done
+    gamma = make_repo(tmp_path, "gamma", None)                        # no PROGRESS file at all
+    return alpha, zeta, beta, gamma
+
+
+def _watch_only(monkeypatch, tmp_path, repos):
+    """Point discover() at exactly these temp repos and nothing else (no real worktrees)."""
+    import iris.agents as agents_mod
+    from tests.test_agents import write_config
+
+    monkeypatch.setattr(agents_mod, "CONFIG",
+                        write_config(tmp_path, repos=[str(r) for r in repos], worktrees=[]))
+
+
+def test_api_runs_lists_progress_repos_not_done_first_then_by_name(tmp_path, monkeypatch):
+    alpha, zeta, beta, gamma = _runs_repos(tmp_path)
+    _watch_only(monkeypatch, tmp_path, [alpha, zeta, beta, gamma])
+
+    data = d.runs_payload()
+    assert data["ok"] is True
+    runs = data["runs"]
+    # gamma (no PROGRESS file) is left out; not-done first, then by name within each group
+    assert [r["name"] for r in runs] == ["alpha", "zeta", "beta"]
+    assert runs[0] == {
+        "name": "alpha", "repo": str(alpha), "file": "PROGRESS-iris6.md",
+        "done_items": 13, "total": 15, "done": False,
+        "reason": "2 of 15 items open in PROGRESS-iris6.md",
+    }
+    assert runs[1] == {
+        "name": "zeta", "repo": str(zeta), "file": "PROGRESS-iris6.md",
+        "done_items": 14, "total": 15, "done": False,
+        "reason": "1 of 15 items open in PROGRESS-iris6.md",
+    }
+    assert runs[2] == {
+        "name": "beta", "repo": str(beta), "file": "PROGRESS-iris6.md",
+        "done_items": 15, "total": 15, "done": True,
+        "reason": "PROGRESS-iris6.md done: 15 items",
+    }
+
+
+def test_api_runs_route_returns_200_and_the_same_json(server, tmp_path, monkeypatch):
+    alpha, zeta, beta, gamma = _runs_repos(tmp_path)
+    _watch_only(monkeypatch, tmp_path, [alpha, zeta, beta, gamma])
+
+    with d._lock:  # drop any cached runs payload so the route recomputes against these repos
+        d._cache.pop("runs", None)
+    status, _headers, body = get(server + "/api/runs")
+    assert status == 200
+    assert json.loads(body) == d.runs_payload()
+
+
 def test_api_lmstudio_unreachable_reports_false(monkeypatch):
     monkeypatch.setattr(d, "V0_MODELS_URL", "http://127.0.0.1:9/api/v0/models")  # port 9: nothing listens
     monkeypatch.setattr(d, "V1_MODELS_URL", "http://127.0.0.1:9/v1/models")

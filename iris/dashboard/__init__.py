@@ -7,6 +7,8 @@ IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by th
                   five-minute history for the sparklines
     /api/agents   one row per watched repo (branch, last commit and age, uncommitted
                   count, BLOCKED.md, STUCK), stuck rows first; cached 30 s
+    /api/runs     one progress row per watched repo that has a PROGRESS-*.md file: item counts
+                  and whether the run is done; not-done runs first, then by name; cached 30 s
     /api/lmstudio every model LM Studio knows, with its state (loaded or not) and type
                   (llm/vlm/embeddings) from the v0 API; falls back to the OpenAI-style
                   list labelled "available (state unknown)"; cached 30 s
@@ -110,6 +112,25 @@ def agents_payload() -> dict:
                      "stuck": s.stuck, "error": s.error})
     rows.sort(key=lambda r: 0 if r["stuck"] else 1)  # stuck first, stable otherwise
     return {"rows": rows}
+
+
+def runs_payload() -> dict:
+    """One progress row per watched repo that has a PROGRESS-*.md file.
+
+    Each row is the run_progress dict for that repo plus its discovered name. Repos without a
+    PROGRESS file are left out; not-done runs come first, then by name."""
+    from iris.agents import discover, load_config
+    from iris.autopilot import run_progress
+
+    cfg = load_config()
+    rows = []
+    for name, repo in discover(cfg):
+        progress = run_progress(repo)
+        if progress["file"] is None:
+            continue  # no PROGRESS file: not a run to show
+        rows.append({"name": name, **progress})
+    rows.sort(key=lambda r: (r["done"], r["name"]))  # not-done first, then by name
+    return {"ok": True, "runs": rows}
 
 
 def _fetch_json(url: str) -> dict:
@@ -547,6 +568,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(system_payload())
         elif path == "/api/agents":
             self._json(_cached("agents", agents_payload))
+        elif path == "/api/runs":
+            self._json(_cached("runs", runs_payload))
         elif path == "/api/lmstudio":
             self._json(_cached("lmstudio", lmstudio_payload))
         elif path == "/api/sessions":

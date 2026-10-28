@@ -181,17 +181,17 @@ def watch(
     if not waiting:
         result = f"nothing queued for {agent}"
         if journal is not None:
-            journal.log(event="autopilot", repo=str(repo), agent=agent, answer=None, result=result)
+            journal.log(event="autopilot", source="cli", repo=str(repo), agent=agent, answer=None, result=result)
         return result
     answer = confirm(f"{repo} is done ({reason}). Start the next {agent} prompt?")
     if not answer:
         result = "Jay said no"
         if journal is not None:
-            journal.log(event="autopilot", repo=str(repo), agent=agent, answer=False, result=result)
+            journal.log(event="autopilot", source="cli", repo=str(repo), agent=agent, answer=False, result=result)
         return result
     result = start(agent, str(repo))  # the new session runs in the repo that just finished
     if journal is not None:
-        journal.log(event="autopilot", repo=str(repo), agent=agent, answer=True, result=result)
+        journal.log(event="autopilot", source="cli", repo=str(repo), agent=agent, answer=True, result=result)
     return result
 
 

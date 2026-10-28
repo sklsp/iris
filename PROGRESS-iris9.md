@@ -7,7 +7,7 @@
 - [x] D5. POST /api/cline/start (601 passed in 26.09s)
 - [x] D6. the Autopilot tab: runs (601 passed in 23.21s)
 - [x] D7. the Autopilot tab: start the next prompt (601 passed in 23.54s)
-- [ ] D8. the Autopilot tab: the queue
+- [x] D8. the Autopilot tab: the queue (601 passed in 24.70s)
 - [ ] D9. tell Jay when a run is done
 - [ ] D10. a page test for the new parts
 - [ ] D11. the autopilot CLI and the page agree

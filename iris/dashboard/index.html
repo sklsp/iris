@@ -168,6 +168,25 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .r-status{flex-basis:100%;color:#8a9099;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .r-status-err{color:#d29922}
 
+/* queue rows and the add prompt form */
+.qrow{display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-bottom:1px solid #1c1f24;font-size:12px}
+.qrow:last-child{border-bottom:none}
+.q-id{color:#565c66;flex:none}
+.q-agent{background:#1a1d22;border:1px solid #23262c;border-radius:4px;padding:1px 7px}
+.q-time{color:#565c66;flex:none;font-size:11px;padding-top:1px}
+.q-textwrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.q-text{white-space:pre-wrap;word-break:break-word;color:#e6e6e6;line-height:1.4;font-size:12px}
+.q-more{align-self:flex-start;background:none;border:none;padding:0;color:#7aa2ff;font-family:inherit;font-size:11px;cursor:pointer}
+.q-more:hover{text-decoration:underline}
+.q-btns{display:flex;gap:4px;flex:none}
+.qbtn{appearance:none;background:#1a1d22;border:1px solid #23262c;color:#8a9099;font-family:inherit;font-size:11px;padding:2px 7px;border-radius:4px;cursor:pointer;line-height:1.5}
+.qbtn:hover:not(:disabled){color:#e6e6e6;border-color:#3a3f47}
+.qbtn:disabled{opacity:.4;cursor:default}
+.q-add{margin-top:10px;padding-top:10px;border-top:1px solid #23262c;display:flex;flex-direction:column;gap:8px}
+.q-add-top{display:flex;align-items:center;gap:8px}
+.q-add-text{width:100%;box-sizing:border-box;background:#0e0f11;border:1px solid #23262c;border-radius:4px;color:#e6e6e6;font-family:inherit;font-size:12px;padding:6px 8px;resize:vertical}
+.q-add-err{color:#d29922;font-size:11px;display:none}
+
 @media (max-width:899px){
   .grid{grid-template-columns:1fr}
   .wide{grid-column:auto}
@@ -273,6 +292,14 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
       <section class="panel wide">
         <h2>Queue</h2>
         <div id="queue-body"><div class="empty">loading...</div></div>
+        <form id="add-prompt" class="q-add">
+          <div class="q-add-top">
+            <input type="text" id="qp-agent" class="agent-input" list="iris-agents" placeholder="qwen" value="qwen">
+            <button type="submit" class="btn-start">Add</button>
+          </div>
+          <textarea id="qp-text" rows="6" class="q-add-text" placeholder="Prompt text (Ctrl+Enter to add)"></textarea>
+          <div id="qp-error" class="q-add-err"></div>
+        </form>
       </section>
     </div>
   </section>
@@ -749,17 +776,88 @@ function renderQueue(d){
     return;
   }
   const prompts = Array.isArray(d.prompts) ? d.prompts : [];
+  QUEUE_PROMPTS = prompts;   // keep the shared copy fresh for the Autopilot tab datalist
   if (!prompts.length){
     body.appendChild(el("div", "empty", "The queue is empty."));
     return;
   }
-  for (const p of prompts){
-    const row = el("div", "crow");
-    row.appendChild(el("span", "num", "#" + p.id));
-    row.appendChild(el("span", null, p.agent || "-"));
-    row.appendChild(el("span", "c-folder", p.text || ""));
-    row.appendChild(el("span", "c-age num", p.added || ""));
+  for (let i = 0; i < prompts.length; i++){
+    const p = prompts[i];
+    const row = el("div", "qrow");
+    row.appendChild(el("span", "num q-id", "#" + p.id));
+    const chip = el("span", "chip q-agent");
+    chip.appendChild(el("span", null, p.agent || "-"));
+    row.appendChild(chip);
+    row.appendChild(el("span", "q-time num", p.added || ""));
+    // the text: first two lines until a "more" toggle reveals all of it
+    const wrap = el("div", "q-textwrap");
+    const fullText = String(p.text || "");
+    const lines = fullText.split("\n");
+    const shortText = lines.length > 2 ? lines.slice(0, 2).join("\n") + "..." : fullText;
+    const textEl = el("div", "q-text", shortText);
+    wrap.appendChild(textEl);
+    if (lines.length > 2){
+      let expanded = false;
+      const moreBtn = el("button", "q-more", "more");
+      moreBtn.type = "button";
+      moreBtn.addEventListener("click", () => {
+        expanded = !expanded;
+        textEl.textContent = expanded ? fullText : shortText;
+        moreBtn.textContent = expanded ? "less" : "more";
+      });
+      wrap.appendChild(moreBtn);
+    }
+    row.appendChild(wrap);
+    // up / down / delete: each calls its POST route and re-renders from the returned queue
+    const btns = el("span", "q-btns");
+    const up = el("button", "qbtn", "up");
+    up.type = "button";
+    if (i === 0) up.disabled = true;   // up is disabled on the first row
+    up.addEventListener("click", () => movePrompt(p.id, -1));
+    const down = el("button", "qbtn", "down");
+    down.type = "button";
+    if (i === prompts.length - 1) down.disabled = true;   // down is disabled on the last row
+    down.addEventListener("click", () => movePrompt(p.id, 1));
+    const del = el("button", "qbtn q-del", "delete");
+    del.type = "button";
+    del.addEventListener("click", () => deletePrompt(p));
+    btns.appendChild(up);
+    btns.appendChild(down);
+    btns.appendChild(del);
+    row.appendChild(btns);
     body.appendChild(row);
+  }
+}
+
+async function movePrompt(id, step){
+  const d = await postModel("/api/queue/move", {id: id, step: step});
+  if (d && d.ok === true) renderQueue(d);
+}
+
+async function deletePrompt(p){
+  if (!window.confirm("Delete prompt " + p.id + " for " + (p.agent || "") + "?")) return;
+  const d = await postModel("/api/queue/delete", {id: p.id});
+  if (d && d.ok === true) renderQueue(d);
+}
+
+async function addPrompt(){
+  const agentInput = $("qp-agent");
+  const textArea = $("qp-text");
+  const errEl = $("qp-error");
+  if (!agentInput || !textArea) return;
+  const showErr = (msg) => { if (errEl){ errEl.textContent = msg || ""; errEl.style.display = msg ? "block" : "none"; } };
+  const agent = String(agentInput.value || "").trim();
+  const text = String(textArea.value || "");
+  if (!agent){ showErr("an agent is required"); return; }
+  if (!text){ showErr("a prompt text is required"); return; }
+  const d = await postModel("/api/queue/add", {agent: agent, text: text});
+  if (d && d.ok === true){
+    showErr("");
+    textArea.value = "";   // clear the textarea on success and re-render from the returned queue
+    renderQueue(d);
+    refreshAgentDatalist();
+  } else {
+    showErr((d && d.error) ? d.error : "could not add the prompt");
   }
 }
 
@@ -955,6 +1053,22 @@ function showTab(name){
 document.querySelectorAll(".tab").forEach(b => { b.onclick = () => { location.hash = b.dataset.tab; }; });
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 showTab(location.hash.slice(1));
+
+// --- queue: the add prompt form --------------------------------------------------
+(function wireAddPrompt(){
+  const form = $("add-prompt");
+  if (!form) return;
+  const textArea = $("qp-text");
+  form.addEventListener("submit", (e) => { e.preventDefault(); addPrompt(); });
+  if (textArea){
+    textArea.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter"){   // Ctrl+Enter adds the prompt
+        e.preventDefault();
+        if (form.requestSubmit) form.requestSubmit(); else addPrompt();
+      }
+    });
+  }
+})();
 
 </script>
 </body>

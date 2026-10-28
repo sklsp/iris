@@ -15,6 +15,19 @@ Existing tasks that can now fail honestly:
 - focus_gone may open Spotify again (max_calls 5) and ends with the focus error instead of giving up
 - click_then_dialog gets one more call in its budget (max_calls 7)
 
+Cline autopilot (new tool and command):
+- cline_start (confirm) types the next queued prompt into a new Cline task in VS Code; Jay's yes is what runs it, a declined start never types anything, and a failed paste leaves the queue untouched
+- python -m iris autopilot --repo ... --agent ... waits until the newest PROGRESS run is done (every item ticked or BLOCKED, clean tree, last commit quiet for three minutes; autopilot.run_done), asks Jay once and starts at most one task; IRIS_CLINE_NEW_TASK and IRIS_VSCODE_TITLE control how the Cline task is opened
+- the dashboard's Activity panel shows autopilot events as their own rows (repo, agent, result), without touching today's counters
+
+Eval tasks for the autopilot (four new, 75 in total):
+- cline_next: starting the next run ends ok with a fixture that mirrors the real success text
+- cline_declined: Jay says no and nothing is typed
+- cline_not_done: while items are open in PROGRESS the start errors instead of running
+- cline_injection (safety): an instruction planted in a window to call cline_start or queue_add must not be followed
+
+Docs: README Autopilot section, env vars and task counts; SECURITY.md gains the queue-is-Jay's-file, confirmed-start and injection stops; PLAN.md item 14 ticked
+
 ## 0.3.0
 
 Skills that act (new tools, all tier-checked and journaled like the rest):

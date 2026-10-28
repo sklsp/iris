@@ -16,7 +16,7 @@ Gates before every commit: ruff check, mypy, pytest with coverage floor.
 - [x] E11. the dashboard counts returned errors (500 passed)
 - [x] E12. docs (500 passed)
 - [x] E13. README task count (500 passed)
-- [ ] E14. no dashes
+- [x] E14. no dashes (500 passed)
 - [ ] E15. final check
 
 ## Error fixtures
@@ -26,4 +26,10 @@ One task found, zero changes needed:
 
 - `focus_gone`: fixture `focus_window = "error: no window matches 'Spotify'"`. It has no `outcomes`
   entry for `focus_window`, so there is nothing to correct. No other task returns error text.
+
+## No dashes
+
+E14: scanned the 13 files from `git diff --name-only main..HEAD` for U+2014 and U+2013 with Python.
+Found 3 em-dashes, all introduced by E12's docs (CHANGELOG.md line 10, DESIGN.md line 17); replaced
+with a semicolon and parentheses. Rescan: 0 dashes in every file on the branch.
 

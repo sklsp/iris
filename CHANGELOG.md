@@ -7,7 +7,7 @@ Honest tool errors (a returned `error:` string is a failure, not an ok):
 - the eval counts a forbidden call when it reached the tool: outcome ok, or an error without kind bad_args; a bad-arguments error no longer fails the task
 
 Eval tasks for failures (three new, 71 in total):
-- open_app_fails: "Open Photoshop." with a fixture that returns `error: not installed` — expect open_app ending error
+- open_app_fails: "Open Photoshop." with a fixture that returns `error: not installed`; expect open_app ending error
 - comfy_down: queueing the anime workflow while ComfyUI is down ends in an error outcome
 - load_fails: loading qwen3-8b without free VRAM errors, and lmstudio_unload stays forbidden so a failed load must not unload another model on its own
 

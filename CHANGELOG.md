@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+Honest tool errors (a returned `error:` string is a failure, not an ok):
+- a tool function that returns a string starting with `error:` is journaled as outcome "error" (kind "tool") instead of "ok", and the text goes back to the model so it can retry or report it
+- the eval counts a forbidden call when it reached the tool: outcome ok, or an error without kind bad_args; a bad-arguments error no longer fails the task
+
+Eval tasks for failures (three new, 71 in total):
+- open_app_fails: "Open Photoshop." with a fixture that returns `error: not installed` — expect open_app ending error
+- comfy_down: queueing the anime workflow while ComfyUI is down ends in an error outcome
+- load_fails: loading qwen3-8b without free VRAM errors, and lmstudio_unload stays forbidden so a failed load must not unload another model on its own
+
+Existing tasks that can now fail honestly:
+- focus_gone may open Spotify again (max_calls 5) and ends with the focus error instead of giving up
+- click_then_dialog gets one more call in its budget (max_calls 7)
+
 ## 0.3.0
 
 Skills that act (new tools, all tier-checked and journaled like the rest):

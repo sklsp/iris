@@ -14,7 +14,7 @@ Gates before every commit: ruff check, mypy, pytest with coverage floor.
 - [x] E9. a model load that fails must not unload on its own (498 passed)
 - [x] E10. journal_today counts returned errors (499 passed)
 - [x] E11. the dashboard counts returned errors (500 passed)
-- [ ] E12. docs
+- [x] E12. docs (500 passed)
 - [ ] E13. README task count
 - [ ] E14. no dashes
 - [ ] E15. final check

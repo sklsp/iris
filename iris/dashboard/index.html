@@ -974,6 +974,7 @@ function renderRuns(d){
     input.addEventListener("input", refreshBtn);
     input.addEventListener("change", () => { writeAgent(r.repo, String(input.value || "").trim()); });
     btn.addEventListener("click", () => { startNextPrompt(r, input, btn); });
+    refreshBtn();
     ctrl.appendChild(input);
     ctrl.appendChild(btn);
     const st = RUN_STATUS[r.repo];

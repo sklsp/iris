@@ -4,7 +4,7 @@ Branch `errors` in W:/Iris. One commit per item, message `errors: <title>` plus 
 Gates before every commit: ruff check, mypy, pytest with coverage floor.
 
 - [x] E1. a returned error is journaled as an error (494 passed)
-- [ ] E2. the eval counts a forbidden call that reached the tool
+- [x] E2. the eval counts a forbidden call that reached the tool (497 passed)
 - [ ] E3. confirmed_ok stays honest
 - [ ] E4. existing tasks that return error text
 - [ ] E5. focus_gone may open the app

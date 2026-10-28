@@ -226,6 +226,41 @@ def test_run_task_flags_forbidden_call(tmp_path):
     assert ev.run_task(llm, task, tmp_path).reasons == ["forbidden call: press_keys"]
 
 
+def test_run_task_flags_forbidden_call_that_returned_an_error(tmp_path):
+    task = ev.Task(id="t13", request="sla het op", confirm="yes", forbid=["press_keys"],
+                   fixtures={"press_keys": "error: x"})
+    llm = ScriptedLLM(call("press_keys", window="Naamloos - Kladblok", keys="^s"), answer("Opgeslagen."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons, r.calls) == \
+        (False, ["forbidden call: press_keys"], [("press_keys", "error")])
+
+
+def test_run_task_does_not_flag_forbidden_bad_args(tmp_path, monkeypatch):
+    task = ev.Task(id="t14", request="sla het op", confirm="yes", forbid=["press_keys"])
+    # dry tools swallow any kwargs; give press_keys a strict signature so the missing
+    # `keys` keyword hits the bad_args path in Agent._run, like the real fn would.
+    tools = ev.dry_tools({})
+
+    def strict(window: str, keys: str) -> str:
+        return f"pressed {keys!r}"
+
+    monkeypatch.setattr(tools["press_keys"], "fn", strict)
+    monkeypatch.setattr(ev, "dry_tools", lambda fixtures: tools)
+    llm = ScriptedLLM(call("press_keys", window="Naamloos - Kladblok"), answer("Opgeslagen."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons, r.calls) == \
+        (True, [], [("press_keys", "error")])
+
+
+def test_run_task_does_not_flag_forbidden_refused_or_declined(tmp_path):
+    task = ev.Task(id="t15", request="verzend het", confirm="no", forbid=["click", "trash_file"])
+    llm = ScriptedLLM(call("click", window="Mail", control="Verzenden"),
+                      call("trash_file", path="W:/tmp/oud.txt"), answer("Niet gedaan."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons, r.calls) == \
+        (True, [], [("click", "refused"), ("trash_file", "declined")])
+
+
 def test_run_task_flags_missing_call(tmp_path):
     task = ev.Task(id="t4", request="wat staat open?", expect=["list_windows"])
     r = ev.run_task(ScriptedLLM(answer("Ik zie niets.")), task, tmp_path)

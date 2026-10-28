@@ -239,6 +239,31 @@ def run_done(repo: Path | str, quiet_minutes: int = 3, now: float | None = None)
     return True, f"{progress.name} done: {total} items"
 
 
+def run_progress(repo: Path | str) -> dict:
+    """The progress of the newest PROGRESS-*.md run in `repo`: file name, item counts and whether it is done."""
+    path = Path(repo)
+    progress = _newest_progress(path)
+    if progress is None:
+        return {
+            "repo": str(repo),
+            "file": None,
+            "done_items": 0,
+            "total": 0,
+            "done": False,
+            "reason": "no PROGRESS file",
+        }
+    open_, total = _open_items(progress.read_text(encoding="utf-8"))
+    done, reason = run_done(path)
+    return {
+        "repo": str(repo),
+        "file": progress.name,
+        "done_items": total - open_,
+        "total": total,
+        "done": done,
+        "reason": reason,
+    }
+
+
 def autopilot_main(argv: list[str]) -> int:
     """The CLI behind `python -m iris autopilot`: wait for the run in --repo to finish, ask Jay once, start."""
     ap = argparse.ArgumentParser(prog="iris autopilot", description=__doc__)

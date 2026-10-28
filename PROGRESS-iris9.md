@@ -1,7 +1,7 @@
 # Iris 9 progress: dashboard autopilot (items D1 to D14)
 
 - [x] D1. remove and move queued prompts (560 passed in 21.33s)
-- [ ] D2. run progress for one repo
+- [x] D2. run progress for one repo (563 passed in 22.12s)
 - [ ] D3. GET /api/runs
 - [ ] D4. POST /api/queue/add, /delete and /move
 - [ ] D5. POST /api/cline/start

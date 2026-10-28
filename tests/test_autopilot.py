@@ -18,6 +18,7 @@ from iris.autopilot import (
     cline_sessions,
     cline_start,
     run_done,
+    run_progress,
     start_in_hub,
     watch,
 )
@@ -115,6 +116,43 @@ def test_a_repo_without_commits_is_reported_not_done(tmp_path, monkeypatch):
 
     monkeypatch.setattr(autopilot, "_git", fake_git)
     assert run_done(repo, now=FIXED + 3600) == (False, "no commits yet")
+
+
+def test_run_progress_of_a_half_done_file(tmp_path):
+    repo = make_repo(tmp_path, "alpha", checklist(open_at=(4, 9)))
+    assert run_progress(repo) == {
+        "repo": str(repo),
+        "file": "PROGRESS-iris6.md",
+        "done_items": 13,
+        "total": 15,
+        "done": False,
+        "reason": "2 of 15 items open in PROGRESS-iris6.md",
+    }
+
+
+def test_run_progress_of_a_done_file(tmp_path):
+    # the commit is at FIXED (years ago), so a fully ticked clean tree is past the quiet period
+    repo = make_repo(tmp_path, "beta", checklist())
+    assert run_progress(repo) == {
+        "repo": str(repo),
+        "file": "PROGRESS-iris6.md",
+        "done_items": 15,
+        "total": 15,
+        "done": True,
+        "reason": "PROGRESS-iris6.md done: 15 items",
+    }
+
+
+def test_run_progress_without_a_file(tmp_path):
+    repo = make_repo(tmp_path, "gamma", None)
+    assert run_progress(repo) == {
+        "repo": str(repo),
+        "file": None,
+        "done_items": 0,
+        "total": 0,
+        "done": False,
+        "reason": "no PROGRESS file",
+    }
 
 
 def _clear_cli_env(monkeypatch) -> None:

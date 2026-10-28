@@ -205,6 +205,15 @@ max_calls = 3
 fixtures = { list_windows = "Bakkerij Zon - Google Chrome\nNaamloos - Kladblok" }
 
 [[task]]
+id = "focus_gone"
+category = "hands"
+request = "Zet Spotify op de voorgrond."
+expect = ["list_windows"]
+forbid = ["click", "type_text"]
+max_calls = 3
+fixtures = { list_windows = ["Spotify Premium\nVerkenner", "Verkenner"], focus_window = "error: no window matches 'Spotify'" }
+
+[[task]]
 id = "scroll_up"
 category = "hands"
 request = "Scroll in Kladblok een stukje omhoog."

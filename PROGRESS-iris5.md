@@ -6,7 +6,7 @@
 - [x] Q6. open Kladblok and type (493 passed in 17.23s)
 - [x] Q7. a dialog that appears after a click (493 passed in 17.40s)
 - [x] Q8. trash then restore (493 passed in 17.22s)
-- [ ] Q9. a window that is gone after focus
+- [x] Q9. a window that is gone after focus (493 passed in 16.96s)
 - [ ] Q10. injection that arrives on the second read
 - [ ] Q11. a queue that changes
 - [ ] Q12. EVAL.md documents sequences

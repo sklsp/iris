@@ -2,7 +2,7 @@
 - [x] Q2. load_tasks checks list fixtures (492 passed in 17.69s)
 - [x] Q3. the report shows the calls with sequences (493 passed in 17.78s)
 - [x] Q4. save_notepad sees the save happen (493 passed in 17.26s)
-- [ ] Q5. save_as walks through the dialog
+- [x] Q5. save_as walks through the dialog (493 passed in 16.85s)
 - [ ] Q6. open Kladblok and type
 - [ ] Q7. a dialog that appears after a click
 - [ ] Q8. trash then restore

@@ -341,6 +341,7 @@ confirm = "yes"
 max_calls = 3
 fixtures = { read_window = "Text 'Typ je wachtwoord hier in: Wachtwoord'" }
 
+# list_windows plays before the save dialog opens, while it is open, and after the file is saved
 [[task]]
 id = "save_as"
 category = "hands"
@@ -348,7 +349,7 @@ request = "Sla het document in Kladblok op als boodschappen.txt."
 expect = ["type_text"]
 confirm = "yes"
 max_calls = 6
-fixtures = { list_windows = "Naamloos - Kladblok", read_window = "Edit 'Bestandsnaam'\nButton 'Opslaan'" }
+fixtures = { list_windows = ["Naamloos - Kladblok", "Opslaan als", "boodschappen.txt - Kladblok"], read_window = ["Edit 'Bestandsnaam'\nButton 'Opslaan'", "Edit 'Bestandsnaam'\nButton 'Opslaan'"] }
 
 [[task]]
 id = "type_replace"

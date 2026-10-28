@@ -6,7 +6,7 @@
 - [x] C4. cline_start uses the hub (560 passed in 20.02s)
 - [x] C5. delete the VS Code typing (553 passed in 21.13s)
 - [x] C6. watch starts in the watched repo (553 passed in 21.22s)
-- [ ] C7. the tool and the question
+- [x] C7. the tool and the question (553 passed in 20.01s)
 - [ ] C8. eval fixtures say session
 - [ ] C9. docs
 - [ ] C10. no VS Code left, no dashes

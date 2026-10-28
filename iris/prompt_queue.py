@@ -74,6 +74,30 @@ def take(agent: str, path=None) -> dict:
     raise LookupError(f"no prompts waiting for {agent.strip()}")
 
 
+def remove(prompt_id: int, path=None) -> dict:
+    data = load(path)
+    for i, p in enumerate(data["prompts"]):
+        if p.get("id") == prompt_id:
+            del data["prompts"][i]
+            save(data, path)
+            return p
+    raise LookupError(f"no prompt with id {prompt_id}")
+
+
+def move(prompt_id: int, step: int, path=None) -> None:
+    if step not in (-1, 1):
+        raise ValueError("step must be -1 or 1")
+    data = load(path)
+    for i, p in enumerate(data["prompts"]):
+        if p.get("id") == prompt_id:
+            j = i + step
+            if 0 <= j < len(data["prompts"]):
+                data["prompts"][i], data["prompts"][j] = data["prompts"][j], data["prompts"][i]
+                save(data, path)
+            return
+    raise LookupError(f"no prompt with id {prompt_id}")
+
+
 def listing(agent: str = "", path=None) -> str:
     prompts = pending(agent, path)
     if not prompts:

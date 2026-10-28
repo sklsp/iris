@@ -121,6 +121,7 @@ request = "Zet het bestand dat je net weggooide terug."
 expect = ["restore_trash"]
 max_calls = 2
 
+# the second list_windows shows the saved title, so the model can see the save worked
 [[task]]
 id = "save_notepad"
 category = "hands"
@@ -129,7 +130,7 @@ expect = ["press_keys"]
 confirm = "yes"
 outcomes = { press_keys = "ok" }
 max_calls = 4
-fixtures = { list_windows = "Naamloos - Kladblok" }
+fixtures = { list_windows = ["Naamloos - Kladblok", "boodschappen.txt - Kladblok"] }
 
 [[task]]
 id = "type_notepad"

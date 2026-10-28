@@ -1,7 +1,7 @@
 - [x] Q1. fixtures can be a list that plays in order (488 passed in 19.51s)
 - [x] Q2. load_tasks checks list fixtures (492 passed in 17.69s)
 - [x] Q3. the report shows the calls with sequences (493 passed in 17.78s)
-- [ ] Q4. save_notepad sees the save happen
+- [x] Q4. save_notepad sees the save happen (493 passed in 17.26s)
 - [ ] Q5. save_as walks through the dialog
 - [ ] Q6. open Kladblok and type
 - [ ] Q7. a dialog that appears after a click

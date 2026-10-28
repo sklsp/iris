@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from iris.autopilot import cline_keys, new_task_command, run_done, vscode_title
+from iris.autopilot import cline_keys, new_task_command, paste_into_cline, run_done, vscode_title
 
 FIXED = 1_700_000_000  # a fixed epoch; every age in these tests is computed from it, never the clock
 
@@ -136,4 +136,60 @@ def test_cline_keys_rejects_a_newline(monkeypatch):
     with pytest.raises(ValueError) as exc:
         cline_keys("first\nsecond")
     assert str(exc.value) == "one line only"
+
+
+class FakeWindow:
+    """Records set_focus and every type_keys call; no real window is ever touched."""
+
+    def __init__(self) -> None:
+        self.focus_calls = 0
+        self.keys: list[tuple[str, dict]] = []
+
+    def set_focus(self) -> None:
+        self.focus_calls += 1
+
+    def type_keys(self, keys: str, **kwargs) -> None:
+        self.keys.append((keys, kwargs))
+
+
+def test_paste_into_cline_types_the_exact_sequence(monkeypatch):
+    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
+    window = FakeWindow()
+    sleeps: list[float] = []
+    text = "add 2+3 (with {braces})"
+    out = paste_into_cline(text, window=window, sleep=sleeps.append)
+    assert window.focus_calls == 1
+    assert [k for k, _ in window.keys] == [
+        "^+p",
+        "Cline: New Task",
+        "{ENTER}",
+        "add 2{+}3 {(}with {{}braces{}}{)}",
+        "{ENTER}",
+    ]
+    assert all(kwargs == {"with_spaces": True} for _, kwargs in window.keys)
+    # two seconds after the command's {ENTER}, a short pause after every other step
+    assert sleeps == [0.3, 0.3, 2, 0.3, 0.3]
+    assert out == "started a Cline task with: add 2+3 (with {braces})"
+
+
+def test_paste_into_cline_truncates_the_reported_text(monkeypatch):
+    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
+    window = FakeWindow()
+    text = "x" * 80
+    out = paste_into_cline(text, window=window, sleep=lambda s: None)
+    assert out == "started a Cline task with: " + "x" * 60
+
+
+def test_paste_into_cline_without_vs_code_raises(monkeypatch):
+    import iris.autopilot as autopilot
+
+    monkeypatch.delenv("IRIS_VSCODE_TITLE", raising=False)
+
+    def no_window(title: str):
+        raise LookupError(f"no window whose title contains {title!r}")
+
+    monkeypatch.setattr(autopilot, "_window", no_window)
+    with pytest.raises(LookupError, match="Visual Studio Code"):
+        paste_into_cline("hello")
+
 

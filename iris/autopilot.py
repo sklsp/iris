@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from iris.agents import _age, _git
-from iris.tools import _escape_keys
+from iris.tools import _escape_keys, _window
 
 
 def new_task_command() -> str:
@@ -32,6 +33,19 @@ def cline_keys(text: str) -> list[str]:
     if "\n" in text or "\r" in text:
         raise ValueError("one line only")
     return ["^+p", _escape_keys(new_task_command()), "{ENTER}", _escape_keys(text), "{ENTER}"]
+
+
+def paste_into_cline(text: str, window=None, sleep: Callable[[float], None] = time.sleep) -> str:
+    """Open a Cline task in VS Code and type `text` into it. `window` is injectable for tests."""
+    if window is None:
+        window = _window(vscode_title())
+    window.set_focus()
+    keys = cline_keys(text)
+    command_enter = keys.index("{ENTER}")  # the {ENTER} right after the command, not the one that sends it
+    for i, k in enumerate(keys):
+        window.type_keys(k, with_spaces=True)
+        sleep(2 if i == command_enter else 0.3)  # after the command's {ENTER} the new task must open
+    return f"started a Cline task with: {text[:60]}"
 
 
 

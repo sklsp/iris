@@ -14,5 +14,5 @@
 - [x] A12. eval: a window cannot start a run (538 passed in 20.46s)
 - [x] A13. docs (538 passed in 20.89s)
 - [x] A14. README test (538 passed in 19.91s); no change needed, tests/test_readme.py loops over tools.TOOLS so cline_start is covered
-- [ ] A15. no dashes
+- [x] A15. no dashes (538 passed in 20.00s); scanned the 16 files changed on main..HEAD for U+2014/U+2013 with Python, none found
 - [ ] A16. final check

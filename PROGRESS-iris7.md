@@ -5,7 +5,7 @@
 - [x] A3. type into VS Code through a fake (515 passed in 18.95s)
 - [x] A4. the cline_start tool (523 passed in 20.41s)
 - [x] A5. the confirm question says what will be typed (524 passed in 19.05s)
-- [ ] A6. autopilot waits, asks once, starts once
+- [x] A6. autopilot waits, asks once, starts once (530 passed in 20.58s)
 - [ ] A7. python -m iris autopilot
 - [ ] A8. the dashboard shows autopilot events
 - [ ] A9. eval: start the next run

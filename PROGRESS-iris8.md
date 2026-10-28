@@ -5,7 +5,7 @@
 - [x] C3. start a session through the hub (558 passed in 22.33s)
 - [x] C4. cline_start uses the hub (560 passed in 20.02s)
 - [x] C5. delete the VS Code typing (553 passed in 21.13s)
-- [ ] C6. watch starts in the watched repo
+- [x] C6. watch starts in the watched repo (553 passed in 21.22s)
 - [ ] C7. the tool and the question
 - [ ] C8. eval fixtures say session
 - [ ] C9. docs

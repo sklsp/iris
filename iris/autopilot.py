@@ -156,15 +156,16 @@ def watch(
     confirm: Callable[[str], bool],
     every: float = 60,
     sleep: Callable[[float], None] = time.sleep,
-    start: Callable[[str], str] | None = None,
+    start: Callable[[str, str], str] | None = None,
     journal: Journal | None = None,
     max_checks: int | None = None,
 ) -> str:
     """Wait until the run in `repo` is done, then ask Jay once before starting the agent's next prompt.
 
-    It returns after the first start or the first answer, so it never starts twice. When journal is given,
-    each outcome is logged as an "autopilot" event with repo, agent, answer and result. max_checks (tests only)
-    stops the loop before any question is asked."""
+    It returns after the first start or the first answer, so it never starts twice. The start callable receives
+    (agent, str(repo)) so the new session runs in the repo that just finished. When journal is given, each outcome
+    is logged as an "autopilot" event with repo, agent, answer and result. max_checks (tests only) stops the loop
+    before any question is asked."""
     if start is None:
         start = cline_start
     checks = 0
@@ -188,7 +189,7 @@ def watch(
         if journal is not None:
             journal.log(event="autopilot", repo=str(repo), agent=agent, answer=False, result=result)
         return result
-    result = start(agent)
+    result = start(agent, str(repo))  # the new session runs in the repo that just finished
     if journal is not None:
         journal.log(event="autopilot", repo=str(repo), agent=agent, answer=True, result=result)
     return result

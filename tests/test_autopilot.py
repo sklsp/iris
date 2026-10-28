@@ -521,16 +521,16 @@ def test_watch_sleeps_until_done_then_asks_once(tmp_path, monkeypatch):
         asked.append(question)
         return True
 
-    started: list[str] = []
+    started: list[tuple[str, str]] = []
 
-    def fake_start(agent_name: str) -> str:
-        started.append(agent_name)
+    def fake_start(agent_name: str, repo: str) -> str:
+        started.append((agent_name, repo))
         return "started the next prompt"
 
     out = watch("acme", "cline", fake_confirm, sleep=fake_sleep, start=fake_start)
     assert sleeps == [60, 60]  # not done twice: two waits before the third check finds it done
     assert asked == ["acme is done (PROGRESS-iris6.md done: 15 items). Start the next cline prompt?"]
-    assert started == ["cline"]
+    assert started == [("cline", "acme")]  # the new session runs in the repo that just finished
     assert out == "started the next prompt"
 
 
@@ -546,10 +546,10 @@ def test_watch_a_no_never_starts(tmp_path, monkeypatch):
         asked.append(question)
         return False
 
-    started: list[str] = []
+    started: list[tuple[str, str]] = []
 
-    def fake_start(agent_name: str) -> str:
-        started.append(agent_name)
+    def fake_start(agent_name: str, repo: str) -> str:
+        started.append((agent_name, repo))
         return "should not happen"
 
     journal = FakeJournal()
@@ -575,7 +575,14 @@ def test_watch_with_an_empty_queue_never_asks(tmp_path, monkeypatch):
         return True
 
     journal = FakeJournal()
-    out = watch("acme", "cline", fake_confirm, sleep=lambda s: None, start=lambda agent_name: "nope", journal=journal)
+    out = watch(
+        "acme",
+        "cline",
+        fake_confirm,
+        sleep=lambda s: None,
+        start=lambda agent_name, repo: "nope",
+        journal=journal,
+    )
     assert out == "nothing queued for cline"
     assert asked == []  # nothing waiting means no question at all
     assert journal.entries == [
@@ -600,7 +607,7 @@ def test_watch_max_checks_stops_the_loop(tmp_path, monkeypatch):
     def fake_sleep(seconds: float) -> None:
         sleeps.append(seconds)
 
-    out = watch("acme", "cline", lambda q: True, sleep=fake_sleep, start=lambda agent_name: "nope", max_checks=2)
+    out = watch("acme", "cline", lambda q: True, sleep=fake_sleep, start=lambda agent_name, repo: "nope", max_checks=2)
     assert out == "still running after 2 checks"
     assert checks == 2
     assert sleeps == [60]
@@ -614,15 +621,15 @@ def test_watch_logs_an_autopilot_event(tmp_path, monkeypatch):
     monkeypatch.setattr(autopilot, "run_done", lambda repo: (True, "PROGRESS-iris6.md done: 15 items"))
     journal = FakeJournal()
 
-    out = watch(
-        "acme",
-        "cline",
-        lambda q: True,
-        sleep=lambda s: None,
-        start=lambda agent_name: "started the next prompt",
-        journal=journal,
-    )
+    seen: list[tuple[str, str]] = []
+
+    def fake_start(agent_name: str, repo: str) -> str:
+        seen.append((agent_name, repo))
+        return "started the next prompt"
+
+    out = watch("acme", "cline", lambda q: True, sleep=lambda s: None, start=fake_start, journal=journal)
     assert out == "started the next prompt"
+    assert seen == [("cline", "acme")]  # started in the repo that just finished
     assert journal.entries == [
         {"event": "autopilot", "repo": "acme", "agent": "cline", "answer": True, "result": "started the next prompt"}
     ]
@@ -634,15 +641,15 @@ def test_watch_defaults_to_cline_start(tmp_path, monkeypatch):
     path = _queue_file(tmp_path)
     monkeypatch.setenv("IRIS_QUEUE", str(path))
     monkeypatch.setattr(autopilot, "run_done", lambda repo: (True, "PROGRESS-iris6.md done: 15 items"))
-    started: list[str] = []
+    started: list[tuple[str, str]] = []
 
-    def fake_cline_start(agent_name: str) -> str:
-        started.append(agent_name)
+    def fake_cline_start(agent_name: str, repo: str) -> str:
+        started.append((agent_name, repo))
         return "started via the default"
 
     monkeypatch.setattr(autopilot, "cline_start", fake_cline_start)
     out = watch("acme", "cline", lambda q: True, sleep=lambda s: None)  # no start given: cline_start is the default
     assert out == "started via the default"
-    assert started == ["cline"]
+    assert started == [("cline", "acme")]  # the default receives (agent, repo) too
 
 

@@ -12,4 +12,15 @@
 - [x] Q12. EVAL.md documents sequences (493 passed in 16.87s)
 - [x] Q13. no dashes (493 passed in 17.23s)
   - Scanned `git diff --name-only main..HEAD` (EVAL.md, PROGRESS-iris5.md, eval/tasks.toml, iris/eval.py, tests/test_eval.py) for U+2014/U+2013: one em dash found in EVAL.md ("Fixtures that change" section), fixed by rewording; all five files clean afterwards.
-- [ ] Q14. final check
+- [x] Q14. final check (493 passed in 17.35s)
+
+## Eval sequences run result
+
+Commits ahead of main: 13 (`git rev-list --count main..HEAD`, before this commit; 14 after it).
+
+Gates, last line of each:
+- ruff check iris tests: All checks passed!
+- mypy: Success: no issues found in 10 source files
+- pytest -q -p no:cacheprovider --cov=iris --cov-report=term: 493 passed in 17.35s
+
+New tasks: 6 (task count 62 to 68): open_then_type, click_then_dialog, trash_then_restore, focus_gone, injection_late, comfy_queue_then_status.

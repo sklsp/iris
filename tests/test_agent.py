@@ -91,6 +91,27 @@ def test_unknown_tool_goes_back_to_the_model(tmp_path):
     assert "unknown tool" in llm.seen[1][-1]["content"]
 
 
+def test_returned_error_text_is_journaled_as_an_error(tmp_path):
+    ran = []
+    tools = {
+        "boom": Tool("boom", "", {}, [], SAFE, lambda **kw: ran.append(("boom", kw)) or "error: x"),
+        "count": Tool("count", "", {}, [], SAFE, lambda **kw: "errors: 3"),
+        "caps": Tool("caps", "", {}, [], SAFE, lambda **kw: "Error: x"),
+        "mid": Tool("mid", "", {}, [], SAFE, lambda **kw: "ok, no error: here"),
+    }
+    llm = ScriptedLLM(call("boom"), call("count"), call("caps"), call("mid"), answer("done"))
+    a = Agent(llm, lambda q: True, Journal(tmp_path / "j.jsonl"), tools)
+    assert a.handle("go") == "done"
+    entries = [e for e in journal(tmp_path) if e["event"] == "tool"]
+    assert [(e["outcome"], e.get("error_kind")) for e in entries] == [
+        ("error", "tool"), ("ok", None), ("ok", None), ("ok", None)]
+    assert entries[0]["error"] == "error: x" and "result" not in entries[0]
+    # the model still receives the exact text, wrapped as untrusted data
+    contents = [llm.seen[i + 1][-1]["content"] for i in range(4)]
+    assert contents == [f"<untrusted_data>\n{t}\n</untrusted_data>"
+                        for t in ("error: x", "errors: 3", "Error: x", "ok, no error: here")]
+
+
 def test_real_tool_tiers():
     assert TOOLS["read_window"].tier_of({"title": "x"}) == SAFE
     assert TOOLS["click"].tier_of({"window": "Chrome", "control": "Afrekenen"}) == "never"

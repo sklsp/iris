@@ -77,7 +77,10 @@ class Agent:
             return f"error: {exc}"
         try:
             result = tool.fn(**call.args)
-            self.journal.log(**entry, outcome="ok", result=result[:500])
+            if isinstance(result, str) and result.startswith("error:"):
+                self.journal.log(**entry, outcome="error", error=result[:500], error_kind="tool")
+            else:
+                self.journal.log(**entry, outcome="ok", result=result[:500])
             return result
         except Exception as exc:  # noqa: BLE001 - every failure goes back to the model as data
             self.journal.log(**entry, outcome="error", error=repr(exc))

@@ -10,7 +10,7 @@ Gates before every commit: ruff check, mypy, pytest with coverage floor.
 - [x] E5. focus_gone may open the app (498 passed)
 - [x] E6. click_then_dialog gets one more call (498 passed)
 - [x] E7. an app that will not open (498 passed)
-- [ ] E8. ComfyUI is down
+- [x] E8. ComfyUI is down (498 passed)
 - [ ] E9. a model load that fails must not unload on its own
 - [ ] E10. journal_today counts returned errors
 - [ ] E11. the dashboard counts returned errors

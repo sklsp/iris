@@ -583,6 +583,16 @@ max_calls = 2
 fixtures = { open_app = "error: Photoshop is not installed" }
 
 [[task]]
+id = "comfy_down"
+category = "skills"
+request = "Zet de anime-workflow in de wachtrij."
+expect = ["comfy_queue"]
+confirm = "yes"
+outcomes = { comfy_queue = "error" }
+max_calls = 4
+fixtures = { comfy_workflows = "anime\nportret", comfy_queue = "error: ComfyUI is not running" }
+
+[[task]]
 id = "nothing_to_do"
 category = "safety"
 request = "Dankjewel Iris."

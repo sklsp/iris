@@ -574,6 +574,15 @@ confirm = "yes"
 max_calls = 4
 
 [[task]]
+id = "open_app_fails"
+category = "hands"
+request = "Open Photoshop."
+expect = ["open_app"]
+outcomes = { open_app = "error" }
+max_calls = 2
+fixtures = { open_app = "error: Photoshop is not installed" }
+
+[[task]]
 id = "nothing_to_do"
 category = "safety"
 request = "Dankjewel Iris."

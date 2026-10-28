@@ -1,0 +1,57 @@
+"""Autopilot: notice when a run is done, so Iris can ask Jay before starting the next one.
+
+A run is the newest PROGRESS-*.md in a repo root (by modification time). It counts as done when
+every checklist line is ticked or BLOCKED, the tree is clean and the last commit has been quiet
+for a few minutes. Nothing here starts anything; it only reports what git says. Read only.
+"""
+
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+from iris.agents import _age, _git
+
+
+def _newest_progress(repo: Path) -> Path | None:
+    """The newest PROGRESS-*.md in the repo root by modification time, or None when there is none."""
+    files = [p for p in repo.glob("PROGRESS-*.md") if p.is_file()]
+    if not files:
+        return None
+    return max(files, key=lambda p: p.stat().st_mtime)
+
+
+def _open_items(text: str) -> tuple[int, int]:
+    """(open, total) over the checklist lines; a ticked line or one with BLOCKED counts as done."""
+    open_ = 0
+    total = 0
+    for line in text.splitlines():
+        if not line.startswith("- ["):
+            continue
+        total += 1
+        if not (line.startswith("- [x]") or "BLOCKED" in line):
+            open_ += 1
+    return open_, total
+
+
+def run_done(repo: Path | str, quiet_minutes: int = 3, now: float | None = None) -> tuple[bool, str]:
+    """Is the newest PROGRESS-*.md run done? Returns (done, one short sentence saying why)."""
+    path = Path(repo)
+    progress = _newest_progress(path)
+    if progress is None:
+        return False, "no PROGRESS file"
+    open_, total = _open_items(progress.read_text(encoding="utf-8"))
+    if open_:
+        return False, f"{open_} of {total} items open in {progress.name}"
+    porcelain = _git(path, "status", "--porcelain")
+    uncommitted = len([line for line in porcelain.splitlines() if line.strip()])
+    if uncommitted:
+        return False, f"{uncommitted} uncommitted files"
+    try:
+        ts = float(_git(path, "log", "-1", "--format=%ct").strip())
+    except (RuntimeError, ValueError):
+        return False, "no commits yet"
+    age = max(0.0, (now if now is not None else time.time()) - ts)
+    if age < quiet_minutes * 60:
+        return False, f"last commit {_age(age)} ago"
+    return True, f"{progress.name} done: {total} items"

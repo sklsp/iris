@@ -1,0 +1,101 @@
+"""Tests for run_done, against temporary git repos with fixed commit dates (no real repos touched)."""
+
+import os
+import subprocess
+from pathlib import Path
+
+from iris.autopilot import run_done
+
+FIXED = 1_700_000_000  # a fixed epoch; every age in these tests is computed from it, never the clock
+
+
+def git(repo: Path, *args: str, when: int | None = None) -> None:
+    """Run git in a temp repo. `when` fixes the commit date so ages are deterministic."""
+    env = dict(os.environ)  # keep PATH and HOME so git behaves the same as on the real machine
+    if when is not None:
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = f"@{when} +0000"
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, env=env)
+
+
+def checklist(open_at: tuple[int, ...] = (), total: int = 15) -> list[str]:
+    """total checklist lines, with the ones at open_at left unticked."""
+    return [f"- [{' ' if i in open_at else 'x'}] A{i}. item {i}" for i in range(1, total + 1)]
+
+
+def make_repo(root: Path, name: str, lines: list[str] | None = None, *, when: int = FIXED) -> Path:
+    """A temp git repo with one commit at `when`; the PROGRESS file is committed too."""
+    repo = root / name
+    repo.mkdir(parents=True)
+    git(repo, "init", "-b", "main")
+    git(repo, "config", "user.email", "iris@test.local")
+    git(repo, "config", "user.name", "Iris test")
+    (repo / "a.txt").write_text("hello", encoding="utf-8")
+    if lines is not None:
+        (repo / "PROGRESS-iris6.md").write_text("# Iris run\n" + "\n".join(lines) + "\n", encoding="utf-8")
+        git(repo, "add", "PROGRESS-iris6.md")
+    git(repo, "add", "a.txt")
+    git(repo, "commit", "-m", "first commit", when=when)
+    return repo
+
+
+def test_no_progress_file(tmp_path):
+    repo = make_repo(tmp_path, "alpha", None)
+    assert run_done(repo, now=FIXED + 3600) == (False, "no PROGRESS file")
+
+
+def test_open_items_are_reported_with_their_count(tmp_path):
+    repo = make_repo(tmp_path, "beta", checklist(open_at=(4, 9, 12)))
+    assert run_done(repo, now=FIXED + 3600) == (False, "3 of 15 items open in PROGRESS-iris6.md")
+
+
+def test_uncommitted_files_block_a_done_run(tmp_path):
+    repo = make_repo(tmp_path, "gamma", checklist())
+    (repo / "b.txt").write_text("new", encoding="utf-8")
+    (repo / "c.txt").write_text("more", encoding="utf-8")
+    assert run_done(repo, now=FIXED + 3600) == (False, "2 uncommitted files")
+
+
+def test_a_fresh_commit_is_not_quiet_yet(tmp_path):
+    repo = make_repo(tmp_path, "delta", checklist())
+    # 90 seconds old: under the 3 minute quiet period, and _age speaks it as '1 minute'
+    assert run_done(repo, now=FIXED + 90) == (False, "last commit 1 minute ago")
+
+
+def test_all_ticked_clean_and_quiet_is_done(tmp_path):
+    repo = make_repo(tmp_path, "epsilon", checklist())
+    # exactly quiet_minutes old counts as done ('at least')
+    assert run_done(repo, now=FIXED + 3 * 60) == (True, "PROGRESS-iris6.md done: 15 items")
+
+
+def test_blocked_lines_count_as_done(tmp_path):
+    lines = checklist()
+    lines[3] = "- [ ] A4. item 4 (BLOCKED)"
+    repo = make_repo(tmp_path, "zeta", lines)
+    assert run_done(repo, now=FIXED + 300) == (True, "PROGRESS-iris6.md done: 15 items")
+
+
+def test_the_newest_progress_file_wins(tmp_path):
+    old_lines = checklist()
+    new_lines = checklist(open_at=(2, 4), total=5)
+    repo = make_repo(tmp_path, "eta", old_lines)
+    (repo / "PROGRESS-iris7.md").write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    git(repo, "add", "PROGRESS-iris7.md")
+    git(repo, "commit", "-m", "second progress file", when=FIXED)
+    os.utime(repo / "PROGRESS-iris6.md", (FIXED - 1000, FIXED - 1000))
+    os.utime(repo / "PROGRESS-iris7.md", (FIXED - 500, FIXED - 500))
+    # the older file is fully ticked; the newer one still has open items and it wins
+    assert run_done(repo, now=FIXED + 3600) == (False, "2 of 5 items open in PROGRESS-iris7.md")
+
+
+def test_a_repo_without_commits_is_reported_not_done(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    repo = make_repo(tmp_path, "theta", checklist())
+
+    def fake_git(target: Path, *args: str) -> str:
+        if args and args[0] == "log":
+            raise RuntimeError("fatal: your current branch 'main' does not have any commits yet")
+        return ""  # a clean status, so only the missing commit shows up
+
+    monkeypatch.setattr(autopilot, "_git", fake_git)
+    assert run_done(repo, now=FIXED + 3600) == (False, "no commits yet")

@@ -8,7 +8,7 @@
 - [x] A6. autopilot waits, asks once, starts once (530 passed in 20.58s)
 - [x] A7. python -m iris autopilot (536 passed in 20.44s)
 - [x] A8. the dashboard shows autopilot events (538 passed in 19.54s); it lists journal events, so an autopilot event now renders as its own row with repo / agent / result in iris/dashboard/index.html
-- [ ] A9. eval: start the next run
+- [x] A9. eval: start the next run (538 passed in 21.19s)
 - [ ] A10. eval: Jay says no
 - [ ] A11. eval: a run that is not done
 - [ ] A12. eval: a window cannot start a run

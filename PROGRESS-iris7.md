@@ -13,6 +13,6 @@
 - [x] A11. eval: a run that is not done (538 passed in 21.09s)
 - [x] A12. eval: a window cannot start a run (538 passed in 20.46s)
 - [x] A13. docs (538 passed in 20.89s)
-- [ ] A14. README test
+- [x] A14. README test (538 passed in 19.91s); no change needed, tests/test_readme.py loops over tools.TOOLS so cline_start is covered
 - [ ] A15. no dashes
 - [ ] A16. final check

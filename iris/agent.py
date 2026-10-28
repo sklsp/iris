@@ -97,4 +97,6 @@ def _describe(name: str, args: dict) -> str:
         return f"Move {args.get('path')} to the trash?"
     if name == "press_keys":
         return f"Press {args.get('keys')} in {args.get('window')}?"
+    if name == "cline_start":
+        return f"Start a new Cline task for {args.get('agent')} with the next queued prompt?"
     return f"Run {name} with {args}?"

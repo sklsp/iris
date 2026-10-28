@@ -131,6 +131,11 @@ def test_describe_asks_clearer_questions_for_trash_and_keys():
     assert _describe("scroll", {"window": "Chrome"}) == "Run scroll with {'window': 'Chrome'}?"
 
 
+def test_describe_asks_for_cline_start_without_the_prompt_text():
+    desc = _describe("cline_start", {"agent": "leadscan"})
+    assert desc == "Start a new Cline task for leadscan with the next queued prompt?"
+
+
 def test_journal_creates_its_folder(tmp_path):
     path = tmp_path / "fresh" / "journal.jsonl"
     Journal(path).log(event="request", text="hoi")

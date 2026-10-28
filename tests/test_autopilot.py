@@ -6,7 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from iris.autopilot import cline_keys, cline_start, new_task_command, paste_into_cline, run_done, vscode_title
+from iris.autopilot import (
+    cline_keys,
+    cline_start,
+    new_task_command,
+    paste_into_cline,
+    run_done,
+    vscode_title,
+    watch,
+)
 
 FIXED = 1_700_000_000  # a fixed epoch; every age in these tests is computed from it, never the clock
 
@@ -264,5 +272,162 @@ def test_cline_start_is_a_confirm_tool():
     from iris.tools import CONFIRM, TOOLS
 
     assert TOOLS["cline_start"].tier == CONFIRM
+
+
+class FakeJournal:
+    def __init__(self) -> None:
+        self.entries: list[dict] = []
+
+    def log(self, **entry) -> None:
+        self.entries.append(entry)
+
+
+def test_watch_sleeps_until_done_then_asks_once(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    answers = iter(
+        [
+            (False, "2 of 15 items open in PROGRESS-iris6.md"),
+            (False, "last commit 1 minute ago"),
+            (True, "PROGRESS-iris6.md done: 15 items"),
+        ]
+    )
+    monkeypatch.setattr(autopilot, "run_done", lambda repo: next(answers))
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    asked: list[str] = []
+
+    def fake_confirm(question: str) -> bool:
+        asked.append(question)
+        return True
+
+    started: list[str] = []
+
+    def fake_start(agent_name: str) -> str:
+        started.append(agent_name)
+        return "started the next prompt"
+
+    out = watch("acme", "cline", fake_confirm, sleep=fake_sleep, start=fake_start)
+    assert sleeps == [60, 60]  # not done twice: two waits before the third check finds it done
+    assert asked == ["acme is done (PROGRESS-iris6.md done: 15 items). Start the next cline prompt?"]
+    assert started == ["cline"]
+    assert out == "started the next prompt"
+
+
+def test_watch_a_no_never_starts(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    monkeypatch.setattr(autopilot, "run_done", lambda repo: (True, "PROGRESS-iris6.md done: 15 items"))
+    asked: list[str] = []
+
+    def fake_confirm(question: str) -> bool:
+        asked.append(question)
+        return False
+
+    started: list[str] = []
+
+    def fake_start(agent_name: str) -> str:
+        started.append(agent_name)
+        return "should not happen"
+
+    journal = FakeJournal()
+    out = watch("acme", "cline", fake_confirm, sleep=lambda s: None, start=fake_start, journal=journal)
+    assert out == "Jay said no"
+    assert asked == ["acme is done (PROGRESS-iris6.md done: 15 items). Start the next cline prompt?"]
+    assert started == []
+    assert journal.entries == [
+        {"event": "autopilot", "repo": "acme", "agent": "cline", "answer": False, "result": "Jay said no"}
+    ]
+
+
+def test_watch_with_an_empty_queue_never_asks(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    path = _queue_file(tmp_path, texts=())
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    monkeypatch.setattr(autopilot, "run_done", lambda repo: (True, "PROGRESS-iris6.md done: 15 items"))
+    asked: list[str] = []
+
+    def fake_confirm(question: str) -> bool:
+        asked.append(question)
+        return True
+
+    journal = FakeJournal()
+    out = watch("acme", "cline", fake_confirm, sleep=lambda s: None, start=lambda agent_name: "nope", journal=journal)
+    assert out == "nothing queued for cline"
+    assert asked == []  # nothing waiting means no question at all
+    assert journal.entries == [
+        {"event": "autopilot", "repo": "acme", "agent": "cline", "answer": None, "result": "nothing queued for cline"}
+    ]
+
+
+def test_watch_max_checks_stops_the_loop(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    checks = 0
+
+    def never_done(repo: object) -> tuple[bool, str]:
+        nonlocal checks
+        checks += 1
+        return (False, "no PROGRESS file")
+
+    monkeypatch.setattr(autopilot, "run_done", never_done)
+
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    out = watch("acme", "cline", lambda q: True, sleep=fake_sleep, start=lambda agent_name: "nope", max_checks=2)
+    assert out == "still running after 2 checks"
+    assert checks == 2
+    assert sleeps == [60]
+
+
+def test_watch_logs_an_autopilot_event(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    monkeypatch.setattr(autopilot, "run_done", lambda repo: (True, "PROGRESS-iris6.md done: 15 items"))
+    journal = FakeJournal()
+
+    out = watch(
+        "acme",
+        "cline",
+        lambda q: True,
+        sleep=lambda s: None,
+        start=lambda agent_name: "started the next prompt",
+        journal=journal,
+    )
+    assert out == "started the next prompt"
+    assert journal.entries == [
+        {"event": "autopilot", "repo": "acme", "agent": "cline", "answer": True, "result": "started the next prompt"}
+    ]
+
+
+def test_watch_defaults_to_cline_start(tmp_path, monkeypatch):
+    import iris.autopilot as autopilot
+
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    monkeypatch.setattr(autopilot, "run_done", lambda repo: (True, "PROGRESS-iris6.md done: 15 items"))
+    started: list[str] = []
+
+    def fake_cline_start(agent_name: str) -> str:
+        started.append(agent_name)
+        return "started via the default"
+
+    monkeypatch.setattr(autopilot, "cline_start", fake_cline_start)
+    out = watch("acme", "cline", lambda q: True, sleep=lambda s: None)  # no start given: cline_start is the default
+    assert out == "started via the default"
+    assert started == ["cline"]
 
 

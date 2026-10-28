@@ -13,6 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from iris import prompt_queue
+from iris.agent import Journal
 from iris.agents import _age, _git
 from iris.tools import _escape_keys, _window
 
@@ -65,6 +66,50 @@ def cline_start(agent: str, repo: str = "") -> str:
     prompt_queue.take(agent)  # only after the paste succeeded, so a failure leaves the queue unchanged
     return result
 
+
+
+def watch(
+    repo: Path | str,
+    agent: str,
+    confirm: Callable[[str], bool],
+    every: float = 60,
+    sleep: Callable[[float], None] = time.sleep,
+    start: Callable[[str], str] | None = None,
+    journal: Journal | None = None,
+    max_checks: int | None = None,
+) -> str:
+    """Wait until the run in `repo` is done, then ask Jay once before starting the agent's next prompt.
+
+    It returns after the first start or the first answer, so it never starts twice. When journal is given,
+    each outcome is logged as an "autopilot" event with repo, agent, answer and result. max_checks (tests only)
+    stops the loop before any question is asked."""
+    if start is None:
+        start = cline_start
+    checks = 0
+    while True:
+        checks += 1
+        done, reason = run_done(repo)
+        if done:
+            break
+        if max_checks is not None and checks >= max_checks:
+            return f"still running after {max_checks} checks"
+        sleep(every)
+    waiting = prompt_queue.pending(agent)
+    if not waiting:
+        result = f"nothing queued for {agent}"
+        if journal is not None:
+            journal.log(event="autopilot", repo=str(repo), agent=agent, answer=None, result=result)
+        return result
+    answer = confirm(f"{repo} is done ({reason}). Start the next {agent} prompt?")
+    if not answer:
+        result = "Jay said no"
+        if journal is not None:
+            journal.log(event="autopilot", repo=str(repo), agent=agent, answer=False, result=result)
+        return result
+    result = start(agent)
+    if journal is not None:
+        journal.log(event="autopilot", repo=str(repo), agent=agent, answer=True, result=result)
+    return result
 
 
 def _newest_progress(repo: Path) -> Path | None:

@@ -28,6 +28,12 @@ Eval tasks for the autopilot (four new, 75 in total):
 
 Docs: README Autopilot section, env vars and task counts; SECURITY.md gains the queue-is-Jay's-file, confirmed-start and injection stops; PLAN.md item 14 ticked
 
+Dashboard Autopilot tab (the normal way to start the next prompt):
+- the page's Autopilot tab shows each watched repo's run (done or running) with a "Start next prompt" button that asks once before it starts, and the queue so you can add, delete and move prompts; when a run finishes while the page is open it raises a done banner and, if allowed, a browser notification
+- POST /api/cline/start starts the agent's next queued prompt through the Cline CLI; like the model routes it needs the page token plus a matching Origin or Referer, and only runs after a click and a confirm dialog
+- queue editing from the tab via POST /api/queue/add, /delete and /move (same token + Origin/Referer guard)
+- docs: README Autopilot and Dashboard sections updated for the tab and its write routes; SECURITY.md gains the dashboard-write-routes stop
+
 ## 0.3.0
 
 Skills that act (new tools, all tier-checked and journaled like the rest):

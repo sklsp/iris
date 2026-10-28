@@ -7,6 +7,8 @@ IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by th
                   five-minute history for the sparklines
     /api/agents   one row per watched repo (branch, last commit and age, uncommitted
                   count, BLOCKED.md, STUCK), stuck rows first; cached 30 s
+    /api/runs     one progress row per watched repo that has a PROGRESS-*.md file: item counts
+                  and whether the run is done; not-done runs first, then by name; cached 30 s
     /api/lmstudio every model LM Studio knows, with its state (loaded or not) and type
                   (llm/vlm/embeddings) from the v0 API; falls back to the OpenAI-style
                   list labelled "available (state unknown)"; cached 30 s
@@ -112,6 +114,25 @@ def agents_payload() -> dict:
     return {"rows": rows}
 
 
+def runs_payload() -> dict:
+    """One progress row per watched repo that has a PROGRESS-*.md file.
+
+    Each row is the run_progress dict for that repo plus its discovered name. Repos without a
+    PROGRESS file are left out; not-done runs come first, then by name."""
+    from iris.agents import discover, load_config
+    from iris.autopilot import run_progress
+
+    cfg = load_config()
+    rows = []
+    for name, repo in discover(cfg):
+        progress = run_progress(repo)
+        if progress["file"] is None:
+            continue  # no PROGRESS file: not a run to show
+        rows.append({"name": name, **progress})
+    rows.sort(key=lambda r: (r["done"], r["name"]))  # not-done first, then by name
+    return {"ok": True, "runs": rows}
+
+
 def _fetch_json(url: str) -> dict:
     with urllib.request.urlopen(url, timeout=5) as resp:
         return json.loads(resp.read().decode("utf-8"))
@@ -148,9 +169,14 @@ def _lms_exe() -> str:
 
 
 LMS_TIMEOUT_SECONDS = 600   # big models can take minutes to load
-WRITE_ROUTES = ("/api/models/load", "/api/models/unload", "/api/iris/model")   # the only POST routes
+WRITE_ROUTES = (
+    "/api/models/load", "/api/models/unload", "/api/iris/model",
+    "/api/queue/add", "/api/queue/delete", "/api/queue/move",
+    "/api/cline/start",
+)   # the only POST routes: model control, the prompt queue and starting a Cline session
 
 _model_action_lock = threading.Lock()   # one load or unload at a time, full stop
+_cline_start_lock = threading.Lock()    # one Cline start at a time, full stop
 
 
 class ModelActionError(Exception):
@@ -508,6 +534,102 @@ def queue_payload() -> dict:
         return {"ok": False, "prompts": [], "error": "the queue file is broken"}
 
 
+def _log_queue_event(action: str, agent: str | None = None, prompt_id: int | None = None) -> None:
+    """One journal line per queue change; the same writer the model routes use."""
+    from iris.agent import Journal
+
+    Journal(journal_path()).log(event="queue", action=action, agent=agent, id=prompt_id)
+
+
+def queue_action(action: str, body: dict) -> dict:
+    """Run one add, delete or move on the prompt queue and return the new queue state.
+
+    action is "add" ({agent, text}), "delete" ({id}) or "move" ({id, step}). Raises
+    ModelActionError with the HTTP code; a broken queue file comes back as a 500."""
+    from iris import prompt_queue
+
+    if not isinstance(body, dict):
+        raise ModelActionError(400, "the body must be a JSON object")
+    try:
+        if action == "add":
+            agent = str(body.get("agent", "")).strip()
+            text = str(body.get("text", "")).strip()
+            if not 1 <= len(agent) <= 40:
+                raise ModelActionError(400, "agent must be 1 to 40 characters")
+            if not 1 <= len(text) <= 8000:
+                raise ModelActionError(400, "text must be 1 to 8000 characters")
+            prompt_id = prompt_queue.add(agent, text)
+            _log_queue_event("add", agent=agent, prompt_id=prompt_id)
+        elif action == "delete":
+            raw_id = body.get("id")
+            if not isinstance(raw_id, int):
+                raise ModelActionError(400, "id must be an integer")
+            try:
+                removed = prompt_queue.remove(raw_id)
+            except LookupError:
+                raise ModelActionError(404, f"no prompt with id {raw_id}") from None
+            _log_queue_event("delete", agent=str(removed.get("agent", "")), prompt_id=raw_id)
+        elif action == "move":
+            raw_id = body.get("id")
+            step = body.get("step")
+            if not isinstance(raw_id, int):
+                raise ModelActionError(400, "id must be an integer")
+            if step not in (-1, 1):
+                raise ModelActionError(400, "step must be -1 or 1")
+            try:
+                prompt_queue.move(raw_id, step)
+            except LookupError:
+                raise ModelActionError(404, f"no prompt with id {raw_id}") from None
+            _log_queue_event("move", agent=None, prompt_id=raw_id)
+        else:  # pragma: no cover - do_POST only routes the three known actions here
+            raise ModelActionError(400, "unknown queue action")
+    except ValueError as exc:  # a broken queue file must not take the dashboard down
+        raise ModelActionError(500, str(exc)) from None
+    return queue_payload()
+
+
+# --- autopilot start -------------------------------------------------------------
+
+
+def _log_autopilot_event(repo: str, agent: str, result: str) -> None:
+    """One journal line per dashboard start; the same writer the model routes use."""
+    from iris.agent import Journal
+
+    Journal(journal_path()).log(
+        event="autopilot", source="dashboard", repo=repo, agent=agent, answer=True, result=result
+    )
+
+
+def cline_start_action(body: dict) -> dict:
+    """Start the agent's next queued prompt as a Cline session, one at a time.
+
+    Body is {agent, repo}: agent required (1 to 40 chars), repo optional. Calls
+    iris.autopilot.cline_start(agent, repo), looked up on the module so tests can
+    monkeypatch it. A result starting with "error:" comes back as a 409; otherwise
+    200 with the new queue state. Either way an autopilot event is journaled."""
+    from iris import autopilot
+
+    if not isinstance(body, dict):
+        raise ModelActionError(400, "the body must be a JSON object")
+    agent = str(body.get("agent", "")).strip()
+    if not 1 <= len(agent) <= 40:
+        raise ModelActionError(400, "agent must be 1 to 40 characters")
+    repo_raw = body.get("repo")
+    repo = "" if repo_raw is None else str(repo_raw).strip()
+
+    if not _cline_start_lock.acquire(blocking=False):
+        raise ModelActionError(409, "a start is already running")
+    try:
+        result = autopilot.cline_start(agent, repo)
+    finally:
+        _cline_start_lock.release()
+
+    _log_autopilot_event(repo, agent, result)
+    if result.startswith("error:"):
+        raise ModelActionError(409, result.removeprefix("error: "))
+    return {"ok": True, "result": result, "queue": queue_payload()["prompts"]}
+
+
 # --- the server -----------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -547,6 +669,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(system_payload())
         elif path == "/api/agents":
             self._json(_cached("agents", agents_payload))
+        elif path == "/api/runs":
+            self._json(_cached("runs", runs_payload))
         elif path == "/api/lmstudio":
             self._json(_cached("lmstudio", lmstudio_payload))
         elif path == "/api/sessions":
@@ -568,7 +692,7 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path not in WRITE_ROUTES:
             self._drain_body()
-            self._json({"error": "read only: POST is allowed on the model routes only"}, code=405)
+            self._json({"error": "read only: this route does not accept POST"}, code=405)
             return
         if not _authorized(self):
             self._drain_body()
@@ -583,6 +707,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/iris/model":
                 payload = set_iris_model(body)
+            elif path in ("/api/queue/add", "/api/queue/delete", "/api/queue/move"):
+                action = path.rsplit("/", 1)[1]   # "add" | "delete" | "move"
+                payload = queue_action(action, body)
+            elif path == "/api/cline/start":
+                payload = cline_start_action(body)
             else:
                 action = "load" if path.endswith("/load") else "unload"
                 payload = model_action(action, body)
@@ -593,7 +722,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _method_not_allowed(self):  # PUT, DELETE, PATCH, OPTIONS and HEAD alike
         self._drain_body()
-        self._json({"error": "read only: GET or POST on the model routes"}, code=405)
+        self._json({"error": "read only: use GET, or POST on a write route"}, code=405)
 
     do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_HEAD = _method_not_allowed
 

@@ -148,6 +148,45 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .c-folder{font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .c-age{color:#565c66}
 
+/* runs */
+.rrow{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1.3fr) minmax(0,1.6fr) auto 74px;
+      gap:8px;align-items:center;padding:6px 8px;border-bottom:1px solid #1c1f24;font-size:12px}
+.rrow:last-child{border-bottom:none}
+.r-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.r-file{color:#8a9099;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-prog{display:flex;align-items:center;gap:6px;min-width:0}
+.r-bar{position:relative;height:8px;background:#23262c;border-radius:4px;overflow:hidden;flex:1;min-width:40px}
+.r-fill{position:absolute;left:0;top:0;bottom:0;background:#7aa2ff}
+.r-count{text-align:right;color:#8a9099;font-size:11px;white-space:nowrap;flex:none}
+.r-reason{color:#565c66;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-ctrl{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.agent-input{width:92px;padding:3px 7px;background:#0e0f11;border:1px solid #23262c;border-radius:4px;color:#e6e6e6;font-size:12px}
+.btn-start{appearance:none;background:rgba(122,162,255,.14);border:1px solid rgba(122,162,255,.4);color:#7aa2ff;
+  font-family:inherit;font-size:11px;font-weight:600;padding:4px 9px;border-radius:4px;cursor:pointer;white-space:nowrap}
+.btn-start:hover:not(:disabled){background:rgba(122,162,255,.24)}
+.btn-start:disabled{opacity:.45;cursor:default}
+.r-status{flex-basis:100%;color:#8a9099;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-status-err{color:#d29922}
+
+/* queue rows and the add prompt form */
+.qrow{display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-bottom:1px solid #1c1f24;font-size:12px}
+.qrow:last-child{border-bottom:none}
+.q-id{color:#565c66;flex:none}
+.q-agent{background:#1a1d22;border:1px solid #23262c;border-radius:4px;padding:1px 7px}
+.q-time{color:#565c66;flex:none;font-size:11px;padding-top:1px}
+.q-textwrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.q-text{white-space:pre-wrap;word-break:break-word;color:#e6e6e6;line-height:1.4;font-size:12px}
+.q-more{align-self:flex-start;background:none;border:none;padding:0;color:#7aa2ff;font-family:inherit;font-size:11px;cursor:pointer}
+.q-more:hover{text-decoration:underline}
+.q-btns{display:flex;gap:4px;flex:none}
+.qbtn{appearance:none;background:#1a1d22;border:1px solid #23262c;color:#8a9099;font-family:inherit;font-size:11px;padding:2px 7px;border-radius:4px;cursor:pointer;line-height:1.5}
+.qbtn:hover:not(:disabled){color:#e6e6e6;border-color:#3a3f47}
+.qbtn:disabled{opacity:.4;cursor:default}
+.q-add{margin-top:10px;padding-top:10px;border-top:1px solid #23262c;display:flex;flex-direction:column;gap:8px}
+.q-add-top{display:flex;align-items:center;gap:8px}
+.q-add-text{width:100%;box-sizing:border-box;background:#0e0f11;border:1px solid #23262c;border-radius:4px;color:#e6e6e6;font-family:inherit;font-size:12px;padding:6px 8px;resize:vertical}
+.q-add-err{color:#d29922;font-size:11px;display:none}
+
 @media (max-width:899px){
   .grid{grid-template-columns:1fr}
   .wide{grid-column:auto}
@@ -163,6 +202,11 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   .srow{grid-template-columns:minmax(0,1fr) auto}
   .s-head,.s-model,.b-prov{display:none}
 }
+/* done banner + notify */
+.done-banner{display:none;align-items:center;gap:10px;margin:8px 14px;padding:9px 12px;border-radius:6px;background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.4);color:#e6e6e6;font-size:13px}
+.done-banner.show{display:flex}
+.btn-notify{appearance:none;background:#1a1d22;border:1px solid #23262c;color:#8a9099;font-family:inherit;font-size:11px;padding:2px 7px;border-radius:4px;cursor:pointer;line-height:1.5;margin-left:8px}
+.btn-notify:hover{color:#e6e6e6;border-color:#3a3f47}
 </style>
 </head>
 <body>
@@ -177,8 +221,13 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <button type="button" class="tab" data-tab="repos">Repos</button>
   <button type="button" class="tab" data-tab="tools">Tools</button>
   <button type="button" class="tab" data-tab="eval">Eval</button>
-  <button type="button" class="tab" data-tab="queue">Queue</button>
+  <button type="button" class="tab" data-tab="queue">Autopilot</button>
 </nav>
+<div id="done-banner" class="done-banner">
+  <span id="done-banner-text"></span>
+  <button type="button" id="done-banner-go" class="btn-start">Open Autopilot</button>
+  <button type="button" id="done-banner-close" class="qbtn">close</button>
+</div>
 <main>
   <section id="overview-pane" class="pane">
     <div class="grid">
@@ -247,8 +296,20 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <section id="queue-pane" class="pane hidden">
     <div class="grid">
       <section class="panel wide">
+        <h2>Runs<button type="button" id="notify-me" class="btn-notify">Notify me</button></h2>
+        <div id="runs-body"><div class="empty">loading...</div></div>
+      </section>
+      <section class="panel wide">
         <h2>Queue</h2>
         <div id="queue-body"><div class="empty">loading...</div></div>
+        <form id="add-prompt" class="q-add">
+          <div class="q-add-top">
+            <input type="text" id="qp-agent" class="agent-input" list="iris-agents" placeholder="qwen" value="qwen">
+            <button type="submit" class="btn-start">Add</button>
+          </div>
+          <textarea id="qp-text" rows="6" class="q-add-text" placeholder="Prompt text (Ctrl+Enter to add)"></textarea>
+          <div id="qp-error" class="q-add-err"></div>
+        </form>
       </section>
     </div>
   </section>
@@ -725,21 +786,323 @@ function renderQueue(d){
     return;
   }
   const prompts = Array.isArray(d.prompts) ? d.prompts : [];
+  QUEUE_PROMPTS = prompts;   // keep the shared copy fresh for the Autopilot tab datalist
   if (!prompts.length){
     body.appendChild(el("div", "empty", "The queue is empty."));
     return;
   }
-  for (const p of prompts){
-    const row = el("div", "crow");
-    row.appendChild(el("span", "num", "#" + p.id));
-    row.appendChild(el("span", null, p.agent || "-"));
-    row.appendChild(el("span", "c-folder", p.text || ""));
-    row.appendChild(el("span", "c-age num", p.added || ""));
+  for (let i = 0; i < prompts.length; i++){
+    const p = prompts[i];
+    const row = el("div", "qrow");
+    row.appendChild(el("span", "num q-id", "#" + p.id));
+    const chip = el("span", "chip q-agent");
+    chip.appendChild(el("span", null, p.agent || "-"));
+    row.appendChild(chip);
+    row.appendChild(el("span", "q-time num", p.added || ""));
+    // the text: first two lines until a "more" toggle reveals all of it
+    const wrap = el("div", "q-textwrap");
+    const fullText = String(p.text || "");
+    const lines = fullText.split("\n");
+    const shortText = lines.length > 2 ? lines.slice(0, 2).join("\n") + "..." : fullText;
+    const textEl = el("div", "q-text", shortText);
+    wrap.appendChild(textEl);
+    if (lines.length > 2){
+      let expanded = false;
+      const moreBtn = el("button", "q-more", "more");
+      moreBtn.type = "button";
+      moreBtn.addEventListener("click", () => {
+        expanded = !expanded;
+        textEl.textContent = expanded ? fullText : shortText;
+        moreBtn.textContent = expanded ? "less" : "more";
+      });
+      wrap.appendChild(moreBtn);
+    }
+    row.appendChild(wrap);
+    // up / down / delete: each calls its POST route and re-renders from the returned queue
+    const btns = el("span", "q-btns");
+    const up = el("button", "qbtn", "up");
+    up.type = "button";
+    if (i === 0) up.disabled = true;   // up is disabled on the first row
+    up.addEventListener("click", () => movePrompt(p.id, -1));
+    const down = el("button", "qbtn", "down");
+    down.type = "button";
+    if (i === prompts.length - 1) down.disabled = true;   // down is disabled on the last row
+    down.addEventListener("click", () => movePrompt(p.id, 1));
+    const del = el("button", "qbtn q-del", "delete");
+    del.type = "button";
+    del.addEventListener("click", () => deletePrompt(p));
+    btns.appendChild(up);
+    btns.appendChild(down);
+    btns.appendChild(del);
+    row.appendChild(btns);
     body.appendChild(row);
   }
 }
 
-async function loadQueue(){ renderQueue(await j("/api/queue")); }
+async function movePrompt(id, step){
+  const d = await postModel("/api/queue/move", {id: id, step: step});
+  if (d && d.ok === true) renderQueue(d);
+}
+
+async function deletePrompt(p){
+  if (!window.confirm("Delete prompt " + p.id + " for " + (p.agent || "") + "?")) return;
+  const d = await postModel("/api/queue/delete", {id: p.id});
+  if (d && d.ok === true) renderQueue(d);
+}
+
+async function addPrompt(){
+  const agentInput = $("qp-agent");
+  const textArea = $("qp-text");
+  const errEl = $("qp-error");
+  if (!agentInput || !textArea) return;
+  const showErr = (msg) => { if (errEl){ errEl.textContent = msg || ""; errEl.style.display = msg ? "block" : "none"; } };
+  const agent = String(agentInput.value || "").trim();
+  const text = String(textArea.value || "");
+  if (!agent){ showErr("an agent is required"); return; }
+  if (!text){ showErr("a prompt text is required"); return; }
+  const d = await postModel("/api/queue/add", {agent: agent, text: text});
+  if (d && d.ok === true){
+    showErr("");
+    textArea.value = "";   // clear the textarea on success and re-render from the returned queue
+    renderQueue(d);
+    refreshAgentDatalist();
+  } else {
+    showErr((d && d.error) ? d.error : "could not add the prompt");
+  }
+}
+
+let QUEUE_PROMPTS = [];   // latest /api/queue prompts; shared by the queue pane and the Autopilot tab
+let RUN_STATUS = {};      // repo -> {text, ok}: the last start result or error shown in that run row
+
+function refreshAgentDatalist(){
+  let dl = $("iris-agents");
+  if (!dl){
+    dl = document.createElement("datalist");
+    dl.id = "iris-agents";
+    document.body.appendChild(dl);
+  }
+  while (dl.firstChild) dl.removeChild(dl.firstChild);
+  const seen = new Set();
+  for (const p of QUEUE_PROMPTS){
+    const a = String(p.agent || "").trim();
+    if (!a || seen.has(a.toLowerCase())) continue;
+    seen.add(a.toLowerCase());
+    dl.appendChild(el("option", null, a));
+  }
+}
+
+function readAgent(repo){
+  try {
+    const v = localStorage.getItem("iris.autopilot.agent." + repo);
+    return (v && String(v).trim()) ? String(v) : "qwen";
+  } catch (err) { return "qwen"; }
+}
+function writeAgent(repo, value){
+  try { localStorage.setItem("iris.autopilot.agent." + repo, String(value || "")); } catch (err) {}
+}
+function agentHasPrompt(agent){
+  const a = String(agent || "").trim().toLowerCase();
+  if (!a) return false;
+  for (const p of QUEUE_PROMPTS){
+    if (String(p.agent || "").trim().toLowerCase() === a) return true;
+  }
+  return false;
+}
+function firstPromptTextFor(agent){
+  const a = String(agent || "").trim().toLowerCase();
+  if (!a) return "";
+  for (const p of QUEUE_PROMPTS){
+    if (String(p.agent || "").trim().toLowerCase() === a) return String(p.text || "");
+  }
+  return "";
+}
+
+async function loadQueue(){
+  const d = await j("/api/queue");
+  QUEUE_PROMPTS = (d && Array.isArray(d.prompts)) ? d.prompts : [];
+  refreshAgentDatalist();
+  renderQueue(d);
+}
+
+function renderRuns(d){
+  const body = $("runs-body");
+  body.textContent = "";
+  if (!d || !Array.isArray(d.runs)){
+    body.appendChild(el("div", "empty", d && d.error ? d.error : "no runs yet"));
+    return;
+  }
+  if (!d.runs.length){
+    body.appendChild(el("div", "empty", "no runs with a PROGRESS file"));
+    return;
+  }
+  for (const r of d.runs){
+    const total = r.total || 0;
+    const doneItems = r.done_items || 0;
+    const pct = total > 0 ? Math.round((doneItems / total) * 100) : 0;
+    const row = el("div", "rrow");
+    row.appendChild(el("span", "r-name", r.name || "-"));
+    row.appendChild(el("span", "r-file num", r.file || ""));
+    const prog = el("span", "r-prog");
+    const bar = el("span", "r-bar");
+    const fill = el("span", "r-fill");
+    fill.style.width = pct + "%";
+    bar.appendChild(fill);
+    prog.appendChild(bar);
+    prog.appendChild(el("span", "r-count num", doneItems + "/" + total));
+    row.appendChild(prog);
+    row.appendChild(el("span", "r-reason", r.reason || ""));
+    // agent input (remembered per repo) plus the Start next prompt button and last result
+    const ctrl = el("span", "r-ctrl");
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "agent-input";
+    input.setAttribute("list", "iris-agents");
+    input.value = readAgent(r.repo);
+    input.placeholder = "qwen";
+    const btn = el("button", "btn-start", "Start next prompt");
+    btn.type = "button";
+    function refreshBtn(){
+      const agent = String(input.value || "").trim();
+      if (r.done === true && agentHasPrompt(agent)){
+        btn.disabled = false;
+        btn.title = "";
+      } else {
+        btn.disabled = true;
+        btn.title = r.done !== true ? "run still has open items" : ("nothing queued for " + agent);
+      }
+    }
+    input.addEventListener("input", refreshBtn);
+    input.addEventListener("change", () => { writeAgent(r.repo, String(input.value || "").trim()); });
+    btn.addEventListener("click", () => { startNextPrompt(r, input, btn); });
+    refreshBtn();
+    ctrl.appendChild(input);
+    ctrl.appendChild(btn);
+    const st = RUN_STATUS[r.repo];
+    if (st){ ctrl.appendChild(el("span", "r-status" + (st.ok ? "" : " r-status-err"), st.text)); }
+    row.appendChild(ctrl);
+    const isDone = r.done === true;
+    row.appendChild(el("span", "badge " + (isDone ? "o-ok" : "o-error"), isDone ? "done" : "running"));
+    body.appendChild(row);
+  }
+}
+
+async function loadRuns(){ renderRuns(await j("/api/runs")); }
+
+async function startNextPrompt(run, input, btn){
+  const agent = String(input.value || "").trim();
+  if (!agent) return;
+  const repo = run.repo || "";
+  const text = firstPromptTextFor(agent);
+  const ok = window.confirm("Start the next " + agent + " prompt in " + repo + "?\n\n" + text.slice(0, 300));
+  if (!ok) return;
+  btn.disabled = true;
+  btn.textContent = "starting...";
+  let statusText = "";
+  let statusOk = false;
+  try {
+    const d = await postModel("/api/cline/start", {agent: agent, repo: repo});
+    if (d && d.ok === true){
+      statusText = String(d.result || "started");
+      statusOk = true;
+    } else {
+      statusText = (d && d.error) ? String(d.error) : "start failed";
+      statusOk = false;
+    }
+  } catch (err) {
+    statusText = "start failed";
+    statusOk = false;
+  }
+  RUN_STATUS[repo] = {text: statusText, ok: statusOk};
+  btn.textContent = "Start next prompt";
+  await Promise.all([loadQueue(), loadRuns()]);
+}
+let runsTimer = null;   // polls /api/runs every 10 s, only while the Autopilot tab is visible
+function startRunsPolling(){
+  if (runsTimer) return;
+  loadRuns();
+  runsTimer = setInterval(loadRuns, 10000);
+}
+function stopRunsPolling(){
+  if (!runsTimer) return;
+  clearInterval(runsTimer);
+  runsTimer = null;
+}
+
+// --- done banner: tell Jay when a run finishes ---------------------------------
+const NORMAL_TITLE = document.title;   // captured once so we can restore it after "(done)"
+let RUNS_BASELINE = null;              // previous /api/runs done-state map; null before the first poll
+
+function runsDoneMap(d){
+  const m = {};
+  if (d && Array.isArray(d.runs)){
+    for (const r of d.runs){
+      const key = String(r.repo || "") + "::" + String(r.name || "");
+      m[key] = {done: r.done === true, name: String(r.name || ""), repo: String(r.repo || "")};
+    }
+  }
+  return m;
+}
+
+function showDoneBanner(name){
+  const banner = $("done-banner");
+  if (!banner) return;
+  const text = name + " is done. Start the next prompt?";
+  const t = $("done-banner-text");
+  if (t) t.textContent = text;
+  banner.classList.add("show");
+  document.title = "(done) " + NORMAL_TITLE;
+  try {
+    if ("Notification" in window && Notification.permission === "granted"){
+      new Notification(text);   // same text as the banner, when notifications are allowed
+    }
+  } catch (err) {}
+}
+
+function closeDoneBanner(){
+  const banner = $("done-banner");
+  if (banner) banner.classList.remove("show");
+  document.title = NORMAL_TITLE;   // restore the normal title once the banner is closed
+}
+
+async function pollRunsForDone(){
+  const d = await j("/api/runs");
+  const now = runsDoneMap(d);
+  if (RUNS_BASELINE){   // the first poll only sets the baseline and never alerts
+    for (const key of Object.keys(now)){
+      const cur = now[key];
+      const prev = RUNS_BASELINE[key];
+      if (cur.done && prev && !prev.done) showDoneBanner(cur.name);   // not done -> done
+    }
+  }
+  RUNS_BASELINE = now;
+}
+
+function wireNotifyMe(){
+  const btn = $("notify-me");
+  if (!btn) return;
+  try {
+    if ("Notification" in window && (Notification.permission === "granted" || Notification.permission === "denied")){
+      btn.style.display = "none";   // already decided, no need to ask again
+      return;
+    }
+  } catch (err) {}
+  btn.addEventListener("click", async () => {
+    try { if ("Notification" in window) await Notification.requestPermission(); } catch (err) {}
+    let state = "default";
+    try { if ("Notification" in window) state = Notification.permission; } catch (err) {}
+    if (state === "granted" || state === "denied") btn.style.display = "none";   // hide once granted or denied
+  });
+}
+
+(function wireDoneBanner(){
+  const go = $("done-banner-go");
+  if (go) go.addEventListener("click", () => showTab("queue"));   // switch to the Autopilot tab
+  const close = $("done-banner-close");
+  if (close) close.addEventListener("click", closeDoneBanner);
+  wireNotifyMe();
+  pollRunsForDone();          // first poll sets the baseline (never alerts)
+  setInterval(pollRunsForDone, 30000);   // keep polling every 30 s even on other tabs
+})();
 
 const RENDERERS = {
   "/api/system": renderSystem,
@@ -771,11 +1134,28 @@ function showTab(name){
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   for (const p of PANES) $(p + "-pane").classList.toggle("hidden", p !== name);
   if (name === "eval") loadEval();   // the eval tab fetches when shown, not on every poll
-  if (name === "queue") loadQueue();   // the queue tab fetches when shown, not on every poll
+  if (name === "queue"){ loadQueue(); startRunsPolling(); }   // queue tab: fetch when shown; runs keep polling while visible
+  else stopRunsPolling();
 }
 document.querySelectorAll(".tab").forEach(b => { b.onclick = () => { location.hash = b.dataset.tab; }; });
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 showTab(location.hash.slice(1));
+
+// --- queue: the add prompt form --------------------------------------------------
+(function wireAddPrompt(){
+  const form = $("add-prompt");
+  if (!form) return;
+  const textArea = $("qp-text");
+  form.addEventListener("submit", (e) => { e.preventDefault(); addPrompt(); });
+  if (textArea){
+    textArea.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter"){   // Ctrl+Enter adds the prompt
+        e.preventDefault();
+        if (form.requestSubmit) form.requestSubmit(); else addPrompt();
+      }
+    });
+  }
+})();
 
 </script>
 </body>

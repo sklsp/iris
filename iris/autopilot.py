@@ -181,17 +181,17 @@ def watch(
     if not waiting:
         result = f"nothing queued for {agent}"
         if journal is not None:
-            journal.log(event="autopilot", repo=str(repo), agent=agent, answer=None, result=result)
+            journal.log(event="autopilot", source="cli", repo=str(repo), agent=agent, answer=None, result=result)
         return result
     answer = confirm(f"{repo} is done ({reason}). Start the next {agent} prompt?")
     if not answer:
         result = "Jay said no"
         if journal is not None:
-            journal.log(event="autopilot", repo=str(repo), agent=agent, answer=False, result=result)
+            journal.log(event="autopilot", source="cli", repo=str(repo), agent=agent, answer=False, result=result)
         return result
     result = start(agent, str(repo))  # the new session runs in the repo that just finished
     if journal is not None:
-        journal.log(event="autopilot", repo=str(repo), agent=agent, answer=True, result=result)
+        journal.log(event="autopilot", source="cli", repo=str(repo), agent=agent, answer=True, result=result)
     return result
 
 
@@ -237,6 +237,31 @@ def run_done(repo: Path | str, quiet_minutes: int = 3, now: float | None = None)
     if age < quiet_minutes * 60:
         return False, f"last commit {_age(age)} ago"
     return True, f"{progress.name} done: {total} items"
+
+
+def run_progress(repo: Path | str) -> dict:
+    """The progress of the newest PROGRESS-*.md run in `repo`: file name, item counts and whether it is done."""
+    path = Path(repo)
+    progress = _newest_progress(path)
+    if progress is None:
+        return {
+            "repo": str(repo),
+            "file": None,
+            "done_items": 0,
+            "total": 0,
+            "done": False,
+            "reason": "no PROGRESS file",
+        }
+    open_, total = _open_items(progress.read_text(encoding="utf-8"))
+    done, reason = run_done(path)
+    return {
+        "repo": str(repo),
+        "file": progress.name,
+        "done_items": total - open_,
+        "total": total,
+        "done": done,
+        "reason": reason,
+    }
 
 
 def autopilot_main(argv: list[str]) -> int:

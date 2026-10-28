@@ -2,7 +2,7 @@
 
 import pytest
 
-from iris.prompt_queue import add, listing, load, pending, queue_path, save, summary, take
+from iris.prompt_queue import add, listing, load, move, pending, queue_path, remove, save, summary, take
 from iris.tools import SAFE, TOOLS
 
 
@@ -56,6 +56,85 @@ def test_take_without_a_prompt_raises_lookup_error(tmp_path):
     path = tmp_path / "q" / "queue.json"
     with pytest.raises(LookupError, match=r"^no prompts waiting for nobody$"):
         take("nobody", path)
+
+
+def test_remove_returns_the_prompt_and_deletes_it(tmp_path):
+    path = tmp_path / "q" / "queue.json"
+    add("leadscan", "Run de tests.", now="2026-10-14 09:00", path=path)
+    add("Iris", "Lees PLAN.md.", now="2026-10-14 09:05", path=path)
+    assert remove(1, path) == {
+        "id": 1,
+        "agent": "leadscan",
+        "text": "Run de tests.",
+        "added": "2026-10-14 09:00",
+    }
+    data = load(path)
+    assert [p["id"] for p in data["prompts"]] == [2]
+    assert data["next_id"] == 3
+
+
+def test_remove_of_an_unknown_id_raises_lookup_error(tmp_path):
+    path = tmp_path / "q" / "queue.json"
+    add("leadscan", "Run de tests.", now="2026-10-14 09:00", path=path)
+    with pytest.raises(LookupError, match=r"^no prompt with id 7$"):
+        remove(7, path)
+
+
+def test_move_up_and_down_swaps_with_the_neighbour(tmp_path):
+    path = tmp_path / "q" / "queue.json"
+    add("leadscan", "first", now="2026-10-14 09:00", path=path)
+    add("Iris", "second", now="2026-10-14 09:05", path=path)
+    add("leadscan", "third", now="2026-10-14 09:10", path=path)
+    move(3, -1, path)
+    data = load(path)
+    assert [(p["id"], p["text"]) for p in data["prompts"]] == [
+        (1, "first"),
+        (3, "third"),
+        (2, "second"),
+    ]
+    move(3, 1, path)
+    data = load(path)
+    assert [(p["id"], p["text"]) for p in data["prompts"]] == [
+        (1, "first"),
+        (2, "second"),
+        (3, "third"),
+    ]
+
+
+def test_move_at_both_edges_changes_nothing(tmp_path):
+    path = tmp_path / "q" / "queue.json"
+    add("leadscan", "first", now="2026-10-14 09:00", path=path)
+    add("Iris", "second", now="2026-10-14 09:05", path=path)
+    move(1, -1, path)
+    assert [p["id"] for p in load(path)["prompts"]] == [1, 2]
+    move(2, 1, path)
+    assert [p["id"] for p in load(path)["prompts"]] == [1, 2]
+
+
+def test_move_with_a_bad_step_raises_value_error(tmp_path):
+    path = tmp_path / "q" / "queue.json"
+    add("leadscan", "first", now="2026-10-14 09:00", path=path)
+    with pytest.raises(ValueError, match=r"^step must be -1 or 1$"):
+        move(1, 2, path)
+
+
+def test_move_of_an_unknown_id_raises_lookup_error(tmp_path):
+    path = tmp_path / "q" / "queue.json"
+    add("leadscan", "first", now="2026-10-14 09:00", path=path)
+    with pytest.raises(LookupError, match=r"^no prompt with id 9$"):
+        move(9, -1, path)
+
+
+def test_move_and_remove_never_change_the_ids(tmp_path):
+    path = tmp_path / "q" / "queue.json"
+    for i in range(4):
+        add("leadscan", f"prompt {i}", now=f"2026-10-14 09:{i:02d}", path=path)
+    move(3, -1, path)
+    remove(2, path)
+    data = load(path)
+    assert [p["id"] for p in data["prompts"]] == [1, 3, 4]
+    texts = {p["id"]: p["text"] for p in data["prompts"]}
+    assert texts[3] == "prompt 2" and texts[4] == "prompt 3"
 
 
 def test_add_requires_agent_and_text():

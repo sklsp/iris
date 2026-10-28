@@ -18,6 +18,7 @@ from iris.autopilot import (
     cline_sessions,
     cline_start,
     run_done,
+    run_progress,
     start_in_hub,
     watch,
 )
@@ -115,6 +116,43 @@ def test_a_repo_without_commits_is_reported_not_done(tmp_path, monkeypatch):
 
     monkeypatch.setattr(autopilot, "_git", fake_git)
     assert run_done(repo, now=FIXED + 3600) == (False, "no commits yet")
+
+
+def test_run_progress_of_a_half_done_file(tmp_path):
+    repo = make_repo(tmp_path, "alpha", checklist(open_at=(4, 9)))
+    assert run_progress(repo) == {
+        "repo": str(repo),
+        "file": "PROGRESS-iris6.md",
+        "done_items": 13,
+        "total": 15,
+        "done": False,
+        "reason": "2 of 15 items open in PROGRESS-iris6.md",
+    }
+
+
+def test_run_progress_of_a_done_file(tmp_path):
+    # the commit is at FIXED (years ago), so a fully ticked clean tree is past the quiet period
+    repo = make_repo(tmp_path, "beta", checklist())
+    assert run_progress(repo) == {
+        "repo": str(repo),
+        "file": "PROGRESS-iris6.md",
+        "done_items": 15,
+        "total": 15,
+        "done": True,
+        "reason": "PROGRESS-iris6.md done: 15 items",
+    }
+
+
+def test_run_progress_without_a_file(tmp_path):
+    repo = make_repo(tmp_path, "gamma", None)
+    assert run_progress(repo) == {
+        "repo": str(repo),
+        "file": None,
+        "done_items": 0,
+        "total": 0,
+        "done": False,
+        "reason": "no PROGRESS file",
+    }
 
 
 def _clear_cli_env(monkeypatch) -> None:
@@ -558,7 +596,14 @@ def test_watch_a_no_never_starts(tmp_path, monkeypatch):
     assert asked == ["acme is done (PROGRESS-iris6.md done: 15 items). Start the next cline prompt?"]
     assert started == []
     assert journal.entries == [
-        {"event": "autopilot", "repo": "acme", "agent": "cline", "answer": False, "result": "Jay said no"}
+        {
+            "event": "autopilot",
+            "source": "cli",
+            "repo": "acme",
+            "agent": "cline",
+            "answer": False,
+            "result": "Jay said no",
+        }
     ]
 
 
@@ -586,7 +631,14 @@ def test_watch_with_an_empty_queue_never_asks(tmp_path, monkeypatch):
     assert out == "nothing queued for cline"
     assert asked == []  # nothing waiting means no question at all
     assert journal.entries == [
-        {"event": "autopilot", "repo": "acme", "agent": "cline", "answer": None, "result": "nothing queued for cline"}
+        {
+            "event": "autopilot",
+            "source": "cli",
+            "repo": "acme",
+            "agent": "cline",
+            "answer": None,
+            "result": "nothing queued for cline",
+        }
     ]
 
 
@@ -631,7 +683,14 @@ def test_watch_logs_an_autopilot_event(tmp_path, monkeypatch):
     assert out == "started the next prompt"
     assert seen == [("cline", "acme")]  # started in the repo that just finished
     assert journal.entries == [
-        {"event": "autopilot", "repo": "acme", "agent": "cline", "answer": True, "result": "started the next prompt"}
+        {
+            "event": "autopilot",
+            "source": "cli",
+            "repo": "acme",
+            "agent": "cline",
+            "answer": True,
+            "result": "started the next prompt",
+        }
     ]
 
 

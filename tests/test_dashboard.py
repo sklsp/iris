@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import threading
@@ -244,6 +245,63 @@ def test_api_agents_stuck_rows_first(tmp_path, monkeypatch):
     assert [r["name"] for r in rows] == ["Beacon", "fresh"]  # stuck first
     assert rows[0]["stuck"] is True and rows[1]["stuck"] is False
     assert rows[0]["uncommitted"] == 1 and rows[0]["branch"] == "main"
+
+
+def _runs_repos(tmp_path):
+    """alpha and zeta are not done, beta is done, gamma has no PROGRESS file at all."""
+    from tests.test_autopilot import checklist, make_repo
+
+    alpha = make_repo(tmp_path, "alpha", checklist(open_at=(4, 9)))   # two items open: not done
+    zeta = make_repo(tmp_path, "zeta", checklist(open_at=(7,)))       # one item open: not done
+    beta = make_repo(tmp_path, "beta", checklist())                   # all ticked, old commit: done
+    gamma = make_repo(tmp_path, "gamma", None)                        # no PROGRESS file at all
+    return alpha, zeta, beta, gamma
+
+
+def _watch_only(monkeypatch, tmp_path, repos):
+    """Point discover() at exactly these temp repos and nothing else (no real worktrees)."""
+    import iris.agents as agents_mod
+    from tests.test_agents import write_config
+
+    monkeypatch.setattr(agents_mod, "CONFIG",
+                        write_config(tmp_path, repos=[str(r) for r in repos], worktrees=[]))
+
+
+def test_api_runs_lists_progress_repos_not_done_first_then_by_name(tmp_path, monkeypatch):
+    alpha, zeta, beta, gamma = _runs_repos(tmp_path)
+    _watch_only(monkeypatch, tmp_path, [alpha, zeta, beta, gamma])
+
+    data = d.runs_payload()
+    assert data["ok"] is True
+    runs = data["runs"]
+    # gamma (no PROGRESS file) is left out; not-done first, then by name within each group
+    assert [r["name"] for r in runs] == ["alpha", "zeta", "beta"]
+    assert runs[0] == {
+        "name": "alpha", "repo": str(alpha), "file": "PROGRESS-iris6.md",
+        "done_items": 13, "total": 15, "done": False,
+        "reason": "2 of 15 items open in PROGRESS-iris6.md",
+    }
+    assert runs[1] == {
+        "name": "zeta", "repo": str(zeta), "file": "PROGRESS-iris6.md",
+        "done_items": 14, "total": 15, "done": False,
+        "reason": "1 of 15 items open in PROGRESS-iris6.md",
+    }
+    assert runs[2] == {
+        "name": "beta", "repo": str(beta), "file": "PROGRESS-iris6.md",
+        "done_items": 15, "total": 15, "done": True,
+        "reason": "PROGRESS-iris6.md done: 15 items",
+    }
+
+
+def test_api_runs_route_returns_200_and_the_same_json(server, tmp_path, monkeypatch):
+    alpha, zeta, beta, gamma = _runs_repos(tmp_path)
+    _watch_only(monkeypatch, tmp_path, [alpha, zeta, beta, gamma])
+
+    with d._lock:  # drop any cached runs payload so the route recomputes against these repos
+        d._cache.pop("runs", None)
+    status, _headers, body = get(server + "/api/runs")
+    assert status == 200
+    assert json.loads(body) == d.runs_payload()
 
 
 def test_api_lmstudio_unreachable_reports_false(monkeypatch):
@@ -882,6 +940,167 @@ def test_api_queue_route(server, tmp_path, monkeypatch):
                                 "added": "2026-10-14 09:00"}]
 
 
+# --- prompt queue writes (item 4) --------------------------------------------------
+
+
+def _journal_queue_events(path):
+    """The {"event": "queue"} lines from a journal file, oldest first."""
+    events = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        entry = json.loads(line)
+        if entry.get("event") == "queue":
+            events.append(entry)
+    return events
+
+
+def test_queue_add_ok_returns_new_state_and_logs(srv, tmp_path, monkeypatch):
+    queue, journal = tmp_path / "q.json", tmp_path / "journal.jsonl"
+    monkeypatch.setenv("IRIS_QUEUE", str(queue))
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+
+    code, body = post(base + "/api/queue/add", {"agent": "leadscan", "text": "Run de tests."},
+                      token=srv.token, origin=base)
+    assert code == 200 and body["ok"] is True
+    p = body["prompts"][0]
+    assert p["id"] == 1 and p["agent"] == "leadscan" and p["text"] == "Run de tests."
+    assert isinstance(p["added"], str) and p["added"]
+
+    events = _journal_queue_events(journal)   # the journal line exists after add
+    assert events[-1]["action"] == "add" and events[-1]["agent"] == "leadscan" and events[-1]["id"] == 1
+
+
+def test_queue_delete_ok_returns_new_state_and_logs(srv, tmp_path, monkeypatch):
+    from iris import prompt_queue
+
+    queue, journal = tmp_path / "q.json", tmp_path / "journal.jsonl"
+    monkeypatch.setenv("IRIS_QUEUE", str(queue))
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+
+    prompt_queue.add("leadscan", "first")   # id 1
+    prompt_queue.add("cline", "second")     # id 2
+    code, body = post(base + "/api/queue/delete", {"id": 1}, token=srv.token, origin=base)
+    assert code == 200 and body["ok"] is True
+    assert [p["id"] for p in body["prompts"]] == [2]
+
+    events = _journal_queue_events(journal)
+    assert events[-1]["action"] == "delete" and events[-1]["agent"] == "leadscan" and events[-1]["id"] == 1
+
+
+def test_queue_move_ok_returns_new_state_and_logs(srv, tmp_path, monkeypatch):
+    from iris import prompt_queue
+
+    queue, journal = tmp_path / "q.json", tmp_path / "journal.jsonl"
+    monkeypatch.setenv("IRIS_QUEUE", str(queue))
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+
+    prompt_queue.add("leadscan", "first")   # id 1
+    prompt_queue.add("cline", "second")     # id 2
+    code, body = post(base + "/api/queue/move", {"id": 1, "step": 1}, token=srv.token, origin=base)
+    assert code == 200 and body["ok"] is True
+    assert [p["id"] for p in body["prompts"]] == [2, 1]   # the two prompts swapped
+
+    events = _journal_queue_events(journal)
+    assert events[-1]["action"] == "move" and events[-1]["id"] == 1
+
+
+@pytest.mark.parametrize("route", ["/api/queue/add", "/api/queue/delete", "/api/queue/move"])
+def test_queue_write_without_a_token_is_403(srv, route):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + route, {"agent": "a", "text": "t"}, origin=base)   # no token
+    assert code == 403 and "forbidden" in body["error"]
+
+
+@pytest.mark.parametrize("route", ["/api/queue/add", "/api/queue/delete", "/api/queue/move"])
+def test_queue_write_from_a_foreign_origin_is_403(srv, route):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, _ = post(base + route, {"agent": "a", "text": "t"}, token=srv.token, origin="http://evil.example")
+    assert code == 403
+
+
+def test_queue_write_with_bad_json_is_400(srv):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    req = urllib.request.Request(base + "/api/queue/add", data=b"{not json", method="POST",
+                                 headers={"Content-Type": "application/json"})
+    req.add_header("X-Iris-Token", srv.token)   # auth passes, then the body fails to parse
+    req.add_header("Origin", base)
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req, timeout=10)
+    assert exc.value.code == 400
+
+
+@pytest.mark.parametrize("agent", ["", "   ", "x" * 41])
+def test_queue_add_bad_agent_is_400(srv, tmp_path, monkeypatch, agent):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/queue/add", {"agent": agent, "text": "ok"}, token=srv.token, origin=base)
+    assert code == 400 and "agent" in body["error"]
+
+
+@pytest.mark.parametrize("text", ["", "   ", "x" * 8001])
+def test_queue_add_bad_text_is_400(srv, tmp_path, monkeypatch, text):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/queue/add", {"agent": "leadscan", "text": text}, token=srv.token, origin=base)
+    assert code == 400 and "text" in body["error"]
+
+
+def test_queue_delete_bad_id_is_400(srv, tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/queue/delete", {"id": "nope"}, token=srv.token, origin=base)
+    assert code == 400 and "id" in body["error"]
+
+
+def test_queue_move_bad_id_is_400(srv, tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/queue/move", {"id": None, "step": 1}, token=srv.token, origin=base)
+    assert code == 400 and "id" in body["error"]
+
+
+@pytest.mark.parametrize("step", [0, 2, -2, "1"])
+def test_queue_move_bad_step_is_400(srv, tmp_path, monkeypatch, step):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/queue/move", {"id": 1, "step": step}, token=srv.token, origin=base)
+    assert code == 400 and "step" in body["error"]
+
+
+def test_queue_delete_unknown_id_is_404(srv, tmp_path, monkeypatch):
+    from iris import prompt_queue
+
+    queue = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(queue))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    prompt_queue.add("leadscan", "first")   # id 1 exists; 99 does not
+    code, body = post(base + "/api/queue/delete", {"id": 99}, token=srv.token, origin=base)
+    assert code == 404 and "no prompt" in body["error"]
+
+
+def test_queue_move_unknown_id_is_404(srv, tmp_path, monkeypatch):
+    from iris import prompt_queue
+
+    queue = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(queue))
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    prompt_queue.add("leadscan", "first")   # id 1 exists; 99 does not
+    code, body = post(base + "/api/queue/move", {"id": 99, "step": 1}, token=srv.token, origin=base)
+    assert code == 404 and "no prompt" in body["error"]
+
+
+@pytest.mark.parametrize("route", ["/api/queue/add", "/api/queue/delete", "/api/queue/move"])
+def test_get_on_a_queue_write_route_is_405(srv, route):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(base + route, timeout=5)
+    assert exc.value.code == 405
+
+
 # --- queue tab (item 3) -----------------------------------------------------------
 
 
@@ -891,4 +1110,115 @@ def test_page_contains_queue_tab_and_empty_state(server):
     assert "/api/queue" in page
     assert 'data-tab="queue"' in page
     assert "The queue is empty." in page
+
+
+# --- cline start (item 5) ---------------------------------------------------------
+
+
+def _journal_autopilot_events(path):
+    """The {"event": "autopilot"} lines from a journal file, oldest first."""
+    events = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        entry = json.loads(line)
+        if entry.get("event") == "autopilot":
+            events.append(entry)
+    return events
+
+
+def test_cline_start_ok_returns_result_and_queue(srv, tmp_path, monkeypatch):
+    from iris import autopilot as ap
+    from iris import prompt_queue
+
+    queue, journal = tmp_path / "q.json", tmp_path / "journal.jsonl"
+    monkeypatch.setenv("IRIS_QUEUE", str(queue))
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    calls: list[tuple[str, str]] = []
+
+    def fake(agent, repo=""):
+        calls.append((agent, repo))
+        return "started session abc"
+
+    monkeypatch.setattr(ap, "cline_start", fake)
+    prompt_queue.add("leadscan", "first")   # id 1; the fake does not take it, so it stays
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/cline/start", {"agent": "leadscan"}, token=srv.token, origin=base)
+    assert code == 200 and body["ok"] is True
+    assert body["result"] == "started session abc"
+    assert [p["id"] for p in body["queue"]] == [1]   # the new queue state comes back
+    assert calls == [("leadscan", "")]               # looked up on the module, called with (agent, repo)
+
+    events = _journal_autopilot_events(journal)      # a success is journaled too
+    assert events[-1]["event"] == "autopilot" and events[-1]["result"] == "started session abc"
+
+
+def test_cline_start_error_result_is_409_and_logged(srv, tmp_path, monkeypatch):
+    import iris.autopilot as ap
+
+    journal = tmp_path / "journal.jsonl"
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    monkeypatch.setattr(ap, "cline_start", lambda a, r="": "error: no prompts waiting for leadscan")
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/cline/start", {"agent": "leadscan"}, token=srv.token, origin=base)
+    assert code == 409 and body["error"] == "no prompts waiting for leadscan"
+
+    events = _journal_autopilot_events(journal)      # the error result is journaled as well
+    assert len(events) == 1
+    e = events[0]
+    assert (e["event"], e["source"]) == ("autopilot", "dashboard")
+    assert (e["agent"], e["repo"], e["answer"]) == ("leadscan", "", True)
+    assert e["result"] == "error: no prompts waiting for leadscan"
+
+
+@pytest.mark.parametrize("body", [{}, {"agent": ""}, {"agent": "   "}, {"agent": "x" * 41}])
+def test_cline_start_bad_agent_is_400(srv, body):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, b = post(base + "/api/cline/start", body, token=srv.token, origin=base)
+    assert code == 400 and "agent" in b["error"]
+
+
+def test_cline_start_without_a_token_is_403(srv):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    code, body = post(base + "/api/cline/start", {"agent": "leadscan"}, origin=base)   # no token
+    assert code == 403 and "forbidden" in body["error"]
+
+
+def test_cline_start_while_one_runs_is_409(srv, monkeypatch):
+    import iris.autopilot as ap
+
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(ap, "cline_start", lambda a, r="": calls.append((a, r)) or "started")
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    with d._cline_start_lock:   # hold the lock for the whole request
+        code, body = post(base + "/api/cline/start", {"agent": "leadscan"}, token=srv.token, origin=base)
+    assert code == 409 and "already running" in body["error"]
+    assert calls == []   # cline_start was never reached while the lock is held
+
+
+def test_get_on_cline_start_is_405(srv):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(base + "/api/cline/start", timeout=5)
+    assert exc.value.code == 405
+
+
+# --- page: the new autopilot UI (item 10) ---------------------------------------
+
+
+def test_page_has_the_ids_and_routes_the_autopilot_ui_needs(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    for needle in ("/api/runs", "/api/cline/start", "/api/queue/add", "/api/queue/delete",
+                   "/api/queue/move", "X-Iris-Token", "Autopilot"):
+        assert needle in page, f"the page is missing {needle!r}"
+
+
+def test_page_has_no_innerhtml_assignment_from_a_variable(server):
+    # On main the regex below finds no hit at all (the page never uses innerHTML), so we
+    # assert it stays zero rather than merely "did not grow".
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    hits = re.findall(r'''innerHTML\s*=\s*[^\\"'\`]''', page)
+    assert hits == [], f"the page assigns innerHTML from a variable: {hits!r}"
 

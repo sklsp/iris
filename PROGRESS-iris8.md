@@ -1,7 +1,7 @@
 # Iris Cline hub run, progress (items 1 to 11)
 
 - [x] C1. the CLI command (543 passed in 19.41s)
-- [ ] C2. read Cline's session history
+- [x] C2. read Cline's session history (549 passed in 20.55s)
 - [ ] C3. start a session through the hub
 - [ ] C4. cline_start uses the hub
 - [ ] C5. delete the VS Code typing

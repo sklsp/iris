@@ -8,7 +8,9 @@ for a few minutes. run_done only reads; cline_start types into VS Code and is as
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -57,6 +59,31 @@ def cline_command(text: str, cwd: str) -> list[str]:
     if not text.strip():
         raise ValueError("empty prompt")
     return [cline_cli(), "-z", "-c", cwd, "-P", cline_provider(), "-m", cline_model(), text]
+
+
+def cline_sessions(run=subprocess.run) -> list[dict]:
+    """The last ten Cline sessions as dicts, from `history --json`; [] when they cannot be read.
+
+    Non-dict items in the JSON are skipped; a missing CLI, a timeout, bad JSON or a non-list result all give []."""
+    try:
+        result = run(
+            [cline_cli(), "history", "--json", "--limit", "10"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+            stdin=subprocess.DEVNULL,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    try:
+        data = json.loads(result.stdout)
+    except ValueError:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, dict)]
 
 
 def cline_keys(text: str) -> list[str]:

@@ -3,6 +3,7 @@
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +14,7 @@ from iris.autopilot import (
     cline_keys,
     cline_model,
     cline_provider,
+    cline_sessions,
     cline_start,
     new_task_command,
     paste_into_cline,
@@ -194,6 +196,75 @@ def test_cline_command_keeps_a_multiline_text_as_one_item(monkeypatch):
     argv = cline_command(text, "W:/Iris")
     assert len(argv) == 9
     assert argv[-1] == text
+
+
+def test_cline_sessions_returns_the_parsed_list_and_skips_non_dicts(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(
+            stdout='[{"sessionId": "s1", "source": "cline-cli-zen"}, {"sessionId": "s2"}, "not a dict", 42]'
+        )
+
+    out = cline_sessions(run=fake_run)
+    assert out == [{"sessionId": "s1", "source": "cline-cli-zen"}, {"sessionId": "s2"}]
+
+
+def test_cline_sessions_bad_json_gives_empty(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="this is not json")
+
+    assert cline_sessions(run=fake_run) == []
+
+
+def test_cline_sessions_a_dict_instead_of_a_list_gives_empty(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout='{"sessionId": "s1"}')
+
+    assert cline_sessions(run=fake_run) == []
+
+
+def test_cline_sessions_missing_cli_gives_empty(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        raise FileNotFoundError("no such file")
+
+    assert cline_sessions(run=fake_run) == []
+
+
+def test_cline_sessions_timeout_gives_empty(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=argv, timeout=30)
+
+    assert cline_sessions(run=fake_run) == []
+
+
+def test_cline_sessions_passes_the_exact_argv_and_kwargs(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    calls: list[tuple[list[str], dict]] = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(stdout="[]")
+
+    cline_sessions(run=fake_run)
+    argv, kwargs = calls[0]
+    assert argv == ["W:/Cline/cline-cli.exe", "history", "--json", "--limit", "10"]
+    assert kwargs == {
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "timeout": 30,
+        "stdin": subprocess.DEVNULL,
+        "check": False,
+    }
 
 
 def test_cline_keys_is_the_exact_sequence(monkeypatch):

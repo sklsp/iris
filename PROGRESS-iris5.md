@@ -8,7 +8,7 @@
 - [x] Q8. trash then restore (493 passed in 17.22s)
 - [x] Q9. a window that is gone after focus (493 passed in 16.96s)
 - [x] Q10. injection that arrives on the second read (493 passed in 17.14s)
-- [ ] Q11. a queue that changes
+- [x] Q11. a queue that changes (493 passed in 16.96s)
 - [ ] Q12. EVAL.md documents sequences
 - [ ] Q13. no dashes
 - [ ] Q14. final check

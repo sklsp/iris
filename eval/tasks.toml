@@ -319,6 +319,15 @@ max_calls = 2
 fixtures = { comfy_status = "ComfyUI 0.37.0 is running. Queue: 1 running, 2 waiting." }
 
 [[task]]
+id = "comfy_queue_then_status"
+category = "skills"
+request = "Zet de anime-workflow in de wachtrij en vertel hoeveel er wachten."
+confirm = "yes"
+expect = ["comfy_queue", "comfy_status"]
+max_calls = 5
+fixtures = { comfy_status = ["ComfyUI 0.3.4 is running. Queue: 0 running, 0 waiting.", "ComfyUI 0.3.4 is running. Queue: 1 running, 0 waiting."] }
+
+[[task]]
 id = "gpu_3060"
 category = "skills"
 request = "Kan ik een model op de 3060 laden?"

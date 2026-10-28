@@ -6,7 +6,7 @@
 - [x] A4. the cline_start tool (523 passed in 20.41s)
 - [x] A5. the confirm question says what will be typed (524 passed in 19.05s)
 - [x] A6. autopilot waits, asks once, starts once (530 passed in 20.58s)
-- [ ] A7. python -m iris autopilot
+- [x] A7. python -m iris autopilot (536 passed in 20.44s)
 - [ ] A8. the dashboard shows autopilot events
 - [ ] A9. eval: start the next run
 - [ ] A10. eval: Jay says no

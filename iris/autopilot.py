@@ -7,6 +7,7 @@ for a few minutes. Nothing here starts anything; it only reports what git says. 
 
 from __future__ import annotations
 
+import argparse
 import os
 import time
 from collections.abc import Callable
@@ -16,6 +17,7 @@ from iris import prompt_queue
 from iris.agent import Journal
 from iris.agents import _age, _git
 from iris.tools import _escape_keys, _window
+from iris.voice import is_yes
 
 
 def new_task_command() -> str:
@@ -154,3 +156,20 @@ def run_done(repo: Path | str, quiet_minutes: int = 3, now: float | None = None)
     if age < quiet_minutes * 60:
         return False, f"last commit {_age(age)} ago"
     return True, f"{progress.name} done: {total} items"
+
+
+def autopilot_main(argv: list[str]) -> int:
+    """The CLI behind `python -m iris autopilot`: wait for the run in --repo to finish, ask Jay once, start."""
+    ap = argparse.ArgumentParser(prog="iris autopilot", description=__doc__)
+    ap.add_argument("--repo", required=True)
+    ap.add_argument("--agent", required=True)
+    ap.add_argument("--every", type=float, default=60.0)
+    a = ap.parse_args(argv)
+
+    def confirm(question: str) -> bool:
+        return is_yes(input(f"Iris: {question} (yes/no) "))
+
+    journal = Journal(Path(os.environ.get("IRIS_JOURNAL") or (Path.home() / ".iris" / "journal.jsonl")))
+    result = watch(a.repo, a.agent, confirm, every=a.every, journal=journal)
+    print(result)
+    return 0

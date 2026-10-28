@@ -11,6 +11,6 @@
 - [x] D9. tell Jay when a run is done (601 passed in 23.93s)
 - [x] D10. a page test for the new parts (603 passed in 24.13s)
 - [x] D11. the autopilot CLI and the page agree (603 passed in 24.68s)
-- [ ] D12. docs
+- [x] D12. docs (603 passed in 24.13s)
 - [ ] D13. no dashes
 - [ ] D14. final check

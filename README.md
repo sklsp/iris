@@ -195,21 +195,29 @@ Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS
 
 ## Autopilot
 
-When a run is done, Iris can start the next one from the queue. `python -m iris autopilot` waits until the newest
-PROGRESS-*.md in the repo has every item ticked or BLOCKED, the tree is clean and the last commit has been quiet for
-three minutes; then it asks Jay whether to start the agent's next queued prompt.
-It starts at most one task and exits after that first answer:
+When a run is done, Iris can start the next one from the queue. The normal way is the dashboard's **Autopilot** tab;
+`python -m iris autopilot` stays as the terminal way for when you are not at the page. Both use the same rule for a
+finished run: the newest PROGRESS-*.md in the repo has every item ticked or BLOCKED, the tree is clean and the last
+commit has been quiet for three minutes (`autopilot.run_done`).
+
+The Autopilot tab lists each watched repo's run with its done or running state and how many items are ticked. Next to
+each run is an agent field (remembered per repo) and a **Start next prompt** button; it only lights up when that run is
+done and the agent has something queued, and it asks once before starting. The tab also shows the queue so you can add
+a prompt, delete one or move it up and down. When a run finishes while the page is open, a banner appears ("…is done.
+Start the next prompt?") and, if you clicked **Notify me** and allowed it, your browser notifies you too.
+
+The terminal way waits in place instead of polling:
 
 ```bash
 .venv\Scripts\python -m iris autopilot --repo W:/Iris --agent qwen   # checks every 60 s, --every changes it
 ```
 
-Starting is `cline_start`: it runs the Cline CLI (`IRIS_CLINE_CLI`, default `W:/Cline/cline-cli.exe`) in the repo
-(or `IRIS_CLINE_CWD`, default W:/Iris) with `-z` and the prompt as one argv item, so a queued prompt may span lines.
-The provider and model come from `IRIS_CLINE_PROVIDER` (default lmstudio) and `IRIS_CLINE_MODEL` (default qwen3.8-27b).
-A start only counts when the CLI's history shows the new session with that prompt; if it does not start, the queue
-stays untouched. Every outcome (nothing queued, Jay said no, started) is logged as an autopilot event that the
-dashboard's Activity panel shows with its own badge.
+It starts at most one task and exits after that first answer. Starting is `cline_start`: it runs the Cline CLI
+(`IRIS_CLINE_CLI`, default `W:/Cline/cline-cli.exe`) in the repo (or `IRIS_CLINE_CWD`, default W:/Iris) with `-z` and
+the prompt as one argv item, so a queued prompt may span lines. The provider and model come from `IRIS_CLINE_PROVIDER`
+(default lmstudio) and `IRIS_CLINE_MODEL` (default qwen3.8-27b). A start only counts when the CLI's history shows the
+new session with that prompt; if it does not start, the queue stays untouched. Every outcome (nothing queued, Jay said
+no, started) is logged as an autopilot event that the dashboard's Activity tab shows with its own badge.
 
 ## Dashboard
 
@@ -221,31 +229,34 @@ A mostly read-only status page for Iris and the machine it runs on:
 set IRIS_DASHBOARD_PORT=9000                        # same, via environment variable
 ```
 
-The server binds to loopback only. All data endpoints answer GET; the two model actions,
-`POST /api/models/load` and `POST /api/models/unload`, are the only writes, and they require a
-loopback Origin or Referer plus the `IRIS_TOKEN` header, so a page opened from anywhere else cannot
-trigger them. Every other method gets a 405. The journal file is opened read-only, there are no CORS
-headers, and the page inserts every string with `textContent`, so journal text cannot run as HTML.
-The page polls every 3 seconds and has three tabs:
+The server binds to loopback only. Every data endpoint answers GET; the writes are the two model actions,
+`POST /api/models/load` and `POST /api/models/unload`, the queue edits, `POST /api/queue/add`, `/delete` and `/move`,
+and `POST /api/cline/start`. All of them require a loopback Origin or Referer plus the per-start `IRIS_TOKEN` header, so
+a page opened from anywhere else cannot trigger them; every other method gets a 405. A start additionally needs a click
+on its button and a confirm dialog, so it never happens on its own. The journal file is opened read-only, there are no
+CORS headers, and the page inserts every string with `textContent`, so journal text cannot run as HTML.
 
-- Overview tab:
-  - System: CPU and RAM with sparklines over the last five minutes, plus load, VRAM and temperature per GPU
-  - LM Studio: every listed model with its type badge and a load or unload button, or a note when it is not reachable
-  - Agents: branch, last commit and its age, uncommitted files, BLOCKED.md and STUCK flags, stuck repos first
-  - Activity: the last 50 journal entries newest first with tier and outcome chips, plus today's request,
-    confirmation, refusal and error counts
-  - Tools: every tool with its risk tier
-- Sessions tab: `GET /api/sessions` reads `~/.iris/sessions.db` read-only on every poll. A session is running
-  only while `ended_at` is empty and its pid still exists; a row whose process died without recording an exit
-  shows as "ended (no exit recorded)", never as running. Subagents are indented under their parent, orphans
-  stay top-level, running sessions come first
-- Claude tab: `GET /api/claude` lists the folders in `~/.claude/projects` whose newest `.jsonl` was written
-  within the last 10 minutes, with folder name and age only. It stats files but never reads them
-- The Queue tab shows the prompts waiting in the agent queue, read only.
+The page polls every 3 seconds and has seven tabs:
 
-Agents, LM Studio and Claude data are cached for 30 seconds so the page does not hammer git or LM Studio;
-the sessions database is small enough to read fresh on every poll. A missing or unreadable source shows an
-empty list in its tab, not an error page.
+- Overview: System (CPU and RAM with sparklines over the last five minutes, plus load, VRAM and temperature per GPU) and
+  Models (every LM Studio model with its type badge and a load or unload button, or a note when it is not reachable).
+- Agents: Cline sessions from `~/.iris/sessions.db`, read on every poll. A session is running only while `ended_at` is
+  empty and its pid still exists; a row whose process died without recording an exit shows as "ended (no exit recorded)",
+  never as running. Subagents are indented under their parent, orphans stay top-level, running sessions come first. Also
+  Claude sessions: the folders in `~/.claude/projects` whose newest `.jsonl` was written within the last 10 minutes, by
+  name and age only (it stats files but never reads them).
+- Activity: the last 50 journal entries newest first with tier and outcome chips, plus today's request, confirmation,
+  refusal and error counts. Autopilot outcomes appear here with their own badge.
+- Repos: branch, last commit and its age, uncommitted files, BLOCKED.md and STUCK flags per agent repo, stuck repos first.
+- Tools: every tool with its risk tier.
+- Eval: the most recent eval run's report (stamp, model and summary) plus how many runs exist.
+- Autopilot: each watched repo's run (done or running) with a **Start next prompt** button that asks once before it
+  starts, and the queue so you can add, delete and move prompts; when a run finishes it raises a done banner and, if
+  allowed, a browser notification. See [Autopilot](#autopilot).
+
+Agents, LM Studio, Claude and runs data are cached for 30 seconds so the page does not hammer git or LM Studio; the
+sessions database is small enough to read fresh on every poll. A missing or unreadable source shows an empty list in its
+tab, not an error page.
 
 ## Eval
 

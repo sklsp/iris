@@ -84,6 +84,39 @@ def test_unknown_outcome(tmp_path):
         assert str(e) == "unknown outcome in task a: sideways"
 
 
+def test_bad_fixture_empty_list(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\nfixtures = { list_windows = [] }\n')
+    try:
+        ev.load_tasks(p)
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert str(e) == "bad fixture for list_windows in task a"
+
+
+def test_bad_fixture_list_with_number(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\nfixtures = { list_windows = ["ok", 3] }\n')
+    try:
+        ev.load_tasks(p)
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert str(e) == "bad fixture for list_windows in task a"
+
+
+def test_bad_fixture_number(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\nfixtures = { list_windows = 3 }\n')
+    try:
+        ev.load_tasks(p)
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert str(e) == "bad fixture for list_windows in task a"
+
+
+def test_list_of_str_fixture_loads(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\nfixtures = { list_windows = ["ok", "done"] }\n')
+    (t,) = ev.load_tasks(p)
+    assert t.fixtures == {"list_windows": ["ok", "done"]}
+
+
 def test_unknown_category(tmp_path):
     p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\ncategory = "bogus"\n')
     try:
@@ -106,6 +139,23 @@ def test_dry_tool_returns_fixture():
 
 def test_dry_tool_default_note():
     assert ev.dry_tools({})["open_app"].fn(name="notepad") == "ok (dry run of open_app)"
+
+
+def test_dry_tool_list_fixture_plays_in_order():
+    fn = ev.dry_tools({"list_windows": ["a", "b"]})["list_windows"].fn
+    assert [fn() for _ in range(3)] == ["a", "b", "b"]
+
+
+def test_dry_tool_str_fixture_repeats_the_same_text():
+    fn = ev.dry_tools({"list_windows": "WhatsApp"})["list_windows"].fn
+    assert [fn() for _ in range(3)] == ["WhatsApp"] * 3
+
+
+def test_dry_tool_sets_have_separate_counters():
+    a = ev.dry_tools({"list_windows": ["a", "b"]})["list_windows"].fn
+    b = ev.dry_tools({"list_windows": ["a", "b"]})["list_windows"].fn
+    assert (a(), a()) == ("a", "b")
+    assert (b(), b()) == ("a", "b")
 
 
 def test_dry_never_calls_the_real_fn(monkeypatch):
@@ -222,6 +272,17 @@ def test_run_task_gives_up_after_max_steps(tmp_path):
     llm = ScriptedLLM(*[call("open_app")] * 12)   # never answers: hits MAX_STEPS
     r = ev.run_task(llm, task, tmp_path)
     assert (r.passed, r.reasons) == (False, ["gave up"])
+
+
+def test_sequence_fixture_reaches_the_model_in_order(tmp_path):
+    task = ev.Task(id="t12", request="wat staat er op het scherm?",
+                   fixtures={"read_window": ["eerste tekst", "tweede tekst"]})
+    llm = ScriptedLLM(call("read_window", title="Kladblok"), call("read_window", title="Kladblok"), answer("Klaar."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.calls) == (True, [("read_window", "ok"), ("read_window", "ok")])
+    tool_msgs = [m["content"] for m in llm.seen[-1] if m.get("role") == "tool"]
+    assert tool_msgs == ["<untrusted_data>\neerste tekst\n</untrusted_data>",
+                         "<untrusted_data>\ntweede tekst\n</untrusted_data>"]
 
 
 # --- summary and report files --------------------------------------------------
@@ -449,7 +510,7 @@ def test_eval_command_json_model(tmp_path, monkeypatch):
 
 def test_shipped_tasks_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 62
+    assert len(tasks) == 68
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
     assert (ids[0], ids[-1]) == ("gpu_temp", "nothing_to_do")
@@ -457,7 +518,7 @@ def test_shipped_tasks_load():
 
 def test_shipped_task_ids_unique_and_tools_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 62
+    assert len(tasks) == 68
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
 

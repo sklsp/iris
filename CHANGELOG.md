@@ -16,13 +16,13 @@ Existing tasks that can now fail honestly:
 - click_then_dialog gets one more call in its budget (max_calls 7)
 
 Cline autopilot (new tool and command):
-- cline_start (confirm) types the next queued prompt into a new Cline task in VS Code; Jay's yes is what runs it, a declined start never types anything, and a failed paste leaves the queue untouched
-- python -m iris autopilot --repo ... --agent ... waits until the newest PROGRESS run is done (every item ticked or BLOCKED, clean tree, last commit quiet for three minutes; autopilot.run_done), asks Jay once and starts at most one task; IRIS_CLINE_NEW_TASK and IRIS_VSCODE_TITLE control how the Cline task is opened
+- cline_start (confirm) starts a new Cline session through the Cline CLI with the next queued prompt; Jay's yes is what runs it, a declined start never starts anything, and a failed start leaves the queue untouched
+- python -m iris autopilot --repo ... --agent ... waits until the newest PROGRESS run is done (every item ticked or BLOCKED, clean tree, last commit quiet for three minutes; autopilot.run_done), asks Jay once and starts at most one task; IRIS_CLINE_CLI, IRIS_CLINE_PROVIDER, IRIS_CLINE_MODEL and IRIS_CLINE_CWD control where the session starts and with what provider and model
 - the dashboard's Activity panel shows autopilot events as their own rows (repo, agent, result), without touching today's counters
 
 Eval tasks for the autopilot (four new, 75 in total):
 - cline_next: starting the next run ends ok with a fixture that mirrors the real success text
-- cline_declined: Jay says no and nothing is typed
+- cline_declined: Jay says no and nothing starts
 - cline_not_done: while items are open in PROGRESS the start errors instead of running
 - cline_injection (safety): an instruction planted in a window to call cline_start or queue_add must not be followed
 

@@ -137,7 +137,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | trash_file | confirm | move a file or folder to Iris's trash, always undoable |
 | queue_add | confirm | put a prompt in Jay's agent queue for one agent, asks first |
 | queue_take | confirm | take the oldest waiting prompt out of the queue so it can be pasted with type_text, asks first |
-| cline_start | confirm | open a new Cline task in VS Code and type the next queued prompt for this agent into it, asks first |
+| cline_start | confirm | start a new Cline session through the Cline CLI with the next queued prompt for this agent; if a repo is given its newest PROGRESS run must be done, asks first |
 
 The tiers are enforced in code, not in the prompt:
 
@@ -191,7 +191,7 @@ A repo is flagged STUCK when it has uncommitted changes and nothing committed fo
 
 ## The prompt queue
 
-Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first. To hand one to Cline, say so and Iris runs `cline_start`: it opens a new Cline task in VS Code and types the oldest queued prompt for that agent into it only after Jay says yes; if the paste fails (say, VS Code is not open) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
+Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first. To hand one to Cline, say so and Iris runs `cline_start`: it starts a new Cline session through the Cline CLI with the oldest queued prompt for that agent only after Jay says yes; if the start fails (say, the CLI is missing or the hub does not pick up the session) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
 
 ## Autopilot
 
@@ -204,11 +204,12 @@ It starts at most one task and exits after that first answer:
 .venv\Scripts\python -m iris autopilot --repo W:/Iris --agent qwen   # checks every 60 s, --every changes it
 ```
 
-Starting is `cline_start`: VS Code is focused by its window title (`IRIS_VSCODE_TITLE`, default "Visual Studio
-Code"), the command palette opens with Ctrl+Shift+P and the entry from `IRIS_CLINE_NEW_TASK` (default "Cline: New
-Task") plus the prompt are typed in. A newline would send the prompt early, so a queued prompt is one line only; if
-the paste fails the queue stays untouched. Every outcome (nothing queued, Jay said no, started) is logged as an
-autopilot event that the dashboard's Activity panel shows with its own badge.
+Starting is `cline_start`: it runs the Cline CLI (`IRIS_CLINE_CLI`, default `W:/Cline/cline-cli.exe`) in the repo
+(or `IRIS_CLINE_CWD`, default W:/Iris) with `-z` and the prompt as one argv item, so a queued prompt may span lines.
+The provider and model come from `IRIS_CLINE_PROVIDER` (default lmstudio) and `IRIS_CLINE_MODEL` (default qwen3.8-27b).
+A start only counts when the CLI's history shows the new session with that prompt; if it does not start, the queue
+stays untouched. Every outcome (nothing queued, Jay said no, started) is logged as an autopilot event that the
+dashboard's Activity panel shows with its own badge.
 
 ## Dashboard
 
@@ -283,8 +284,10 @@ Iris uses.
 | `IRIS_AGENTS_TOML` | `iris/agents.toml` | which repos the agent manager watches |
 | `IRIS_REPOS` | the four built-in repo paths | repo paths for the agent manager, ';' separated; used when agents.toml has no repos |
 | `IRIS_QUEUE` | `~/.iris/queue.json` | the agent manager's prompt queue |
-| `IRIS_CLINE_NEW_TASK` | `Cline: New Task` | the command palette entry cline_start types to open a Cline task |
-| `IRIS_VSCODE_TITLE` | `Visual Studio Code` | the VS Code window title cline_start focuses before typing |
+| `IRIS_CLINE_CLI` | `W:/Cline/cline-cli.exe` | where cline_start finds the Cline CLI that starts sessions in the background hub |
+| `IRIS_CLINE_PROVIDER` | `lmstudio` | the provider passed with -P to the Cline CLI |
+| `IRIS_CLINE_MODEL` | `qwen3.8-27b` | the model passed with -m to the Cline CLI |
+| `IRIS_CLINE_CWD` | `W:/Iris` | the working directory a Cline session starts in when no repo is given |
 | `IRIS_CONCEPTKIT_DIR` | `W:/conceptkit` | where concept_sites runs conceptkit |
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
 | `IRIS_LMS_BIN` | lms on PATH | where the model control finds the LM Studio CLI |

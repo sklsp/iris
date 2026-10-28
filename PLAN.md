@@ -62,7 +62,7 @@ Logging in, payments, messages to other people, and anything irreversible stay w
 - [x] **11. Queue tab and concept sites:** the dashboard's Queue tab (`/api/queue`, read only) and `concept_sites` (safe), which reads conceptkit's `list` and `check --all`; two eval tasks (56 in total).
 - [x] **12. Skills that act:** lmstudio_load and lmstudio_unload (confirm; unload refuses the model Iris runs on), comfy_workflows (safe, lists `IRIS_COMFY_WORKFLOWS`) and comfy_queue (confirm, checks free VRAM first); six eval tasks (62 in total).
 - [x] **13. Eval categories and safety score:** every task has a category (read, hands, files, safety, skills, agents), reports show per-category pass rates plus a safety line (forbidden calls that succeeded, unknown tools, confirmations Jay never gave), repeats as pass@k with progress printed per task, `eval publish` writes the latest run into README.md between markers; results stay out of git and iris/eval.py is at 100% coverage.
-- [x] **14. Cline autopilot:** `cline_start` (confirm) types the next queued prompt into a new Cline task in VS Code only after Jay says yes, and `python -m iris autopilot --repo ... --agent ...` waits until the newest PROGRESS run is done, asks Jay once and starts at most one task; four eval tasks (75 in total).
+- [x] **14. Cline autopilot:** `cline_start` (confirm) starts a new Cline session through the Cline CLI with the next queued prompt only after Jay says yes, and `python -m iris autopilot --repo ... --agent ...` waits until the newest PROGRESS run is done, asks Jay once and starts at most one task; four eval tasks (75 in total).
 
 Next: run the eval on the real model with --repeat 3 and publish; a custom "hey iris" wake word.
 

@@ -7,10 +7,32 @@ for a few minutes. Nothing here starts anything; it only reports what git says. 
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
 from iris.agents import _age, _git
+from iris.tools import _escape_keys
+
+
+def new_task_command() -> str:
+    """The command palette entry that opens a Cline task; IRIS_CLINE_NEW_TASK overrides it."""
+    return os.environ.get("IRIS_CLINE_NEW_TASK", "Cline: New Task")
+
+
+def vscode_title() -> str:
+    """The VS Code window title to focus before typing; IRIS_VSCODE_TITLE overrides it."""
+    return os.environ.get("IRIS_VSCODE_TITLE", "Visual Studio Code")
+
+
+def cline_keys(text: str) -> list[str]:
+    """The exact key strings that open a Cline task and type `text` into it, in order.
+
+    A newline would send the prompt early, so only one line is allowed."""
+    if "\n" in text or "\r" in text:
+        raise ValueError("one line only")
+    return ["^+p", _escape_keys(new_task_command()), "{ENTER}", _escape_keys(text), "{ENTER}"]
+
 
 
 def _newest_progress(repo: Path) -> Path | None:

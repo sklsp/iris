@@ -4,7 +4,9 @@ import os
 import subprocess
 from pathlib import Path
 
-from iris.autopilot import run_done
+import pytest
+
+from iris.autopilot import cline_keys, new_task_command, run_done, vscode_title
 
 FIXED = 1_700_000_000  # a fixed epoch; every age in these tests is computed from it, never the clock
 
@@ -99,3 +101,39 @@ def test_a_repo_without_commits_is_reported_not_done(tmp_path, monkeypatch):
 
     monkeypatch.setattr(autopilot, "_git", fake_git)
     assert run_done(repo, now=FIXED + 3600) == (False, "no commits yet")
+
+
+def test_commands_default_and_read_the_env_when_called(monkeypatch):
+    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
+    monkeypatch.delenv("IRIS_VSCODE_TITLE", raising=False)
+    assert new_task_command() == "Cline: New Task"
+    assert vscode_title() == "Visual Studio Code"
+    monkeypatch.setenv("IRIS_CLINE_NEW_TASK", "Cline: New Cline Task")
+    monkeypatch.setenv("IRIS_VSCODE_TITLE", "Code - Workspaces")
+    assert new_task_command() == "Cline: New Cline Task"  # read when called, not at import
+    assert vscode_title() == "Code - Workspaces"
+
+
+def test_cline_keys_is_the_exact_sequence(monkeypatch):
+    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
+    text = "add 2+3 (with {braces})"
+    assert cline_keys(text) == [
+        "^+p",
+        "Cline: New Task",
+        "{ENTER}",
+        "add 2{+}3 {(}with {{}braces{}}{)}",
+        "{ENTER}",
+    ]
+
+
+def test_cline_keys_escapes_the_command_too(monkeypatch):
+    monkeypatch.setenv("IRIS_CLINE_NEW_TASK", "Cline: New Task (beta)")
+    assert cline_keys("x") == ["^+p", "Cline: New Task {(}beta{)}", "{ENTER}", "x", "{ENTER}"]
+
+
+def test_cline_keys_rejects_a_newline(monkeypatch):
+    monkeypatch.delenv("IRIS_CLINE_NEW_TASK", raising=False)
+    with pytest.raises(ValueError) as exc:
+        cline_keys("first\nsecond")
+    assert str(exc.value) == "one line only"
+

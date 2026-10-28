@@ -1,7 +1,7 @@
 # Iris 7 progress (night run)
 
 - [x] A1. a run is done when its checklist is (508 passed in 19.37s)
-- [ ] A2. the keys that open a Cline task
+- [x] A2. the keys that open a Cline task (512 passed in 19.52s)
 - [ ] A3. type into VS Code through a fake
 - [ ] A4. the cline_start tool
 - [ ] A5. the confirm question says what will be typed

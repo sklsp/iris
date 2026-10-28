@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import threading
@@ -1200,4 +1201,24 @@ def test_get_on_cline_start_is_405(srv):
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(base + "/api/cline/start", timeout=5)
     assert exc.value.code == 405
+
+
+# --- page: the new autopilot UI (item 10) ---------------------------------------
+
+
+def test_page_has_the_ids_and_routes_the_autopilot_ui_needs(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    for needle in ("/api/runs", "/api/cline/start", "/api/queue/add", "/api/queue/delete",
+                   "/api/queue/move", "X-Iris-Token", "Autopilot"):
+        assert needle in page, f"the page is missing {needle!r}"
+
+
+def test_page_has_no_innerhtml_assignment_from_a_variable(server):
+    # On main the regex below finds no hit at all (the page never uses innerHTML), so we
+    # assert it stays zero rather than merely "did not grow".
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    hits = re.findall(r'''innerHTML\s*=\s*[^\\"'\`]''', page)
+    assert hits == [], f"the page assigns innerHTML from a variable: {hits!r}"
 

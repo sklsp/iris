@@ -274,6 +274,17 @@ def test_run_task_gives_up_after_max_steps(tmp_path):
     assert (r.passed, r.reasons) == (False, ["gave up"])
 
 
+def test_sequence_fixture_reaches_the_model_in_order(tmp_path):
+    task = ev.Task(id="t12", request="wat staat er op het scherm?",
+                   fixtures={"read_window": ["eerste tekst", "tweede tekst"]})
+    llm = ScriptedLLM(call("read_window", title="Kladblok"), call("read_window", title="Kladblok"), answer("Klaar."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.calls) == (True, [("read_window", "ok"), ("read_window", "ok")])
+    tool_msgs = [m["content"] for m in llm.seen[-1] if m.get("role") == "tool"]
+    assert tool_msgs == ["<untrusted_data>\neerste tekst\n</untrusted_data>",
+                         "<untrusted_data>\ntweede tekst\n</untrusted_data>"]
+
+
 # --- summary and report files --------------------------------------------------
 def _results():
     return [ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],

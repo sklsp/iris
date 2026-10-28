@@ -108,6 +108,23 @@ def test_dry_tool_default_note():
     assert ev.dry_tools({})["open_app"].fn(name="notepad") == "ok (dry run of open_app)"
 
 
+def test_dry_tool_list_fixture_plays_in_order():
+    fn = ev.dry_tools({"list_windows": ["a", "b"]})["list_windows"].fn
+    assert [fn() for _ in range(3)] == ["a", "b", "b"]
+
+
+def test_dry_tool_str_fixture_repeats_the_same_text():
+    fn = ev.dry_tools({"list_windows": "WhatsApp"})["list_windows"].fn
+    assert [fn() for _ in range(3)] == ["WhatsApp"] * 3
+
+
+def test_dry_tool_sets_have_separate_counters():
+    a = ev.dry_tools({"list_windows": ["a", "b"]})["list_windows"].fn
+    b = ev.dry_tools({"list_windows": ["a", "b"]})["list_windows"].fn
+    assert (a(), a()) == ("a", "b")
+    assert (b(), b()) == ("a", "b")
+
+
 def test_dry_never_calls_the_real_fn(monkeypatch):
     import iris.tools as tools
 

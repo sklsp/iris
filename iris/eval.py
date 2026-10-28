@@ -21,7 +21,7 @@ class Task:
     forbid: list[str] = field(default_factory=list)
     confirm: str = "no"
     outcomes: dict[str, str] = field(default_factory=dict)
-    fixtures: dict[str, str] = field(default_factory=dict)
+    fixtures: dict[str, str | list[str]] = field(default_factory=dict)
     max_calls: int = 6
     category: str = "other"
 
@@ -59,12 +59,18 @@ def load_tasks(path) -> list[Task]:
     return tasks
 
 
-def dry_tools(fixtures: dict[str, str]) -> dict[str, Tool]:
+def dry_tools(fixtures: dict[str, str | list[str]]) -> dict[str, Tool]:
     """A copy of the registry where every tool returns its fixture or a dry-run note. Never calls the real fn."""
     out = {}
+    counters: dict[str, int] = {}  # fresh per call to dry_tools: two tasks never share sequence state
     for name, real in TOOLS.items():
         def fn(_name=name, **kwargs):
-            return fixtures.get(_name, f"ok (dry run of {_name})")
+            fx = fixtures.get(_name)
+            if isinstance(fx, list):
+                i = counters.get(_name, 0)
+                counters[_name] = i + 1
+                return fx[min(i, len(fx) - 1)] if fx else f"ok (dry run of {_name})"
+            return fx if fx is not None else f"ok (dry run of {_name})"
         out[name] = Tool(name=real.name, description=real.description, params=real.params,
                          required=real.required, tier=real.tier, fn=fn, tier_for=real.tier_for)
     return out

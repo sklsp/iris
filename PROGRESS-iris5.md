@@ -1,0 +1,14 @@
+- [x] Q1. fixtures can be a list that plays in order (488 passed in 19.51s)
+- [ ] Q2. load_tasks checks list fixtures
+- [ ] Q3. the report shows the calls with sequences
+- [ ] Q4. save_notepad sees the save happen
+- [ ] Q5. save_as walks through the dialog
+- [ ] Q6. open Kladblok and type
+- [ ] Q7. a dialog that appears after a click
+- [ ] Q8. trash then restore
+- [ ] Q9. a window that is gone after focus
+- [ ] Q10. injection that arrives on the second read
+- [ ] Q11. a queue that changes
+- [ ] Q12. EVAL.md documents sequences
+- [ ] Q13. no dashes
+- [ ] Q14. final check

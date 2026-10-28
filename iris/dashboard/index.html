@@ -149,7 +149,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .c-age{color:#565c66}
 
 /* runs */
-.rrow{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1.3fr) minmax(0,1.6fr) 74px;
+.rrow{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1.3fr) minmax(0,1.6fr) auto 74px;
       gap:8px;align-items:center;padding:6px 8px;border-bottom:1px solid #1c1f24;font-size:12px}
 .rrow:last-child{border-bottom:none}
 .r-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
@@ -159,6 +159,14 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .r-fill{position:absolute;left:0;top:0;bottom:0;background:#7aa2ff}
 .r-count{text-align:right;color:#8a9099;font-size:11px;white-space:nowrap;flex:none}
 .r-reason{color:#565c66;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-ctrl{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.agent-input{width:92px;padding:3px 7px;background:#0e0f11;border:1px solid #23262c;border-radius:4px;color:#e6e6e6;font-size:12px}
+.btn-start{appearance:none;background:rgba(122,162,255,.14);border:1px solid rgba(122,162,255,.4);color:#7aa2ff;
+  font-family:inherit;font-size:11px;font-weight:600;padding:4px 9px;border-radius:4px;cursor:pointer;white-space:nowrap}
+.btn-start:hover:not(:disabled){background:rgba(122,162,255,.24)}
+.btn-start:disabled{opacity:.45;cursor:default}
+.r-status{flex-basis:100%;color:#8a9099;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-status-err{color:#d29922}
 
 @media (max-width:899px){
   .grid{grid-template-columns:1fr}
@@ -755,7 +763,58 @@ function renderQueue(d){
   }
 }
 
-async function loadQueue(){ renderQueue(await j("/api/queue")); }
+let QUEUE_PROMPTS = [];   // latest /api/queue prompts; shared by the queue pane and the Autopilot tab
+let RUN_STATUS = {};      // repo -> {text, ok}: the last start result or error shown in that run row
+
+function refreshAgentDatalist(){
+  let dl = $("iris-agents");
+  if (!dl){
+    dl = document.createElement("datalist");
+    dl.id = "iris-agents";
+    document.body.appendChild(dl);
+  }
+  while (dl.firstChild) dl.removeChild(dl.firstChild);
+  const seen = new Set();
+  for (const p of QUEUE_PROMPTS){
+    const a = String(p.agent || "").trim();
+    if (!a || seen.has(a.toLowerCase())) continue;
+    seen.add(a.toLowerCase());
+    dl.appendChild(el("option", null, a));
+  }
+}
+
+function readAgent(repo){
+  try {
+    const v = localStorage.getItem("iris.autopilot.agent." + repo);
+    return (v && String(v).trim()) ? String(v) : "qwen";
+  } catch (err) { return "qwen"; }
+}
+function writeAgent(repo, value){
+  try { localStorage.setItem("iris.autopilot.agent." + repo, String(value || "")); } catch (err) {}
+}
+function agentHasPrompt(agent){
+  const a = String(agent || "").trim().toLowerCase();
+  if (!a) return false;
+  for (const p of QUEUE_PROMPTS){
+    if (String(p.agent || "").trim().toLowerCase() === a) return true;
+  }
+  return false;
+}
+function firstPromptTextFor(agent){
+  const a = String(agent || "").trim().toLowerCase();
+  if (!a) return "";
+  for (const p of QUEUE_PROMPTS){
+    if (String(p.agent || "").trim().toLowerCase() === a) return String(p.text || "");
+  }
+  return "";
+}
+
+async function loadQueue(){
+  const d = await j("/api/queue");
+  QUEUE_PROMPTS = (d && Array.isArray(d.prompts)) ? d.prompts : [];
+  refreshAgentDatalist();
+  renderQueue(d);
+}
 
 function renderRuns(d){
   const body = $("runs-body");
@@ -784,6 +843,34 @@ function renderRuns(d){
     prog.appendChild(el("span", "r-count num", doneItems + "/" + total));
     row.appendChild(prog);
     row.appendChild(el("span", "r-reason", r.reason || ""));
+    // agent input (remembered per repo) plus the Start next prompt button and last result
+    const ctrl = el("span", "r-ctrl");
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "agent-input";
+    input.setAttribute("list", "iris-agents");
+    input.value = readAgent(r.repo);
+    input.placeholder = "qwen";
+    const btn = el("button", "btn-start", "Start next prompt");
+    btn.type = "button";
+    function refreshBtn(){
+      const agent = String(input.value || "").trim();
+      if (r.done === true && agentHasPrompt(agent)){
+        btn.disabled = false;
+        btn.title = "";
+      } else {
+        btn.disabled = true;
+        btn.title = r.done !== true ? "run still has open items" : ("nothing queued for " + agent);
+      }
+    }
+    input.addEventListener("input", refreshBtn);
+    input.addEventListener("change", () => { writeAgent(r.repo, String(input.value || "").trim()); });
+    btn.addEventListener("click", () => { startNextPrompt(r, input, btn); });
+    ctrl.appendChild(input);
+    ctrl.appendChild(btn);
+    const st = RUN_STATUS[r.repo];
+    if (st){ ctrl.appendChild(el("span", "r-status" + (st.ok ? "" : " r-status-err"), st.text)); }
+    row.appendChild(ctrl);
     const isDone = r.done === true;
     row.appendChild(el("span", "badge " + (isDone ? "o-ok" : "o-error"), isDone ? "done" : "running"));
     body.appendChild(row);
@@ -791,6 +878,35 @@ function renderRuns(d){
 }
 
 async function loadRuns(){ renderRuns(await j("/api/runs")); }
+
+async function startNextPrompt(run, input, btn){
+  const agent = String(input.value || "").trim();
+  if (!agent) return;
+  const repo = run.repo || "";
+  const text = firstPromptTextFor(agent);
+  const ok = window.confirm("Start the next " + agent + " prompt in " + repo + "?\n\n" + text.slice(0, 300));
+  if (!ok) return;
+  btn.disabled = true;
+  btn.textContent = "starting...";
+  let statusText = "";
+  let statusOk = false;
+  try {
+    const d = await postModel("/api/cline/start", {agent: agent, repo: repo});
+    if (d && d.ok === true){
+      statusText = String(d.result || "started");
+      statusOk = true;
+    } else {
+      statusText = (d && d.error) ? String(d.error) : "start failed";
+      statusOk = false;
+    }
+  } catch (err) {
+    statusText = "start failed";
+    statusOk = false;
+  }
+  RUN_STATUS[repo] = {text: statusText, ok: statusOk};
+  btn.textContent = "Start next prompt";
+  await Promise.all([loadQueue(), loadRuns()]);
+}
 let runsTimer = null;   // polls /api/runs every 10 s, only while the Autopilot tab is visible
 function startRunsPolling(){
   if (runsTimer) return;

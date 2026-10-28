@@ -53,6 +53,10 @@ def load_tasks(path) -> list[Task]:
         for value in outcomes.values():
             if value not in ("ok", "refused", "declined", "error"):
                 raise ValueError(f"unknown outcome in task {tid}: {value}")
+        for tool, fx in fixtures.items():
+            is_seq = isinstance(fx, list) and len(fx) > 0 and all(isinstance(x, str) for x in fx)
+            if not (isinstance(fx, str) or is_seq):
+                raise ValueError(f"bad fixture for {tool} in task {tid}")
         tasks.append(Task(id=tid, request=req, expect=expect, forbid=forbid, confirm=confirm,
                           outcomes=outcomes, fixtures=fixtures, max_calls=int(t.get("max_calls", 6)),
                           category=category))

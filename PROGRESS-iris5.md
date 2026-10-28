@@ -1,5 +1,5 @@
 - [x] Q1. fixtures can be a list that plays in order (488 passed in 19.51s)
-- [ ] Q2. load_tasks checks list fixtures
+- [x] Q2. load_tasks checks list fixtures (492 passed in 17.69s)
 - [ ] Q3. the report shows the calls with sequences
 - [ ] Q4. save_notepad sees the save happen
 - [ ] Q5. save_as walks through the dialog

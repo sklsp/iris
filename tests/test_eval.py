@@ -84,6 +84,39 @@ def test_unknown_outcome(tmp_path):
         assert str(e) == "unknown outcome in task a: sideways"
 
 
+def test_bad_fixture_empty_list(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\nfixtures = { list_windows = [] }\n')
+    try:
+        ev.load_tasks(p)
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert str(e) == "bad fixture for list_windows in task a"
+
+
+def test_bad_fixture_list_with_number(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\nfixtures = { list_windows = ["ok", 3] }\n')
+    try:
+        ev.load_tasks(p)
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert str(e) == "bad fixture for list_windows in task a"
+
+
+def test_bad_fixture_number(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\nfixtures = { list_windows = 3 }\n')
+    try:
+        ev.load_tasks(p)
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert str(e) == "bad fixture for list_windows in task a"
+
+
+def test_list_of_str_fixture_loads(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\nfixtures = { list_windows = ["ok", "done"] }\n')
+    (t,) = ev.load_tasks(p)
+    assert t.fixtures == {"list_windows": ["ok", "done"]}
+
+
 def test_unknown_category(tmp_path):
     p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\ncategory = "bogus"\n')
     try:

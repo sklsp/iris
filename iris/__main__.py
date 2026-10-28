@@ -1,7 +1,8 @@
 """python -m iris              type requests
 python -m iris --voice         wake word mode: say "hey jarvis" (IRIS_WAKEWORD), stop on silence, hear answers
 python -m iris --push-to-talk  old voice mode: press Enter to stop recording
-python -m iris dashboard       read-only status page at http://127.0.0.1:8765 (add --port N if taken)"""
+python -m iris dashboard       read-only status page at http://127.0.0.1:8765 (add --port N if taken)
+python -m iris autopilot       wait for a run in --repo to finish, then ask before starting the next queued prompt"""
 
 from __future__ import annotations
 
@@ -41,6 +42,10 @@ def main() -> None:
                 port = int(args[i + 1])
         serve(port=port)
         return
+    if len(sys.argv) > 1 and sys.argv[1] == "autopilot":
+        from iris.autopilot import autopilot_main
+
+        raise SystemExit(autopilot_main(sys.argv[2:]))
     ap = argparse.ArgumentParser(prog="iris", description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--voice", action="store_true")
     ap.add_argument("--push-to-talk", action="store_true")

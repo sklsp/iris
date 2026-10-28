@@ -17,7 +17,7 @@ and answers out loud. No cloud, no cost per command. See [PLAN.md](PLAN.md) for 
 - Windows UI Automation instead of screenshots: Iris reads named controls, not pixels
 - Risk tiers enforced in code with tests: safe / confirm / never, escalating with the arguments
 - Wake word and streaming TTS: openWakeWord and faster-whisper in, SAPI or Kokoro out
-- An eval harness: 71 dry-run tasks that measure how well the model picks tools
+- An eval harness: 75 dry-run tasks that measure how well the model picks tools
 - The design decisions, with reasons: [DESIGN.md](DESIGN.md), UI Automation over pixels, tiers in code, untrusted screen text, barge-in
 
 ```mermaid
@@ -62,20 +62,21 @@ flowchart LR
 | queue_list | safe |  |
 | queue_add | confirm |  |
 | queue_take | confirm |  |
+| cline_start | confirm |  |
 | concept_sites | safe |  |
 
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-10-28 12:19 on `qwen3.8-27b`: 210/213 passed (98.6%), median 3.7 s, 0.34 confirmations per task, safety: 0 forbidden, 0 unknown tools, 68/71 pass every time.
+Run of 2026-10-28 17:06 on `qwen3.8-27b`: 217/225 passed (96.4%), median 3.8 s, 0.36 confirmations per task, safety: 3 forbidden, 0 unknown tools, 70/75 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 15/15 | 100.0% |
+| agents | 23/24 | 95.8% |
 | files | 12/12 | 100.0% |
-| hands | 44/45 | 97.8% |
+| hands | 42/45 | 93.3% |
 | read | 24/24 | 100.0% |
-| safety | 70/72 | 97.2% |
+| safety | 71/75 | 94.7% |
 | skills | 45/45 | 100.0% |
 
 <!-- eval:end -->
@@ -136,6 +137,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | trash_file | confirm | move a file or folder to Iris's trash, always undoable |
 | queue_add | confirm | put a prompt in Jay's agent queue for one agent, asks first |
 | queue_take | confirm | take the oldest waiting prompt out of the queue so it can be pasted with type_text, asks first |
+| cline_start | confirm | open a new Cline task in VS Code and type the next queued prompt for this agent into it, asks first |
 
 The tiers are enforced in code, not in the prompt:
 
@@ -189,7 +191,24 @@ A repo is flagged STUCK when it has uncommitted changes and nothing committed fo
 
 ## The prompt queue
 
-Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first. Iris never pastes a prompt by itself: pasting it into a chat is `type_text`, which asks too. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
+Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first. To hand one to Cline, say so and Iris runs `cline_start`: it opens a new Cline task in VS Code and types the oldest queued prompt for that agent into it only after Jay says yes; if the paste fails (say, VS Code is not open) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
+
+## Autopilot
+
+When a run is done, Iris can start the next one from the queue. `python -m iris autopilot` waits until the newest
+PROGRESS-*.md in the repo has every item ticked or BLOCKED, the tree is clean and the last commit has been quiet for
+three minutes; then it asks Jay whether to start the agent's next queued prompt.
+It starts at most one task and exits after that first answer:
+
+```bash
+.venv\Scripts\python -m iris autopilot --repo W:/Iris --agent qwen   # checks every 60 s, --every changes it
+```
+
+Starting is `cline_start`: VS Code is focused by its window title (`IRIS_VSCODE_TITLE`, default "Visual Studio
+Code"), the command palette opens with Ctrl+Shift+P and the entry from `IRIS_CLINE_NEW_TASK` (default "Cline: New
+Task") plus the prompt are typed in. A newline would send the prompt early, so a queued prompt is one line only; if
+the paste fails the queue stays untouched. Every outcome (nothing queued, Jay said no, started) is logged as an
+autopilot event that the dashboard's Activity panel shows with its own badge.
 
 ## Dashboard
 
@@ -232,7 +251,7 @@ empty list in its tab, not an error page.
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 71 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 75 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 
 ```bash
 .venv\Scripts\python -m iris eval                          # all tasks, report in eval/results
@@ -264,6 +283,8 @@ Iris uses.
 | `IRIS_AGENTS_TOML` | `iris/agents.toml` | which repos the agent manager watches |
 | `IRIS_REPOS` | the four built-in repo paths | repo paths for the agent manager, ';' separated; used when agents.toml has no repos |
 | `IRIS_QUEUE` | `~/.iris/queue.json` | the agent manager's prompt queue |
+| `IRIS_CLINE_NEW_TASK` | `Cline: New Task` | the command palette entry cline_start types to open a Cline task |
+| `IRIS_VSCODE_TITLE` | `Visual Studio Code` | the VS Code window title cline_start focuses before typing |
 | `IRIS_CONCEPTKIT_DIR` | `W:/conceptkit` | where concept_sites runs conceptkit |
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
 | `IRIS_LMS_BIN` | lms on PATH | where the model control finds the LM Studio CLI |

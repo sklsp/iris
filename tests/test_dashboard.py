@@ -199,6 +199,37 @@ def test_api_journal_counts_a_returned_error(tmp_path, monkeypatch):
     assert data["today"] == {"requests": 1, "confirmations": 0, "refusals": 0, "errors": 1}
 
 
+def test_api_journal_passes_autopilot_events_through_and_keeps_the_counters(tmp_path, monkeypatch):
+    """An autopilot event reaches the Activity panel like any other entry and leaves today's counters alone."""
+    journal = tmp_path / "journal.jsonl"
+    now = datetime.now()
+
+    def t(days_ago: float) -> str:
+        return (now - timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    auto_t = t(0)
+    lines = [json.dumps({"event": "request", "text": "r0", "t": t(0)})]
+    lines.append(json.dumps({"event": "tool", "tool": "click", "args": {}, "tier": "confirm",
+                             "outcome": "ok", "result": "clicked", "t": t(0)}))
+    lines.append(json.dumps({"event": "autopilot", "repo": "Iris", "agent": "Cline",
+                             "result": "536 passed in 20.44s", "t": auto_t}))
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = journal_payload()
+    autos = [e for e in data["entries"] if e.get("event") == "autopilot"]
+    assert autos == [{"event": "autopilot", "repo": "Iris", "agent": "Cline",
+                      "result": "536 passed in 20.44s", "t": auto_t}]
+    assert data["today"] == {"requests": 1, "confirmations": 1, "refusals": 0, "errors": 0}
+
+
+def test_page_renders_autopilot_events_in_the_activity_panel(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    assert 'e.event === "autopilot"' in page   # groupTurns keeps autopilot events instead of dropping them
+    assert "b-auto" in page                    # the badge class that marks an autopilot row
+
+
 def test_api_agents_stuck_rows_first(tmp_path, monkeypatch):
     import iris.agents as agents_mod
     from tests.test_agents import make_repo, write_config

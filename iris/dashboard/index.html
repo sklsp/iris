@@ -48,6 +48,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .t-confirm,.o-error{color:#d29922;background:rgba(210,153,34,.12)}
 .t-never,.o-refused{color:#f85149;background:rgba(248,81,73,.12)}
 .o-declined{color:#8a9099;background:rgba(138,144,153,.12)}
+.b-auto{color:#7aa2ff;background:rgba(122,162,255,.14)}
 
 /* agents */
 .arow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,.8fr) minmax(0,1.2fr) 76px auto;
@@ -107,6 +108,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .t-name{font-size:12px}
 .t-args{color:#565c66;font-size:11px;min-width:0;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .t-giveup{margin-left:14px;color:#d29922;font-size:12px;padding-top:2px}
+.t-auto{display:flex;gap:8px;align-items:center;margin-top:2px;font-size:12px}
 
 /* tools */
 .trow{display:grid;grid-template-columns:auto minmax(0,.8fr) minmax(0,1.3fr);gap:8px;align-items:center;
@@ -533,19 +535,21 @@ function renderLM(d){
 }
 
 function groupTurns(entries){
-  const turns = [];
+  const items = [];
   let cur = null;
   for (const e of entries.slice().reverse()){   // oldest first, so tools land in their turn
     if (e.event === "request"){
       cur = {ts: e.t, request: e.text || "", tools: [], answer: "", gave_up: false};
-      turns.push(cur);
+      items.push({turn: cur});
+    } else if (e.event === "autopilot"){
+      items.push({auto: e});   // a system event between turns; shown in its own row
     } else if (cur){
       if (e.event === "tool") cur.tools.push(e);
       else if (e.event === "answer") cur.answer = e.text || "";
       else if (e.event === "gave_up") cur.gave_up = true;
     }
   }
-  return turns.reverse();   // newest first again
+  return items.reverse();   // newest first again
 }
 
 function renderJournal(d){
@@ -565,12 +569,25 @@ function renderJournal(d){
     chip.appendChild(el("span", "cval num" + (pair[2] ? " " + pair[2] : ""), String(pair[1] || 0)));
     counters.appendChild(chip);
   });
-  const turns = groupTurns(d.entries);
-  if (!turns.length){
+  const items = groupTurns(d.entries);
+  if (!items.length){
     body.appendChild(el("div", "empty", "no journal entries yet"));
     return;
   }
-  for (const t of turns){
+  for (const item of items){
+    if ("auto" in item){
+      const e = item.auto;
+      const row = el("div", "turn");
+      const line = el("div", "t-auto");
+      line.appendChild(el("span", "t-time num", fmtTime(e.t)));
+      line.appendChild(el("span", "badge b-auto", "autopilot"));
+      line.appendChild(el("span", "t-name num", [e.repo, e.agent].filter(Boolean).join(" / ") || "?"));
+      if (e.result) line.appendChild(el("span", "t-args num", truncate(String(e.result), 160)));
+      row.appendChild(line);
+      body.appendChild(row);
+      continue;
+    }
+    const t = item.turn;
     const turn = el("div", "turn");
     const req = el("div", "t-req");
     req.appendChild(el("span", "t-time num", fmtTime(t.ts)));

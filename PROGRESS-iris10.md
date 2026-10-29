@@ -6,7 +6,7 @@ Branch: `queue-voice`. Items 1 to 9, one commit each. Gates before every commit:
 
 - [x] R1. queue_remove tool (610 passed in 23.72s)
 - [x] R2. queue_move tool (618 passed in 21.84s)
-- [ ] R3. eval tasks for queue_remove and queue_move
+- [x] R3. eval tasks for queue_remove and queue_move (618 passed in 22.66s)
 - [ ] R4. the run row fits a narrow window
 - [ ] R5. the start button says why it waits
 - [ ] R6. page tests for R4 and R5

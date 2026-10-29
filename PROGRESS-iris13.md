@@ -7,4 +7,11 @@
 - [x] H5. the Eval tab lists flaky tasks (653 passed in 21.72s)
 - [x] H6. page test and docs (654 passed in 23.33s)
 - [x] H7. no dashes (scan of 8 files changed since eval-language: one U+2014 found in EVAL.md, fixed; re-scan clean) (654 passed in 23.09s)
-- [ ] H8. final check
+- [x] H8. final check (654 passed in 22.99s)
+
+## Eval history run result
+
+- commits ahead of eval-language: 8 (one per item, H1-H8)
+- ruff check iris tests -> All checks passed!
+- mypy -> Success: no issues found in 11 source files
+- pytest -q --cov=iris -> 654 passed in 22.99s (coverage 96.61%, required 94%)

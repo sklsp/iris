@@ -552,6 +552,21 @@ def queue_remove(id: int) -> str:
     return f"Removed prompt {p['id']} for {p['agent']}: {text}"
 
 
+def queue_move(id: int, direction: str) -> str:
+    """Move one waiting prompt in Jay's agent queue one place up (earlier) or down (later) by its id. Asks Jay first."""
+    from iris.prompt_queue import listing as _listing
+    from iris.prompt_queue import move as _move
+
+    d = direction.strip().lower()
+    if d not in ("up", "down"):
+        return 'error: direction must be "up" or "down"'
+    try:
+        _move(id, -1 if d == "up" else 1)
+    except LookupError:
+        return f"error: no prompt with id {id}"
+    return f"Moved prompt {id} {d}.\n{_listing()}"
+
+
 def cline_start(agent: str, repo: str = "") -> str:
     """Start a new Cline session for this agent with the next queued prompt, in repo (default W:/Iris).
 
@@ -656,6 +671,10 @@ TOOLS = {t.name: t for t in [
     Tool("queue_remove",
          "Remove one waiting prompt from Jay's agent queue by its id (the number queue_list shows). Asks Jay first.",
          {"id": {"type": "integer"}}, ["id"], CONFIRM, queue_remove),
+    Tool("queue_move",
+         "Move one waiting prompt in Jay's agent queue one place up (earlier) or down (later)"
+         " by its id. Asks Jay first.",
+         {"id": {"type": "integer"}, "direction": S}, ["id", "direction"], CONFIRM, queue_move),
     Tool("cline_start",
          "Start a new Cline session for this agent with the next queued prompt, in repo (default W:/Iris)."
          " Asks Jay first.",

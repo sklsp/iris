@@ -764,6 +764,59 @@ def test_queue_remove_is_registered_with_confirm():
     assert t.params["id"]["type"] == "integer"
 
 
+# --- queue_move ---------------------------------------------------------------
+def test_queue_move_up_swaps_with_the_previous_prompt(tmp_path, monkeypatch):
+    from iris.prompt_queue import add as _add
+    from iris.prompt_queue import load
+
+    path = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    first = _add("leadscan", "Eerste prompt.")
+    second = _add("Iris", "Tweede prompt.")
+    result = tools.queue_move(second, "up")
+    assert [p["id"] for p in load(path)["prompts"]] == [second, first]
+    assert result == (f"Moved prompt {second} up.\n2 prompts waiting:\n{second}. Iris: Tweede prompt.\n"
+                      f"{first}. leadscan: Eerste prompt.")
+
+
+def test_queue_move_down_ignores_case_and_spaces(tmp_path, monkeypatch):
+    from iris.prompt_queue import add as _add
+    from iris.prompt_queue import load
+
+    path = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    first = _add("leadscan", "Eerste prompt.")
+    second = _add("Iris", "Tweede prompt.")
+    result = tools.queue_move(first, " DOWN ")
+    assert [p["id"] for p in load(path)["prompts"]] == [second, first]
+    assert result.startswith(f"Moved prompt {first} down.\n")
+
+
+def test_queue_move_bad_direction_gives_error_text(tmp_path, monkeypatch):
+    from iris.prompt_queue import add as _add
+
+    path = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    _add("Iris", "Een prompt.")
+    assert tools.queue_move(1, "sideways") == 'error: direction must be "up" or "down"'
+
+
+def test_queue_move_unknown_id_gives_error_text(tmp_path, monkeypatch):
+    from iris.prompt_queue import add as _add
+
+    path = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    _add("Iris", "Een prompt.")
+    assert tools.queue_move(99, "up") == "error: no prompt with id 99"
+
+
+def test_queue_move_is_registered_with_confirm():
+    t = tools.TOOLS["queue_move"]
+    assert t.tier == tools.CONFIRM
+    assert t.required == ["id", "direction"]
+    assert t.params["id"]["type"] == "integer"
+
+
 # --- registry guards -----------------------------------------------------------
 def test_every_tool_is_documented():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")

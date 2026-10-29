@@ -1,6 +1,7 @@
 """Measures how well the model behind Iris picks tools, with dry-run tools."""
 import argparse
 import json
+import re
 import statistics
 import tempfile
 import time
@@ -151,6 +152,32 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
     return Result(id=task.id, passed=not reasons, calls=calls, confirmations=confirmations,
                   seconds=seconds, answer=answer_text, reasons=reasons, category=task.category,
                   confirm=task.confirm, confirmed_ok=confirmed_ok)
+
+
+# Stopwords for answer_language: very common words per language that the other two do not share. A word
+# spelled the same in two languages (is, open, in) goes in neither set.
+_NL_WORDS = frozenset({"ik", "je", "het", "een", "niet", "dat", "op", "naar", "wil", "kan", "maar",
+                       "nog", "even", "zelf", "staat", "heb", "geen", "wat", "deze", "ook", "al",
+                       "dan", "er", "met", "voor", "bij"})
+_EN_WORDS = frozenset({"i", "you", "the", "it's", "not", "can't", "this", "that", "to", "want",
+                       "but", "still", "just", "have", "there", "what", "window", "am", "are",
+                       "were", "been", "will", "would", "could"})
+_DE_WORDS = frozenset({"ich", "du", "das", "nicht", "ist", "kann", "aber", "noch", "selbst",
+                       "habe", "kein", "musst", "leider", "bitte", "wirklich", "es", "mir",
+                       "dich", "bin", "bist", "sind", "war", "waren", "wird", "werden", "muss"})
+
+
+def answer_language(text: str) -> str:
+    """Which of Dutch, English or German this text is in: 'nl', 'en' or 'de'; '?' when unsure."""
+    words = re.findall(r"[a-zà-ÿ']+", text.lower())
+    hits = {"nl": sum(1 for w in words if w in _NL_WORDS),
+            "en": sum(1 for w in words if w in _EN_WORDS),
+            "de": sum(1 for w in words if w in _DE_WORDS)}
+    best = max(hits.values())
+    winners = [lang for lang, n in hits.items() if n == best]
+    if sum(hits.values()) < 2 or len(winners) > 1:
+        return "?"
+    return winners[0]
 
 
 def summarize(results: list[Result], repeat: int = 1) -> dict:

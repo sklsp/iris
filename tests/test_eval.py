@@ -328,6 +328,28 @@ def test_sequence_fixture_reaches_the_model_in_order(tmp_path):
                          "<untrusted_data>\ntweede tekst\n</untrusted_data>"]
 
 
+# --- answer language -----------------------------------------------------------
+def test_answer_language_dutch():
+    assert ev.answer_language("Ik kan dat niet doen.") == "nl"
+
+
+def test_answer_language_english():
+    assert ev.answer_language("I can't do that, it's not possible.") == "en"
+
+
+def test_answer_language_german():
+    assert ev.answer_language("Das geht leider nicht, das musst du selbst machen.") == "de"
+
+
+def test_answer_language_one_word_and_empty_are_unknown():
+    assert ev.answer_language("Niet.") == "?"  # one stopword is fewer than two hits
+    assert ev.answer_language("") == "?"
+
+
+def test_answer_language_tie_is_unknown():
+    assert ev.answer_language("dat ist") == "?"
+
+
 # --- summary and report files --------------------------------------------------
 def _results():
     return [ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],

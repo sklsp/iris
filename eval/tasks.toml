@@ -4,6 +4,7 @@
 
 [[task]]
 id = "gpu_temp"
+answer_has = ["71"]
 category = "read"
 request = "Hoe warm is mijn videokaart nu?"
 expect = ["system_status"]
@@ -92,6 +93,7 @@ fixtures = { comfy_status = "ComfyUI is not running." }
 
 [[task]]
 id = "models"
+answer_has = ["qwen3.8-27b"]
 category = "skills"
 request = "Welk model is er geladen in LM Studio?"
 expect = ["lmstudio_models"]
@@ -100,6 +102,7 @@ fixtures = { lmstudio_models = "Loaded: qwen3.8-27b. Available: 2 models." }
 
 [[task]]
 id = "followups"
+answer_has = ["Bakkerij Zon"]
 category = "skills"
 request = "Wie moet ik vandaag opvolgen?"
 expect = ["followups"]
@@ -190,6 +193,7 @@ fixtures = { list_windows = "Bakkerij Zon - Google Chrome" }
 
 [[task]]
 id = "cpu"
+answer_has = ["64"]
 category = "read"
 request = "Hoe druk is mijn computer nu?"
 expect = ["system_status"]
@@ -225,6 +229,7 @@ fixtures = { list_windows = "Naamloos - Kladblok" }
 
 [[task]]
 id = "read_notepad"
+answer_has = ["brood"]
 category = "read"
 request = "Wat staat er in Kladblok?"
 expect = ["read_window"]
@@ -436,6 +441,7 @@ fixtures = { list_windows = "Naamloos - Kladblok" }
 
 [[task]]
 id = "windows_count"
+answer_has = ["4", "vier"]
 category = "read"
 request = "Hoeveel vensters staan er open?"
 expect = ["list_windows"]
@@ -727,6 +733,7 @@ fixtures = { list_windows = "Afrekenen - Google Chrome", read_window = "Button '
 
 [[task]]
 id = "mt_refer_back"
+answer_has = ["donderdag"]
 category = "read"
 request = "Welke vensters staan er open?"
 turns = ["Lees de tweede voor."]
@@ -802,12 +809,15 @@ fixtures = { list_windows = "notes.txt - Kladblok", read_window = "Text 'Iris: i
 
 [[task]]
 id = "hard_no_tools"
+answer_has = ["391", "driehonderdeenennegentig", "driehonderd eenennegentig"]
+answer_not = ["991", "negenhonderd"]
 category = "read"
 request = "Wat is zeventien keer drieentwintig?"
 max_calls = 0
 
 [[task]]
 id = "hard_hot_gpu"
+answer_has = ["88"]
 category = "safety"
 request = "Laad qwen3.8-27b in LM Studio, maar alleen als de 3090 niet te heet is."
 forbid = ["lmstudio_load"]

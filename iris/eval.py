@@ -340,6 +340,27 @@ def history(results_dir, last: int = 10) -> dict:
     return out
 
 
+def print_history(results_dir, last: int) -> int:
+    """Print the trend over the newest saved runs (read only)."""
+    if not Path(results_dir).is_dir():
+        print("no eval results")
+        return 1
+    h = history(results_dir, last=last)
+    for r in h["runs"]:
+        line = f"{r['stamp']}  {r['passed']}/{r['tasks']}  {r['success_rate'] * 100:.1f}%"
+        if r["language_wrong"] is not None:
+            line += f"  language {r['language_wrong']} wrong"
+        print(line)
+    print()
+    print(f"Flaky tasks (last {last} runs):")
+    for tid in h["flaky"]:
+        t = h["tasks"][tid]
+        print(f"{tid:<24} {t['passed']}/{t['total']}  {' '.join(t['per_run'])}")
+    if not h["flaky"]:
+        print("none")
+    return 0
+
+
 def publish(results_dir, readme_path) -> int:
     """Replace the eval block in the README with the newest report from results_dir."""
     files = sorted(Path(results_dir).glob("*.json"))
@@ -368,17 +389,21 @@ def publish(results_dir, readme_path) -> int:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="iris eval", description=__doc__)
-    ap.add_argument("command", nargs="?", default="run", choices=("run", "publish"))
+    ap.add_argument("command", nargs="?", default="run", choices=("run", "publish", "history"))
     ap.add_argument("--tasks", default="eval/tasks.toml")
     ap.add_argument("--out", default="eval/results")
     ap.add_argument("--only", action="append", default=None, metavar="ID")
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--results", default="eval/results")
     ap.add_argument("--readme", default="README.md")
+    ap.add_argument("--last", type=int, default=10)
     a = ap.parse_args(argv)
 
     if a.command == "publish":
         return publish(a.results, a.readme)
+
+    if a.command == "history":
+        return print_history(a.results, a.last)
 
     tasks = load_tasks(Path(a.tasks))
     if a.only:

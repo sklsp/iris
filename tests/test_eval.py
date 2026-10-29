@@ -742,3 +742,47 @@ def test_history_last_keeps_only_the_newest(tmp_path):
 def test_history_missing_dir_is_empty(tmp_path):
     assert ev.history(tmp_path / "nope") == {"runs": [], "tasks": {}, "flaky": [], "skipped": 0}
 
+
+# --- the history command --------------------------------------------------------
+def test_main_history_prints_runs_and_flaky(tmp_path, capsys):
+    _mk_reports(tmp_path)
+    rc = ev.main(["history", "--results", str(tmp_path)])
+    out = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert out == [
+        "20260101-000000  2/3  66.7%",
+        "20260102-000000  3/4  75.0%  language 1 wrong",
+        "",
+        "Flaky tasks (last 10 runs):",
+        "b                        0/2  0/1 0/1",
+        "a                        2/3  1/1 1/2"]
+
+
+def test_main_history_last_flag(tmp_path, capsys):
+    _mk_reports(tmp_path)
+    rc = ev.main(["history", "--results", str(tmp_path), "--last", "1"])
+    out = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert out == [
+        "20260102-000000  3/4  75.0%  language 1 wrong",
+        "",
+        "Flaky tasks (last 1 runs):",
+        "b                        0/1  0/1",
+        "a                        1/2  1/2"]
+
+
+def test_main_history_no_flaky_prints_none(tmp_path, capsys):
+    one = {"stamp": "20260103-000000", "model": "m",
+           "summary": {"tasks": 1, "passed": 1, "success_rate": 1.0},
+           "results": [{"id": "a", "passed": True}]}
+    (tmp_path / "20260103-000000.json").write_text(_json.dumps(one), encoding="utf-8")
+    rc = ev.main(["history", "--results", str(tmp_path)])
+    out = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert out == ["20260103-000000  1/1  100.0%", "", "Flaky tasks (last 10 runs):", "none"]
+
+
+def test_main_history_missing_folder(tmp_path, capsys):
+    rc = ev.main(["history", "--results", str(tmp_path / "nope")])
+    assert rc == 1 and capsys.readouterr().out.splitlines() == ["no eval results"]
+

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sklsp/Iris/actions/workflows/ci.yml/badge.svg)](https://github.com/sklsp/Iris/actions/workflows/ci.yml)
 
-Python 3.11+ . Windows . 300 tests . 96% coverage
+Python 3.11+ . Windows . 696 tests . 96% coverage
 
 ## What it is
 

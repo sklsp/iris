@@ -236,40 +236,40 @@ def test_cline_sessions_returns_the_parsed_list_and_skips_non_dicts(monkeypatch)
     assert out == [{"sessionId": "s1", "source": "cline-cli-zen"}, {"sessionId": "s2"}]
 
 
-def test_cline_sessions_bad_json_gives_empty(monkeypatch):
+def test_cline_sessions_bad_json_gives_none(monkeypatch):
     _clear_cli_env(monkeypatch)
 
     def fake_run(argv, **kwargs):
         return SimpleNamespace(stdout="this is not json")
 
-    assert cline_sessions(run=fake_run) == []
+    assert cline_sessions(run=fake_run) is None
 
 
-def test_cline_sessions_a_dict_instead_of_a_list_gives_empty(monkeypatch):
+def test_cline_sessions_a_dict_instead_of_a_list_gives_none(monkeypatch):
     _clear_cli_env(monkeypatch)
 
     def fake_run(argv, **kwargs):
         return SimpleNamespace(stdout='{"sessionId": "s1"}')
 
-    assert cline_sessions(run=fake_run) == []
+    assert cline_sessions(run=fake_run) is None
 
 
-def test_cline_sessions_missing_cli_gives_empty(monkeypatch):
+def test_cline_sessions_missing_cli_gives_none(monkeypatch):
     _clear_cli_env(monkeypatch)
 
     def fake_run(argv, **kwargs):
         raise FileNotFoundError("no such file")
 
-    assert cline_sessions(run=fake_run) == []
+    assert cline_sessions(run=fake_run) is None
 
 
-def test_cline_sessions_timeout_gives_empty(monkeypatch):
+def test_cline_sessions_timeout_gives_none(monkeypatch):
     _clear_cli_env(monkeypatch)
 
     def fake_run(argv, **kwargs):
         raise subprocess.TimeoutExpired(cmd=argv, timeout=30)
 
-    assert cline_sessions(run=fake_run) == []
+    assert cline_sessions(run=fake_run) is None
 
 
 def test_cline_sessions_passes_the_exact_argv_and_kwargs(monkeypatch):
@@ -560,6 +560,49 @@ def test_start_in_hub_retries_the_dispatch_once_when_the_first_is_lost(monkeypat
     )
     assert out == "started Cline session abc in W:/Iris"  # found by the retry, matched against the original t0
     assert calls == 2
+
+
+def test_start_in_hub_retries_when_round_one_read_but_found_nothing(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    calls = 0
+
+    def fake_run(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    def empty_then_found() -> list[dict]:
+        # round one reads an empty history (a successful read); the session appears only after the retry dispatches
+        return [] if calls < 2 else sessions
+
+    out = start_in_hub(
+        "fix the bug", "W:/Iris", run=fake_run, sessions=empty_then_found, now=lambda: HUB_NOW, sleep=lambda s: None
+    )
+    assert out == "started Cline session abc in W:/Iris"
+    assert calls == 2  # a successful empty read allows exactly one retry dispatch
+
+
+def test_start_in_hub_a_blind_first_round_never_retries(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    calls = 0
+
+    def fake_run(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    with pytest.raises(RuntimeError) as exc:
+        start_in_hub(
+            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: None, now=lambda: HUB_NOW, sleep=lambda s: None
+        )
+    message = str(exc.value)
+    assert message == "could not read the Cline history; not retrying, so a session may have started: check Cline"
+    assert calls == 1  # no second dispatch when round one could not read the history at all
 
 
 def test_start_in_hub_missing_cli_raises_lookup_error_without_a_retry(monkeypatch):

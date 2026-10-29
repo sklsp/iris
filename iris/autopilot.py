@@ -52,10 +52,10 @@ def cline_command(text: str, cwd: str) -> list[str]:
     return [cline_cli(), "-z", "-c", cwd, "-P", cline_provider(), "-m", cline_model(), text]
 
 
-def cline_sessions(run=subprocess.run) -> list[dict]:
-    """The last ten Cline sessions as dicts, from `history --json`; [] when they cannot be read.
+def cline_sessions(run=subprocess.run) -> list[dict] | None:
+    """The last ten Cline sessions as dicts, from `history --json`; None when they cannot be read.
 
-    Non-dict items in the JSON are skipped; a missing CLI, a timeout, bad JSON or a non-list result all give []."""
+    Non-dict items in the JSON are skipped; a missing CLI, a timeout, bad JSON or a non-list result all give None."""
     try:
         result = run(
             [cline_cli(), "history", "--json", "--limit", "10"],
@@ -67,13 +67,13 @@ def cline_sessions(run=subprocess.run) -> list[dict]:
             check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        return []
+        return None
     try:
         data = json.loads(result.stdout)
     except ValueError:
-        return []
+        return None
     if not isinstance(data, list):
-        return []
+        return None
     return [item for item in data if isinstance(item, dict)]
 
 
@@ -122,15 +122,22 @@ def _dispatch(text: str, cwd: str, run=subprocess.run) -> str:
     return result.stderr or ""
 
 
-def _poll(text: str, t0: float, sessions, sleep=time.sleep, polls: int = 5) -> str | None:
-    """Check the history up to `polls` times, 3 seconds apart; the matching session id, else None."""
+def _poll(text: str, t0: float, sessions, sleep=time.sleep, polls: int = 5) -> tuple[str | None, bool]:
+    """Check the history up to `polls` times, 3 seconds apart.
+
+    Returns (the matching session id or None, whether at least one read succeeded)."""
+    any_read = False
     for attempt in range(polls):
         if attempt > 0:
             sleep(3)
-        sid = _find_started(text, t0, sessions())
+        found = sessions()
+        if found is None:
+            continue  # the history could not be read this time; keep polling
+        any_read = True
+        sid = _find_started(text, t0, found)
         if sid is not None:
-            return sid
-    return None
+            return sid, True
+    return None, any_read
 
 
 def start_in_hub(
@@ -139,20 +146,24 @@ def start_in_hub(
     """Start a Cline session in the background hub and prove it started from the history.
 
     A timeout of the CLI call is not an error by itself (the session may still have started). FileNotFoundError
-    raises LookupError at once; when the first dispatch's polls find nothing, the same command runs once more and
-    the history is polled again with the original t0, so a late first session still counts. Only then does it raise
-    RuntimeError "Cline did not start a session after two tries: <detail>", where detail is the last non-empty
-    stderr line of the second call, or "no output"."""
+    raises LookupError at once; when the first dispatch's polls find nothing but at least one read succeeded, the same
+    command runs once more and the history is polled again with the original t0, so a late first session still counts.
+    When no read of round one succeeded it raises RuntimeError "could not read the Cline history; not retrying, so a
+    session may have started: check Cline", because re-dispatching could start the prompt twice. Only when both rounds
+    found nothing does it raise RuntimeError "Cline did not start a session after two tries: <detail>", where detail is
+    the last non-empty stderr line of the second call, or "no output"."""
     if sessions is None:
         sessions = partial(cline_sessions, run=run)
     if now is None:
         now = time.time
     t0 = now()
     stderr = _dispatch(text, cwd, run=run)
-    sid = _poll(text, t0, sessions, sleep=sleep, polls=polls)
+    sid, any_read = _poll(text, t0, sessions, sleep=sleep, polls=polls)
+    if sid is None and not any_read:
+        raise RuntimeError("could not read the Cline history; not retrying, so a session may have started: check Cline")
     if sid is None:
         stderr = _dispatch(text, cwd, run=run)  # the first dispatch may have been lost; one retry before deciding
-        sid = _poll(text, t0, sessions, sleep=sleep, polls=polls)
+        sid, _ = _poll(text, t0, sessions, sleep=sleep, polls=polls)
     if sid is not None:
         return f"started Cline session {sid} in {cwd}"
     detail = next((line.strip() for line in reversed(stderr.splitlines()) if line.strip()), "no output")

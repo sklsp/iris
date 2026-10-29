@@ -103,21 +103,8 @@ def _find_started(text: str, t0: float, sessions: list[dict]) -> str | None:
     return None
 
 
-def start_in_hub(
-    text: str, cwd: str, run=subprocess.run, sessions=None, now=None, sleep=time.sleep, polls: int = 5
-) -> str:
-    """Start a Cline session in the background hub and prove it started from the history.
-
-    A timeout of the CLI call is not an error by itself (the session may still have started). FileNotFoundError
-    raises LookupError; no matching `cline-cli-zen` entry with this prompt after up to `polls` checks, 3 seconds
-    apart, raises RuntimeError carrying the last non-empty stderr line, or "no output". The history is checked
-    right away and again a few times because sessions can appear in it a few seconds late."""
-    if sessions is None:
-        sessions = partial(cline_sessions, run=run)
-    if now is None:
-        now = time.time
-    t0 = now()
-    stderr = ""
+def _dispatch(text: str, cwd: str, run=subprocess.run) -> str:
+    """Run the Cline CLI command once and return its stderr, "" on timeout; FileNotFoundError raises LookupError."""
     try:
         result = run(
             cline_command(text, cwd),
@@ -131,19 +118,45 @@ def start_in_hub(
     except FileNotFoundError:
         raise LookupError(f"Cline CLI not found at {cline_cli()}") from None
     except subprocess.TimeoutExpired:
-        pass  # the session may still have started; polling decides
-    else:
-        stderr = result.stderr or ""
+        return ""  # the session may still have started; polling decides
+    return result.stderr or ""
 
+
+def _poll(text: str, t0: float, sessions, sleep=time.sleep, polls: int = 5) -> str | None:
+    """Check the history up to `polls` times, 3 seconds apart; the matching session id, else None."""
     for attempt in range(polls):
         if attempt > 0:
             sleep(3)
         sid = _find_started(text, t0, sessions())
         if sid is not None:
-            return f"started Cline session {sid} in {cwd}"
+            return sid
+    return None
 
+
+def start_in_hub(
+    text: str, cwd: str, run=subprocess.run, sessions=None, now=None, sleep=time.sleep, polls: int = 5
+) -> str:
+    """Start a Cline session in the background hub and prove it started from the history.
+
+    A timeout of the CLI call is not an error by itself (the session may still have started). FileNotFoundError
+    raises LookupError at once; when the first dispatch's polls find nothing, the same command runs once more and
+    the history is polled again with the original t0, so a late first session still counts. Only then does it raise
+    RuntimeError "Cline did not start a session after two tries: <detail>", where detail is the last non-empty
+    stderr line of the second call, or "no output"."""
+    if sessions is None:
+        sessions = partial(cline_sessions, run=run)
+    if now is None:
+        now = time.time
+    t0 = now()
+    stderr = _dispatch(text, cwd, run=run)
+    sid = _poll(text, t0, sessions, sleep=sleep, polls=polls)
+    if sid is None:
+        stderr = _dispatch(text, cwd, run=run)  # the first dispatch may have been lost; one retry before deciding
+        sid = _poll(text, t0, sessions, sleep=sleep, polls=polls)
+    if sid is not None:
+        return f"started Cline session {sid} in {cwd}"
     detail = next((line.strip() for line in reversed(stderr.splitlines()) if line.strip()), "no output")
-    raise RuntimeError(f"Cline did not start a session: {detail}")
+    raise RuntimeError(f"Cline did not start a session after two tries: {detail}")
 
 
 def cline_start(agent: str, repo: str = "") -> str:

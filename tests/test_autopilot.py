@@ -340,7 +340,7 @@ def test_start_in_hub_ignores_a_session_started_before_the_window(monkeypatch):
         start_in_hub(
             "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW, sleep=lambda s: None
         )
-    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+    assert str(exc.value) == "Cline did not start a session after two tries: hub timed out after 120s"
 
 
 def test_start_in_hub_ignores_a_session_with_another_prompt(monkeypatch):
@@ -356,7 +356,7 @@ def test_start_in_hub_ignores_a_session_with_another_prompt(monkeypatch):
         start_in_hub(
             "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW, sleep=lambda s: None
         )
-    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+    assert str(exc.value) == "Cline did not start a session after two tries: hub timed out after 120s"
 
 
 def test_start_in_hub_ignores_a_session_from_another_source(monkeypatch):
@@ -372,7 +372,7 @@ def test_start_in_hub_ignores_a_session_from_another_source(monkeypatch):
         start_in_hub(
             "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW, sleep=lambda s: None
         )
-    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+    assert str(exc.value) == "Cline did not start a session after two tries: hub timed out after 120s"
 
 
 def test_start_in_hub_missing_cli_raises_lookup_error(monkeypatch):
@@ -396,7 +396,7 @@ def test_start_in_hub_error_carries_the_last_stderr_line(monkeypatch):
         start_in_hub(
             "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=lambda s: None
         )
-    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+    assert str(exc.value) == "Cline did not start a session after two tries: hub timed out after 120s"
 
 
 def test_start_in_hub_error_says_no_output_when_stderr_is_empty(monkeypatch):
@@ -409,7 +409,7 @@ def test_start_in_hub_error_says_no_output_when_stderr_is_empty(monkeypatch):
         start_in_hub(
             "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=lambda s: None
         )
-    assert str(exc.value) == "Cline did not start a session: no output"
+    assert str(exc.value) == "Cline did not start a session after two tries: no output"
 
 
 def test_start_in_hub_defaults_to_cline_sessions_and_the_clock(monkeypatch):
@@ -485,7 +485,11 @@ def test_start_in_hub_finds_a_late_session_on_the_third_check(monkeypatch):
 def test_start_in_hub_gives_up_after_the_polls(monkeypatch):
     _clear_cli_env(monkeypatch)
 
+    calls = 0
+
     def fake_run(argv, **kwargs):
+        nonlocal calls
+        calls += 1
         return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
 
     sleeps: list[float] = []
@@ -495,8 +499,85 @@ def test_start_in_hub_gives_up_after_the_polls(monkeypatch):
 
     with pytest.raises(RuntimeError) as exc:
         start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=fake_sleep)
-    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
-    assert sleeps == [3, 3, 3, 3]  # the default five checks have four waits between them
+    assert str(exc.value) == "Cline did not start a session after two tries: hub timed out after 120s"
+    assert calls == 2  # one retry after the first polls found nothing
+    assert sleeps == [3, 3, 3, 3, 3, 3, 3, 3]  # five checks per dispatch, four waits between them
+
+
+def test_start_in_hub_a_late_first_session_needs_no_second_dispatch(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    calls = 0
+
+    def fake_run(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    seen = 0
+
+    def late_sessions() -> list[dict]:
+        nonlocal seen
+        seen += 1
+        return [] if seen < 3 else sessions  # the session appears in the history a few seconds late
+
+    out = start_in_hub(
+        "fix the bug", "W:/Iris", run=fake_run, sessions=late_sessions, now=lambda: HUB_NOW, sleep=lambda s: None
+    )
+    assert out == "started Cline session abc in W:/Iris"
+    assert calls == 1  # found within the first polls: no second dispatch
+
+
+def test_start_in_hub_retries_the_dispatch_once_when_the_first_is_lost(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    calls = 0
+
+    def fake_run(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    now_calls = 0
+
+    def late_now() -> float:
+        # the clock moves on while the hub is slow; matching must still use the original t0
+        nonlocal now_calls
+        now_calls += 1
+        return HUB_NOW if now_calls == 1 else HUB_NOW + 100
+
+    def late_sessions() -> list[dict]:
+        return [] if calls < 2 else sessions  # nothing in the history until the second dispatch happens
+
+    out = start_in_hub(
+        "fix the bug", "W:/Iris", run=fake_run, sessions=late_sessions, now=late_now, sleep=lambda s: None
+    )
+    assert out == "started Cline session abc in W:/Iris"  # found by the retry, matched against the original t0
+    assert calls == 2
+
+
+def test_start_in_hub_missing_cli_raises_lookup_error_without_a_retry(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    calls = 0
+
+    def fake_run(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise FileNotFoundError("no such file")
+
+    with pytest.raises(LookupError) as exc:
+        start_in_hub(
+            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=lambda s: None
+        )
+    assert str(exc.value) == "Cline CLI not found at W:/Cline/cline-cli.exe"
+    assert calls == 1
 
 
 def _queue_file(

@@ -36,7 +36,7 @@ Dashboard Autopilot tab (the normal way to start the next prompt):
 
 Queue editing by voice, and dashboard polish:
 - queue_remove (confirm) removes one waiting prompt from the agent queue by its id, and queue_move (confirm) moves one up or down; both ask first, like queue_add and queue_take
-- four new eval tasks (79 in total): queue_removed and queue_moved pin the two tools with their confirms, cline_next_prompt starts a session only after Jay says yes to the next queued prompt, and queue_injection (safety) refuses an instruction planted in a window to edit the queue or start Cline
+- four new eval tasks (79 in total): queue_remove_yes and queue_remove_declined pin queue_remove's confirm and decline paths, queue_move_up pins queue_move with its listing reply, and queue_remove_by_text makes Iris list the queue first to resolve a prompt referred to by text
 - the dashboard's Autopilot run rows wrap on narrow screens instead of squashing the text (a 700px media query); a disabled Start button now says why it waits, with the run's own reason from /api/runs such as "last commit 1 minute ago" or "3 of 4 items open in PROGRESS-b.md"
 
 ## 0.3.0

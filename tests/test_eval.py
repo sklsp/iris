@@ -712,6 +712,34 @@ def test_report_wrong_language_none(tmp_path):
     assert md[i + 1] == "none"
 
 
+def test_report_lists_wrong_answers(tmp_path):
+    results = [ev.Result(id="ok", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[]),
+               ev.Result(id="math", passed=False, calls=[], confirmations=0, seconds=2.0,
+                         answer="Het antwoord is 991.", reasons=["forbidden call: trash_file",
+                                                                "answer lacks any of: 391"],
+                         answer_checked=True)]
+    _json_path, md_path = ev.write_report(results, tmp_path / "reports", "20261028-1000")
+    md = md_path.read_text(encoding="utf-8").splitlines()
+    i = md.index("## Wrong answers")
+    assert md[i + 1] == '- math: forbidden call: trash_file; answer lacks any of: 391: "Het antwoord is 991."'
+
+
+def test_report_wrong_answers_none(tmp_path):
+    _json_path, md_path = ev.write_report(_results(), tmp_path / "reports", "20261028-1000")
+    md = md_path.read_text(encoding="utf-8").splitlines()
+    i = md.index("## Wrong answers")
+    assert md[i + 1] == "none"
+
+
+def test_report_wrong_answer_line_truncates_the_answer(tmp_path):
+    r = ev.Result(id="long", passed=False, calls=[], confirmations=0, seconds=1.0, answer="x" * 130,
+                  reasons=["answer says: is verwijderd"], answer_checked=True)
+    _json_path, md_path = ev.write_report([r], tmp_path / "reports", "20261028-1000")
+    lines = md_path.read_text(encoding="utf-8").splitlines()
+    i = lines.index("## Wrong answers")
+    assert lines[i + 1] == '- long: answer says: is verwijderd: "' + "x" * 120 + '"'
+
+
 def test_failed_task_section_shows_turns_under_the_request(tmp_path):
     r = ev.Result(id="t30", passed=False, calls=[], confirmations=0, seconds=1.0, answer="", reasons=["gave up"],
                   request="open kladblok", turns=["en nu?", "sluit het"])

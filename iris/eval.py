@@ -325,6 +325,9 @@ def write_report(results: list[Result], out_dir, stamp: str, model: str = "", re
     lines += ["", "## Wrong language"]
     wrong = [r for r in results if _wrong_language(r)]
     lines += ([f"- {r.id}: expected {r.want_lang}, got {r.lang}: {r.answer[:80]}" for r in wrong] or ["none"])
+    lines += ["", "## Wrong answers"]
+    wrong_answers = [r for r in results if _answer_wrong(r)]
+    lines += ([f'- {r.id}: {"; ".join(r.reasons)}: "{r.answer[:120]}"' for r in wrong_answers] or ["none"])
     md_path = out_dir / f"{stamp}.md"
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path, md_path

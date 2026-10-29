@@ -4,7 +4,7 @@ Branch: `answer-checks` in W:/Iris. One commit per item, message `A<n>: <title>`
 
 - [x] A1. answer checks (753 passed in 23.11s)
 - [x] A2. the summary counts wrong answers (758 passed in 25.17s)
-- [ ] A3. the report lists wrong answers
+- [x] A3. the report lists wrong answers (761 passed in 24.46s)
 - [ ] A4. docs
 - [ ] A5. no dashes
 - [ ] A6. final check

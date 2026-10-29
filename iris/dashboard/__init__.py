@@ -20,8 +20,8 @@ IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by th
                   old, folder name and age only; cached 30 s
     /api/iris/model which model Iris talks to right now and where that choice came from
                     (the IRIS_MODEL environment variable, then ~/.iris/settings.json)
-    /api/eval     the newest eval report from eval/results (or IRIS_EVAL_DIR): its stamp,
-                  model and summary, plus how many runs exist so far
+    /api/eval     the newest full eval report from eval/results (or IRIS_EVAL_DIR): its stamp,
+                  model and summary, plus how many runs exist so far; partial (filtered) runs are skipped
     /api/eval/history the trend over the last 10 saved runs in that same folder: success rate per run,
                   per-task pass counts with one entry per run, and the flaky tasks; cached 30 s
     /api/queue    the prompts waiting in the agent queue, oldest first (read only)
@@ -502,14 +502,16 @@ def _cached(key: str, fn) -> dict:
 # --- eval reports ---------------------------------------------------------------
 
 def eval_payload(results_dir=None) -> dict:
-    """The newest eval report from results_dir / IRIS_EVAL_DIR, plus how many runs exist.
+    """The newest full eval report from results_dir / IRIS_EVAL_DIR, plus how many runs exist.
 
-    The newest file is decided by name alone: the stamps sort by time."""
+    The newest file is decided by name alone: the stamps sort by time. Partial (filtered)
+    reports are skipped via iris.eval.full_reports."""
     if results_dir is None:
         results_dir = os.environ.get("IRIS_EVAL_DIR") or str(Path(__file__).resolve().parents[2] / "eval" / "results")
-    base = Path(results_dir)
+    from iris import eval as iris_eval
+
     try:
-        files = sorted(f for f in base.glob("*.json") if f.is_file())
+        files = [f for f in iris_eval.full_reports(results_dir) if f.is_file()]
     except OSError:
         return {"latest": None, "runs": 0}
     if not files:

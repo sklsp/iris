@@ -1,7 +1,7 @@
 # Iris eval filters run (night-iris20)
 
 - [x] E1. partial runs never become the headline (732 passed in 22.98s)
-- [ ] E2. the dashboard shows the newest full run
+- [x] E2. the dashboard shows the newest full run (733 passed in 24.34s)
 - [ ] E3. --category
 - [ ] E4. --only takes patterns
 - [ ] E5. --failed-from

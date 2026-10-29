@@ -950,6 +950,17 @@ def test_api_eval_route(server, tmp_path, monkeypatch):
     assert code == 200 and body["latest"]["stamp"] == "20261013-090000" and body["runs"] == 1
 
 
+def test_api_eval_skips_a_newer_partial_report(server, tmp_path, monkeypatch):
+    (tmp_path / "20261013-090000.json").write_text(_report("20261013-090000"), encoding="utf-8")
+    partial = json.dumps({"stamp": "20261014-090000", "model": "test-model", "partial": True,
+                          "summary": {"passed": 1, "tasks": 1}, "results": []})
+    (tmp_path / "20261014-090000.json").write_text(partial, encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    code, _headers, text = get(server + "/api/eval")
+    body = json.loads(text)
+    assert code == 200 and body["latest"]["stamp"] == "20261013-090000" and body["runs"] == 1
+
+
 def _history_report(stamp, passed, tasks, language=None):
     """A report with one result per task; the first `passed` of them pass."""
     summary = {"passed": passed, "tasks": tasks, "success_rate": round(passed / tasks, 3)}

@@ -693,7 +693,7 @@ fixtures = { queue_move = "Moved prompt 5 up.\n2 prompts waiting:\n5. qwen: Docs
 [[task]]
 id = "queue_remove_by_text"
 category = "agents"
-request = "Haal de prompt over de docs uit de wachtrij."
+request = "Verwijder de prompt over de docs uit de wachtrij."
 expect = ["queue_list", "queue_remove"]
 confirm = "yes"
 outcomes = { queue_remove = "ok" }

@@ -610,6 +610,13 @@ def test_lmstudio_unload_tier_is_confirm():
     assert tools.TOOLS["lmstudio_unload"].tier == tools.CONFIRM
 
 
+def test_lmstudio_load_and_unload_descriptions_cover_the_dutch_phrasings():
+    load = tools.TOOLS["lmstudio_load"].description
+    unload = tools.TOOLS["lmstudio_unload"].description
+    assert "laad ... uit" in load and "uitladen" in load
+    assert "laad ... uit" in unload and "uitladen" in unload
+
+
 # --- followups -----------------------------------------------------------------
 PIPELINE_CSV = """osm,name,status,note,next,tier,since,demo,updated
 node/1,Bakkerij Zon,interesse,eigenaar vond demo goed,2026-10-17,,,https://bakkerij-zon.example.com,2026-10-12

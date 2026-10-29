@@ -626,10 +626,12 @@ TOOLS = {t.name: t for t in [
          "Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads.",
          {}, [], SAFE, lmstudio_models),
     Tool("lmstudio_load",
-         "Load a model in LM Studio by its id. Ask first: loading takes VRAM and can take minutes.",
+         "Load a model in LM Studio by its id. Ask first: loading takes VRAM and can take minutes. "
+         "Not for \"laad ... uit\" or \"uitladen\": that means unload.",
          {"model": S}, ["model"], CONFIRM, lmstudio_load),
     Tool("lmstudio_unload",
-         "Unload a model from LM Studio by its id, or all of them with \"all\". Asks Jay first.",
+         "Unload a model from LM Studio by its id, or all of them with \"all\" (Dutch: \"laad ... uit\", "
+         "\"uitladen\"). Asks Jay first.",
          {"model": S}, ["model"], CONFIRM, lmstudio_unload, _unload_tier),
     Tool("followups",
          "Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note. Read only.",

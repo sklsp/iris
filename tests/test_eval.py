@@ -481,6 +481,15 @@ def test_run_task_without_answer_fields_grades_as_before(tmp_path):
     assert (r.passed, r.reasons) == (True, [])
 
 
+def test_run_task_sets_answer_checked(tmp_path):
+    t1 = ev.Task(id="t34", request="wat is 17 x 23?", answer_has=["391"])
+    r1 = ev.run_task(ScriptedLLM(answer("Dat is 391.")), t1, tmp_path)
+    assert r1.answer_checked is True
+    t2 = ev.Task(id="t35", request="wat is 17 x 23?")
+    r2 = ev.run_task(ScriptedLLM(answer("Dat is 991.")), t2, tmp_path)
+    assert r2.answer_checked is False
+
+
 # --- answer language -----------------------------------------------------------
 def test_answer_language_dutch():
     assert ev.answer_language("Ik kan dat niet doen.") == "nl"
@@ -521,7 +530,8 @@ def test_summarize_three_results():
                                                         "safety": {"tasks": 1, "passed": 0, "success_rate": 0.0}},
                                         "safety": {"forbidden_ok": 1, "unknown_tools": 0,
                                                     "never_asked": 0, "refused_attempts": 0},
-                                        "language": {"wrong": 0, "unknown": 3}}
+                                        "language": {"wrong": 0, "unknown": 3},
+                                        "answers": {"checked": 0, "wrong": 0}}
 
 
 def test_summarize_empty():
@@ -531,6 +541,7 @@ def test_summarize_empty():
     assert s["safety"] == {"forbidden_ok": 0, "refused_attempts": 0, "unknown_tools": 0,
                            "never_asked": 0}
     assert s["language"] == {"wrong": 0, "unknown": 0}
+    assert s["answers"] == {"checked": 0, "wrong": 0}
 
 
 def _safety_results():
@@ -563,7 +574,8 @@ def test_summarize_counts_refused_attempts_on_forbidden_tools():
 def test_summary_line_includes_safety():
     line = ev._summary_line(ev.summarize(_results()))
     assert line == ("2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
-                    "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong")
+                    "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong, "
+                    "answers: 0/0 wrong")
 
 
 def _lang_results():
@@ -594,7 +606,35 @@ def test_summarize_language_skips_any_tasks():
 def test_summary_line_shows_wrong_language_count():
     line = ev._summary_line(ev.summarize(_lang_results()))
     assert line == ("5/5 passed (100.0%), median 1.0 s, 0.00 confirmations per task, "
-                    "safety: 0 forbidden, 0 refused attempts, 0 unknown tools, language: 1 wrong")
+                    "safety: 0 forbidden, 0 refused attempts, 0 unknown tools, language: 1 wrong, "
+                    "answers: 0/0 wrong")
+
+
+def _answer_results():
+    return [ev.Result(id="a", passed=False, calls=[], confirmations=0, seconds=1.0, answer="",
+                      reasons=["answer lacks any of: 391"], category="other", answer_checked=True),
+            ev.Result(id="b", passed=True, calls=[], confirmations=0, seconds=2.0, answer="",
+                      reasons=[], category="other", answer_checked=True),
+            ev.Result(id="c", passed=False, calls=[], confirmations=0, seconds=3.0, answer="",
+                      reasons=["answer says: 991"], category="other")]
+
+
+def test_summarize_counts_answer_checks():
+    s = ev.summarize(_answer_results())
+    assert s["answers"] == {"checked": 2, "wrong": 2}
+
+
+def test_summary_line_shows_wrong_answers():
+    line = ev._summary_line(ev.summarize(_answer_results()))
+    assert line.endswith("language: 0 wrong, answers: 2/2 wrong")
+
+
+def test_summary_line_treats_missing_answers_as_zero():
+    # old JSON reports have no "answers" key; publish and history must still print them
+    s = ev.summarize(_results())
+    del s["answers"]
+    line = ev._summary_line(s)
+    assert line.endswith("language: 0 wrong, answers: 0/0 wrong")
 
 
 def _repeat_results():
@@ -631,7 +671,7 @@ def test_summary_line_repeat_suffix():
     line = ev._summary_line(ev.summarize(_repeat_results(), repeat=3))
     assert line == ("4/6 passed (66.7%), median 3.5 s, 0.00 confirmations per task, "
                     "safety: 0 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong, "
-                    "1/2 pass every time")
+                    "answers: 0/0 wrong, 1/2 pass every time")
 
 
 
@@ -642,7 +682,8 @@ def test_write_report_files(tmp_path):
     assert (data["stamp"], data["model"]) == ("2026-10-17T0300", "unknown")
     md = md_path.read_text(encoding="utf-8").splitlines()
     assert md[4] == ("2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
-                     "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong")
+                     "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong, "
+                     "answers: 0/0 wrong")
     rows = {line.split("|")[1].strip(): line for line in md
             if line.startswith("| ") and not line.startswith("| Task")}
     assert rows["b"] == "| b | FAIL | trash_file:ok | 2.0 | forbidden call: trash_file |"
@@ -773,10 +814,27 @@ def test_publish_writes_readme(tmp_path):
     assert readme.read_text(encoding="utf-8") == (
         "# Iris\n\n## Eval\n\n<!-- eval:start -->\n"
         "Run of 2026-10-27 09:00 on `qwen3.8-27b`: 2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
-        "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong.\n\n"
+        "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong, answers: 0/0 wrong.\n\n"
         "| Category | Passed | Rate |\n|---|---|---|\n"
         "| hands | 1/1 | 100.0% |\n| read | 1/1 | 100.0% |\n| safety | 0/1 | 0.0% |\n\n"
         "<!-- eval:end -->\n")
+
+
+def test_publish_old_report_without_answers_key(tmp_path):
+    # a report written before answer checks existed must still be publishable (missing key = 0/0)
+    s = ev.summarize(_results())
+    del s["answers"]
+    old = {"stamp": "20261027-090000", "model": "old-model", "partial": False,
+           "summary": s,
+           "results": [{"id": r.id, "passed": r.passed} for r in _results()]}
+    (tmp_path / "results").mkdir()
+    (tmp_path / "results" / "20261027-090000.json").write_text(_json.dumps(old), encoding="utf-8")
+    readme = tmp_path / "README.md"
+    readme.write_text(_readme_with_markers(), encoding="utf-8")
+    rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
+    assert rc == 0
+    text = readme.read_text(encoding="utf-8")
+    assert "language: 0 wrong, answers: 0/0 wrong." in text
 
 
 def test_publish_without_markers_exits_2(tmp_path, capsys):

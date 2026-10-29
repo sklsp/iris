@@ -1054,6 +1054,18 @@ def test_queue_move_ok_returns_new_state_and_logs(srv, tmp_path, monkeypatch):
     assert events[-1]["action"] == "move" and events[-1]["id"] == 1
 
 
+# Driven by WRITE_ROUTES itself, so a write route added later is covered without a new test.
+@pytest.mark.parametrize("route", d.WRITE_ROUTES)
+@pytest.mark.parametrize("auth", ["no token", "wrong token", "foreign origin", "no origin"])
+def test_every_write_route_refuses_without_the_token_and_origin(srv, route, auth):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    token, origin = {"no token": (None, base), "wrong token": ("not-the-token", base),
+                     "foreign origin": (srv.token, "http://evil.example"), "no origin": (srv.token, None)}[auth]
+    code, _ = post(base + route, {"model": "m1", "agent": "a", "text": "t", "id": 1, "step": 1},
+                   token=token, origin=origin)
+    assert code == 403
+
+
 @pytest.mark.parametrize("route", ["/api/queue/add", "/api/queue/delete", "/api/queue/move"])
 def test_queue_write_without_a_token_is_403(srv, route):
     base = f"http://{HOST}:{srv.server_address[1]}"

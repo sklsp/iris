@@ -100,7 +100,7 @@ To publish the newest report into README.md, replacing the block between `<!-- e
 
 publish takes the newest non-partial `{stamp}.json` in the results dir (the last full run when sorted by name) and writes its Date, Model, summary line and category table into that block; it exits 2 if there are no full reports or the README has no markers.
 
-A filtered run — one using `--only`, `--category` or `--failed-from` — is marked `"partial": true` in its JSON report and is never published into README.md nor shown as the dashboard's latest run; both pick the newest full (non-partial) report instead.
+A filtered run (one using `--only`, `--category` or `--failed-from`) is marked `"partial": true` in its JSON report and is never published into README.md nor shown as the dashboard's latest run; both pick the newest full (non-partial) report instead.
 
 ## Dashboard
 

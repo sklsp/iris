@@ -6,5 +6,5 @@
 - [x] E4. --only takes patterns (739 passed in 23.23s)
 - [x] E5. --failed-from (743 passed in 23.54s)
 - [x] E6. docs (743 passed in 24.33s)
-- [ ] E7. no dashes
+- [x] E7. no dashes (scan of the 7 files changed since honest-counters found U+2014 only in EVAL.md:103, fixed; 743 passed in 23.45s)
 - [ ] E8. final check

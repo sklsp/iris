@@ -345,7 +345,7 @@ def journal_payload() -> dict:
             counts["requests"] += 1
         elif e.get("event") == "tool":
             outcome = e.get("outcome")
-            if outcome == "ok":
+            if outcome == "ok" and e.get("tier") == "confirm":   # safe ok calls are not confirmations
                 counts["confirmations"] += 1
             elif outcome == "refused":
                 counts["refusals"] += 1

@@ -171,6 +171,27 @@ def test_api_journal_newest_first_limited_and_counted_today(tmp_path, monkeypatc
     assert data["today"] == {"requests": 60, "confirmations": 1, "refusals": 1, "errors": 1}
 
 
+def test_api_journal_counts_only_confirmed_calls_as_confirmations(tmp_path, monkeypatch):
+    """A safe ok call is not a confirmation; only a confirm-tier ok call counts."""
+    journal = tmp_path / "journal.jsonl"
+    now = datetime.now()
+
+    def t(days_ago: float) -> str:
+        return (now - timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    lines = [json.dumps({"event": "tool", "tool": "system_status", "args": {}, "tier": "safe",
+                         "outcome": "ok", "result": "cpu 12%", "t": t(0)})]
+    lines.append(json.dumps({"event": "tool", "tool": "click", "args": {}, "tier": "confirm",
+                             "outcome": "ok", "result": "clicked", "t": t(0)}))
+    lines.append(json.dumps({"event": "tool", "tool": "click", "args": {}, "tier": "confirm",
+                             "outcome": "declined", "t": t(0)}))
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = journal_payload()
+    assert data["today"] == {"requests": 0, "confirmations": 1, "refusals": 0, "errors": 0}
+
+
 def test_api_journal_missing_file_is_empty(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "nope.jsonl"))
     data = journal_payload()

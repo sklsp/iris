@@ -387,7 +387,8 @@ def test_summarize_three_results():
                                         "by_category": {"hands": {"tasks": 1, "passed": 1, "success_rate": 1.0},
                                                         "read": {"tasks": 1, "passed": 1, "success_rate": 1.0},
                                                         "safety": {"tasks": 1, "passed": 0, "success_rate": 0.0}},
-                                        "safety": {"forbidden_ok": 1, "unknown_tools": 0, "never_asked": 0}}
+                                        "safety": {"forbidden_ok": 1, "unknown_tools": 0, "never_asked": 0},
+                                        "language": {"wrong": 0, "unknown": 3}}
 
 
 def test_summarize_empty():
@@ -395,6 +396,7 @@ def test_summarize_empty():
     assert (s["tasks"], s["passed"], s["success_rate"]) == (0, 0, 0.0)
     assert s["by_category"] == {}
     assert s["safety"] == {"forbidden_ok": 0, "unknown_tools": 0, "never_asked": 0}
+    assert s["language"] == {"wrong": 0, "unknown": 0}
 
 
 def _safety_results():
@@ -412,7 +414,38 @@ def test_summarize_safety_counts():
 def test_summary_line_includes_safety():
     line = ev._summary_line(ev.summarize(_results()))
     assert line == ("2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
-                    "safety: 1 forbidden, 0 unknown tools")
+                    "safety: 1 forbidden, 0 unknown tools, language: 0 wrong")
+
+
+def _lang_results():
+    return [ev.Result(id="nl_ok", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                      lang="nl", want_lang="nl"),
+            ev.Result(id="de_wrong", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                      lang="de", want_lang="nl"),
+            ev.Result(id="en_ok", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                      lang="en", want_lang="en"),
+            ev.Result(id="unknown_nl", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                      lang="?", want_lang="nl"),
+            ev.Result(id="any_de", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                      lang="de", want_lang="any")]
+
+
+def test_summarize_language_counts_wrong_and_unknown():
+    assert ev.summarize(_lang_results())["language"] == {"wrong": 1, "unknown": 1}
+
+
+def test_summarize_language_skips_any_tasks():
+    s = ev.summarize([ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                                lang="de", want_lang="any"),
+                      ev.Result(id="b", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                                lang="?", want_lang="any")])
+    assert s["language"] == {"wrong": 0, "unknown": 0}
+
+
+def test_summary_line_shows_wrong_language_count():
+    line = ev._summary_line(ev.summarize(_lang_results()))
+    assert line == ("5/5 passed (100.0%), median 1.0 s, 0.00 confirmations per task, "
+                    "safety: 0 forbidden, 0 unknown tools, language: 1 wrong")
 
 
 def _repeat_results():
@@ -448,7 +481,7 @@ def test_summarize_empty_with_repeat():
 def test_summary_line_repeat_suffix():
     line = ev._summary_line(ev.summarize(_repeat_results(), repeat=3))
     assert line == ("4/6 passed (66.7%), median 3.5 s, 0.00 confirmations per task, "
-                    "safety: 0 forbidden, 0 unknown tools, 1/2 pass every time")
+                    "safety: 0 forbidden, 0 unknown tools, language: 0 wrong, 1/2 pass every time")
 
 
 
@@ -459,7 +492,7 @@ def test_write_report_files(tmp_path):
     assert (data["stamp"], data["model"]) == ("2026-10-17T0300", "unknown")
     md = md_path.read_text(encoding="utf-8").splitlines()
     assert md[4] == ("2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
-                     "safety: 1 forbidden, 0 unknown tools")
+                     "safety: 1 forbidden, 0 unknown tools, language: 0 wrong")
     rows = {line.split("|")[1].strip(): line for line in md
             if line.startswith("| ") and not line.startswith("| Task")}
     assert rows["b"] == "| b | FAIL | trash_file:ok | 2.0 | forbidden call: trash_file |"
@@ -533,7 +566,7 @@ def test_publish_writes_readme(tmp_path):
     assert readme.read_text(encoding="utf-8") == (
         "# Iris\n\n## Eval\n\n<!-- eval:start -->\n"
         "Run of 2026-10-27 09:00 on `qwen3.8-27b`: 2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
-        "safety: 1 forbidden, 0 unknown tools.\n\n"
+        "safety: 1 forbidden, 0 unknown tools, language: 0 wrong.\n\n"
         "| Category | Passed | Rate |\n|---|---|---|\n"
         "| hands | 1/1 | 100.0% |\n| read | 1/1 | 100.0% |\n| safety | 0/1 | 0.0% |\n\n"
         "<!-- eval:end -->\n")

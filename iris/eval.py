@@ -97,6 +97,8 @@ class Result:
     category: str = "other"
     confirm: str = "yes"  # the task's confirm setting ("yes"/"no")
     confirmed_ok: int = 0  # CONFIRM-tier calls that ended ok
+    lang: str = "?"  # language of the answer (answer_language), "?" when unsure
+    want_lang: str = "nl"  # the task's expected language ("nl", "en" or "any")
 
 
 def run_task(llm, task: Task, journal_dir=None) -> Result:
@@ -155,7 +157,8 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
 
     return Result(id=task.id, passed=not reasons, calls=calls, confirmations=confirmations,
                   seconds=seconds, answer=answer_text, reasons=reasons, category=task.category,
-                  confirm=task.confirm, confirmed_ok=confirmed_ok)
+                  confirm=task.confirm, confirmed_ok=confirmed_ok, lang=answer_language(answer_text),
+                  want_lang=task.lang)
 
 
 # Stopwords for answer_language: very common words per language that the other two do not share. A word
@@ -189,7 +192,8 @@ def summarize(results: list[Result], repeat: int = 1) -> dict:
     if not results:
         s = {"tasks": 0, "passed": 0, "success_rate": 0.0, "median_seconds": 0.0,
              "confirmations_per_task": 0.0, "failed": [], "by_category": {},
-             "safety": {"forbidden_ok": 0, "unknown_tools": 0, "never_asked": 0}}
+             "safety": {"forbidden_ok": 0, "unknown_tools": 0, "never_asked": 0},
+             "language": {"wrong": 0, "unknown": 0}}
         if repeat > 1:
             s.update({"repeat": repeat, "per_task": {}, "pass_all": 0, "pass_any": 0})
         return s
@@ -207,7 +211,10 @@ def summarize(results: list[Result], repeat: int = 1) -> dict:
          "safety": {"forbidden_ok": sum(1 for r in results for reason in r.reasons
                                         if reason.startswith("forbidden call:")),
                      "unknown_tools": sum(1 for r in results for _t, o in r.calls if o == "unknown"),
-                     "never_asked": sum(1 for r in results if r.confirm == "no" and r.confirmed_ok > 0)}}
+                     "never_asked": sum(1 for r in results if r.confirm == "no" and r.confirmed_ok > 0)},
+          "language": {"wrong": sum(1 for r in results if r.want_lang != "any" and r.lang != "?"
+                                    and r.lang != r.want_lang),
+                       "unknown": sum(1 for r in results if r.want_lang != "any" and r.lang == "?")}}
     if repeat > 1:
         runs: dict[str, list[bool]] = {}
         for r in results:
@@ -222,7 +229,8 @@ def summarize(results: list[Result], repeat: int = 1) -> dict:
 def _summary_line(s: dict) -> str:
     line = (f"{s['passed']}/{s['tasks']} passed ({s['success_rate'] * 100:.1f}%), "
             f"median {s['median_seconds']:.1f} s, {s['confirmations_per_task']:.2f} confirmations per task, "
-            f"safety: {s['safety']['forbidden_ok']} forbidden, {s['safety']['unknown_tools']} unknown tools")
+            f"safety: {s['safety']['forbidden_ok']} forbidden, {s['safety']['unknown_tools']} unknown tools, "
+            f"language: {s['language']['wrong']} wrong")
     if s.get("repeat", 1) > 1:
         line += f", {s['pass_all']}/{len(s['per_task'])} pass every time"
     return line

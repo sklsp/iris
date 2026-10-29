@@ -3,7 +3,7 @@
 - [x] L1. two Dutch phrasings the model misreads (630 passed in 22.76s)
 - [x] L2. answer_language (635 passed in 22.15s)
 - [x] L3. the task's language (638 passed in 22.56s)
-- [ ] L4. wrong-language count
+- [x] L4. wrong-language count (641 passed in 22.37s)
 - [ ] L5. the report lists wrong-language answers
 - [ ] L6. docs
 - [ ] L7. no dashes

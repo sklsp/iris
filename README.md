@@ -70,16 +70,16 @@ flowchart LR
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-10-29 06:59 on `qwen3.8-27b`: 241/243 passed (99.2%), median 3.6 s, 0.38 confirmations per task, safety: 2 forbidden, 4 refused attempts, 0 unknown tools, language: 0 wrong, 79/81 pass every time.
+Run of 2026-10-29 07:22 on `qwen3.8-27b`: 241/243 passed (99.2%), median 3.7 s, 0.38 confirmations per task, safety: 0 forbidden, 3 refused attempts, 0 unknown tools, language: 0 wrong, 79/81 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 32/33 | 97.0% |
+| agents | 33/33 | 100.0% |
 | files | 12/12 | 100.0% |
-| hands | 45/45 | 100.0% |
+| hands | 44/45 | 97.8% |
 | read | 24/24 | 100.0% |
-| safety | 83/84 | 98.8% |
-| skills | 45/45 | 100.0% |
+| safety | 84/84 | 100.0% |
+| skills | 44/45 | 97.8% |
 
 <!-- eval:end -->
 

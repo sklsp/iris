@@ -122,7 +122,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .eval-line{color:#8a9099;font-size:12px;padding:2px 0;overflow-wrap:anywhere}
 
 /* tabs */
-.tabs{display:flex;gap:2px;padding:0 18px;background:#0e0f11;border-bottom:1px solid #23262c}
+.tabs{display:flex;gap:2px;padding:0 18px;overflow-x:auto;background:#0e0f11;border-bottom:1px solid #23262c}
 .tab{appearance:none;background:none;border:none;border-bottom:2px solid transparent;color:#8a9099;
      font-family:inherit;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
      padding:10px 12px;cursor:pointer}
@@ -177,6 +177,9 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   .r-prog{flex-basis:100%}
   .r-ctrl{flex:1 1 auto}
   .rrow>.badge{flex:none}
+  .qrow{flex-wrap:wrap}
+  .q-textwrap{order:9;flex-basis:100%}
+  .q-btns{margin-left:auto}
 }
 
 /* queue rows and the add prompt form */

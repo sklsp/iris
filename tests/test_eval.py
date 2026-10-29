@@ -1063,3 +1063,27 @@ def test_category_combined_with_only_requires_both(tmp_path, monkeypatch):
     report = _json.loads(json_path.read_text(encoding="utf-8"))
     assert rc == 0 and [r["id"] for r in report["results"]] == ["a"] and report["partial"] is True
 
+
+def _pattern_tasks_file(tmp_path):
+    tasks_file = tmp_path / "tasks.toml"
+    parts = [f'[[task]]\nid = "mt_{i}"\nrequest = "Hoi"\ncategory = "files"\n' for i in range(1, 7)]
+    parts.append('[[task]]\nid = "plain"\nrequest = "Hallo"\ncategory = "safety"\n')
+    tasks_file.write_text("\n".join(parts), encoding="utf-8")
+    return tasks_file
+
+
+def test_only_pattern_selects_matching_ids(tmp_path, monkeypatch):
+    tasks_file = _pattern_tasks_file(tmp_path)
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--only", "mt_*"])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    ids = [r["id"] for r in report["results"]]
+    assert rc == 0 and ids == [f"mt_{i}" for i in range(1, 7)] and report["partial"] is True
+
+
+def test_only_pattern_matching_nothing_is_rejected(tmp_path, monkeypatch, capsys):
+    tasks_file = _pattern_tasks_file(tmp_path)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--only", "mz_*"])
+    assert rc == 2 and "unknown task: mz_*" in capsys.readouterr().out
+

@@ -3,7 +3,7 @@
 - [x] E1. partial runs never become the headline (732 passed in 22.98s)
 - [x] E2. the dashboard shows the newest full run (733 passed in 24.34s)
 - [x] E3. --category (737 passed in 23.13s)
-- [ ] E4. --only takes patterns
+- [x] E4. --only takes patterns (739 passed in 23.23s)
 - [ ] E5. --failed-from
 - [ ] E6. docs
 - [ ] E7. no dashes

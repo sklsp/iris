@@ -1,5 +1,6 @@
 """Measures how well the model behind Iris picks tools, with dry-run tools."""
 import argparse
+import fnmatch
 import json
 import re
 import statistics
@@ -469,10 +470,10 @@ def main(argv: list[str]) -> int:
     tasks = load_tasks(Path(a.tasks))
     partial = False
     if a.only:
-        known = {t.id for t in tasks}
-        for tid in a.only:
-            if tid not in known:
-                print(f"unknown task: {tid}")
+        ids = [t.id for t in tasks]
+        for pat in a.only:
+            if not any(fnmatch.fnmatchcase(tid, pat) for tid in ids):
+                print(f"unknown task: {pat}")
                 return 2
     if a.category:
         known_cats = {t.category for t in tasks}
@@ -481,10 +482,11 @@ def main(argv: list[str]) -> int:
                 print(f"unknown category: {cat}")
                 return 2
     if a.only or a.category:
-        wanted_ids = set(a.only) if a.only else None
+        patterns = a.only if a.only else None
         wanted_cats = set(a.category) if a.category else None
         tasks = [t for t in tasks
-                 if (wanted_ids is None or t.id in wanted_ids) and (wanted_cats is None or t.category in wanted_cats)]
+                 if (patterns is None or any(fnmatch.fnmatchcase(t.id, p) for p in patterns))
+                 and (wanted_cats is None or t.category in wanted_cats)]
         partial = True
 
     llm = LMStudio()

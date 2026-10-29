@@ -52,10 +52,10 @@ Eval history (trend across saved runs):
 - the Eval tab's History panel shows one row per run (stamp, passed/tasks, a success-rate bar, language wrong when known), fetched with the tab like the rest of it
 - the Eval tab's Flaky tasks panel lists ids that did not pass every saved run, with passed/total and a chip per run in the ok or warning colour
 
-Reliable Cline start (a start is confirmed from history, never started twice):
+Reliable Cline start (a start is confirmed from history; the retry only happens when the history was readable and showed no new session after about 15 seconds):
 - start_in_hub proves the session started by polling Cline's history up to five times, three seconds apart; a CLI timeout alone no longer counts as success, and a missing match raises an error carrying the last non-empty stderr line ("no output" when there is none)
-- if the first dispatch's polls find nothing, the same command runs once more before giving up (the retry matches against the original moment, so a late-appearing session still counts); the give-up error then reads "Cline did not start a session after two tries: ..."
-- the dashboard's Start button now says "starting... (can take a minute)", since a start can take about four minutes in the worst case (two CLI calls with their 120 s timeout plus polls)
+- if the first dispatch's polls find nothing, the same command runs once more before giving up (the retry matches against the original moment, so a late-appearing session still counts); a session that registers later than about 15 seconds could still be started twice; the give-up error then reads "Cline did not start a session after two tries: ..."
+- the dashboard's Start button now says "starting... (can take a few minutes)", since a start can take about four minutes in the worst case (two CLI calls with their 120 s timeout plus polls)
 
 ## 0.3.0
 

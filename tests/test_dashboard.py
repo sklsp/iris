@@ -1279,9 +1279,9 @@ def test_page_run_row_wraps_narrow_and_button_says_why(server):
     assert "r.reason" in fn, "refreshBtn must use r.reason for the tooltip"
 
 
-def test_page_start_button_warns_that_it_can_take_a_minute(server):
+def test_page_start_button_warns_that_it_can_take_a_few_minutes(server):
     # a start can now take up to about 4 minutes (two CLI calls with their 120 s timeout plus polls)
     status, _headers, page = get(server + "/")
     assert status == 200
-    assert "starting... (can take a minute)" in page
+    assert "starting... (can take a few minutes)" in page
 

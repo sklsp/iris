@@ -455,6 +455,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--out", default="eval/results")
     ap.add_argument("--only", action="append", default=None, metavar="ID")
     ap.add_argument("--category", action="append", default=None, metavar="NAME")
+    ap.add_argument("--failed-from", default=None, metavar="PATH")
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--results", default="eval/results")
     ap.add_argument("--readme", default="README.md")
@@ -468,7 +469,6 @@ def main(argv: list[str]) -> int:
         return print_history(a.results, a.last)
 
     tasks = load_tasks(Path(a.tasks))
-    partial = False
     if a.only:
         ids = [t.id for t in tasks]
         for pat in a.only:
@@ -481,13 +481,38 @@ def main(argv: list[str]) -> int:
             if cat not in known_cats:
                 print(f"unknown category: {cat}")
                 return 2
-    if a.only or a.category:
+    failed_ids = None
+    if a.failed_from:
+        failed_path = Path(a.failed_from)
+        try:
+            old = json.loads(failed_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            print(f"cannot read {failed_path}")
+            return 2
+        known_ids = {t.id for t in tasks}
+        failed_ids, seen = [], set()
+        results = old.get("results") if isinstance(old, dict) else None
+        for r in results if isinstance(results, list) else []:
+            rid = r.get("id") if isinstance(r, dict) else None
+            if not isinstance(rid, str) or rid in seen:
+                continue
+            seen.add(rid)
+            if rid not in known_ids:
+                print(f"skipped (no longer a task): {rid}")
+            elif not r.get("passed"):
+                failed_ids.append(rid)
+        if not failed_ids:
+            print(f"nothing failed in {failed_path.name}")
+            return 0
+    partial = bool(a.only or a.category or failed_ids is not None)
+    if partial:
         patterns = a.only if a.only else None
         wanted_cats = set(a.category) if a.category else None
+        keep = set(failed_ids) if failed_ids is not None else None
         tasks = [t for t in tasks
                  if (patterns is None or any(fnmatch.fnmatchcase(t.id, p) for p in patterns))
-                 and (wanted_cats is None or t.category in wanted_cats)]
-        partial = True
+                 and (wanted_cats is None or t.category in wanted_cats)
+                 and (keep is None or t.id in keep)]
 
     llm = LMStudio()
     total = len(tasks) * a.repeat

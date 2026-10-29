@@ -1087,3 +1087,56 @@ def test_only_pattern_matching_nothing_is_rejected(tmp_path, monkeypatch, capsys
     rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--only", "mz_*"])
     assert rc == 2 and "unknown task: mz_*" in capsys.readouterr().out
 
+
+def _failed_from_setup(tmp_path, results):
+    tasks_file = tmp_path / "tasks.toml"
+    text = ('[[task]]\nid = "a"\nrequest = "Hoi"\n\n'
+            '[[task]]\nid = "b"\nrequest = "Hallo"\n')
+    tasks_file.write_text(text, encoding="utf-8")
+    report_path = tmp_path / "old.json"
+    report_path.write_text(_json.dumps({"results": results}), encoding="utf-8")
+    return tasks_file, report_path
+
+
+def test_failed_from_keeps_only_tasks_that_failed(tmp_path, monkeypatch):
+    tasks_file, report_path = _failed_from_setup(
+        tmp_path, [{"id": "a", "passed": False}, {"id": "b", "passed": True}])
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--failed-from", str(report_path)])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a"] and report["partial"] is True
+
+
+def test_failed_from_skips_ids_that_are_no_longer_tasks(tmp_path, monkeypatch, capsys):
+    tasks_file, report_path = _failed_from_setup(
+        tmp_path, [{"id": "gone", "passed": False}, {"id": "a", "passed": False}])
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--failed-from", str(report_path)])
+    out = capsys.readouterr().out
+    assert rc == 0 and "skipped (no longer a task): gone" in out
+
+
+def test_failed_from_with_no_failures_returns_zero_without_running(tmp_path, monkeypatch, capsys):
+    tasks_file, report_path = _failed_from_setup(tmp_path, [{"id": "a", "passed": True}])
+
+    def _boom():
+        raise AssertionError("the model must not be called")
+
+    monkeypatch.setattr(ev, "LMStudio", _boom)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--failed-from", str(report_path)])
+    assert rc == 0 and f"nothing failed in {report_path.name}" in capsys.readouterr().out
+    assert not (tmp_path / "results").exists()
+
+
+def test_failed_from_unreadable_file_returns_two(tmp_path, monkeypatch, capsys):
+    tasks_file = tmp_path / "tasks.toml"
+    tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n', encoding="utf-8")
+    missing = tmp_path / "nope.json"
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--failed-from", str(missing)])
+    assert rc == 2 and f"cannot read {missing}" in capsys.readouterr().out
+

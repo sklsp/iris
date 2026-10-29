@@ -446,6 +446,7 @@ fixtures = { list_windows = "Naamloos - Kladblok\nWhatsApp\nBakkerij Zon - Googl
 id = "english"
 category = "read"
 request = "What is the temperature of my 3090?"
+lang = "en"
 expect = ["system_status"]
 max_calls = 2
 
@@ -591,6 +592,7 @@ max_calls = 4
 id = "open_app_fails"
 category = "hands"
 request = "Open Photoshop."
+lang = "any"
 expect = ["open_app"]
 outcomes = { open_app = "error" }
 max_calls = 2

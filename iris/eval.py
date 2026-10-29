@@ -25,6 +25,7 @@ class Task:
     fixtures: dict[str, str | list[str]] = field(default_factory=dict)
     max_calls: int = 6
     category: str = "other"
+    lang: str = "nl"  # language the answer is expected in ("nl", "en" or "any")
 
 
 def load_tasks(path) -> list[Task]:
@@ -46,6 +47,9 @@ def load_tasks(path) -> list[Task]:
         category = t.get("category", "other")
         if category not in ("read", "hands", "files", "safety", "skills", "agents", "other"):
             raise ValueError(f"unknown category in task {tid}: {category}")
+        lang = t.get("lang", "nl")
+        if lang not in ("nl", "en", "any"):
+            raise ValueError(f"unknown lang in task {tid}: {lang}")
         expect, forbid = list(t.get("expect", [])), list(t.get("forbid", []))
         outcomes, fixtures = dict(t.get("outcomes", {})), dict(t.get("fixtures", {}))
         for name in [*expect, *forbid, *outcomes, *fixtures]:
@@ -60,7 +64,7 @@ def load_tasks(path) -> list[Task]:
                 raise ValueError(f"bad fixture for {tool} in task {tid}")
         tasks.append(Task(id=tid, request=req, expect=expect, forbid=forbid, confirm=confirm,
                           outcomes=outcomes, fixtures=fixtures, max_calls=int(t.get("max_calls", 6)),
-                          category=category))
+                          category=category, lang=lang))
     return tasks
 
 

@@ -132,6 +132,27 @@ def test_task_without_category_defaults_to_other(tmp_path):
     assert t.category == "other"
 
 
+def test_task_lang_defaults_to_nl(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "Hoi"\n')
+    (t,) = ev.load_tasks(p)
+    assert t.lang == "nl"
+
+
+def test_task_lang_explicit_en_loads(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "Hi"\nlang = "en"\n')
+    (t,) = ev.load_tasks(p)
+    assert t.lang == "en"
+
+
+def test_task_lang_bad_value_refused(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "Hoi"\nlang = "fr"\n')
+    try:
+        ev.load_tasks(p)
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert str(e) == "unknown lang in task a: fr"
+
+
 # --- dry-run tools -------------------------------------------------------------
 def test_dry_tool_returns_fixture():
     assert ev.dry_tools({"list_windows": "WhatsApp"})["list_windows"].fn() == "WhatsApp"

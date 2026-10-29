@@ -817,6 +817,14 @@ def test_queue_move_is_registered_with_confirm():
     assert t.params["id"]["type"] == "integer"
 
 
+# --- queue_take and queue_remove descriptions -----------------------------------
+def test_queue_take_and_remove_descriptions_point_to_the_right_tool():
+    take = tools.TOOLS["queue_take"].description
+    remove = tools.TOOLS["queue_remove"].description
+    assert "never to delete one" in take
+    assert "call queue_list first" in remove
+
+
 # --- registry guards -----------------------------------------------------------
 def test_every_tool_is_documented():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")

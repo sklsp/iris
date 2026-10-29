@@ -87,12 +87,31 @@ def _started_at_epoch(value: object) -> float | None:
         return None
 
 
-def start_in_hub(text: str, cwd: str, run=subprocess.run, sessions=None, now=None) -> str:
+def _find_started(text: str, t0: float, sessions: list[dict]) -> str | None:
+    """The session id of a `cline-cli-zen` entry started at or after t0 - 5 whose prompt contains text, else None."""
+    needle = text.strip()[:60]
+    for session in sessions:
+        if session.get("source") != "cline-cli-zen":
+            continue
+        started_at = _started_at_epoch(session.get("startedAt"))
+        if started_at is None or started_at < t0 - 5:
+            continue
+        prompt = session.get("prompt")
+        if not isinstance(prompt, str) or needle not in prompt:
+            continue
+        return session["sessionId"]
+    return None
+
+
+def start_in_hub(
+    text: str, cwd: str, run=subprocess.run, sessions=None, now=None, sleep=time.sleep, polls: int = 5
+) -> str:
     """Start a Cline session in the background hub and prove it started from the history.
 
     A timeout of the CLI call is not an error by itself (the session may still have started). FileNotFoundError
-    raises LookupError; no matching `cline-cli-zen` entry with this prompt raises RuntimeError carrying the last
-    non-empty stderr line, or "no output"."""
+    raises LookupError; no matching `cline-cli-zen` entry with this prompt after up to `polls` checks, 3 seconds
+    apart, raises RuntimeError carrying the last non-empty stderr line, or "no output". The history is checked
+    right away and again a few times because sessions can appear in it a few seconds late."""
     if sessions is None:
         sessions = partial(cline_sessions, run=run)
     if now is None:
@@ -112,21 +131,16 @@ def start_in_hub(text: str, cwd: str, run=subprocess.run, sessions=None, now=Non
     except FileNotFoundError:
         raise LookupError(f"Cline CLI not found at {cline_cli()}") from None
     except subprocess.TimeoutExpired:
-        pass  # the session may still have started; step 2 decides
+        pass  # the session may still have started; polling decides
     else:
         stderr = result.stderr or ""
 
-    needle = text.strip()[:60]
-    for session in sessions():
-        if session.get("source") != "cline-cli-zen":
-            continue
-        started_at = _started_at_epoch(session.get("startedAt"))
-        if started_at is None or started_at < t0 - 5:
-            continue
-        prompt = session.get("prompt")
-        if not isinstance(prompt, str) or needle not in prompt:
-            continue
-        return f"started Cline session {session['sessionId']} in {cwd}"
+    for attempt in range(polls):
+        if attempt > 0:
+            sleep(3)
+        sid = _find_started(text, t0, sessions())
+        if sid is not None:
+            return f"started Cline session {sid} in {cwd}"
 
     detail = next((line.strip() for line in reversed(stderr.splitlines()) if line.strip()), "no output")
     raise RuntimeError(f"Cline did not start a session: {detail}")

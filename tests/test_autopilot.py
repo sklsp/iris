@@ -337,7 +337,9 @@ def test_start_in_hub_ignores_a_session_started_before_the_window(monkeypatch):
         return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
 
     with pytest.raises(RuntimeError) as exc:
-        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+        start_in_hub(
+            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW, sleep=lambda s: None
+        )
     assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
 
 
@@ -351,7 +353,9 @@ def test_start_in_hub_ignores_a_session_with_another_prompt(monkeypatch):
         return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
 
     with pytest.raises(RuntimeError) as exc:
-        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+        start_in_hub(
+            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW, sleep=lambda s: None
+        )
     assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
 
 
@@ -365,7 +369,9 @@ def test_start_in_hub_ignores_a_session_from_another_source(monkeypatch):
         return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
 
     with pytest.raises(RuntimeError) as exc:
-        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW)
+        start_in_hub(
+            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW, sleep=lambda s: None
+        )
     assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
 
 
@@ -387,7 +393,9 @@ def test_start_in_hub_error_carries_the_last_stderr_line(monkeypatch):
         return SimpleNamespace(stdout="", stderr="first line\nsecond line\nhub timed out after 120s\n", returncode=1)
 
     with pytest.raises(RuntimeError) as exc:
-        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW)
+        start_in_hub(
+            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=lambda s: None
+        )
     assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
 
 
@@ -398,7 +406,9 @@ def test_start_in_hub_error_says_no_output_when_stderr_is_empty(monkeypatch):
         return SimpleNamespace(stdout="", stderr="   \n", returncode=1)
 
     with pytest.raises(RuntimeError) as exc:
-        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW)
+        start_in_hub(
+            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=lambda s: None
+        )
     assert str(exc.value) == "Cline did not start a session: no output"
 
 
@@ -420,6 +430,73 @@ def test_start_in_hub_defaults_to_cline_sessions_and_the_clock(monkeypatch):
 
     out = start_in_hub("fix the bug", "W:/Iris", run=fake_run)
     assert out == "started Cline session abc in W:/Iris"
+
+
+def test_start_in_hub_finds_the_session_on_the_first_check_without_sleeping(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    out = start_in_hub(
+        "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: sessions, now=lambda: HUB_NOW, sleep=fake_sleep
+    )
+    assert out == "started Cline session abc in W:/Iris"
+    assert sleeps == []  # found on the first check: no wait at all
+
+
+def test_start_in_hub_finds_a_late_session_on_the_third_check(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    seen = 0
+
+    def late_sessions() -> list[dict]:
+        nonlocal seen
+        seen += 1
+        return [] if seen < 3 else sessions  # the session appears in the history a few seconds late
+
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    out = start_in_hub(
+        "fix the bug", "W:/Iris", run=fake_run, sessions=late_sessions, now=lambda: HUB_NOW, sleep=fake_sleep
+    )
+    assert out == "started Cline session abc in W:/Iris"
+    assert seen == 3  # two empty checks before the third finds it
+    assert sleeps == [3, 3]  # a 3-second wait between checks, never before the first
+
+
+def test_start_in_hub_gives_up_after_the_polls(monkeypatch):
+    _clear_cli_env(monkeypatch)
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    with pytest.raises(RuntimeError) as exc:
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=fake_sleep)
+    assert str(exc.value) == "Cline did not start a session: hub timed out after 120s"
+    assert sleeps == [3, 3, 3, 3]  # the default five checks have four waits between them
 
 
 def _queue_file(

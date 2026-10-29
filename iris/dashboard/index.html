@@ -121,6 +121,13 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .eval-big{font-size:20px;font-weight:600;color:#e6e6e6;padding:4px 0}
 .eval-line{color:#8a9099;font-size:12px;padding:2px 0;overflow-wrap:anywhere}
 
+/* eval history */
+.eh-row{display:flex;align-items:center;gap:10px;padding:5px 8px;border-bottom:1px solid #1c1f24;font-size:12px}
+.eh-row:last-child{border-bottom:none}
+.eh-stamp{color:#e6e6e6;white-space:nowrap}
+.eh-lang{color:#d29922;font-size:11px;white-space:nowrap;flex:none}
+.eh-row .r-prog{flex:1}
+
 /* tabs */
 .tabs{display:flex;gap:2px;padding:0 18px;overflow-x:auto;background:#0e0f11;border-bottom:1px solid #23262c}
 .tab{appearance:none;background:none;border:none;border-bottom:2px solid transparent;color:#8a9099;
@@ -303,6 +310,10 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
       <section class="panel wide">
         <h2>Eval</h2>
         <div id="eval-body"><div class="empty">loading...</div></div>
+      </section>
+      <section class="panel wide">
+        <h2>History</h2>
+        <div id="eval-history-body"><div class="empty">loading...</div></div>
       </section>
     </div>
   </section>
@@ -788,8 +799,41 @@ function renderEval(d){
   body.appendChild(el("div", "eval-line", failed.length ? "Failed: " + failed.join(", ") : "Failed: none"));
 }
 
+function renderEvalHistory(d){
+  const body = $("eval-history-body");
+  body.textContent = "";
+  if (!d || !Array.isArray(d.runs)){
+    body.appendChild(el("div", "empty", d && d.error ? d.error : "history unavailable"));
+    return;
+  }
+  if (!d.runs.length){
+    body.appendChild(el("div", "empty", "No eval runs saved yet."));
+    return;
+  }
+  for (const r of d.runs){   // newest first, as the API returns them
+    const rate = Number(r.success_rate);
+    const pct = Number.isFinite(rate) ? Math.round(Math.min(1, Math.max(0, rate)) * 100) : 0;
+    const row = el("div", "eh-row");
+    row.appendChild(el("span", "eh-stamp num", r.stamp || "-"));
+    const prog = el("span", "r-prog");   // the Autopilot tab's progress bar CSS
+    const bar = el("span", "r-bar");
+    const fill = el("span", "r-fill");
+    fill.style.width = pct + "%";
+    bar.appendChild(fill);
+    prog.appendChild(bar);
+    prog.appendChild(el("span", "r-count num", (r.passed ?? 0) + "/" + (r.tasks ?? 0)));
+    row.appendChild(prog);
+    if (typeof r.language_wrong === "number"){
+      row.appendChild(el("span", "eh-lang num", "language " + r.language_wrong + " wrong"));
+    }
+    body.appendChild(row);
+  }
+}
+
 async function loadEval(){
-  renderEval(await j("/api/eval"));   // fetched when the tab is shown, not on every poll
+  const [latest, history] = await Promise.all([j("/api/eval"), j("/api/eval/history")]);
+  renderEval(latest);
+  renderEvalHistory(history);   // fetched when the tab is shown, not on every poll
 }
 
 function renderQueue(d){

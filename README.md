@@ -276,6 +276,8 @@ spoken request plus what should happen: which tools must be called, which must n
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
 from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 93 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
+It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
+`answer_not` forbids them, so a wrong number fails the task even when every tool call was right.
 
 ```bash
 .venv\Scripts\python -m iris eval                          # all tasks, report in eval/results

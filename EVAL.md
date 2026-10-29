@@ -15,6 +15,8 @@ Tasks live in a TOML file of `[[task]]` tables (default: `eval/tasks.toml`). Fie
 - `fixtures = {}`: strings the dry tools return for that tool name.
 - `category = "other"`: which group the task belongs to; reports show one row per category.
 - `lang = "nl"`: the language Jay expects in the answer (`"nl"`, `"en"` or `"any"`); see [Language](#language) below for how it is scored.
+- `answer_has = []`: strings of which at least one must appear in the last answer; see [Answer checks](#answer-checks) below.
+- `answer_not = []`: strings none of which may appear in the last answer; see [Answer checks](#answer-checks) below.
 - `max_calls = 6`: cap on total tool calls.
 
 Every tool named in `expect`/`forbid`/`outcomes`/`fixtures` must exist in the registry, or loading fails. One real task, copied from `tasks.toml`:
@@ -55,6 +57,8 @@ Sequence state is fresh per task, so two tasks never share it.
 - the agent did not give up.
 
 A task passes when it has zero reasons; a failure lists its reasons (`missing call`, `forbidden call`, wrong final outcome, `too many calls`, `gave up`).
+
+**Answer checks.** A task can also check what Iris says back: `answer_has = [...]` requires at least one of its strings to appear in the last answer, and `answer_not = [...]` fails when any of them does. Matching is case-insensitive (casefolded, with non-breaking spaces normalized) and looks only at the last answer of the conversation. That catches a failure tool grading cannot see: a task can call every right tool and still tell Jay a wrong number — read out the wrong value from a window, for instance. A failed check adds an `answer lacks any of: ...` or `answer says: ...` reason, so the task fails like any other graded rule; reports count such results as `answers: N/M wrong` in the summary line and list them in a Wrong answers section at the end of the MD.
 
 ## Multi-turn tasks
 

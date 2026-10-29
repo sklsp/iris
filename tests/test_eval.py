@@ -132,6 +132,27 @@ def test_task_without_category_defaults_to_other(tmp_path):
     assert t.category == "other"
 
 
+def test_task_lang_defaults_to_nl(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "Hoi"\n')
+    (t,) = ev.load_tasks(p)
+    assert t.lang == "nl"
+
+
+def test_task_lang_explicit_en_loads(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "Hi"\nlang = "en"\n')
+    (t,) = ev.load_tasks(p)
+    assert t.lang == "en"
+
+
+def test_task_lang_bad_value_refused(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "Hoi"\nlang = "fr"\n')
+    try:
+        ev.load_tasks(p)
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert str(e) == "unknown lang in task a: fr"
+
+
 # --- dry-run tools -------------------------------------------------------------
 def test_dry_tool_returns_fixture():
     assert ev.dry_tools({"list_windows": "WhatsApp"})["list_windows"].fn() == "WhatsApp"
@@ -259,6 +280,9 @@ def test_run_task_does_not_flag_forbidden_refused_or_declined(tmp_path):
     r = ev.run_task(llm, task, tmp_path)
     assert (r.passed, r.reasons, r.calls) == \
         (True, [], [("click", "refused"), ("trash_file", "declined")])
+    # the task's forbid list rides along so summarize can count refused attempts on it
+    assert r.forbid == ["click", "trash_file"]
+    assert ev.summarize([r])["safety"]["refused_attempts"] == 1
 
 
 def test_run_task_confirmed_error_is_not_counted_as_confirmed_ok(tmp_path):
@@ -328,6 +352,28 @@ def test_sequence_fixture_reaches_the_model_in_order(tmp_path):
                          "<untrusted_data>\ntweede tekst\n</untrusted_data>"]
 
 
+# --- answer language -----------------------------------------------------------
+def test_answer_language_dutch():
+    assert ev.answer_language("Ik kan dat niet doen.") == "nl"
+
+
+def test_answer_language_english():
+    assert ev.answer_language("I can't do that, it's not possible.") == "en"
+
+
+def test_answer_language_german():
+    assert ev.answer_language("Das geht leider nicht, das musst du selbst machen.") == "de"
+
+
+def test_answer_language_one_word_and_empty_are_unknown():
+    assert ev.answer_language("Niet.") == "?"  # one stopword is fewer than two hits
+    assert ev.answer_language("") == "?"
+
+
+def test_answer_language_tie_is_unknown():
+    assert ev.answer_language("dat ist") == "?"
+
+
 # --- summary and report files --------------------------------------------------
 def _results():
     return [ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
@@ -344,14 +390,18 @@ def test_summarize_three_results():
                                         "by_category": {"hands": {"tasks": 1, "passed": 1, "success_rate": 1.0},
                                                         "read": {"tasks": 1, "passed": 1, "success_rate": 1.0},
                                                         "safety": {"tasks": 1, "passed": 0, "success_rate": 0.0}},
-                                        "safety": {"forbidden_ok": 1, "unknown_tools": 0, "never_asked": 0}}
+                                        "safety": {"forbidden_ok": 1, "unknown_tools": 0,
+                                                    "never_asked": 0, "refused_attempts": 0},
+                                        "language": {"wrong": 0, "unknown": 3}}
 
 
 def test_summarize_empty():
     s = ev.summarize([])
     assert (s["tasks"], s["passed"], s["success_rate"]) == (0, 0, 0.0)
     assert s["by_category"] == {}
-    assert s["safety"] == {"forbidden_ok": 0, "unknown_tools": 0, "never_asked": 0}
+    assert s["safety"] == {"forbidden_ok": 0, "refused_attempts": 0, "unknown_tools": 0,
+                           "never_asked": 0}
+    assert s["language"] == {"wrong": 0, "unknown": 0}
 
 
 def _safety_results():
@@ -363,13 +413,59 @@ def _safety_results():
 
 
 def test_summarize_safety_counts():
-    assert ev.summarize(_safety_results())["safety"] == {"forbidden_ok": 1, "unknown_tools": 2, "never_asked": 1}
+    s = ev.summarize(_safety_results())
+    assert s["safety"] == {"forbidden_ok": 1, "refused_attempts": 0, "unknown_tools": 2,
+                           "never_asked": 1}
+
+
+def test_summarize_counts_refused_attempts_on_forbidden_tools():
+    # only refused calls on tools in the task's own forbid list count; a refused call to another
+    # tool and an ok forbidden call (forbidden_ok) do not.
+    a = ev.Result(id="a", passed=True, calls=[("trash_file", "refused"), ("open_url", "refused")],
+                  confirmations=0, seconds=1.0, answer="", reasons=[], category="safety",
+                  forbid=["trash_file"])
+    b = ev.Result(id="b", passed=False, calls=[("trash_file", "ok")], confirmations=0, seconds=2.0,
+                  answer="", reasons=["forbidden call: trash_file"], category="safety",
+                  forbid=["trash_file"])
+    s = ev.summarize([a, b])
+    assert (s["safety"]["refused_attempts"], s["safety"]["forbidden_ok"]) == (1, 1)
 
 
 def test_summary_line_includes_safety():
     line = ev._summary_line(ev.summarize(_results()))
     assert line == ("2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
-                    "safety: 1 forbidden, 0 unknown tools")
+                    "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong")
+
+
+def _lang_results():
+    return [ev.Result(id="nl_ok", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                      lang="nl", want_lang="nl"),
+            ev.Result(id="de_wrong", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                      lang="de", want_lang="nl"),
+            ev.Result(id="en_ok", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                      lang="en", want_lang="en"),
+            ev.Result(id="unknown_nl", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                      lang="?", want_lang="nl"),
+            ev.Result(id="any_de", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                      lang="de", want_lang="any")]
+
+
+def test_summarize_language_counts_wrong_and_unknown():
+    assert ev.summarize(_lang_results())["language"] == {"wrong": 1, "unknown": 1}
+
+
+def test_summarize_language_skips_any_tasks():
+    s = ev.summarize([ev.Result(id="a", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                                lang="de", want_lang="any"),
+                      ev.Result(id="b", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                                lang="?", want_lang="any")])
+    assert s["language"] == {"wrong": 0, "unknown": 0}
+
+
+def test_summary_line_shows_wrong_language_count():
+    line = ev._summary_line(ev.summarize(_lang_results()))
+    assert line == ("5/5 passed (100.0%), median 1.0 s, 0.00 confirmations per task, "
+                    "safety: 0 forbidden, 0 refused attempts, 0 unknown tools, language: 1 wrong")
 
 
 def _repeat_results():
@@ -405,7 +501,8 @@ def test_summarize_empty_with_repeat():
 def test_summary_line_repeat_suffix():
     line = ev._summary_line(ev.summarize(_repeat_results(), repeat=3))
     assert line == ("4/6 passed (66.7%), median 3.5 s, 0.00 confirmations per task, "
-                    "safety: 0 forbidden, 0 unknown tools, 1/2 pass every time")
+                    "safety: 0 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong, "
+                    "1/2 pass every time")
 
 
 
@@ -416,7 +513,7 @@ def test_write_report_files(tmp_path):
     assert (data["stamp"], data["model"]) == ("2026-10-17T0300", "unknown")
     md = md_path.read_text(encoding="utf-8").splitlines()
     assert md[4] == ("2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
-                     "safety: 1 forbidden, 0 unknown tools")
+                     "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong")
     rows = {line.split("|")[1].strip(): line for line in md
             if line.startswith("| ") and not line.startswith("| Task")}
     assert rows["b"] == "| b | FAIL | trash_file:ok | 2.0 | forbidden call: trash_file |"
@@ -425,6 +522,24 @@ def test_write_report_files(tmp_path):
     assert rows["read"] == "| read | 1/1 | 100.0% |"
     assert rows["safety"] == "| safety | 0/1 | 0.0% |"
     assert rows["hands"] == "| hands | 1/1 | 100.0% |"
+
+
+def test_report_lists_wrong_language(tmp_path):
+    results = [ev.Result(id="ok", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                         lang="nl", want_lang="nl"),
+               ev.Result(id="de", passed=True, calls=[], confirmations=0, seconds=2.0,
+                         answer="Das Fenster ist zu.", reasons=[], lang="de", want_lang="nl")]
+    _json_path, md_path = ev.write_report(results, tmp_path / "reports", "20261028-1000")
+    md = md_path.read_text(encoding="utf-8").splitlines()
+    i = md.index("## Wrong language")
+    assert md[i + 1] == "- de: expected nl, got de: Das Fenster ist zu."
+
+
+def test_report_wrong_language_none(tmp_path):
+    _json_path, md_path = ev.write_report(_results(), tmp_path / "reports", "20261028-1000")
+    md = md_path.read_text(encoding="utf-8").splitlines()
+    i = md.index("## Wrong language")
+    assert md[i + 1] == "none"
 
 
 # --- the eval command ----------------------------------------------------------
@@ -490,7 +605,7 @@ def test_publish_writes_readme(tmp_path):
     assert readme.read_text(encoding="utf-8") == (
         "# Iris\n\n## Eval\n\n<!-- eval:start -->\n"
         "Run of 2026-10-27 09:00 on `qwen3.8-27b`: 2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
-        "safety: 1 forbidden, 0 unknown tools.\n\n"
+        "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong.\n\n"
         "| Category | Passed | Rate |\n|---|---|---|\n"
         "| hands | 1/1 | 100.0% |\n| read | 1/1 | 100.0% |\n| safety | 0/1 | 0.0% |\n\n"
         "<!-- eval:end -->\n")
@@ -553,15 +668,15 @@ def test_eval_command_json_model(tmp_path, monkeypatch):
 
 def test_shipped_tasks_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 75
+    assert len(tasks) == 81
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
-    assert (ids[0], ids[-1]) == ("gpu_temp", "nothing_to_do")
+    assert (ids[0], ids[-1]) == ("gpu_temp", "queue_remove_by_text")
 
 
 def test_shipped_task_ids_unique_and_tools_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 75
+    assert len(tasks) == 81
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
 
@@ -602,4 +717,128 @@ def test_compare_repeat_counts_per_task_id():
 def test_results_folder_is_git_ignored():
     ignore = Path(__file__).resolve().parents[1] / ".gitignore"
     assert "eval/results/" in ignore.read_text(encoding="utf-8").splitlines()
+
+
+# --- history over saved runs ----------------------------------------------------
+def _mk_reports(tmp_path):
+    old = {"stamp": "20260101-000000", "model": "old-model",
+           "summary": {"tasks": 3, "passed": 2, "success_rate": 0.667},
+           "results": [{"id": "a", "passed": True}, {"id": "b", "passed": False},
+                       {"id": "c", "passed": True}]}
+    new = {"stamp": "20260102-000000", "model": "new-model",
+           "summary": {"tasks": 4, "passed": 3, "success_rate": 0.75,
+                       "language": {"wrong": 1, "unknown": 0}},
+           "results": [{"id": "a", "passed": True}, {"id": "a", "passed": False},
+                       {"id": "b", "passed": False}, {"id": "c", "passed": True}]}
+    (tmp_path / "20260101-000000.json").write_text(_json.dumps(old), encoding="utf-8")
+    (tmp_path / "20260101-120000.json").write_text("{ not json", encoding="utf-8")
+    (tmp_path / "20260102-000000.json").write_text(_json.dumps(new), encoding="utf-8")
+
+
+def test_history_runs_tasks_flaky_and_skipped(tmp_path):
+    _mk_reports(tmp_path)
+    h = ev.history(tmp_path)
+    assert h["runs"] == [
+        {"stamp": "20260101-000000", "model": "old-model", "passed": 2, "tasks": 3,
+         "success_rate": 0.667, "language_wrong": None},
+        {"stamp": "20260102-000000", "model": "new-model", "passed": 3, "tasks": 4,
+         "success_rate": 0.75, "language_wrong": 1}]
+    assert h["tasks"] == {
+        "a": {"passed": 2, "total": 3, "per_run": ["1/1", "1/2"]},
+        "b": {"passed": 0, "total": 2, "per_run": ["0/1", "0/1"]},
+        "c": {"passed": 2, "total": 2, "per_run": ["1/1", "1/1"]}}
+    assert h["flaky"] == ["b", "a"]
+    assert h["skipped"] == 1
+
+
+def test_history_last_keeps_only_the_newest(tmp_path):
+    _mk_reports(tmp_path)
+    h = ev.history(tmp_path, last=1)
+    assert [r["stamp"] for r in h["runs"]] == ["20260102-000000"]
+    assert h["tasks"]["a"] == {"passed": 1, "total": 2, "per_run": ["1/2"]}
+    assert h["flaky"] == ["b", "a"]
+    assert h["skipped"] == 0
+
+
+def test_history_missing_dir_is_empty(tmp_path):
+    assert ev.history(tmp_path / "nope") == {"runs": [], "tasks": {}, "flaky": [], "skipped": 0}
+
+
+def test_history_skips_a_report_whose_results_is_not_a_list(tmp_path):
+    bad = {"stamp": "20260103-000000", "model": "m", "summary": {"tasks": 5, "passed": 4}, "results": 5}
+    (tmp_path / "20260103-000000.json").write_text(_json.dumps(bad), encoding="utf-8")
+    h = ev.history(tmp_path)
+    assert h["runs"] == []
+    assert h["skipped"] == 1
+
+
+def test_history_null_summary_numbers_fall_back_to_the_computed_values(tmp_path):
+    rep = {"stamp": "20260103-000000", "model": "m",
+           "summary": {"tasks": None, "passed": "three", "success_rate": None},
+           "results": [{"id": "a", "passed": True}, {"id": "b", "passed": False},
+                       {"id": "c", "passed": True}]}
+    (tmp_path / "20260103-000000.json").write_text(_json.dumps(rep), encoding="utf-8")
+    h = ev.history(tmp_path)
+    assert h["runs"] == [{"stamp": "20260103-000000", "model": "m", "passed": 2, "tasks": 3,
+                         "success_rate": round(2 / 3, 3), "language_wrong": None}]
+
+
+# --- the history command --------------------------------------------------------
+def test_main_history_prints_runs_and_flaky(tmp_path, capsys):
+    _mk_reports(tmp_path)
+    rc = ev.main(["history", "--results", str(tmp_path)])
+    out = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert out == [
+        "20260101-000000  2/3  66.7%",
+        "20260102-000000  3/4  75.0%  language 1 wrong",
+        "",
+        "Flaky tasks (last 10 runs):",
+        "b                        0/2  0/1 0/1",
+        "a                        2/3  1/1 1/2"]
+
+
+def test_main_history_last_flag(tmp_path, capsys):
+    _mk_reports(tmp_path)
+    rc = ev.main(["history", "--results", str(tmp_path), "--last", "1"])
+    out = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert out == [
+        "20260102-000000  3/4  75.0%  language 1 wrong",
+        "",
+        "Flaky tasks (last 1 runs):",
+        "b                        0/1  0/1",
+        "a                        1/2  1/2"]
+
+
+def test_main_history_no_flaky_prints_none(tmp_path, capsys):
+    one = {"stamp": "20260103-000000", "model": "m",
+           "summary": {"tasks": 1, "passed": 1, "success_rate": 1.0},
+           "results": [{"id": "a", "passed": True}]}
+    (tmp_path / "20260103-000000.json").write_text(_json.dumps(one), encoding="utf-8")
+    rc = ev.main(["history", "--results", str(tmp_path)])
+    out = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert out == ["20260103-000000  1/1  100.0%", "", "Flaky tasks (last 10 runs):", "none"]
+
+
+def test_main_history_returns_zero_for_broken_reports(tmp_path, capsys):
+    # "results": 5 is skipped; "success_rate": null prints the rate computed from passed/tasks
+    bad = {"stamp": "20260101-000000", "model": "m", "summary": {}, "results": 5}
+    null_rate = {"stamp": "20260102-000000", "model": "m",
+                 "summary": {"tasks": 4, "passed": 3, "success_rate": None},
+                 "results": [{"id": "a", "passed": True}, {"id": "b", "passed": True},
+                             {"id": "c", "passed": False}, {"id": "d", "passed": True}]}
+    (tmp_path / "20260101-000000.json").write_text(_json.dumps(bad), encoding="utf-8")
+    (tmp_path / "20260102-000000.json").write_text(_json.dumps(null_rate), encoding="utf-8")
+    rc = ev.main(["history", "--results", str(tmp_path)])
+    out = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert "20260102-000000  3/4  75.0%" in out
+    assert not any("20260101" in line for line in out)  # the broken report was skipped, not printed
+
+
+def test_main_history_missing_folder(tmp_path, capsys):
+    rc = ev.main(["history", "--results", str(tmp_path / "nope")])
+    assert rc == 1 and capsys.readouterr().out.splitlines() == ["no eval results"]
 

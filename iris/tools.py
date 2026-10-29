@@ -304,7 +304,9 @@ def _window(title: str):
     t = title.lower()
     wins = [w for w in _desktop().windows() if t in w.window_text().lower()]
     if not wins:
-        raise LookupError(f"no window whose title contains {title!r}")
+        raise LookupError(
+            f"no window whose title contains {title!r}; it is not open now. Call list_windows once to check, "
+            f"then tell Jay instead of retrying.")
     return wins[0]
 
 
@@ -378,6 +380,13 @@ def _click_tier(args: dict) -> str:
 
 def _type_tier(args: dict) -> str:
     return NEVER if _NEVER_WORDS.search(str(args.get("into", ""))) else CONFIRM
+
+
+def _open_url_tier(args: dict) -> str:
+    from urllib.parse import urlparse
+
+    scheme = urlparse(str(args.get("url", ""))).scheme.lower()
+    return SAFE if scheme in ("http", "https") else NEVER
 
 
 # --- hands --------------------------------------------------------------------
@@ -538,6 +547,35 @@ def queue_take(agent: str) -> str:
     return f"Next prompt for {p['agent']} (removed from the queue):\n{p['text']}"
 
 
+def queue_remove(id: int) -> str:
+    """Remove one waiting prompt from Jay's agent queue by its id (the number queue_list shows). Asks Jay first."""
+    from iris.prompt_queue import remove as _remove
+
+    try:
+        p = _remove(id)
+    except LookupError:
+        return f"error: no prompt with id {id}"
+    text = str(p.get("text", ""))
+    if len(text) > 80:
+        text = text[:77] + "..."
+    return f"Removed prompt {p['id']} for {p['agent']}: {text}"
+
+
+def queue_move(id: int, direction: str) -> str:
+    """Move one waiting prompt in Jay's agent queue one place up (earlier) or down (later) by its id. Asks Jay first."""
+    from iris.prompt_queue import listing as _listing
+    from iris.prompt_queue import move as _move
+
+    d = direction.strip().lower()
+    if d not in ("up", "down"):
+        return 'error: direction must be "up" or "down"'
+    try:
+        _move(id, -1 if d == "up" else 1)
+    except LookupError:
+        return f"error: no prompt with id {id}"
+    return f"Moved prompt {id} {d}.\n{_listing()}"
+
+
 def cline_start(agent: str, repo: str = "") -> str:
     """Start a new Cline session for this agent with the next queued prompt, in repo (default W:/Iris).
 
@@ -588,10 +626,12 @@ TOOLS = {t.name: t for t in [
          "Which models LM Studio has loaded and how many it knows. Read only: never loads or unloads.",
          {}, [], SAFE, lmstudio_models),
     Tool("lmstudio_load",
-         "Load a model in LM Studio by its id. Ask first: loading takes VRAM and can take minutes.",
+         "Load a model in LM Studio by its id. Ask first: loading takes VRAM and can take minutes. "
+         "Not for \"laad ... uit\" or \"uitladen\": that means unload.",
          {"model": S}, ["model"], CONFIRM, lmstudio_load),
     Tool("lmstudio_unload",
-         "Unload a model from LM Studio by its id, or all of them with \"all\". Asks Jay first.",
+         "Unload a model from LM Studio by its id, or all of them with \"all\" (Dutch: \"laad ... uit\", "
+         "\"uitladen\"). Asks Jay first.",
          {"model": S}, ["model"], CONFIRM, lmstudio_unload, _unload_tier),
     Tool("followups",
          "Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note. Read only.",
@@ -619,7 +659,7 @@ TOOLS = {t.name: t for t in [
          {"window": S, "direction": {"type": "string", "enum": ["up", "down"]},
           "amount": {"type": "integer"}}, ["window", "direction"], SAFE, scroll),
     Tool("open_url", "Open an http or https URL in the default browser. file:, javascript: and data: are refused.",
-         {"url": S}, ["url"], SAFE, open_url),
+         {"url": S}, ["url"], SAFE, open_url, _open_url_tier),
     Tool("trash_file",
          "Move a file or folder to Iris's trash (undoable with restore_trash). Never deletes permanently.",
          {"path": S}, ["path"], CONFIRM, trash_file, _trash_tier),
@@ -635,10 +675,19 @@ TOOLS = {t.name: t for t in [
     Tool("queue_add", "Put a prompt in Jay's agent queue for one agent (a repo or chat name). Asks Jay first.",
           {"agent": S, "text": S}, ["agent", "text"], CONFIRM, queue_add),
     Tool("queue_take",
-         "Take the oldest waiting prompt for one agent out of the queue and return its text,"
-         " so it can be pasted with type_text."
-         " Asks Jay first.",
+         "Take the oldest waiting prompt for one agent out of the queue to paste it into that agent:"
+         " returns its text so it can be pasted with type_text."
+         " Only for handing a prompt to an agent, never to delete one. Asks Jay first.",
           {"agent": S}, ["agent"], CONFIRM, queue_take),
+    Tool("queue_remove",
+         "Delete one waiting prompt from Jay's agent queue by its id."
+         " Use this whenever Jay wants a prompt removed, deleted or gone,"
+         " also when he names it by its text: call queue_list first to find its id. Asks Jay first.",
+         {"id": {"type": "integer"}}, ["id"], CONFIRM, queue_remove),
+    Tool("queue_move",
+         "Move one waiting prompt in Jay's agent queue one place up (earlier) or down (later)"
+         " by its id. Asks Jay first.",
+         {"id": {"type": "integer"}, "direction": S}, ["id", "direction"], CONFIRM, queue_move),
     Tool("cline_start",
          "Start a new Cline session for this agent with the next queued prompt, in repo (default W:/Iris)."
          " Asks Jay first.",

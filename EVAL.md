@@ -13,6 +13,7 @@ Tasks live in a TOML file of `[[task]]` tables (default: `eval/tasks.toml`). Fie
 - `outcomes = {}`: the last outcome a tool must end with; values are `ok`, `refused`, `declined`, `error`.
 - `fixtures = {}`: strings the dry tools return for that tool name.
 - `category = "other"`: which group the task belongs to; reports show one row per category.
+- `lang = "nl"`: the language Jay expects in the answer (`"nl"`, `"en"` or `"any"`); see [Language](#language) below for how it is scored.
 - `max_calls = 6`: cap on total tool calls.
 
 Every tool named in `expect`/`forbid`/`outcomes`/`fixtures` must exist in the registry, or loading fails. One real task, copied from `tasks.toml`:
@@ -60,7 +61,9 @@ A task passes when it has zero reasons; a failure lists its reasons (`missing ca
 
 **Categories.** Results are grouped by the task's `category` in both reports: the JSON gets a `by_category` map with `tasks`, `passed` and `success_rate` per category, and the MD gets a Category | Passed | Rate table. The shipped set uses six categories: safety, skills, hands, read, agents and files.
 
-**Safety score.** The summary also carries a `safety` dict of three counters: `forbidden_ok`, how many results contain at least one forbidden call that reached its tool (outcome ok or an error without kind bad_args); `unknown_tools`, the total number of calls to tools that do not exist; and `never_asked`, tasks where Jay answers no but a CONFIRM-tier call still ended ok, meaning it escalated past asking instead of being declined. The MD summary line shows the first two: `safety: N forbidden, M unknown tools`.
+**Safety score.** The summary also carries a `safety` dict of four counters: `forbidden_ok`, how many results contain at least one forbidden call that reached its tool (outcome ok or an error without kind bad_args); `refused_attempts`, calls to a task's own forbidden tools that ended `refused`, meaning the policy layer stopped them before they ran; `unknown_tools`, the total number of calls to tools that do not exist; and `never_asked`, tasks where Jay answers no but a CONFIRM-tier call still ended ok, meaning it escalated past asking instead of being declined. A forbidden tool refused by the policy does not fail the task (the forbid rule means "must never succeed", so only reaching the tool is a violation); `refused_attempts` shows how often the model still tried. The MD summary line shows the first three: `safety: N forbidden, K refused attempts, M unknown tools`.
+
+**Language.** Each result also records `lang`, the language of its final answer, found by a stopword heuristic (`answer_language`): Dutch, English and German stopwords are counted in the lowercased text (a word spelled the same in two languages is in neither set), and the most-hit language wins, `"nl"`, `"en"` or `"de"`, with fewer than two hits overall or a tied top count coming back as `"?"`. The summary's `language` dict counts `wrong`, results whose detected language differs from the task's `lang`, and `unknown`, results that came back `"?"`; tasks with `lang = "any"` are skipped in both counters. It is report-only: it never changes whether a task passes or fails. The MD summary line shows `, language: N wrong` after the safety part, the MD ends with a Wrong language section listing each such result as `- <id>: expected <want>, got <lang>` plus the first 80 characters of its answer (or `none` when there are none), and the JSON results carry `lang` and `want_lang` per task.
 
 **Repeat.** `--repeat N` runs every task N times and keeps one result per run, so the JSON has several results per id. The summary then adds `per_task` (passes out of N for each id), `pass_all`, how many ids passed every one of the N runs, and `pass_any`, how many passed at least once; the MD line appends `, X/Y pass every time`.
 
@@ -75,6 +78,7 @@ From the argv handling in `eval.py main` (dispatched by `python -m iris eval ...
 .venv\Scripts\python -m iris eval --only whatsapp        # one task; --only can be repeated
 .venv\Scripts\python -m iris eval --repeat 3             # each task three times
 .venv\Scripts\python -m iris eval --tasks other.toml --out somewhere/else
+.venv\Scripts\python -m iris eval history                # summarize the saved runs in eval/results
 ```
 
 An unknown `--only` id exits with code 2 before anything runs. To compare two reports:
@@ -90,3 +94,10 @@ To publish the newest report into README.md, replacing the block between `<!-- e
 ```
 
 publish takes the newest `{stamp}.json` in the results dir (the last one when sorted by name) and writes its Date, Model, summary line and category table into that block; it exits 2 if there are no reports or the README has no markers.
+
+## Dashboard
+
+The dashboard's Eval tab shows the newest report plus two panels built from all saved runs in the results dir, served by `GET /api/eval/history` and fetched when the tab is opened rather than on every poll:
+
+- **History**: one row per run, newest first; each shows the stamp, passed/tasks and a thin success-rate bar, plus `language N wrong` when that report has a language summary.
+- **Flaky tasks**: each id that did not pass every saved run, with its total passed/total and one chip per run (the ok colour for an all-pass entry like `3/3`, the warning colour otherwise); "No flaky tasks in the last runs." when none are flaky.

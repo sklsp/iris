@@ -1,6 +1,7 @@
 """Measures how well the model behind Iris picks tools, with dry-run tools."""
 import argparse
 import json
+import re
 import statistics
 import tempfile
 import time
@@ -24,6 +25,7 @@ class Task:
     fixtures: dict[str, str | list[str]] = field(default_factory=dict)
     max_calls: int = 6
     category: str = "other"
+    lang: str = "nl"  # language the answer is expected in ("nl", "en" or "any")
 
 
 def load_tasks(path) -> list[Task]:
@@ -45,6 +47,9 @@ def load_tasks(path) -> list[Task]:
         category = t.get("category", "other")
         if category not in ("read", "hands", "files", "safety", "skills", "agents", "other"):
             raise ValueError(f"unknown category in task {tid}: {category}")
+        lang = t.get("lang", "nl")
+        if lang not in ("nl", "en", "any"):
+            raise ValueError(f"unknown lang in task {tid}: {lang}")
         expect, forbid = list(t.get("expect", [])), list(t.get("forbid", []))
         outcomes, fixtures = dict(t.get("outcomes", {})), dict(t.get("fixtures", {}))
         for name in [*expect, *forbid, *outcomes, *fixtures]:
@@ -59,7 +64,7 @@ def load_tasks(path) -> list[Task]:
                 raise ValueError(f"bad fixture for {tool} in task {tid}")
         tasks.append(Task(id=tid, request=req, expect=expect, forbid=forbid, confirm=confirm,
                           outcomes=outcomes, fixtures=fixtures, max_calls=int(t.get("max_calls", 6)),
-                          category=category))
+                          category=category, lang=lang))
     return tasks
 
 
@@ -92,6 +97,9 @@ class Result:
     category: str = "other"
     confirm: str = "yes"  # the task's confirm setting ("yes"/"no")
     confirmed_ok: int = 0  # CONFIRM-tier calls that ended ok
+    lang: str = "?"  # language of the answer (answer_language), "?" when unsure
+    want_lang: str = "nl"  # the task's expected language ("nl", "en" or "any")
+    forbid: list[str] = field(default_factory=list)  # the task's forbid list, for refused_attempts
 
 
 def run_task(llm, task: Task, journal_dir=None) -> Result:
@@ -150,7 +158,39 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
 
     return Result(id=task.id, passed=not reasons, calls=calls, confirmations=confirmations,
                   seconds=seconds, answer=answer_text, reasons=reasons, category=task.category,
-                  confirm=task.confirm, confirmed_ok=confirmed_ok)
+                  confirm=task.confirm, confirmed_ok=confirmed_ok, lang=answer_language(answer_text),
+                  want_lang=task.lang, forbid=task.forbid)
+
+
+# Stopwords for answer_language: very common words per language that the other two do not share. A word
+# spelled the same in two languages (is, open, in) goes in neither set.
+_NL_WORDS = frozenset({"ik", "je", "het", "een", "niet", "dat", "op", "naar", "wil", "kan", "maar",
+                       "nog", "even", "zelf", "staat", "heb", "geen", "wat", "deze", "ook", "al",
+                       "dan", "er", "met", "voor", "bij"})
+_EN_WORDS = frozenset({"i", "you", "the", "it's", "not", "can't", "this", "that", "to", "want",
+                       "but", "still", "just", "have", "there", "what", "window", "am", "are",
+                       "were", "been", "will", "would", "could"})
+_DE_WORDS = frozenset({"ich", "du", "das", "nicht", "ist", "kann", "aber", "noch", "selbst",
+                       "habe", "kein", "musst", "leider", "bitte", "wirklich", "es", "mir",
+                       "dich", "bin", "bist", "sind", "war", "waren", "wird", "werden", "muss"})
+
+
+def answer_language(text: str) -> str:
+    """Which of Dutch, English or German this text is in: 'nl', 'en' or 'de'; '?' when unsure."""
+    words = re.findall(r"[a-zà-ÿ']+", text.lower())
+    hits = {"nl": sum(1 for w in words if w in _NL_WORDS),
+            "en": sum(1 for w in words if w in _EN_WORDS),
+            "de": sum(1 for w in words if w in _DE_WORDS)}
+    best = max(hits.values())
+    winners = [lang for lang, n in hits.items() if n == best]
+    if sum(hits.values()) < 2 or len(winners) > 1:
+        return "?"
+    return winners[0]
+
+
+def _wrong_language(r: Result) -> bool:
+    """True when r answered in a language its task did not want ('any' tasks and unsure answers never count)."""
+    return r.want_lang != "any" and r.lang != "?" and r.lang != r.want_lang
 
 
 def summarize(results: list[Result], repeat: int = 1) -> dict:
@@ -158,7 +198,8 @@ def summarize(results: list[Result], repeat: int = 1) -> dict:
     if not results:
         s = {"tasks": 0, "passed": 0, "success_rate": 0.0, "median_seconds": 0.0,
              "confirmations_per_task": 0.0, "failed": [], "by_category": {},
-             "safety": {"forbidden_ok": 0, "unknown_tools": 0, "never_asked": 0}}
+             "safety": {"forbidden_ok": 0, "unknown_tools": 0, "never_asked": 0, "refused_attempts": 0},
+             "language": {"wrong": 0, "unknown": 0}}
         if repeat > 1:
             s.update({"repeat": repeat, "per_task": {}, "pass_all": 0, "pass_any": 0})
         return s
@@ -175,8 +216,12 @@ def summarize(results: list[Result], repeat: int = 1) -> dict:
                          for c, rs in sorted(by.items())},
          "safety": {"forbidden_ok": sum(1 for r in results for reason in r.reasons
                                         if reason.startswith("forbidden call:")),
+                     "refused_attempts": sum(1 for r in results for t, o in r.calls
+                                             if o == "refused" and t in r.forbid),
                      "unknown_tools": sum(1 for r in results for _t, o in r.calls if o == "unknown"),
-                     "never_asked": sum(1 for r in results if r.confirm == "no" and r.confirmed_ok > 0)}}
+                     "never_asked": sum(1 for r in results if r.confirm == "no" and r.confirmed_ok > 0)},
+          "language": {"wrong": sum(1 for r in results if _wrong_language(r)),
+                       "unknown": sum(1 for r in results if r.want_lang != "any" and r.lang == "?")}}
     if repeat > 1:
         runs: dict[str, list[bool]] = {}
         for r in results:
@@ -191,7 +236,8 @@ def summarize(results: list[Result], repeat: int = 1) -> dict:
 def _summary_line(s: dict) -> str:
     line = (f"{s['passed']}/{s['tasks']} passed ({s['success_rate'] * 100:.1f}%), "
             f"median {s['median_seconds']:.1f} s, {s['confirmations_per_task']:.2f} confirmations per task, "
-            f"safety: {s['safety']['forbidden_ok']} forbidden, {s['safety']['unknown_tools']} unknown tools")
+            f"safety: {s['safety']['forbidden_ok']} forbidden, {s['safety']['refused_attempts']} refused attempts, "
+            f"{s['safety']['unknown_tools']} unknown tools, language: {s['language']['wrong']} wrong")
     if s.get("repeat", 1) > 1:
         line += f", {s['pass_all']}/{len(s['per_task'])} pass every time"
     return line
@@ -220,6 +266,9 @@ def write_report(results: list[Result], out_dir, stamp: str, model: str = "", re
         lines.append(f"| {r.id} | {'pass' if r.passed else 'FAIL'} | "
                      f"{', '.join(f'{t}:{o}' for t, o in r.calls) or '-'} | {r.seconds:.1f} | "
                      f"{' ; '.join(r.reasons) or '-'} |")
+    lines += ["", "## Wrong language"]
+    wrong = [r for r in results if _wrong_language(r)]
+    lines += ([f"- {r.id}: expected {r.want_lang}, got {r.lang}: {r.answer[:80]}" for r in wrong] or ["none"])
     md_path = out_dir / f"{stamp}.md"
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path, md_path
@@ -247,6 +296,83 @@ def compare(a: dict, b: dict) -> list[str]:
     same = sum(1 for i in ids if i in pa and i in pb and pa[i] == pb[i])
     lines.append(f"same: {same}")
     return lines
+
+
+def _num_or(value, fallback):
+    """value when it is an int/float (bools do not count), else the computed fallback."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+    return fallback
+
+
+def history(results_dir, last: int = 10) -> dict:
+    """Read-only trend over the newest reports in results_dir; never writes anything there.
+
+    A report whose "results" is not a list is skipped (counted in "skipped"); summary numbers that are
+    not int/float fall back to values computed from results."""
+    out: dict = {"runs": [], "tasks": {}, "flaky": [], "skipped": 0}
+    d = Path(results_dir)
+    if not d.is_dir():
+        return out
+    files = sorted(d.glob("*.json"))[-last:] if last > 0 else []
+    per_task: dict[str, list[tuple[int, int]]] = {}
+    for f in files:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            out["skipped"] += 1
+            continue
+        if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+            out["skipped"] += 1
+            continue
+        results = [r for r in data["results"] if isinstance(r, dict) and "id" in r]
+        s = data.get("summary")
+        if not isinstance(s, dict):
+            s = {}
+        passed = _num_or(s.get("passed"), sum(1 for r in results if r.get("passed")))
+        tasks_n = _num_or(s.get("tasks"), len(results))
+        rate = _num_or(s.get("success_rate"), round(passed / tasks_n, 3) if tasks_n else 0.0)
+        lang = s.get("language")
+        out["runs"].append({"stamp": data.get("stamp", f.stem), "model": data.get("model", ""),
+                            "passed": passed, "tasks": tasks_n, "success_rate": rate,
+                            "language_wrong": lang.get("wrong") if isinstance(lang, dict) else None})
+        by: dict[str, list[bool]] = {}
+        for r in results:
+            by.setdefault(r["id"], []).append(bool(r.get("passed")))
+        for tid, flags in sorted(by.items()):
+            per_task.setdefault(tid, []).append((sum(flags), len(flags)))
+    for tid, entries in sorted(per_task.items()):
+        p = sum(x[0] for x in entries)
+        t = sum(x[1] for x in entries)
+        out["tasks"][tid] = {"passed": p, "total": t, "per_run": [f"{a}/{b}" for a, b in entries]}
+    flaky: list[tuple[float, str]] = []
+    for tid, v in out["tasks"].items():
+        if v["passed"] < v["total"]:
+            flaky.append((v["passed"] / v["total"], tid))
+    out["flaky"] = [tid for _, tid in sorted(flaky)]
+    return out
+
+
+def print_history(results_dir, last: int) -> int:
+    """Print the trend over the newest saved runs (read only)."""
+    if not Path(results_dir).is_dir():
+        print("no eval results")
+        return 1
+    h = history(results_dir, last=last)
+    for r in h["runs"]:
+        rate = _num_or(r.get("success_rate"), round(r["passed"] / r["tasks"], 3) if r["tasks"] else 0.0)
+        line = f"{r['stamp']}  {r['passed']}/{r['tasks']}  {rate * 100:.1f}%"
+        if r["language_wrong"] is not None:
+            line += f"  language {r['language_wrong']} wrong"
+        print(line)
+    print()
+    print(f"Flaky tasks (last {last} runs):")
+    for tid in h["flaky"]:
+        t = h["tasks"][tid]
+        print(f"{tid:<24} {t['passed']}/{t['total']}  {' '.join(t['per_run'])}")
+    if not h["flaky"]:
+        print("none")
+    return 0
 
 
 def publish(results_dir, readme_path) -> int:
@@ -277,17 +403,21 @@ def publish(results_dir, readme_path) -> int:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="iris eval", description=__doc__)
-    ap.add_argument("command", nargs="?", default="run", choices=("run", "publish"))
+    ap.add_argument("command", nargs="?", default="run", choices=("run", "publish", "history"))
     ap.add_argument("--tasks", default="eval/tasks.toml")
     ap.add_argument("--out", default="eval/results")
     ap.add_argument("--only", action="append", default=None, metavar="ID")
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--results", default="eval/results")
     ap.add_argument("--readme", default="README.md")
+    ap.add_argument("--last", type=int, default=10)
     a = ap.parse_args(argv)
 
     if a.command == "publish":
         return publish(a.results, a.readme)
+
+    if a.command == "history":
+        return print_history(a.results, a.last)
 
     tasks = load_tasks(Path(a.tasks))
     if a.only:

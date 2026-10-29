@@ -65,6 +65,19 @@ def test_focus_window(fake_window):
     assert fake_window.focus_calls == 1
 
 
+def test_missing_window_error_tells_the_model_to_stop_retrying(monkeypatch):
+    class EmptyDesktop:
+        def windows(self):
+            return []
+
+    monkeypatch.setattr(tools, "_desktop", lambda: EmptyDesktop())
+    with pytest.raises(LookupError) as exc:
+        tools.focus_window("Spotify")
+    assert str(exc.value) == (
+        "no window whose title contains 'Spotify'; it is not open now. Call list_windows once to check, "
+        "then tell Jay instead of retrying.")
+
+
 # --- scroll -------------------------------------------------------------------
 def test_scroll_down_sends_negative_delta(monkeypatch, fake_window):
     calls = []
@@ -597,6 +610,13 @@ def test_lmstudio_unload_tier_is_confirm():
     assert tools.TOOLS["lmstudio_unload"].tier == tools.CONFIRM
 
 
+def test_lmstudio_load_and_unload_descriptions_cover_the_dutch_phrasings():
+    load = tools.TOOLS["lmstudio_load"].description
+    unload = tools.TOOLS["lmstudio_unload"].description
+    assert "laad ... uit" in load and "uitladen" in load
+    assert "laad ... uit" in unload and "uitladen" in unload
+
+
 # --- followups -----------------------------------------------------------------
 PIPELINE_CSV = """osm,name,status,note,next,tier,since,demo,updated
 node/1,Bakkerij Zon,interesse,eigenaar vond demo goed,2026-10-17,,,https://bakkerij-zon.example.com,2026-10-12
@@ -728,6 +748,101 @@ def test_concept_sites_lists_and_checks(tmp_path, monkeypatch):
     assert calls[0][-3:] == ["-m", "conceptkit", "list"]
     assert calls[1][-4:] == ["-m", "conceptkit", "check", "--all"]
     assert tools.TOOLS["concept_sites"].tier == tools.SAFE
+
+
+# --- queue_remove ---------------------------------------------------------------
+def test_queue_remove_removes_the_prompt(tmp_path, monkeypatch):
+    from iris.prompt_queue import add as _add
+    from iris.prompt_queue import load
+
+    path = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    pid = _add("leadscan", "Run de tests en vertel me het resultaat.")
+    assert tools.queue_remove(pid) == (
+        f"Removed prompt {pid} for leadscan: Run de tests en vertel me het resultaat.")
+    assert load(path)["prompts"] == []
+
+
+def test_queue_remove_cuts_long_text_to_80_chars(tmp_path, monkeypatch):
+    from iris.prompt_queue import add as _add
+
+    path = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    pid = _add("Iris", "a" * 90)
+    assert tools.queue_remove(pid) == f"Removed prompt {pid} for Iris: {'a' * 77}..."
+
+
+def test_queue_remove_unknown_id_gives_error_text(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    assert tools.queue_remove(99) == "error: no prompt with id 99"
+
+
+def test_queue_remove_is_registered_with_confirm():
+    t = tools.TOOLS["queue_remove"]
+    assert t.tier == tools.CONFIRM
+    assert t.required == ["id"]
+    assert t.params["id"]["type"] == "integer"
+
+
+# --- queue_move ---------------------------------------------------------------
+def test_queue_move_up_swaps_with_the_previous_prompt(tmp_path, monkeypatch):
+    from iris.prompt_queue import add as _add
+    from iris.prompt_queue import load
+
+    path = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    first = _add("leadscan", "Eerste prompt.")
+    second = _add("Iris", "Tweede prompt.")
+    result = tools.queue_move(second, "up")
+    assert [p["id"] for p in load(path)["prompts"]] == [second, first]
+    assert result == (f"Moved prompt {second} up.\n2 prompts waiting:\n{second}. Iris: Tweede prompt.\n"
+                      f"{first}. leadscan: Eerste prompt.")
+
+
+def test_queue_move_down_ignores_case_and_spaces(tmp_path, monkeypatch):
+    from iris.prompt_queue import add as _add
+    from iris.prompt_queue import load
+
+    path = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    first = _add("leadscan", "Eerste prompt.")
+    second = _add("Iris", "Tweede prompt.")
+    result = tools.queue_move(first, " DOWN ")
+    assert [p["id"] for p in load(path)["prompts"]] == [second, first]
+    assert result.startswith(f"Moved prompt {first} down.\n")
+
+
+def test_queue_move_bad_direction_gives_error_text(tmp_path, monkeypatch):
+    from iris.prompt_queue import add as _add
+
+    path = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    _add("Iris", "Een prompt.")
+    assert tools.queue_move(1, "sideways") == 'error: direction must be "up" or "down"'
+
+
+def test_queue_move_unknown_id_gives_error_text(tmp_path, monkeypatch):
+    from iris.prompt_queue import add as _add
+
+    path = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    _add("Iris", "Een prompt.")
+    assert tools.queue_move(99, "up") == "error: no prompt with id 99"
+
+
+def test_queue_move_is_registered_with_confirm():
+    t = tools.TOOLS["queue_move"]
+    assert t.tier == tools.CONFIRM
+    assert t.required == ["id", "direction"]
+    assert t.params["id"]["type"] == "integer"
+
+
+# --- queue_take and queue_remove descriptions -----------------------------------
+def test_queue_take_and_remove_descriptions_point_to_the_right_tool():
+    take = tools.TOOLS["queue_take"].description
+    remove = tools.TOOLS["queue_remove"].description
+    assert "never to delete one" in take
+    assert "call queue_list first" in remove
 
 
 # --- registry guards -----------------------------------------------------------

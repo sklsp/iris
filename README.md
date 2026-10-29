@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sklsp/Iris/actions/workflows/ci.yml/badge.svg)](https://github.com/sklsp/Iris/actions/workflows/ci.yml)
 
-Python 3.11+ . Windows . 300 tests . 96% coverage
+Python 3.11+ . Windows . 696 tests . 96% coverage
 
 ## What it is
 
@@ -17,7 +17,7 @@ and answers out loud. No cloud, no cost per command. See [PLAN.md](PLAN.md) for 
 - Windows UI Automation instead of screenshots: Iris reads named controls, not pixels
 - Risk tiers enforced in code with tests: safe / confirm / never, escalating with the arguments
 - Wake word and streaming TTS: openWakeWord and faster-whisper in, SAPI or Kokoro out
-- An eval harness: 75 dry-run tasks that measure how well the model picks tools
+- An eval harness: 81 dry-run tasks that measure how well the model picks tools
 - The design decisions, with reasons: [DESIGN.md](DESIGN.md), UI Automation over pixels, tiers in code, untrusted screen text, barge-in
 
 ```mermaid
@@ -62,21 +62,23 @@ flowchart LR
 | queue_list | safe |  |
 | queue_add | confirm |  |
 | queue_take | confirm |  |
+| queue_remove | confirm |  |
+| queue_move | confirm |  |
 | cline_start | confirm |  |
 | concept_sites | safe |  |
 
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-10-29 00:37 on `qwen3.8-27b`: 222/225 passed (98.7%), median 3.8 s, 0.35 confirmations per task, safety: 2 forbidden, 0 unknown tools, 73/75 pass every time.
+Run of 2026-10-29 09:16 on `qwen3.8-27b`: 238/243 passed (97.9%), median 3.6 s, 0.38 confirmations per task, safety: 0 forbidden, 6 refused attempts, 0 unknown tools, language: 0 wrong, 78/81 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 24/24 | 100.0% |
+| agents | 32/33 | 97.0% |
 | files | 12/12 | 100.0% |
-| hands | 44/45 | 97.8% |
+| hands | 43/45 | 95.6% |
 | read | 24/24 | 100.0% |
-| safety | 73/75 | 97.3% |
+| safety | 82/84 | 97.6% |
 | skills | 45/45 | 100.0% |
 
 <!-- eval:end -->
@@ -137,6 +139,8 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | trash_file | confirm | move a file or folder to Iris's trash, always undoable |
 | queue_add | confirm | put a prompt in Jay's agent queue for one agent, asks first |
 | queue_take | confirm | take the oldest waiting prompt out of the queue so it can be pasted with type_text, asks first |
+| queue_remove | confirm | remove one waiting prompt from the agent queue by its id (the number queue_list shows), asks first |
+| queue_move | confirm | move one waiting prompt one place up or down in the agent queue by its id, asks first |
 | cline_start | confirm | start a new Cline session through the Cline CLI with the next queued prompt for this agent; if a repo is given its newest PROGRESS run must be done, asks first |
 
 The tiers are enforced in code, not in the prompt:
@@ -191,7 +195,7 @@ A repo is flagged STUCK when it has uncommitted changes and nothing committed fo
 
 ## The prompt queue
 
-Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first. To hand one to Cline, say so and Iris runs `cline_start`: it starts a new Cline session through the Cline CLI with the oldest queued prompt for that agent only after Jay says yes; if the start fails (say, the CLI is missing or the hub does not pick up the session) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
+Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first, as do removing one by its id (`queue_remove`; say "verwijder prompt 2 uit de wachtrij") and moving one up or down (`queue_move`; say "schuif prompt 1 omhoog"). To hand one to Cline, say so and Iris runs `cline_start`: it starts a new Cline session through the Cline CLI with the oldest queued prompt for that agent only after Jay says yes; if the start fails (say, the CLI is missing or the hub does not pick up the session) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
 
 ## Autopilot
 
@@ -215,9 +219,13 @@ The terminal way waits in place instead of polling:
 It starts at most one task and exits after that first answer. Starting is `cline_start`: it runs the Cline CLI
 (`IRIS_CLINE_CLI`, default `W:/Cline/cline-cli.exe`) in the repo (or `IRIS_CLINE_CWD`, default W:/Iris) with `-z` and
 the prompt as one argv item, so a queued prompt may span lines. The provider and model come from `IRIS_CLINE_PROVIDER`
-(default lmstudio) and `IRIS_CLINE_MODEL` (default qwen3.8-27b). A start only counts when the CLI's history shows the
-new session with that prompt; if it does not start, the queue stays untouched. Every outcome (nothing queued, Jay said
-no, started) is logged as an autopilot event that the dashboard's Activity tab shows with its own badge.
+(default lmstudio) and `IRIS_CLINE_MODEL` (default qwen3.8-27b). A start is confirmed from Cline's history rather than
+assumed from the CLI call itself; if the first dispatch's checks find no new session, the same command runs once more
+before Iris gives up, and both rounds match against the original moment so a late-appearing session still counts. The
+retry only happens when Cline's history was readable and showed no new session after about 15 seconds; a session that
+registers later than that could still be started twice. If it does not start after all that, the queue stays untouched.
+Every outcome (nothing queued, Jay said no, started) is logged as an autopilot event that the dashboard's Activity tab
+shows with its own badge.
 
 ## Dashboard
 
@@ -263,7 +271,7 @@ tab, not an error page.
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 75 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 81 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 
 ```bash
 .venv\Scripts\python -m iris eval                          # all tasks, report in eval/results

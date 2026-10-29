@@ -898,11 +898,57 @@ def test_api_eval_route(server, tmp_path, monkeypatch):
     assert code == 200 and body["latest"]["stamp"] == "20261013-090000" and body["runs"] == 1
 
 
+def _history_report(stamp, passed, tasks, language=None):
+    """A report with one result per task; the first `passed` of them pass."""
+    summary = {"passed": passed, "tasks": tasks, "success_rate": round(passed / tasks, 3)}
+    if language is not None:
+        summary["language"] = {"wrong": language, "unknown": 0}
+    results = [{"id": f"t{i}", "passed": i < passed} for i in range(tasks)]
+    return json.dumps({"stamp": stamp, "model": "test-model", "summary": summary, "results": results})
+
+
+def test_eval_history_payload_reads_the_newest_runs(tmp_path, monkeypatch):
+    (tmp_path / "20261013-090000.json").write_text(_history_report("20261013-090000", 1, 2), encoding="utf-8")
+    (tmp_path / "20261014-090000.json").write_text("{not json", encoding="utf-8")
+    report_c = _history_report("20261015-090000", 2, 2, language=1)
+    (tmp_path / "20261015-090000.json").write_text(report_c, encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    p = d.eval_history_payload()
+    assert [r["stamp"] for r in p["runs"]] == ["20261013-090000", "20261015-090000"]
+    assert p["runs"][0]["language_wrong"] is None and p["runs"][1]["language_wrong"] == 1
+    assert p["tasks"]["t0"] == {"passed": 2, "total": 2, "per_run": ["1/1", "1/1"]}
+    assert p["tasks"]["t1"] == {"passed": 1, "total": 2, "per_run": ["0/1", "1/1"]}
+    assert p["flaky"] == ["t1"] and p["skipped"] == 1
+
+
+def test_eval_history_payload_empty_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    assert d.eval_history_payload() == {"runs": [], "tasks": {}, "flaky": [], "skipped": 0}
+
+
+def test_api_eval_history_route(server, tmp_path, monkeypatch):
+    (tmp_path / "20261015-090000.json").write_text(_history_report("20261015-090000", 1, 2), encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    d._cache.clear()   # a previous test may have cached this route's payload
+    code, _headers, text = get(server + "/api/eval/history")
+    body = json.loads(text)
+    assert code == 200 and body["runs"][0]["stamp"] == "20261015-090000"
+    assert body["tasks"]["t1"] == {"passed": 0, "total": 1, "per_run": ["0/1"]}
+    assert body["flaky"] == ["t1"] and "error" not in body
+
+
 def test_page_contains_eval_tab_and_empty_state(server):
     status, _headers, page = get(server + "/")
     assert status == 200
     assert "/api/eval" in page
     assert "No eval run yet. Run: python -m iris eval" in page
+
+
+def test_page_contains_eval_history_panels(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    for needle in ("/api/eval/history", "History", "Flaky tasks"):
+        assert needle in page
 
 
 # --- prompt queue (item 2) ---------------------------------------------------------
@@ -1006,6 +1052,18 @@ def test_queue_move_ok_returns_new_state_and_logs(srv, tmp_path, monkeypatch):
 
     events = _journal_queue_events(journal)
     assert events[-1]["action"] == "move" and events[-1]["id"] == 1
+
+
+# Driven by WRITE_ROUTES itself, so a write route added later is covered without a new test.
+@pytest.mark.parametrize("route", d.WRITE_ROUTES)
+@pytest.mark.parametrize("auth", ["no token", "wrong token", "foreign origin", "no origin"])
+def test_every_write_route_refuses_without_the_token_and_origin(srv, route, auth):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    token, origin = {"no token": (None, base), "wrong token": ("not-the-token", base),
+                     "foreign origin": (srv.token, "http://evil.example"), "no origin": (srv.token, None)}[auth]
+    code, _ = post(base + route, {"model": "m1", "agent": "a", "text": "t", "id": 1, "step": 1},
+                   token=token, origin=origin)
+    assert code == 403
 
 
 @pytest.mark.parametrize("route", ["/api/queue/add", "/api/queue/delete", "/api/queue/move"])
@@ -1221,4 +1279,21 @@ def test_page_has_no_innerhtml_assignment_from_a_variable(server):
     assert status == 200
     hits = re.findall(r'''innerHTML\s*=\s*[^\\"'\`]''', page)
     assert hits == [], f"the page assigns innerHTML from a variable: {hits!r}"
+
+
+def test_page_run_row_wraps_narrow_and_button_says_why(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    assert "@media (max-width: 700px)" in page   # R4: the run row wraps instead of squashing
+    assert "refreshBtn();" in page               # still called once right after the click listener
+    start = page.index("function refreshBtn")    # and its body uses r.reason for the disabled title
+    fn = page[start:page.index("\n    }", start)]
+    assert "r.reason" in fn, "refreshBtn must use r.reason for the tooltip"
+
+
+def test_page_start_button_warns_that_it_can_take_a_few_minutes(server):
+    # a start can now take up to about 4 minutes (two CLI calls with their 120 s timeout plus polls)
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    assert "starting... (can take a few minutes)" in page
 

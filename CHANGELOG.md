@@ -34,6 +34,29 @@ Dashboard Autopilot tab (the normal way to start the next prompt):
 - queue editing from the tab via POST /api/queue/add, /delete and /move (same token + Origin/Referer guard)
 - docs: README Autopilot and Dashboard sections updated for the tab and its write routes; SECURITY.md gains the dashboard-write-routes stop
 
+Queue editing by voice, and dashboard polish:
+- queue_remove (confirm) removes one waiting prompt from the agent queue by its id, and queue_move (confirm) moves one up or down; both ask first, like queue_add and queue_take
+- four new eval tasks (79 in total): queue_remove_yes and queue_remove_declined pin queue_remove's confirm and decline paths, queue_move_up pins queue_move with its listing reply, and queue_remove_by_text makes Iris list the queue first to resolve a prompt referred to by text
+- the dashboard's Autopilot run rows wrap on narrow screens instead of squashing the text (a 700px media query); a disabled Start button now says why it waits, with the run's own reason from /api/runs such as "last commit 1 minute ago" or "3 of 4 items open in PROGRESS-b.md"
+
+Policy refusals run:
+- queue_take and queue_remove descriptions now point to the right tool: take is for handing a prompt to an agent, never deleting one; remove is what Jay wants when a prompt should go away, also by its text via queue_list first
+- open_url refuses non http(s) URLs in the policy layer (NEVER tier), so a refusal is journaled as refused and nothing runs
+- a missing window says so: the error tells the model the title is not open now, to check list_windows once and tell Jay instead of retrying; the focus_gone fixture matches that real text
+- two new safety eval tasks (81 in total): file_url and data_url pin refused URL schemes with forbid ["open_url"]
+
+Eval history (trend across saved runs):
+- eval.history() reads the {stamp}.json reports in a results dir and returns per-run rows plus flaky task ids with their per-run pass counts, newest first
+- python -m iris eval history prints those as text: one line per run, then the flaky ids with their entries
+- GET /api/eval/history serves the same data to the dashboard without touching the latest-report route
+- the Eval tab's History panel shows one row per run (stamp, passed/tasks, a success-rate bar, language wrong when known), fetched with the tab like the rest of it
+- the Eval tab's Flaky tasks panel lists ids that did not pass every saved run, with passed/total and a chip per run in the ok or warning colour
+
+Reliable Cline start (a start is confirmed from history; the retry only happens when the history was readable and showed no new session after about 15 seconds):
+- start_in_hub proves the session started by polling Cline's history up to five times, three seconds apart; a CLI timeout alone no longer counts as success, and a missing match raises an error carrying the last non-empty stderr line ("no output" when there is none)
+- if the first dispatch's polls find nothing, the same command runs once more before giving up (the retry matches against the original moment, so a late-appearing session still counts); a session that registers later than about 15 seconds could still be started twice; the give-up error then reads "Cline did not start a session after two tries: ..."
+- the dashboard's Start button now says "starting... (can take a few minutes)", since a start can take about four minutes in the worst case (two CLI calls with their 120 s timeout plus polls)
+
 ## 0.3.0
 
 Skills that act (new tools, all tier-checked and journaled like the rest):
@@ -58,6 +81,13 @@ Docs:
 
 Coverage:
 - iris/eval.py at 100% (was 97%) with tests for broken journal lines, MAX_STEPS give-up, publish without reports and --only filtering; the suite is now 484 tests
+
+Eval language tracking:
+- two Dutch phrasings the model misreads are pinned: lmstudio_load and lmstudio_unload descriptions say "laad ... uit"/"uitladen" means unload, and queue_remove_by_text asks "Verwijder ..." instead of the ambiguous "Haal ... uit de wachtrij"
+- answer_language detects whether a final answer is Dutch, English or German by stopword count, "?" when unsure; every result records it as lang
+- every task has a lang field ("nl", "en" or "any") for the language Jay expects in the answer (default nl)
+- the summary counts wrong-language answers (language.wrong and language.unknown) and shows them on the MD line
+- the MD report lists each wrong-language result under Wrong language (id, expected, got, first 80 chars of the answer); JSON results carry lang and want_lang per task
 
 ## 0.2.0
 

@@ -697,3 +697,48 @@ def test_results_folder_is_git_ignored():
     ignore = Path(__file__).resolve().parents[1] / ".gitignore"
     assert "eval/results/" in ignore.read_text(encoding="utf-8").splitlines()
 
+
+# --- history over saved runs ----------------------------------------------------
+def _mk_reports(tmp_path):
+    old = {"stamp": "20260101-000000", "model": "old-model",
+           "summary": {"tasks": 3, "passed": 2, "success_rate": 0.667},
+           "results": [{"id": "a", "passed": True}, {"id": "b", "passed": False},
+                       {"id": "c", "passed": True}]}
+    new = {"stamp": "20260102-000000", "model": "new-model",
+           "summary": {"tasks": 4, "passed": 3, "success_rate": 0.75,
+                       "language": {"wrong": 1, "unknown": 0}},
+           "results": [{"id": "a", "passed": True}, {"id": "a", "passed": False},
+                       {"id": "b", "passed": False}, {"id": "c", "passed": True}]}
+    (tmp_path / "20260101-000000.json").write_text(_json.dumps(old), encoding="utf-8")
+    (tmp_path / "20260101-120000.json").write_text("{ not json", encoding="utf-8")
+    (tmp_path / "20260102-000000.json").write_text(_json.dumps(new), encoding="utf-8")
+
+
+def test_history_runs_tasks_flaky_and_skipped(tmp_path):
+    _mk_reports(tmp_path)
+    h = ev.history(tmp_path)
+    assert h["runs"] == [
+        {"stamp": "20260101-000000", "model": "old-model", "passed": 2, "tasks": 3,
+         "success_rate": 0.667, "language_wrong": None},
+        {"stamp": "20260102-000000", "model": "new-model", "passed": 3, "tasks": 4,
+         "success_rate": 0.75, "language_wrong": 1}]
+    assert h["tasks"] == {
+        "a": {"passed": 2, "total": 3, "per_run": ["1/1", "1/2"]},
+        "b": {"passed": 0, "total": 2, "per_run": ["0/1", "0/1"]},
+        "c": {"passed": 2, "total": 2, "per_run": ["1/1", "1/1"]}}
+    assert h["flaky"] == ["b", "a"]
+    assert h["skipped"] == 1
+
+
+def test_history_last_keeps_only_the_newest(tmp_path):
+    _mk_reports(tmp_path)
+    h = ev.history(tmp_path, last=1)
+    assert [r["stamp"] for r in h["runs"]] == ["20260102-000000"]
+    assert h["tasks"]["a"] == {"passed": 1, "total": 2, "per_run": ["1/2"]}
+    assert h["flaky"] == ["b", "a"]
+    assert h["skipped"] == 0
+
+
+def test_history_missing_dir_is_empty(tmp_path):
+    assert ev.history(tmp_path / "nope") == {"runs": [], "tasks": {}, "flaky": [], "skipped": 0}
+

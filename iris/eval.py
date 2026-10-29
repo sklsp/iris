@@ -295,6 +295,51 @@ def compare(a: dict, b: dict) -> list[str]:
     return lines
 
 
+def history(results_dir, last: int = 10) -> dict:
+    """Read-only trend over the newest reports in results_dir; never writes anything there."""
+    out: dict = {"runs": [], "tasks": {}, "flaky": [], "skipped": 0}
+    d = Path(results_dir)
+    if not d.is_dir():
+        return out
+    files = sorted(d.glob("*.json"))[-last:] if last > 0 else []
+    per_task: dict[str, list[tuple[int, int]]] = {}
+    for f in files:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            out["skipped"] += 1
+            continue
+        if not isinstance(data, dict) or "results" not in data:
+            out["skipped"] += 1
+            continue
+        results = [r for r in data["results"] if isinstance(r, dict) and "id" in r]
+        s = data.get("summary")
+        if not isinstance(s, dict):
+            s = {}
+        passed = s.get("passed", sum(1 for r in results if r.get("passed")))
+        tasks_n = s.get("tasks", len(results))
+        rate = s.get("success_rate", round(passed / tasks_n, 3) if tasks_n else 0.0)
+        lang = s.get("language")
+        out["runs"].append({"stamp": data.get("stamp", f.stem), "model": data.get("model", ""),
+                            "passed": passed, "tasks": tasks_n, "success_rate": rate,
+                            "language_wrong": lang.get("wrong") if isinstance(lang, dict) else None})
+        by: dict[str, list[bool]] = {}
+        for r in results:
+            by.setdefault(r["id"], []).append(bool(r.get("passed")))
+        for tid, flags in sorted(by.items()):
+            per_task.setdefault(tid, []).append((sum(flags), len(flags)))
+    for tid, entries in sorted(per_task.items()):
+        p = sum(x[0] for x in entries)
+        t = sum(x[1] for x in entries)
+        out["tasks"][tid] = {"passed": p, "total": t, "per_run": [f"{a}/{b}" for a, b in entries]}
+    flaky: list[tuple[float, str]] = []
+    for tid, v in out["tasks"].items():
+        if v["passed"] < v["total"]:
+            flaky.append((v["passed"] / v["total"], tid))
+    out["flaky"] = [tid for _, tid in sorted(flaky)]
+    return out
+
+
 def publish(results_dir, readme_path) -> int:
     """Replace the eval block in the README with the newest report from results_dir."""
     files = sorted(Path(results_dir).glob("*.json"))

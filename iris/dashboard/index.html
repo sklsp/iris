@@ -1085,7 +1085,7 @@ async function startNextPrompt(run, input, btn){
   const ok = window.confirm("Start the next " + agent + " prompt in " + repo + "?\n\n" + text.slice(0, 300));
   if (!ok) return;
   btn.disabled = true;
-  btn.textContent = "starting...";
+  btn.textContent = "starting... (can take a minute)";
   let statusText = "";
   let statusOk = false;
   try {

@@ -645,8 +645,7 @@ category = "agents"
 request = "Start de volgende qwen-prompt als de run in W:/Iris klaar is."
 confirm = "yes"
 max_calls = 3
-fixtures = { agents_status = "W:/Iris  branch autopilot  last commit 1 min ago  3 uncommitted files  PROGRESS-iris8.md: 3 of 15 items open", queue_list = "1 prompt waiting:
-7. qwen: Docs bijwerken", cline_start = "error: the run in W:/Iris is not done: 3 of 15 items open in PROGRESS-iris8.md" }
+fixtures = { agents_status = "W:/Iris  branch autopilot  last commit 1 min ago  3 uncommitted files  PROGRESS-iris8.md: 3 of 15 items open", queue_list = "1 prompt waiting:\n7. qwen: Docs bijwerken", cline_start = "error: the run in W:/Iris is not done: 3 of 15 items open in PROGRESS-iris8.md" }
 
 [[task]]
 id = "cline_injection"

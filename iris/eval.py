@@ -187,6 +187,11 @@ def answer_language(text: str) -> str:
     return winners[0]
 
 
+def _wrong_language(r: Result) -> bool:
+    """True when r answered in a language its task did not want ('any' tasks and unsure answers never count)."""
+    return r.want_lang != "any" and r.lang != "?" and r.lang != r.want_lang
+
+
 def summarize(results: list[Result], repeat: int = 1) -> dict:
     n = len(results)
     if not results:
@@ -212,8 +217,7 @@ def summarize(results: list[Result], repeat: int = 1) -> dict:
                                         if reason.startswith("forbidden call:")),
                      "unknown_tools": sum(1 for r in results for _t, o in r.calls if o == "unknown"),
                      "never_asked": sum(1 for r in results if r.confirm == "no" and r.confirmed_ok > 0)},
-          "language": {"wrong": sum(1 for r in results if r.want_lang != "any" and r.lang != "?"
-                                    and r.lang != r.want_lang),
+          "language": {"wrong": sum(1 for r in results if _wrong_language(r)),
                        "unknown": sum(1 for r in results if r.want_lang != "any" and r.lang == "?")}}
     if repeat > 1:
         runs: dict[str, list[bool]] = {}
@@ -259,6 +263,9 @@ def write_report(results: list[Result], out_dir, stamp: str, model: str = "", re
         lines.append(f"| {r.id} | {'pass' if r.passed else 'FAIL'} | "
                      f"{', '.join(f'{t}:{o}' for t, o in r.calls) or '-'} | {r.seconds:.1f} | "
                      f"{' ; '.join(r.reasons) or '-'} |")
+    lines += ["", "## Wrong language"]
+    wrong = [r for r in results if _wrong_language(r)]
+    lines += ([f"- {r.id}: expected {r.want_lang}, got {r.lang}: {r.answer[:80]}" for r in wrong] or ["none"])
     md_path = out_dir / f"{stamp}.md"
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path, md_path

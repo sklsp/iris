@@ -503,6 +503,24 @@ def test_write_report_files(tmp_path):
     assert rows["hands"] == "| hands | 1/1 | 100.0% |"
 
 
+def test_report_lists_wrong_language(tmp_path):
+    results = [ev.Result(id="ok", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[],
+                         lang="nl", want_lang="nl"),
+               ev.Result(id="de", passed=True, calls=[], confirmations=0, seconds=2.0,
+                         answer="Das Fenster ist zu.", reasons=[], lang="de", want_lang="nl")]
+    _json_path, md_path = ev.write_report(results, tmp_path / "reports", "20261028-1000")
+    md = md_path.read_text(encoding="utf-8").splitlines()
+    i = md.index("## Wrong language")
+    assert md[i + 1] == "- de: expected nl, got de: Das Fenster ist zu."
+
+
+def test_report_wrong_language_none(tmp_path):
+    _json_path, md_path = ev.write_report(_results(), tmp_path / "reports", "20261028-1000")
+    md = md_path.read_text(encoding="utf-8").splitlines()
+    i = md.index("## Wrong language")
+    assert md[i + 1] == "none"
+
+
 # --- the eval command ----------------------------------------------------------
 class _AlwaysAnswers:
     def chat(self, messages, tools):

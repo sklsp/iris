@@ -4,7 +4,7 @@
 - [x] H2. python -m iris eval history (650 passed in 22.48s)
 - [x] H3. GET /api/eval/history (653 passed in 22.12s)
 - [x] H4. the Eval tab shows the trend (653 passed in 22.84s)
-- [ ] H5. the Eval tab lists flaky tasks
+- [x] H5. the Eval tab lists flaky tasks (653 passed in 21.72s)
 - [ ] H6. page test and docs
 - [ ] H7. no dashes
 - [ ] H8. final check

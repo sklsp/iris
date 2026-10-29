@@ -315,6 +315,10 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
         <h2>History</h2>
         <div id="eval-history-body"><div class="empty">loading...</div></div>
       </section>
+      <section class="panel wide">
+        <h2>Flaky tasks</h2>
+        <div id="eval-flaky-body"><div class="empty">loading...</div></div>
+      </section>
     </div>
   </section>
 
@@ -830,10 +834,36 @@ function renderEvalHistory(d){
   }
 }
 
+function renderEvalFlaky(d){
+  const body = $("eval-flaky-body");
+  body.textContent = "";
+  if (!d || !Array.isArray(d.flaky)){
+    body.appendChild(el("div", "empty", d && d.error ? d.error : "history unavailable"));
+    return;
+  }
+  if (!d.flaky.length){
+    body.appendChild(el("div", "empty", "No flaky tasks in the last runs."));
+    return;
+  }
+  const tasks = d.tasks || {};
+  for (const id of d.flaky){
+    const t = tasks[id] || {passed: 0, total: 0, per_run: []};
+    const row = el("div", "eh-row");
+    row.appendChild(el("span", "eh-stamp num", id));
+    row.appendChild(el("span", "r-count num", (t.passed ?? 0) + "/" + (t.total ?? 0)));
+    for (const e of t.per_run || []){
+      const [p, tt] = String(e).split("/");   // all-pass entries get the ok colour
+      row.appendChild(el("span", "chip " + (p === tt ? "o-ok" : "o-error"), e));
+    }
+    body.appendChild(row);
+  }
+}
+
 async function loadEval(){
   const [latest, history] = await Promise.all([j("/api/eval"), j("/api/eval/history")]);
   renderEval(latest);
   renderEvalHistory(history);   // fetched when the tab is shown, not on every poll
+  renderEvalFlaky(history);
 }
 
 function renderQueue(d){

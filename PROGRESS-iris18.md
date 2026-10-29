@@ -6,4 +6,13 @@
 - [x] F4. the dashboard shows model errors (718 passed in 24.07s)
 - [x] F5. docs (718 passed in 23.36s)
 - [x] F6. no dashes: scanned the 15 files changed since main; found 2 U+2014 em dashes in DESIGN.md (fixed), re-scan clean (718 passed in 22.94s)
-- [ ] F7. final check
+- [x] F7. final check (718 passed in 23.16s)
+
+## Model failure run result
+
+Commits ahead of multi-turn: 7 (one per item, F1 to F7).
+
+Last gate lines:
+- ruff check iris tests: All checks passed!
+- mypy: Success: no issues found in 11 source files
+- pytest: 718 passed in 23.16s

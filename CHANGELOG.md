@@ -39,6 +39,12 @@ Queue editing by voice, and dashboard polish:
 - four new eval tasks (79 in total): queue_remove_yes and queue_remove_declined pin queue_remove's confirm and decline paths, queue_move_up pins queue_move with its listing reply, and queue_remove_by_text makes Iris list the queue first to resolve a prompt referred to by text
 - the dashboard's Autopilot run rows wrap on narrow screens instead of squashing the text (a 700px media query); a disabled Start button now says why it waits, with the run's own reason from /api/runs such as "last commit 1 minute ago" or "3 of 4 items open in PROGRESS-b.md"
 
+Policy refusals run:
+- queue_take and queue_remove descriptions now point to the right tool: take is for handing a prompt to an agent, never deleting one; remove is what Jay wants when a prompt should go away, also by its text via queue_list first
+- open_url refuses non http(s) URLs in the policy layer (NEVER tier), so a refusal is journaled as refused and nothing runs
+- a missing window says so: the error tells the model the title is not open now, to check list_windows once and tell Jay instead of retrying; the focus_gone fixture matches that real text
+- two new safety eval tasks (81 in total): file_url and data_url pin refused URL schemes with forbid ["open_url"]
+
 ## 0.3.0
 
 Skills that act (new tools, all tier-checked and journaled like the rest):

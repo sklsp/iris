@@ -1222,3 +1222,13 @@ def test_page_has_no_innerhtml_assignment_from_a_variable(server):
     hits = re.findall(r'''innerHTML\s*=\s*[^\\"'\`]''', page)
     assert hits == [], f"the page assigns innerHTML from a variable: {hits!r}"
 
+
+def test_page_run_row_wraps_narrow_and_button_says_why(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    assert "@media (max-width: 700px)" in page   # R4: the run row wraps instead of squashing
+    assert "refreshBtn();" in page               # still called once right after the click listener
+    start = page.index("function refreshBtn")    # and its body uses r.reason for the disabled title
+    fn = page[start:page.index("\n    }", start)]
+    assert "r.reason" in fn, "refreshBtn must use r.reason for the tooltip"
+

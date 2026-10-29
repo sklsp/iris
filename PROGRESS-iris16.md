@@ -6,6 +6,6 @@ Branch: `review-fixes` in W:/Iris. One commit per item, gates pass before every 
 - [x] V2. honest wording about double starts (F1, F5) (663 passed in 22.94s)
 - [x] V3. SECURITY.md cites real tests (F2) (664 passed in 23.62s)
 - [x] V4. a broken report never breaks history (F4) (667 passed in 23.45s)
-- [ ] V5. count refused attempts (F3)
+- [x] V5. count refused attempts (F3) (668 passed in 22.83s)
 - [ ] V6. no dashes
 - [ ] V7. final check

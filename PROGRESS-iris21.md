@@ -6,5 +6,5 @@ Branch: `answer-checks` in W:/Iris. One commit per item, message `A<n>: <title>`
 - [x] A2. the summary counts wrong answers (758 passed in 25.17s)
 - [x] A3. the report lists wrong answers (761 passed in 24.46s)
 - [x] A4. docs (761 passed in 24.27s)
-- [ ] A5. no dashes
+- [x] A5. no dashes (scan of eval-filters..HEAD found 1 em dash, fixed in EVAL.md; 761 passed in 24.16s)
 - [ ] A6. final check

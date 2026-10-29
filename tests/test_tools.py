@@ -730,6 +730,40 @@ def test_concept_sites_lists_and_checks(tmp_path, monkeypatch):
     assert tools.TOOLS["concept_sites"].tier == tools.SAFE
 
 
+# --- queue_remove ---------------------------------------------------------------
+def test_queue_remove_removes_the_prompt(tmp_path, monkeypatch):
+    from iris.prompt_queue import add as _add
+    from iris.prompt_queue import load
+
+    path = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    pid = _add("leadscan", "Run de tests en vertel me het resultaat.")
+    assert tools.queue_remove(pid) == (
+        f"Removed prompt {pid} for leadscan: Run de tests en vertel me het resultaat.")
+    assert load(path)["prompts"] == []
+
+
+def test_queue_remove_cuts_long_text_to_80_chars(tmp_path, monkeypatch):
+    from iris.prompt_queue import add as _add
+
+    path = tmp_path / "q.json"
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    pid = _add("Iris", "a" * 90)
+    assert tools.queue_remove(pid) == f"Removed prompt {pid} for Iris: {'a' * 77}..."
+
+
+def test_queue_remove_unknown_id_gives_error_text(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
+    assert tools.queue_remove(99) == "error: no prompt with id 99"
+
+
+def test_queue_remove_is_registered_with_confirm():
+    t = tools.TOOLS["queue_remove"]
+    assert t.tier == tools.CONFIRM
+    assert t.required == ["id"]
+    assert t.params["id"]["type"] == "integer"
+
+
 # --- registry guards -----------------------------------------------------------
 def test_every_tool_is_documented():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")

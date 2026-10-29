@@ -62,6 +62,7 @@ flowchart LR
 | queue_list | safe |  |
 | queue_add | confirm |  |
 | queue_take | confirm |  |
+| queue_remove | confirm |  |
 | cline_start | confirm |  |
 | concept_sites | safe |  |
 
@@ -137,6 +138,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | trash_file | confirm | move a file or folder to Iris's trash, always undoable |
 | queue_add | confirm | put a prompt in Jay's agent queue for one agent, asks first |
 | queue_take | confirm | take the oldest waiting prompt out of the queue so it can be pasted with type_text, asks first |
+| queue_remove | confirm | remove one waiting prompt from the agent queue by its id (the number queue_list shows), asks first |
 | cline_start | confirm | start a new Cline session through the Cline CLI with the next queued prompt for this agent; if a repo is given its newest PROGRESS run must be done, asks first |
 
 The tiers are enforced in code, not in the prompt:

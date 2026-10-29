@@ -538,6 +538,20 @@ def queue_take(agent: str) -> str:
     return f"Next prompt for {p['agent']} (removed from the queue):\n{p['text']}"
 
 
+def queue_remove(id: int) -> str:
+    """Remove one waiting prompt from Jay's agent queue by its id (the number queue_list shows). Asks Jay first."""
+    from iris.prompt_queue import remove as _remove
+
+    try:
+        p = _remove(id)
+    except LookupError:
+        return f"error: no prompt with id {id}"
+    text = str(p.get("text", ""))
+    if len(text) > 80:
+        text = text[:77] + "..."
+    return f"Removed prompt {p['id']} for {p['agent']}: {text}"
+
+
 def cline_start(agent: str, repo: str = "") -> str:
     """Start a new Cline session for this agent with the next queued prompt, in repo (default W:/Iris).
 
@@ -639,6 +653,9 @@ TOOLS = {t.name: t for t in [
          " so it can be pasted with type_text."
          " Asks Jay first.",
           {"agent": S}, ["agent"], CONFIRM, queue_take),
+    Tool("queue_remove",
+         "Remove one waiting prompt from Jay's agent queue by its id (the number queue_list shows). Asks Jay first.",
+         {"id": {"type": "integer"}}, ["id"], CONFIRM, queue_remove),
     Tool("cline_start",
          "Start a new Cline session for this agent with the next queued prompt, in repo (default W:/Iris)."
          " Asks Jay first.",

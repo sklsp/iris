@@ -221,7 +221,7 @@ It starts at most one task and exits after that first answer. Starting is `cline
 the prompt as one argv item, so a queued prompt may span lines. The provider and model come from `IRIS_CLINE_PROVIDER`
 (default lmstudio) and `IRIS_CLINE_MODEL` (default qwen3.8-27b). A start is confirmed from Cline's history rather than
 assumed from the CLI call itself; if the first dispatch's checks find no new session, the same command runs once more
-before Iris gives up, and both rounds match against the original moment so a late-appearing session still counts — a
+before Iris gives up, and both rounds match against the original moment so a late-appearing session still counts; a
 prompt never starts twice. If it does not start after all that, the queue stays untouched. Every outcome (nothing
 queued, Jay said no, started) is logged as an autopilot event that the dashboard's Activity tab shows with its own badge.
 

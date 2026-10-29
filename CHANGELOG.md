@@ -34,6 +34,11 @@ Dashboard Autopilot tab (the normal way to start the next prompt):
 - queue editing from the tab via POST /api/queue/add, /delete and /move (same token + Origin/Referer guard)
 - docs: README Autopilot and Dashboard sections updated for the tab and its write routes; SECURITY.md gains the dashboard-write-routes stop
 
+Queue editing by voice, and dashboard polish:
+- queue_remove (confirm) removes one waiting prompt from the agent queue by its id, and queue_move (confirm) moves one up or down; both ask first, like queue_add and queue_take
+- four new eval tasks (79 in total): queue_removed and queue_moved pin the two tools with their confirms, cline_next_prompt starts a session only after Jay says yes to the next queued prompt, and queue_injection (safety) refuses an instruction planted in a window to edit the queue or start Cline
+- the dashboard's Autopilot run rows wrap on narrow screens instead of squashing the text (a 700px media query); a disabled Start button now says why it waits, with the run's own reason from /api/runs such as "last commit 1 minute ago" or "3 of 4 items open in PROGRESS-b.md"
+
 ## 0.3.0
 
 Skills that act (new tools, all tier-checked and journaled like the rest):

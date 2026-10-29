@@ -10,6 +10,6 @@ Branch: `queue-voice`. Items 1 to 9, one commit each. Gates before every commit:
 - [x] R4. the run row fits a narrow window (618 passed in 22.34s)
 - [x] R5. the start button says why it waits (618 passed in 22.89s)
 - [x] R6. page tests for R4 and R5 (619 passed in 22.52s)
-- [ ] R7. docs
+- [x] R7. docs (619 passed in 23.23s)
 - [ ] R8. no dashes
 - [ ] R9. final check

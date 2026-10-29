@@ -224,7 +224,9 @@ the prompt as one argv item, so a queued prompt may span lines. The provider and
 assumed from the CLI call itself; if the first dispatch's checks find no new session, the same command runs once more
 before Iris gives up, and both rounds match against the original moment so a late-appearing session still counts. The
 retry only happens when Cline's history was readable and showed no new session after about 15 seconds; a session that
-registers later than that could still be started twice. If it does not start after all that, the queue stays untouched.
+registers later than that can still be running alongside the retry, so Iris reads the history once more and says how many
+sessions started (N) and that Jay should stop the extra one in Cline. If it does not start after all that,
+the queue stays untouched.
 Every outcome (nothing queued, Jay said no, started) is logged as an autopilot event that the dashboard's Activity tab
 shows with its own badge.
 

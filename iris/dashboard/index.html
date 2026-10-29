@@ -979,7 +979,8 @@ function renderRuns(d){
         btn.title = "";
       } else {
         btn.disabled = true;
-        btn.title = r.done !== true ? "run still has open items" : ("nothing queued for " + agent);
+        const why = String(r.reason || "").trim() || "run is not done";
+        btn.title = r.done !== true ? why : ("nothing queued for " + agent);
       }
     }
     input.addEventListener("input", refreshBtn);

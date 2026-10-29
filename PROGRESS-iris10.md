@@ -18,10 +18,10 @@ R8 result: `git diff --name-only main..HEAD` lists 9 files; a Python scan of all
 
 ## Queue voice run result
 
-- 10 commits ahead of main: R1 through R9, one per item, plus a docs fix for the eval task ids
+- 12 commits ahead of main as of this commit: R1 through R9, one per item; a docs fix for the eval task ids; and f111546, a parallel dashboard commit not part of this run
 - ruff: All checks passed!
 - mypy: Success: no issues found in 11 source files
-- pytest: 619 passed in 22.67s (coverage 96.69%, floor of 94% reached)
+- pytest: 619 passed in 22.76s (coverage 96.69%, floor of 94% reached)
 - new tools: queue_remove and queue_move, both confirm tier, both ask first
 - new eval tasks: queue_remove_yes, queue_remove_declined, queue_move_up, queue_remove_by_text (79 in total)
 

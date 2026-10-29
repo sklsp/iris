@@ -87,6 +87,39 @@ def test_pressing_enter_in_a_mail_or_chat_window_is_never(args, expected):
     assert tools._press_keys_tier(args) == expected
 
 
+OPEN_URL_TIER = [
+    ({"url": "https://example.com"}, tools.SAFE),
+    ({"url": "http://x"}, tools.SAFE),
+    ({"url": "javascript:alert(1)"}, tools.NEVER),
+    ({"url": "JavaScript:alert(1)"}, tools.NEVER),  # mixed case is refused too
+    ({"url": "file:///C:/Windows/System32/cmd.exe"}, tools.NEVER),
+    ({"url": "data:text/html,hi"}, tools.NEVER),
+    ({"url": "example.com"}, tools.NEVER),  # no scheme at all
+]
+
+
+@pytest.mark.parametrize("args, expected", OPEN_URL_TIER, ids=[a["url"] for a, _ in OPEN_URL_TIER])
+def test_open_url_refuses_every_scheme_but_http_and_https(args, expected):
+    assert tools._open_url_tier(args) == expected
+
+
+def test_open_url_with_a_javascript_url_is_refused_before_it_runs(tmp_path, monkeypatch):
+    started = []
+    monkeypatch.setattr(tools.os, "startfile", lambda u: started.append(u))
+    llm = _ScriptedLLM(_confirm_call("open_url", url="javascript:alert(1)"), _answer("I cannot do that."))
+    asked = []
+    Agent(llm, lambda q: asked.append(q) or False, Journal(tmp_path / "j.jsonl"),
+          {"open_url": tools.TOOLS["open_url"]}).handle("open it")
+    assert started == []  # the real open_url never ran
+    assert asked == []  # a NEVER tier is refused before confirm is even asked
+    lines = _tool_lines(tmp_path)
+    assert len(lines) == 1
+    line = dict(lines[0])
+    line.pop("t")
+    assert line == {"event": "tool", "tool": "open_url", "args": {"url": "javascript:alert(1)"},
+                    "tier": tools.NEVER, "outcome": "refused"}
+
+
 TRASH_TIER = [
     (str(Path.home() / "notes.txt"), tools.CONFIRM),  # under the home folder: allowed
     ("W:/scratch.txt", tools.CONFIRM),  # under W:/: allowed

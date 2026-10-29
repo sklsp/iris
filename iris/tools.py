@@ -380,6 +380,13 @@ def _type_tier(args: dict) -> str:
     return NEVER if _NEVER_WORDS.search(str(args.get("into", ""))) else CONFIRM
 
 
+def _open_url_tier(args: dict) -> str:
+    from urllib.parse import urlparse
+
+    scheme = urlparse(str(args.get("url", ""))).scheme.lower()
+    return SAFE if scheme in ("http", "https") else NEVER
+
+
 # --- hands --------------------------------------------------------------------
 # Window titles that mean "pressing Enter sends a message or email": never automated.
 _MAIL_CHAT = re.compile(r"(outlook|gmail|whatsapp|discord|\bteams\b|slack)", re.I)
@@ -648,7 +655,7 @@ TOOLS = {t.name: t for t in [
          {"window": S, "direction": {"type": "string", "enum": ["up", "down"]},
           "amount": {"type": "integer"}}, ["window", "direction"], SAFE, scroll),
     Tool("open_url", "Open an http or https URL in the default browser. file:, javascript: and data: are refused.",
-         {"url": S}, ["url"], SAFE, open_url),
+         {"url": S}, ["url"], SAFE, open_url, _open_url_tier),
     Tool("trash_file",
          "Move a file or folder to Iris's trash (undoable with restore_trash). Never deletes permanently.",
          {"path": S}, ["path"], CONFIRM, trash_file, _trash_tier),

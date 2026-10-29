@@ -7,7 +7,13 @@
 - [x] L5. the report lists wrong-language answers (643 passed in 23.05s)
 - [x] L6. docs (643 passed in 23.01s)
 - [x] L7. no dashes (643 passed in 22.85s)
-- [ ] L8. final check
+- [x] L8. final check (643 passed in 22.84s)
+
+## Eval language run result
+
+- Commits ahead of policy-refusals: 8 (L1 to L8; this commit included)
+- Gates, last lines: ruff "All checks passed!"; mypy "Success: no issues found in 11 source files"; pytest "643 passed in 22.84s"
+- Tasks set to a non-default lang: english -> "en", open_app_fails -> "any" (all others stay nl)
 
 L3 lang changes in eval/tasks.toml: english -> "en", open_app_fails -> "any". Every other request has at least one Dutch word, so it stays nl.
 

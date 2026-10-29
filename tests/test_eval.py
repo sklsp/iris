@@ -736,7 +736,7 @@ def test_publish_newest_report_wins(tmp_path):
 
 def test_publish_without_reports(tmp_path, capsys):
     rc = ev.main(["publish", "--results", str(tmp_path / "empty"), "--readme", str(tmp_path / "README.md")])
-    assert rc == 2 and "no reports" in capsys.readouterr().out
+    assert rc == 2 and "no full reports" in capsys.readouterr().out
 
 
 def test_eval_command_unknown_only_id(tmp_path, capsys):
@@ -944,4 +944,78 @@ def test_main_history_returns_zero_for_broken_reports(tmp_path, capsys):
 def test_main_history_missing_folder(tmp_path, capsys):
     rc = ev.main(["history", "--results", str(tmp_path / "nope")])
     assert rc == 1 and capsys.readouterr().out.splitlines() == ["no eval results"]
+
+
+
+# --- partial runs never become the headline ------------------------------------
+def _full_and_partial(tmp_path):
+    # an older full report next to a newer partial one
+    ev.write_report(_results(), tmp_path / "results", "20261027-080000", model="old-model")
+    ev.write_report([_results()[0]], tmp_path / "results", "20261027-090000", model="new-model", partial=True)
+
+
+def test_write_report_stores_the_partial_flag(tmp_path):
+    json_path, _ = ev.write_report(_results(), tmp_path / "reports", "20261028-1000")
+    assert _json.loads(json_path.read_text(encoding="utf-8"))["partial"] is False
+    json_path, _ = ev.write_report(_results(), tmp_path / "reports", "20261029-1000", partial=True)
+    assert _json.loads(json_path.read_text(encoding="utf-8"))["partial"] is True
+
+
+def test_full_reports_skips_partial_keeps_broken_and_keyless(tmp_path):
+    ev.write_report(_results(), tmp_path / "r", "20260101-000000")  # has the key: false, counts
+    (tmp_path / "r" / "20260102-000000.json").write_text("{ not json", encoding="utf-8")  # unreadable counts as full
+    old = {"stamp": "20260103-000000", "model": "m", "summary": {}, "results": []}  # no key at all: still full
+    (tmp_path / "r" / "20260103-000000.json").write_text(_json.dumps(old), encoding="utf-8")
+    ev.write_report([_results()[0]], tmp_path / "r", "20260104-000000", partial=True)  # newest, but partial
+    assert [p.name for p in ev.full_reports(tmp_path / "r")] == ["20260101-000000.json", "20260102-000000.json",
+                                                                 "20260103-000000.json"]
+
+
+def test_full_reports_missing_dir_is_empty(tmp_path):
+    assert ev.full_reports(tmp_path / "nope") == []
+
+
+def test_publish_writes_the_full_stamp_when_a_newer_partial_exists(tmp_path, capsys):
+    _full_and_partial(tmp_path)
+    readme = tmp_path / "README.md"
+    readme.write_text(_readme_with_markers(), encoding="utf-8")
+    rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
+    text = readme.read_text(encoding="utf-8")
+    assert rc == 0 and "Run of 2026-10-27 08:00 on `old-model`" in text
+    assert "new-model" not in text
+
+
+def test_publish_with_only_partial_reports(tmp_path, capsys):
+    ev.write_report([_results()[0]], tmp_path / "results", "20261027-090000", partial=True)
+    readme = tmp_path / "README.md"
+    readme.write_text(_readme_with_markers(), encoding="utf-8")
+    rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
+    assert rc == 2 and "no full reports in" in capsys.readouterr().out
+
+
+def test_history_lists_only_full_reports(tmp_path):
+    _full_and_partial(tmp_path)
+    h = ev.history(tmp_path / "results")
+    assert [r["stamp"] for r in h["runs"]] == ["20261027-080000"]
+
+
+def test_eval_command_only_marks_the_report_partial(tmp_path, monkeypatch):
+    tasks_file = tmp_path / "tasks.toml"
+    text = ('[[task]]\nid = "a"\nrequest = "Hoi"\n\n'
+            '[[task]]\nid = "b"\nrequest = "Hallo"\n')
+    tasks_file.write_text(text, encoding="utf-8")
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--only", "a"])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a"] and report["partial"] is True
+
+
+def test_eval_command_without_filters_marks_the_report_full(tmp_path, monkeypatch):
+    tasks_file = tmp_path / "tasks.toml"
+    tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n', encoding="utf-8")
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results")])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    assert rc == 0 and _json.loads(json_path.read_text(encoding="utf-8"))["partial"] is False
 

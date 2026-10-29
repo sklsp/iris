@@ -264,13 +264,16 @@ def _category_table(s: dict) -> list[str]:
     return lines
 
 
-def write_report(results: list[Result], out_dir, stamp: str, model: str = "", repeat: int = 1) -> tuple[Path, Path]:
-    """Write {stamp}.json and {stamp}.md into out_dir; returns (json path, md path)."""
+def write_report(results: list[Result], out_dir, stamp: str, model: str = "", repeat: int = 1,
+                 partial: bool = False) -> tuple[Path, Path]:
+    """Write {stamp}.json and {stamp}.md into out_dir; returns (json path, md path).
+
+    partial marks a filtered run over a subset of the tasks; such reports never become the headline."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     s = summarize(results, repeat=repeat)
     json_path = out_dir / f"{stamp}.json"
-    json_path.write_text(json.dumps({"stamp": stamp, "model": model or "unknown",
+    json_path.write_text(json.dumps({"stamp": stamp, "model": model or "unknown", "partial": partial,
                                      "summary": s, "results": [asdict(r) for r in results]}, indent=2),
                          encoding="utf-8")
     lines = [f"# Iris eval {stamp}", "", f"Model: {model or 'unknown'}", "", _summary_line(s), ""]
@@ -326,16 +329,38 @@ def _num_or(value, fallback):
     return fallback
 
 
-def history(results_dir, last: int = 10) -> dict:
-    """Read-only trend over the newest reports in results_dir; never writes anything there.
+def full_reports(results_dir) -> list[Path]:
+    """The *.json reports in results_dir, sorted by name, without the partial ones.
 
-    A report whose "results" is not a list is skipped (counted in "skipped"); summary numbers that are
-    not int/float fall back to values computed from results."""
+    A report whose JSON says "partial": true was a filtered run and never counts; a report
+    without the key, or one that cannot be read as JSON, counts as full (history() copes
+    with broken files)."""
+    d = Path(results_dir)
+    if not d.is_dir():
+        return []
+    out: list[Path] = []
+    for f in sorted(d.glob("*.json")):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            out.append(f)
+            continue
+        if isinstance(data, dict) and data.get("partial") is True:
+            continue
+        out.append(f)
+    return out
+
+
+def history(results_dir, last: int = 10) -> dict:
+    """Read-only trend over the newest full reports in results_dir; never writes anything there.
+
+    Partial (filtered) runs are not listed. A report whose "results" is not a list is skipped
+    (counted in "skipped"); summary numbers that are not int/float fall back to values computed from results."""
     out: dict = {"runs": [], "tasks": {}, "flaky": [], "skipped": 0}
     d = Path(results_dir)
     if not d.is_dir():
         return out
-    files = sorted(d.glob("*.json"))[-last:] if last > 0 else []
+    files = full_reports(results_dir)[-last:] if last > 0 else []
     per_task: dict[str, list[tuple[int, int]]] = {}
     for f in files:
         try:
@@ -397,10 +422,10 @@ def print_history(results_dir, last: int) -> int:
 
 
 def publish(results_dir, readme_path) -> int:
-    """Replace the eval block in the README with the newest report from results_dir."""
-    files = sorted(Path(results_dir).glob("*.json"))
+    """Replace the eval block in the README with the newest full report from results_dir."""
+    files = full_reports(results_dir)
     if not files:
-        print(f"no reports in {results_dir}")
+        print(f"no full reports in {results_dir}")
         return 2
     data = json.loads(files[-1].read_text(encoding="utf-8"))
     s = data["summary"]
@@ -441,6 +466,7 @@ def main(argv: list[str]) -> int:
         return print_history(a.results, a.last)
 
     tasks = load_tasks(Path(a.tasks))
+    partial = False
     if a.only:
         known = {t.id for t in tasks}
         for tid in a.only:
@@ -449,6 +475,7 @@ def main(argv: list[str]) -> int:
                 return 2
         wanted = set(a.only)
         tasks = [t for t in tasks if t.id in wanted]
+        partial = True
 
     llm = LMStudio()
     total = len(tasks) * a.repeat
@@ -460,7 +487,7 @@ def main(argv: list[str]) -> int:
             print(f"[{len(results)}/{total}] {r.id} {'pass' if r.passed else 'FAIL'} {r.seconds:.1f}s", flush=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     s = summarize(results, repeat=a.repeat)
-    _, md_path = write_report(results, a.out, stamp, model=effective_model(), repeat=a.repeat)
+    _, md_path = write_report(results, a.out, stamp, model=effective_model(), repeat=a.repeat, partial=partial)
     print(_summary_line(s))
     print(f"Report: {md_path}")
     return 0

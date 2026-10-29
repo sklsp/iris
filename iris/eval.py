@@ -104,6 +104,8 @@ class Result:
     lang: str = "?"  # language of the answer (answer_language), "?" when unsure
     want_lang: str = "nl"  # the task's expected language ("nl", "en" or "any")
     forbid: list[str] = field(default_factory=list)  # the task's forbid list, for refused_attempts
+    request: str = ""  # the task's first request, shown in the report's failed-task section
+    turns: list[str] = field(default_factory=list)  # later requests of the same conversation
 
 
 def run_task(llm, task: Task, journal_dir=None) -> Result:
@@ -165,7 +167,7 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
     return Result(id=task.id, passed=not reasons, calls=calls, confirmations=confirmations,
                   seconds=seconds, answer=answer_text, reasons=reasons, category=task.category,
                   confirm=task.confirm, confirmed_ok=confirmed_ok, lang=answer_language(answer_text),
-                  want_lang=task.lang, forbid=task.forbid)
+                  want_lang=task.lang, forbid=task.forbid, request=task.request, turns=list(task.turns))
 
 
 # Stopwords for answer_language: very common words per language that the other two do not share. A word
@@ -272,6 +274,13 @@ def write_report(results: list[Result], out_dir, stamp: str, model: str = "", re
         lines.append(f"| {r.id} | {'pass' if r.passed else 'FAIL'} | "
                      f"{', '.join(f'{t}:{o}' for t, o in r.calls) or '-'} | {r.seconds:.1f} | "
                      f"{' ; '.join(r.reasons) or '-'} |")
+    lines += ["", "## Failed tasks"]
+    failed = [r for r in results if not r.passed]
+    for r in failed:
+        lines.append(f"- {r.id}: {r.request}")
+        lines += [f"  then: {t}" for t in r.turns]
+    if not failed:
+        lines.append("none")
     lines += ["", "## Wrong language"]
     wrong = [r for r in results if _wrong_language(r)]
     lines += ([f"- {r.id}: expected {r.want_lang}, got {r.lang}: {r.answer[:80]}" for r in wrong] or ["none"])

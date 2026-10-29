@@ -396,6 +396,13 @@ def test_max_calls_counts_calls_of_both_turns(tmp_path):
     assert (r.passed, r.reasons) == (False, ["too many calls: 3 > 2"])
 
 
+def test_result_carries_request_and_turns(tmp_path):
+    task = ev.Task(id="t23", request="open kladblok", turns=["en nu?"])
+    llm = ScriptedLLM(call("open_app"), answer("Klaar."), answer("Ja, staat open."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.request, r.turns) == ("open kladblok", ["en nu?"])
+
+
 # --- answer language -----------------------------------------------------------
 def test_answer_language_dutch():
     assert ev.answer_language("Ik kan dat niet doen.") == "nl"
@@ -584,6 +591,45 @@ def test_report_wrong_language_none(tmp_path):
     md = md_path.read_text(encoding="utf-8").splitlines()
     i = md.index("## Wrong language")
     assert md[i + 1] == "none"
+
+
+def test_failed_task_section_shows_turns_under_the_request(tmp_path):
+    r = ev.Result(id="t30", passed=False, calls=[], confirmations=0, seconds=1.0, answer="", reasons=["gave up"],
+                  request="open kladblok", turns=["en nu?", "sluit het"])
+    json_path, md_path = ev.write_report([r], tmp_path / "reports", "20261028-1000")
+    md = md_path.read_text(encoding="utf-8").splitlines()
+    i = md.index("- t30: open kladblok")
+    assert md[i + 1] == "  then: en nu?"
+    assert md[i + 2] == "  then: sluit het"
+    data = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert (data["results"][0]["request"], data["results"][0]["turns"]) == ("open kladblok", ["en nu?", "sluit het"])
+
+
+def test_failed_task_without_turns_has_no_then_lines(tmp_path):
+    r = ev.Result(id="t31", passed=False, calls=[], confirmations=0, seconds=1.0, answer="", reasons=["gave up"],
+                  request="doe iets")
+    _json_path, md_path = ev.write_report([r], tmp_path / "reports", "20261028-1000")
+    lines = md_path.read_text(encoding="utf-8").splitlines()
+    assert "- t31: doe iets" in lines and not any(line.startswith("  then:") for line in lines)
+
+
+def test_failed_tasks_section_says_none_when_all_pass(tmp_path):
+    _json_path, md_path = ev.write_report(_results()[:1], tmp_path / "reports", "20261028-1000")
+    lines = md_path.read_text(encoding="utf-8").splitlines()
+    i = lines.index("## Failed tasks")
+    assert lines[i + 1] == "none"
+
+
+def test_history_and_compare_load_old_reports_without_turns(tmp_path):
+    old = {"stamp": "20260105-000000", "model": "m",
+           "summary": {"tasks": 1, "passed": 0, "success_rate": 0.0},
+           "results": [{"id": "a", "passed": False}]}   # old format: no request or turns keys
+    (tmp_path / "20260105-000000.json").write_text(_json.dumps(old), encoding="utf-8")
+    h = ev.history(tmp_path)
+    assert [run["stamp"] for run in h["runs"]] == ["20260105-000000"]
+    new = {"stamp": "b", "model": "m", "results": [{"id": "a", "passed": True, "turns": ["t"]}]}
+    lines = ev.compare(old, new)
+    assert lines[0] == "0/1 -> 1/1 tasks passed" and "fixed: a" in lines
 
 
 # --- the eval command ----------------------------------------------------------

@@ -2,7 +2,7 @@
 
 - [x] M1. bound the history (699 passed in 24.14s)
 - [x] M2. multi-turn eval tasks (704 passed in 22.87s)
-- [ ] M3. the report shows turns
+- [x] M3. the report shows turns (709 passed in 24.16s)
 - [ ] M4. six multi-turn tasks
 - [ ] M5. docs
 - [ ] M6. no dashes

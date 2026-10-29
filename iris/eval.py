@@ -26,6 +26,7 @@ class Task:
     max_calls: int = 6
     category: str = "other"
     lang: str = "nl"  # language the answer is expected in ("nl", "en" or "any")
+    turns: list[str] = field(default_factory=list)  # later requests in the same conversation, after request
 
 
 def load_tasks(path) -> list[Task]:
@@ -62,9 +63,12 @@ def load_tasks(path) -> list[Task]:
             is_seq = isinstance(fx, list) and len(fx) > 0 and all(isinstance(x, str) for x in fx)
             if not (isinstance(fx, str) or is_seq):
                 raise ValueError(f"bad fixture for {tool} in task {tid}")
+        raw_turns = t.get("turns", [])
+        if not isinstance(raw_turns, list) or not all(isinstance(x, str) and x for x in raw_turns):
+            raise ValueError(f"bad turns in task {tid}")
         tasks.append(Task(id=tid, request=req, expect=expect, forbid=forbid, confirm=confirm,
                           outcomes=outcomes, fixtures=fixtures, max_calls=int(t.get("max_calls", 6)),
-                          category=category, lang=lang))
+                          category=category, lang=lang, turns=list(raw_turns)))
     return tasks
 
 
@@ -110,6 +114,8 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
     agent = Agent(llm, lambda q: task.confirm == "yes", Journal(path), dry_tools(task.fixtures))
     start = time.perf_counter()
     answer_text = agent.handle(task.request)
+    for turn in task.turns:
+        answer_text = agent.handle(turn)
     seconds = time.perf_counter() - start
 
     calls, kinds, confirmations, confirmed_ok, gave_up = [], [], 0, 0, False

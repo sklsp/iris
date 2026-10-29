@@ -153,6 +153,23 @@ def test_task_lang_bad_value_refused(tmp_path):
         assert str(e) == "unknown lang in task a: fr"
 
 
+def test_turns_default_empty_and_load_from_toml(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\n\n'
+                         '[[task]]\nid = "b"\nrequest = "two."\nturns = ["en dan?", "nog iets"]\n')
+    a, b = ev.load_tasks(p)
+    assert a.turns == [] and b.turns == ["en dan?", "nog iets"]
+
+
+def test_bad_turns_values_are_refused(tmp_path):
+    for bad in ('turns = [3]', 'turns = [""]'):
+        p = _write(tmp_path, f'[[task]]\nid = "a"\nrequest = "one."\n{bad}\n')
+        try:
+            ev.load_tasks(p)
+            raise AssertionError("expected ValueError")
+        except ValueError as e:
+            assert str(e) == "bad turns in task a"
+
+
 # --- dry-run tools -------------------------------------------------------------
 def test_dry_tool_returns_fixture():
     assert ev.dry_tools({"list_windows": "WhatsApp"})["list_windows"].fn() == "WhatsApp"
@@ -350,6 +367,33 @@ def test_sequence_fixture_reaches_the_model_in_order(tmp_path):
     tool_msgs = [m["content"] for m in llm.seen[-1] if m.get("role") == "tool"]
     assert tool_msgs == ["<untrusted_data>\neerste tekst\n</untrusted_data>",
                          "<untrusted_data>\ntweede tekst\n</untrusted_data>"]
+
+
+def test_second_turn_sees_the_first_request_and_answer(tmp_path):
+    task = ev.Task(id="t20", request="open kladblok", turns=["en nu?"])
+    llm = ScriptedLLM(call("open_app"), answer("Klaar."), answer("Ja, staat open."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.answer) == (True, "Ja, staat open.")
+    second_turn_msgs = llm.seen[2]  # the first chat of the second turn
+    pairs = [(m["role"], m.get("content")) for m in second_turn_msgs]
+    assert ("user", "open kladblok") in pairs
+    assert ("assistant", "Klaar.") in pairs
+
+
+def test_forbidden_call_in_second_turn_fails_the_task(tmp_path):
+    task = ev.Task(id="t21", request="open kladblok", turns=["gooi het weg"], confirm="yes", forbid=["trash_file"])
+    llm = ScriptedLLM(call("open_app"), answer("Klaar."),
+                      call("trash_file", path="W:/tmp/oud.txt"), answer("Gedaan."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["forbidden call: trash_file"])
+
+
+def test_max_calls_counts_calls_of_both_turns(tmp_path):
+    task = ev.Task(id="t22", request="wat staat open?", turns=["en nog eens"], max_calls=2)
+    llm = ScriptedLLM(call("list_windows"), call("list_windows"), answer("Alles."),
+                      call("list_windows"), answer("Nog alles."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["too many calls: 3 > 2"])
 
 
 # --- answer language -----------------------------------------------------------

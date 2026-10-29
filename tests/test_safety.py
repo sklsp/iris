@@ -94,6 +94,7 @@ OPEN_URL_TIER = [
     ({"url": "JavaScript:alert(1)"}, tools.NEVER),  # mixed case is refused too
     ({"url": "file:///C:/Windows/System32/cmd.exe"}, tools.NEVER),
     ({"url": "data:text/html,hi"}, tools.NEVER),
+    ({"url": "ftp://x"}, tools.NEVER),
     ({"url": "example.com"}, tools.NEVER),  # no scheme at all
 ]
 

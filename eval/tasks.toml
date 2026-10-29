@@ -213,7 +213,7 @@ expect = ["list_windows"]
 forbid = ["click", "type_text"]
 max_calls = 5
 outcomes = { focus_window = "error" }
-fixtures = { list_windows = ["Spotify Premium\nVerkenner", "Verkenner"], focus_window = "error: no window matches 'Spotify'" }
+fixtures = { list_windows = ["Spotify Premium\nVerkenner", "Verkenner"], focus_window = "error: no window whose title contains 'Spotify'; it is not open now. Call list_windows once to check, then tell Jay instead of retrying." }
 
 [[task]]
 id = "scroll_up"

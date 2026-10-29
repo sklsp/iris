@@ -304,7 +304,9 @@ def _window(title: str):
     t = title.lower()
     wins = [w for w in _desktop().windows() if t in w.window_text().lower()]
     if not wins:
-        raise LookupError(f"no window whose title contains {title!r}")
+        raise LookupError(
+            f"no window whose title contains {title!r}; it is not open now. Call list_windows once to check, "
+            f"then tell Jay instead of retrying.")
     return wins[0]
 
 

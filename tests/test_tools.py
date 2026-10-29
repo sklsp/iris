@@ -65,6 +65,19 @@ def test_focus_window(fake_window):
     assert fake_window.focus_calls == 1
 
 
+def test_missing_window_error_tells_the_model_to_stop_retrying(monkeypatch):
+    class EmptyDesktop:
+        def windows(self):
+            return []
+
+    monkeypatch.setattr(tools, "_desktop", lambda: EmptyDesktop())
+    with pytest.raises(LookupError) as exc:
+        tools.focus_window("Spotify")
+    assert str(exc.value) == (
+        "no window whose title contains 'Spotify'; it is not open now. Call list_windows once to check, "
+        "then tell Jay instead of retrying.")
+
+
 # --- scroll -------------------------------------------------------------------
 def test_scroll_down_sends_negative_delta(monkeypatch, fake_window):
     calls = []

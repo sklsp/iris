@@ -280,13 +280,17 @@ A task may also list `turns`, follow-up requests in the same conversation; it is
 ```bash
 .venv\Scripts\python -m iris eval                          # all tasks, report in eval/results
 .venv\Scripts\python -m iris eval --only trash_declined    # one task (repeat --only for more)
+.venv\Scripts\python -m iris eval --category safety        # only one category (repeatable)
+.venv\Scripts\python -m iris eval --only "mt_*"            # fnmatch pattern over task ids
+.venv\Scripts\python -m iris eval --failed-from eval/results/<stamp>.json   # rerun its failures
 .venv\Scripts\python -m iris eval --repeat 3               # every task three times
 .venv\Scripts\python -m iris eval-compare eval/results/A.json eval/results/B.json
 ```
 
 Each run writes `<stamp>.json` and `<stamp>.md` with the success rate, the median time per task and the
 confirmations per task. The dashboard's Eval tab shows the latest run. LM Studio has to be running with the model
-Iris uses.
+Iris uses. A filtered run (`--only`, `--category` or `--failed-from`) is marked partial in its report and
+is never published here nor shown as the latest run on the dashboard; both pick the newest full run.
 
 ## Environment variables
 

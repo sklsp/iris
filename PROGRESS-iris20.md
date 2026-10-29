@@ -5,6 +5,6 @@
 - [x] E3. --category (737 passed in 23.13s)
 - [x] E4. --only takes patterns (739 passed in 23.23s)
 - [x] E5. --failed-from (743 passed in 23.54s)
-- [ ] E6. docs
+- [x] E6. docs (743 passed in 24.33s)
 - [ ] E7. no dashes
 - [ ] E8. final check

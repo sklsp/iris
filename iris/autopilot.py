@@ -87,20 +87,29 @@ def _started_at_epoch(value: object) -> float | None:
         return None
 
 
+def _matches(text: str, t0: float, session: dict) -> bool:
+    """Whether one history entry is a start of `text`: right source, inside the window, prompt contains it."""
+    if session.get("source") != "cline-cli-zen":
+        return False
+    started_at = _started_at_epoch(session.get("startedAt"))
+    if started_at is None or started_at < t0 - 5:
+        return False
+    needle = text.strip()[:60]
+    prompt = session.get("prompt")
+    return isinstance(prompt, str) and needle in prompt
+
+
 def _find_started(text: str, t0: float, sessions: list[dict]) -> str | None:
     """The session id of a `cline-cli-zen` entry started at or after t0 - 5 whose prompt contains text, else None."""
-    needle = text.strip()[:60]
     for session in sessions:
-        if session.get("source") != "cline-cli-zen":
-            continue
-        started_at = _started_at_epoch(session.get("startedAt"))
-        if started_at is None or started_at < t0 - 5:
-            continue
-        prompt = session.get("prompt")
-        if not isinstance(prompt, str) or needle not in prompt:
-            continue
-        return session["sessionId"]
+        if _matches(text, t0, session):
+            return session["sessionId"]
     return None
+
+
+def _count_started(text: str, t0: float, sessions_list: list[dict]) -> int:
+    """How many entries of the history _find_started's rules would match; two or more means a double start."""
+    return sum(1 for s in sessions_list if _matches(text, t0, s))
 
 
 def _dispatch(text: str, cwd: str, run=subprocess.run) -> str:
@@ -151,7 +160,8 @@ def start_in_hub(
     When no read of round one succeeded it raises RuntimeError "could not read the Cline history; not retrying, so a
     session may have started: check Cline", because re-dispatching could start the prompt twice. Only when both rounds
     found nothing does it raise RuntimeError "Cline did not start a session after two tries: <detail>", where detail is
-    the last non-empty stderr line of the second call, or "no output"."""
+    the last non-empty stderr line of the second call, or "no output". When the retry found the session, the history is
+    read once more; if two or more entries match, the result carries a warning that the prompt started twice."""
     if sessions is None:
         sessions = partial(cline_sessions, run=run)
     if now is None:
@@ -161,10 +171,19 @@ def start_in_hub(
     sid, any_read = _poll(text, t0, sessions, sleep=sleep, polls=polls)
     if sid is None and not any_read:
         raise RuntimeError("could not read the Cline history; not retrying, so a session may have started: check Cline")
+    retried = False
     if sid is None:
         stderr = _dispatch(text, cwd, run=run)  # the first dispatch may have been lost; one retry before deciding
         sid, _ = _poll(text, t0, sessions, sleep=sleep, polls=polls)
+        retried = True
     if sid is not None:
+        if retried:   # a late first session and this retry can both be running; count them once more
+            sleep(3)  # give a second session time to register before counting
+            extra = sessions()
+            n = _count_started(text, t0, extra) if extra is not None else 1
+            if n >= 2:
+                return (f"started Cline session {sid} in {cwd}; warning: {n} sessions started for this prompt, "
+                        f"stop the extra one in Cline")
         return f"started Cline session {sid} in {cwd}"
     detail = next((line.strip() for line in reversed(stderr.splitlines()) if line.strip()), "no output")
     raise RuntimeError(f"Cline did not start a session after two tries: {detail}")

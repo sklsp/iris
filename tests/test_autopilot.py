@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from iris.autopilot import (
+    _count_started,
     cline_cli,
     cline_command,
     cline_cwd,
@@ -621,6 +622,142 @@ def test_start_in_hub_missing_cli_raises_lookup_error_without_a_retry(monkeypatc
         )
     assert str(exc.value) == "Cline CLI not found at W:/Cline/cline-cli.exe"
     assert calls == 1
+
+
+def test_start_in_hub_first_round_success_does_not_reread_the_history(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    reads = 0
+
+    def counting_sessions() -> list[dict]:
+        nonlocal reads
+        reads += 1
+        return sessions
+
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    out = start_in_hub(
+        "fix the bug", "W:/Iris", run=fake_run, sessions=counting_sessions, now=lambda: HUB_NOW, sleep=fake_sleep
+    )
+    assert out == "started Cline session abc in W:/Iris"
+    assert reads == 1   # found on the first check; no extra read of the history
+    assert sleeps == []
+
+
+def test_start_in_hub_retry_with_one_session_says_nothing(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    calls = 0
+
+    def fake_run(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    reads = 0
+
+    def empty_then_found() -> list[dict]:
+        # round one reads an empty history; the session appears only after the retry dispatches
+        nonlocal reads
+        reads += 1
+        return [] if calls < 2 else sessions
+
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    out = start_in_hub(
+        "fix the bug", "W:/Iris", run=fake_run, sessions=empty_then_found, now=lambda: HUB_NOW, sleep=fake_sleep
+    )
+    assert out == "started Cline session abc in W:/Iris"
+    assert reads == 7   # five of round one plus the first of round two, and exactly one extra read after that
+    assert sleeps[-1] == 3   # the wait before the extra read
+
+
+def test_start_in_hub_retry_with_two_sessions_warns_about_the_double_start(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    first = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+    both = first + [
+        {"sessionId": "def", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 2), "prompt": "fix the bug"}
+    ]
+
+    calls = 0
+
+    def fake_run(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    reads = 0
+
+    def empty_then_first_then_both() -> list[dict]:
+        # round one is empty; the retry's polls see one session; the extra read sees both (a double start)
+        nonlocal reads
+        reads += 1
+        if calls < 2:
+            return []
+        return first if reads <= 6 else both
+
+    out = start_in_hub(
+        "fix the bug", "W:/Iris", run=fake_run, sessions=empty_then_first_then_both, now=lambda: HUB_NOW,
+        sleep=lambda s: None,
+    )
+    assert out == ("started Cline session abc in W:/Iris; warning: 2 sessions started for this prompt, "
+                   "stop the extra one in Cline")
+
+
+def test_start_in_hub_retry_with_an_unreadable_extra_read_says_nothing(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    sessions = [
+        {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    ]
+
+    calls = 0
+
+    def fake_run(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
+
+    reads = 0
+
+    def empty_then_found_then_none() -> list[dict] | None:
+        # round one is empty; the retry's polls find it; the extra read fails (None) and must not warn
+        nonlocal reads
+        reads += 1
+        if calls < 2:
+            return []
+        return sessions if reads <= 6 else None
+
+    out = start_in_hub(
+        "fix the bug", "W:/Iris", run=fake_run, sessions=empty_then_found_then_none, now=lambda: HUB_NOW,
+        sleep=lambda s: None,
+    )
+    assert out == "started Cline session abc in W:/Iris"
+
+
+def test_count_started_ignores_old_sessions_and_other_prompts():
+    old = {"sessionId": "old", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW - 6), "prompt": "fix the bug"}
+    other = {"sessionId": "oth", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1),
+             "prompt": "some other prompt"}
+    first = {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
+    second = {"sessionId": "def", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW - 4), "prompt": "fix the bug"}
+    assert _count_started("fix the bug", HUB_NOW, [old, other, first, second]) == 2   # only the two inside the window
 
 
 def _queue_file(

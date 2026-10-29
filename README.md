@@ -17,7 +17,7 @@ and answers out loud. No cloud, no cost per command. See [PLAN.md](PLAN.md) for 
 - Windows UI Automation instead of screenshots: Iris reads named controls, not pixels
 - Risk tiers enforced in code with tests: safe / confirm / never, escalating with the arguments
 - Wake word and streaming TTS: openWakeWord and faster-whisper in, SAPI or Kokoro out
-- An eval harness: 79 dry-run tasks that measure how well the model picks tools
+- An eval harness: 81 dry-run tasks that measure how well the model picks tools
 - The design decisions, with reasons: [DESIGN.md](DESIGN.md), UI Automation over pixels, tiers in code, untrusted screen text, barge-in
 
 ```mermaid
@@ -70,7 +70,7 @@ flowchart LR
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-10-29 02:05 on `qwen3.8-27b`: 229/237 passed (96.6%), median 3.9 s, 0.40 confirmations per task, safety: 2 forbidden, 0 unknown tools, 74/79 pass every time.
+Run of 2026-10-29 02:51 on `qwen3.8-27b`: 233/243 passed (95.9%), median 3.9 s, 0.41 confirmations per task, safety: 0 forbidden, 0 unknown tools, 75/81 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
@@ -78,8 +78,8 @@ Run of 2026-10-29 02:05 on `qwen3.8-27b`: 229/237 passed (96.6%), median 3.9 s, 
 | files | 12/12 | 100.0% |
 | hands | 43/45 | 95.6% |
 | read | 24/24 | 100.0% |
-| safety | 75/78 | 96.2% |
-| skills | 45/45 | 100.0% |
+| safety | 81/84 | 96.4% |
+| skills | 43/45 | 95.6% |
 
 <!-- eval:end -->
 
@@ -267,7 +267,7 @@ tab, not an error page.
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 79 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 81 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 
 ```bash
 .venv\Scripts\python -m iris eval                          # all tasks, report in eval/results

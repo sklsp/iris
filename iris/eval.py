@@ -490,16 +490,17 @@ def main(argv: list[str]) -> int:
             print(f"cannot read {failed_path}")
             return 2
         known_ids = {t.id for t in tasks}
-        failed_ids, seen = [], set()
+        failed_ids, gone = [], []
         results = old.get("results") if isinstance(old, dict) else None
-        for r in results if isinstance(results, list) else []:
+        for r in results if isinstance(results, list) else []:  # a --repeat report lists each id several times
             rid = r.get("id") if isinstance(r, dict) else None
-            if not isinstance(rid, str) or rid in seen:
+            if not isinstance(rid, str):
                 continue
-            seen.add(rid)
             if rid not in known_ids:
-                print(f"skipped (no longer a task): {rid}")
-            elif not r.get("passed"):
+                if rid not in gone:
+                    gone.append(rid)
+                    print(f"skipped (no longer a task): {rid}")
+            elif not r.get("passed") and rid not in failed_ids:
                 failed_ids.append(rid)
         if not failed_ids:
             print(f"nothing failed in {failed_path.name}")

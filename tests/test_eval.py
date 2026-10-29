@@ -1109,6 +1109,18 @@ def test_failed_from_keeps_only_tasks_that_failed(tmp_path, monkeypatch):
     assert rc == 0 and [r["id"] for r in report["results"]] == ["a"] and report["partial"] is True
 
 
+def test_failed_from_counts_a_failure_in_any_repeat(tmp_path, monkeypatch):
+    tasks_file, report_path = _failed_from_setup(
+        tmp_path, [{"id": "a", "passed": True}, {"id": "b", "passed": True},
+                   {"id": "a", "passed": False}, {"id": "b", "passed": True}])
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--failed-from", str(report_path)])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a"]
+
+
 def test_failed_from_skips_ids_that_are_no_longer_tasks(tmp_path, monkeypatch, capsys):
     tasks_file, report_path = _failed_from_setup(
         tmp_path, [{"id": "gone", "passed": False}, {"id": "a", "passed": False}])

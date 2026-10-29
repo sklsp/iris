@@ -5,5 +5,5 @@
 - [x] M3. the report shows turns (709 passed in 24.16s)
 - [x] M4. six multi-turn tasks (709 passed in 23.25s)
 - [x] M5. docs (709 passed in 22.94s)
-- [ ] M6. no dashes
+- [x] M6. no dashes (8 changed files scanned, none contain U+2014/U+2013; 709 passed in 22.99s)
 - [ ] M7. final check

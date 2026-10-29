@@ -5,5 +5,5 @@
 - [x] P3. a window that is not there says so (629 passed in 21.66s)
 - [x] P4. eval tasks for refused URLs (629 passed in 23.63s)
 - [x] P5. docs (629 passed in 22.28s)
-- [ ] P6. no dashes
+- [x] P6. no dashes (8 files changed since queue-voice scanned with Python; 0 U+2014/U+2013 found)
 - [ ] P7. final check

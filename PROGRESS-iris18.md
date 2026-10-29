@@ -4,6 +4,6 @@
 - [x] F2. the eval grades a model failure (714 passed in 22.88s)
 - [x] F3. journal_today counts model errors (716 passed in 24.67s)
 - [x] F4. the dashboard shows model errors (718 passed in 24.07s)
-- [ ] F5. docs
+- [x] F5. docs (718 passed in 23.36s)
 - [ ] F6. no dashes
 - [ ] F7. final check

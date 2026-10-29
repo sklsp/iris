@@ -326,4 +326,5 @@ Notepad took 5 s, and an edit request stopped at the confirmation. 149 tests cov
 model, the wake word and VAD on synthetic audio, the SAPI and Kokoro speakers with fakes, the window and URL
 tools with fake windows, the agent manager against temporary git repos, and the dashboard's sessions and
 Claude endpoints against temporary databases and controlled file times. Nothing in the suite touches the real
-desktop, the microphone, the LLM or your repos.
+desktop, the microphone, the LLM or your repos. When LM Studio is down or a model call fails, Iris says so,
+journals an `llm_error` and keeps listening.

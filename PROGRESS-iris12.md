@@ -5,7 +5,7 @@
 - [x] L3. the task's language (638 passed in 22.56s)
 - [x] L4. wrong-language count (641 passed in 22.37s)
 - [x] L5. the report lists wrong-language answers (643 passed in 23.05s)
-- [ ] L6. docs
+- [x] L6. docs (643 passed in 23.01s)
 - [ ] L7. no dashes
 - [ ] L8. final check
 

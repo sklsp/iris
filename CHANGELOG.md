@@ -70,6 +70,13 @@ Docs:
 Coverage:
 - iris/eval.py at 100% (was 97%) with tests for broken journal lines, MAX_STEPS give-up, publish without reports and --only filtering; the suite is now 484 tests
 
+Eval language tracking:
+- two Dutch phrasings the model misreads are pinned: lmstudio_load and lmstudio_unload descriptions say "laad ... uit"/"uitladen" means unload, and queue_remove_by_text asks "Verwijder ..." instead of the ambiguous "Haal ... uit de wachtrij"
+- answer_language detects whether a final answer is Dutch, English or German by stopword count, "?" when unsure; every result records it as lang
+- every task has a lang field ("nl", "en" or "any") for the language Jay expects in the answer (default nl)
+- the summary counts wrong-language answers (language.wrong and language.unknown) and shows them on the MD line
+- the MD report lists each wrong-language result under Wrong language (id, expected, got, first 80 chars of the answer); JSON results carry lang and want_lang per task
+
 ## 0.2.0
 
 Gates:

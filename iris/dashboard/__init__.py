@@ -314,6 +314,14 @@ def _page_template() -> bytes:
     return _PAGE_TEMPLATE
 
 
+def _activity_entry(e) -> dict:
+    """A journal line shaped for the Activity tab; a model failure shows like an errored call of 'model'."""
+    if e.get("event") == "llm_error":
+        return {"event": "tool", "tool": "model", "tier": "?", "outcome": "error",
+                "error": str(e.get("error") or ""), "t": e.get("t")}
+    return e
+
+
 def journal_payload() -> dict:
     """The last 50 entries, newest first, plus today's counters. Read only."""
     path = journal_path()
@@ -330,7 +338,7 @@ def journal_payload() -> dict:
                     continue  # a torn final line must never break the dashboard
     today = time.strftime("%Y-%m-%d")
     counts = {"requests": 0, "confirmations": 0, "refusals": 0, "errors": 0}
-    for e in entries:
+    for e in entries:   # raw lines: a model error is not a tool call, so it stays out of the counters
         if not str(e.get("t", "")).startswith(today):
             continue
         if e.get("event") == "request":
@@ -343,7 +351,7 @@ def journal_payload() -> dict:
                 counts["refusals"] += 1
             elif outcome == "error":
                 counts["errors"] += 1
-    return {"entries": entries[-JOURNAL_LIMIT:][::-1], "today": counts}
+    return {"entries": [_activity_entry(e) for e in entries[-JOURNAL_LIMIT:]][::-1], "today": counts}
 
 
 def tools_payload() -> dict:

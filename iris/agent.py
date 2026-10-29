@@ -47,7 +47,14 @@ class Agent:
         self.journal.log(event="request", text=request)
         schemas = [t.schema() for t in self.tools.values()]
         for _ in range(MAX_STEPS):
-            reply = self.llm.chat(self.messages, schemas)
+            try:
+                reply = self.llm.chat(self.messages, schemas)
+            except (OSError, KeyError, IndexError, ValueError) as exc:
+                # LM Studio is down or full: end this turn only and keep the voice loop alive
+                self.journal.log(event="llm_error", error=repr(exc)[:500])
+                starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
+                del self.messages[starts[-1]:]
+                return "I can't reach the model in LM Studio right now. Try again in a moment."
             self.messages.append(reply.raw)
             if not reply.calls:
                 self.journal.log(event="answer", text=reply.text)

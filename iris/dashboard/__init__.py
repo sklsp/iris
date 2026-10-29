@@ -22,6 +22,8 @@ IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by th
                     (the IRIS_MODEL environment variable, then ~/.iris/settings.json)
     /api/eval     the newest eval report from eval/results (or IRIS_EVAL_DIR): its stamp,
                   model and summary, plus how many runs exist so far
+    /api/eval/history the trend over the last 10 saved runs in that same folder: success rate per run,
+                  per-task pass counts with one entry per run, and the flaky tasks; cached 30 s
     /api/queue    the prompts waiting in the agent queue, oldest first (read only)
 
 POST (the only writes): /api/models/load {model}, /api/models/unload {model | "all"}
@@ -521,6 +523,18 @@ def eval_payload(results_dir=None) -> dict:
     return {"latest": latest, "runs": len(files)}
 
 
+def eval_history_payload(results_dir=None) -> dict:
+    """The trend over the newest saved runs from results_dir / IRIS_EVAL_DIR (read only)."""
+    if results_dir is None:
+        results_dir = os.environ.get("IRIS_EVAL_DIR") or str(Path(__file__).resolve().parents[2] / "eval" / "results")
+    from iris import eval as iris_eval
+
+    try:
+        return iris_eval.history(results_dir, last=10)
+    except (OSError, ValueError, TypeError, KeyError):  # a broken report must not take the dashboard down
+        return {"runs": [], "tasks": {}, "flaky": [], "skipped": 0, "error": "unreadable reports"}
+
+
 # --- prompt queue ---------------------------------------------------------------
 
 
@@ -683,6 +697,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(tools_payload())
         elif path == "/api/eval":
             self._json(eval_payload())
+        elif path == "/api/eval/history":
+            self._json(_cached("eval_history", eval_history_payload))
         elif path == "/api/queue":
             self._json(queue_payload())
         else:

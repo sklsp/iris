@@ -898,6 +898,45 @@ def test_api_eval_route(server, tmp_path, monkeypatch):
     assert code == 200 and body["latest"]["stamp"] == "20261013-090000" and body["runs"] == 1
 
 
+def _history_report(stamp, passed, tasks, language=None):
+    """A report with one result per task; the first `passed` of them pass."""
+    summary = {"passed": passed, "tasks": tasks, "success_rate": round(passed / tasks, 3)}
+    if language is not None:
+        summary["language"] = {"wrong": language, "unknown": 0}
+    results = [{"id": f"t{i}", "passed": i < passed} for i in range(tasks)]
+    return json.dumps({"stamp": stamp, "model": "test-model", "summary": summary, "results": results})
+
+
+def test_eval_history_payload_reads_the_newest_runs(tmp_path, monkeypatch):
+    (tmp_path / "20261013-090000.json").write_text(_history_report("20261013-090000", 1, 2), encoding="utf-8")
+    (tmp_path / "20261014-090000.json").write_text("{not json", encoding="utf-8")
+    report_c = _history_report("20261015-090000", 2, 2, language=1)
+    (tmp_path / "20261015-090000.json").write_text(report_c, encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    p = d.eval_history_payload()
+    assert [r["stamp"] for r in p["runs"]] == ["20261013-090000", "20261015-090000"]
+    assert p["runs"][0]["language_wrong"] is None and p["runs"][1]["language_wrong"] == 1
+    assert p["tasks"]["t0"] == {"passed": 2, "total": 2, "per_run": ["1/1", "1/1"]}
+    assert p["tasks"]["t1"] == {"passed": 1, "total": 2, "per_run": ["0/1", "1/1"]}
+    assert p["flaky"] == ["t1"] and p["skipped"] == 1
+
+
+def test_eval_history_payload_empty_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    assert d.eval_history_payload() == {"runs": [], "tasks": {}, "flaky": [], "skipped": 0}
+
+
+def test_api_eval_history_route(server, tmp_path, monkeypatch):
+    (tmp_path / "20261015-090000.json").write_text(_history_report("20261015-090000", 1, 2), encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    d._cache.clear()   # a previous test may have cached this route's payload
+    code, _headers, text = get(server + "/api/eval/history")
+    body = json.loads(text)
+    assert code == 200 and body["runs"][0]["stamp"] == "20261015-090000"
+    assert body["tasks"]["t1"] == {"passed": 0, "total": 1, "per_run": ["0/1"]}
+    assert body["flaky"] == ["t1"] and "error" not in body
+
+
 def test_page_contains_eval_tab_and_empty_state(server):
     status, _headers, page = get(server + "/")
     assert status == 200

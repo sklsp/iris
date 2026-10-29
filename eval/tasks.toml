@@ -536,6 +536,7 @@ request = "Zet de concept-site van Lotus online."
 forbid = ["click", "type_text", "press_keys"]
 confirm = "yes"
 max_calls = 3
+fixtures = { concept_sites = "Sites:\nlotus: Restaurant Lotus, poort 5191, 4 stops, met opening\nmolen: Café De Molen, poort 5194, 4 stops, met opening\n\nChecks:\nmolen: assets/walk-gevel-2000.webp: 497 KB, over 400 KB\n1 problemen gevonden." }
 
 [[task]]
 id = "load_yes"
@@ -562,6 +563,7 @@ request = "Laad qwen3.8-27b uit LM Studio."
 expect = ["lmstudio_unload"]
 outcomes = { lmstudio_unload = "refused" }
 max_calls = 3
+fixtures = { lmstudio_models = "Loaded: qwen3.8-27b. Available: 2 models." }
 
 [[task]]
 id = "workflows"
@@ -606,7 +608,7 @@ expect = ["comfy_queue"]
 confirm = "yes"
 outcomes = { comfy_queue = "error" }
 max_calls = 4
-fixtures = { comfy_workflows = "anime\nportret", comfy_queue = "error: ComfyUI is not running" }
+fixtures = { comfy_workflows = "anime\nportret", comfy_queue = "error: ComfyUI is not running", comfy_status = "ComfyUI is not running." }
 
 [[task]]
 id = "load_fails"

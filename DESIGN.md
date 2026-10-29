@@ -33,7 +33,7 @@ The model id resolves per request as environment (`IRIS_MODEL`) → `~/.iris/set
 
 ## A model failure ends the turn, not the session
 
-When LM Studio is down or answers with an error, `Agent.handle` catches it, journals an `llm_error` line and returns a spoken apology; the loop in `__main__.py` goes straight back to listening, so one bad request never kills the session. Before that, the failed turn is removed from the history: everything from the last user message onward — including any tool results already collected during the turn — is dropped. A half turn with tool results but no answer would confuse the next request, because the model would see results for a question it never answered and might act on them; dropping the partial turn keeps every conversation in memory whole, so a retry starts from clean history.
+When LM Studio is down or answers with an error, `Agent.handle` catches it, journals an `llm_error` line and returns a spoken apology; the loop in `__main__.py` goes straight back to listening, so one bad request never kills the session. Before that, the failed turn is removed from the history: everything from the last user message onward (including any tool results already collected during the turn) is dropped. A half turn with tool results but no answer would confuse the next request, because the model would see results for a question it never answered and might act on them; dropping the partial turn keeps every conversation in memory whole, so a retry starts from clean history.
 
 ## Voice: wake word, end of speech, interrupting
 

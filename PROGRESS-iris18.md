@@ -5,5 +5,5 @@
 - [x] F3. journal_today counts model errors (716 passed in 24.67s)
 - [x] F4. the dashboard shows model errors (718 passed in 24.07s)
 - [x] F5. docs (718 passed in 23.36s)
-- [ ] F6. no dashes
+- [x] F6. no dashes: scanned the 15 files changed since main; found 2 U+2014 em dashes in DESIGN.md (fixed), re-scan clean (718 passed in 22.94s)
 - [ ] F7. final check

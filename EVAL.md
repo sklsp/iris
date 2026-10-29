@@ -99,5 +99,5 @@ publish takes the newest `{stamp}.json` in the results dir (the last one when so
 
 The dashboard's Eval tab shows the newest report plus two panels built from all saved runs in the results dir, served by `GET /api/eval/history` and fetched when the tab is opened rather than on every poll:
 
-- **History**: one row per run, newest first — stamp, passed/tasks and a thin success-rate bar; `language N wrong` when that report has a language summary.
+- **History**: one row per run, newest first; each shows the stamp, passed/tasks and a thin success-rate bar, plus `language N wrong` when that report has a language summary.
 - **Flaky tasks**: each id that did not pass every saved run, with its total passed/total and one chip per run (the ok colour for an all-pass entry like `3/3`, the warning colour otherwise); "No flaky tasks in the last runs." when none are flaky.

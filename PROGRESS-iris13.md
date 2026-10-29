@@ -5,6 +5,6 @@
 - [x] H3. GET /api/eval/history (653 passed in 22.12s)
 - [x] H4. the Eval tab shows the trend (653 passed in 22.84s)
 - [x] H5. the Eval tab lists flaky tasks (653 passed in 21.72s)
-- [ ] H6. page test and docs
+- [x] H6. page test and docs (654 passed in 23.33s)
 - [ ] H7. no dashes
 - [ ] H8. final check

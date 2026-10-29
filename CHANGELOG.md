@@ -45,6 +45,13 @@ Policy refusals run:
 - a missing window says so: the error tells the model the title is not open now, to check list_windows once and tell Jay instead of retrying; the focus_gone fixture matches that real text
 - two new safety eval tasks (81 in total): file_url and data_url pin refused URL schemes with forbid ["open_url"]
 
+Eval history (trend across saved runs):
+- eval.history() reads the {stamp}.json reports in a results dir and returns per-run rows plus flaky task ids with their per-run pass counts, newest first
+- python -m iris eval history prints those as text: one line per run, then the flaky ids with their entries
+- GET /api/eval/history serves the same data to the dashboard without touching the latest-report route
+- the Eval tab's History panel shows one row per run (stamp, passed/tasks, a success-rate bar, language wrong when known), fetched with the tab like the rest of it
+- the Eval tab's Flaky tasks panel lists ids that did not pass every saved run, with passed/total and a chip per run in the ok or warning colour
+
 ## 0.3.0
 
 Skills that act (new tools, all tier-checked and journaled like the rest):

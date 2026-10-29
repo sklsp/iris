@@ -944,6 +944,13 @@ def test_page_contains_eval_tab_and_empty_state(server):
     assert "No eval run yet. Run: python -m iris eval" in page
 
 
+def test_page_contains_eval_history_panels(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    for needle in ("/api/eval/history", "History", "Flaky tasks"):
+        assert needle in page
+
+
 # --- prompt queue (item 2) ---------------------------------------------------------
 
 

@@ -171,6 +171,27 @@ def test_api_journal_newest_first_limited_and_counted_today(tmp_path, monkeypatc
     assert data["today"] == {"requests": 60, "confirmations": 1, "refusals": 1, "errors": 1}
 
 
+def test_api_journal_counts_only_confirmed_calls_as_confirmations(tmp_path, monkeypatch):
+    """A safe ok call is not a confirmation; only a confirm-tier ok call counts."""
+    journal = tmp_path / "journal.jsonl"
+    now = datetime.now()
+
+    def t(days_ago: float) -> str:
+        return (now - timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    lines = [json.dumps({"event": "tool", "tool": "system_status", "args": {}, "tier": "safe",
+                         "outcome": "ok", "result": "cpu 12%", "t": t(0)})]
+    lines.append(json.dumps({"event": "tool", "tool": "click", "args": {}, "tier": "confirm",
+                             "outcome": "ok", "result": "clicked", "t": t(0)}))
+    lines.append(json.dumps({"event": "tool", "tool": "click", "args": {}, "tier": "confirm",
+                             "outcome": "declined", "t": t(0)}))
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = journal_payload()
+    assert data["today"] == {"requests": 0, "confirmations": 1, "refusals": 0, "errors": 0}
+
+
 def test_api_journal_missing_file_is_empty(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "nope.jsonl"))
     data = journal_payload()
@@ -224,11 +245,42 @@ def test_api_journal_passes_autopilot_events_through_and_keeps_the_counters(tmp_
     assert data["today"] == {"requests": 1, "confirmations": 1, "refusals": 0, "errors": 0}
 
 
+def test_api_journal_shows_model_errors_like_errored_calls(tmp_path, monkeypatch):
+    """An llm_error line reaches the Activity panel as an errored call of 'model' and leaves the tool counters alone."""
+    journal = tmp_path / "journal.jsonl"
+    now = datetime.now()
+
+    def t(days_ago: float) -> str:
+        return (now - timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    err_t, bare_t = t(0), t(0)
+    lines = [json.dumps({"event": "request", "text": "r0", "t": t(0)})]
+    lines.append(json.dumps({"event": "llm_error", "error": "URLError('connection refused')", "t": err_t}))
+    lines.append(json.dumps({"event": "llm_error", "t": bare_t}))  # no error key: must not break the endpoint
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = journal_payload()
+    models = [e for e in data["entries"] if e.get("tool") == "model"]
+    assert models == [   # newest first: the bare line was written last
+        {"event": "tool", "tool": "model", "tier": "?", "outcome": "error", "error": "", "t": bare_t},
+        {"event": "tool", "tool": "model", "tier": "?", "outcome": "error",
+         "error": "URLError('connection refused')", "t": err_t},
+    ]
+    assert data["today"] == {"requests": 1, "confirmations": 0, "refusals": 0, "errors": 0}
+
+
 def test_page_renders_autopilot_events_in_the_activity_panel(server):
     status, _headers, page = get(server + "/")
     assert status == 200
     assert 'e.event === "autopilot"' in page   # groupTurns keeps autopilot events instead of dropping them
     assert "b-auto" in page                    # the badge class that marks an autopilot row
+
+
+def test_page_renders_model_error_text_in_the_activity_panel(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    assert 'truncate(String(ev.error), 160)' in page   # errored rows show their error text via textContent
 
 
 def test_api_agents_stuck_rows_first(tmp_path, monkeypatch):
@@ -892,6 +944,17 @@ def test_eval_payload_old_report_has_no_new_keys(tmp_path, monkeypatch):
 
 def test_api_eval_route(server, tmp_path, monkeypatch):
     (tmp_path / "20261013-090000.json").write_text(_report("20261013-090000"), encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    code, _headers, text = get(server + "/api/eval")
+    body = json.loads(text)
+    assert code == 200 and body["latest"]["stamp"] == "20261013-090000" and body["runs"] == 1
+
+
+def test_api_eval_skips_a_newer_partial_report(server, tmp_path, monkeypatch):
+    (tmp_path / "20261013-090000.json").write_text(_report("20261013-090000"), encoding="utf-8")
+    partial = json.dumps({"stamp": "20261014-090000", "model": "test-model", "partial": True,
+                          "summary": {"passed": 1, "tasks": 1}, "results": []})
+    (tmp_path / "20261014-090000.json").write_text(partial, encoding="utf-8")
     monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
     code, _headers, text = get(server + "/api/eval")
     body = json.loads(text)

@@ -22,6 +22,7 @@ SYSTEM = """You are Iris, a voice assistant that operates Jay's Windows PC throu
 - Answer in one or two short spoken sentences, in the language Jay used. No markdown."""
 
 MAX_STEPS = 12
+MAX_HISTORY_CHARS = 40_000
 
 
 class Journal:
@@ -42,20 +43,43 @@ class Agent:
 
     def handle(self, request: str) -> str:
         self.messages.append({"role": "user", "content": request})
+        self._trim()
         self.journal.log(event="request", text=request)
         schemas = [t.schema() for t in self.tools.values()]
         for _ in range(MAX_STEPS):
-            reply = self.llm.chat(self.messages, schemas)
+            try:
+                reply = self.llm.chat(self.messages, schemas)
+            except (OSError, KeyError, IndexError, ValueError) as exc:
+                # LM Studio is down or full: end this turn only and keep the voice loop alive
+                self.journal.log(event="llm_error", error=repr(exc)[:500])
+                starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
+                del self.messages[starts[-1]:]
+                return "I can't reach the model in LM Studio right now. Try again in a moment."
             self.messages.append(reply.raw)
             if not reply.calls:
                 self.journal.log(event="answer", text=reply.text)
+                self._trim()
                 return reply.text
             for call in reply.calls:
                 result = self._run(call)
                 self.messages.append({"role": "tool", "tool_call_id": call.id,
                                       "content": f"<untrusted_data>\n{result}\n</untrusted_data>"})
         self.journal.log(event="gave_up", steps=MAX_STEPS)
+        self._trim()
         return "I stopped: this took too many steps."
+
+    def _trim(self) -> None:
+        """Drop the oldest whole turns until history fits in MAX_HISTORY_CHARS.
+
+        The system message is never dropped and the current turn (the last user message onward)
+        is kept even when it alone exceeds budget; only whole turns go, so a tool result always
+        keeps its assistant tool_calls message."""
+        while True:
+            starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
+            size = sum(len(json.dumps(m, ensure_ascii=False)) for m in self.messages)
+            if len(starts) <= 1 or size <= MAX_HISTORY_CHARS:
+                return
+            del self.messages[starts[0]:starts[1]]
 
     def _run(self, call) -> str:
         tool = self.tools.get(call.name)

@@ -717,6 +717,32 @@ def test_journal_today_counts_a_returned_error(tmp_path, monkeypatch):
         "Today: 1 requests, 1 tool calls (0 ok, 0 refused, 0 declined, 1 errors).")
 
 
+def test_journal_today_counts_model_errors(tmp_path, monkeypatch):
+    lines = [
+        {"event": "request", "text": "open notepad", "t": "2026-10-17T09:00:00"},
+        {"event": "llm_error", "error": "URLError('connection refused')", "t": "2026-10-17T09:05:00"},
+        {"event": "request", "text": "check the gpu", "t": "2026-10-17T10:00:00"},
+        {"event": "llm_error", "error": "TimeoutError()", "t": "2026-10-17T10:05:00"},
+    ]
+    p = tmp_path / "journal.jsonl"
+    p.write_text("\n".join(json.dumps(e) for e in lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(p))
+    assert tools.journal_today("2026-10-17") == (
+        "Today: 2 requests, 0 tool calls (0 ok, 0 refused, 0 declined, 0 errors). 2 model errors.")
+
+
+def test_journal_today_ignores_model_errors_from_other_days(tmp_path, monkeypatch):
+    lines = [
+        {"event": "request", "text": "open notepad", "t": "2026-10-17T09:00:00"},
+        {"event": "llm_error", "error": "URLError('connection refused')", "t": "2026-10-16T09:05:00"},
+    ]
+    p = tmp_path / "journal.jsonl"
+    p.write_text("\n".join(json.dumps(e) for e in lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(p))
+    assert tools.journal_today("2026-10-17") == (
+        "Today: 1 requests, 0 tool calls (0 ok, 0 refused, 0 declined, 0 errors).")
+
+
 
 # --- concept_sites ---------------------------------------------------------------
 def test_concept_sites_without_repo(tmp_path, monkeypatch):

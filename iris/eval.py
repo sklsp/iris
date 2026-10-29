@@ -1,5 +1,6 @@
 """Measures how well the model behind Iris picks tools, with dry-run tools."""
 import argparse
+import fnmatch
 import json
 import re
 import statistics
@@ -26,6 +27,9 @@ class Task:
     max_calls: int = 6
     category: str = "other"
     lang: str = "nl"  # language the answer is expected in ("nl", "en" or "any")
+    turns: list[str] = field(default_factory=list)  # later requests in the same conversation, after request
+    answer_has: list[str] = field(default_factory=list)  # last answer must contain at least one of these
+    answer_not: list[str] = field(default_factory=list)  # last answer must contain none of these
 
 
 def load_tasks(path) -> list[Task]:
@@ -62,9 +66,17 @@ def load_tasks(path) -> list[Task]:
             is_seq = isinstance(fx, list) and len(fx) > 0 and all(isinstance(x, str) for x in fx)
             if not (isinstance(fx, str) or is_seq):
                 raise ValueError(f"bad fixture for {tool} in task {tid}")
+        raw_turns = t.get("turns", [])
+        if not isinstance(raw_turns, list) or not all(isinstance(x, str) and x for x in raw_turns):
+            raise ValueError(f"bad turns in task {tid}")
+        answer_has, answer_not = t.get("answer_has", []), t.get("answer_not", [])
+        for key, value in (("answer_has", answer_has), ("answer_not", answer_not)):
+            if not isinstance(value, list) or not all(isinstance(x, str) and x for x in value):
+                raise ValueError(f"bad {key} in task {tid}")
         tasks.append(Task(id=tid, request=req, expect=expect, forbid=forbid, confirm=confirm,
                           outcomes=outcomes, fixtures=fixtures, max_calls=int(t.get("max_calls", 6)),
-                          category=category, lang=lang))
+                          category=category, lang=lang, turns=list(raw_turns),
+                          answer_has=answer_has, answer_not=answer_not))
     return tasks
 
 
@@ -100,6 +112,9 @@ class Result:
     lang: str = "?"  # language of the answer (answer_language), "?" when unsure
     want_lang: str = "nl"  # the task's expected language ("nl", "en" or "any")
     forbid: list[str] = field(default_factory=list)  # the task's forbid list, for refused_attempts
+    request: str = ""  # the task's first request, shown in the report's failed-task section
+    turns: list[str] = field(default_factory=list)  # later requests of the same conversation
+    answer_checked: bool = False  # the task had answer_has or answer_not checks
 
 
 def run_task(llm, task: Task, journal_dir=None) -> Result:
@@ -110,9 +125,12 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
     agent = Agent(llm, lambda q: task.confirm == "yes", Journal(path), dry_tools(task.fixtures))
     start = time.perf_counter()
     answer_text = agent.handle(task.request)
+    for turn in task.turns:
+        answer_text = agent.handle(turn)
     seconds = time.perf_counter() - start
 
     calls, kinds, confirmations, confirmed_ok, gave_up = [], [], 0, 0, False
+    model_error = False
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
             e = json.loads(line)
@@ -127,6 +145,8 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
                     confirmed_ok += 1
         elif e.get("event") == "gave_up":
             gave_up = True
+        elif e.get("event") == "llm_error":
+            model_error = True
 
     reasons = []
     called = {name for name, _ in calls}
@@ -155,11 +175,22 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
         reasons.append(f"too many calls: {len(calls)} > {task.max_calls}")
     if gave_up:
         reasons.append("gave up")
+    if model_error:
+        # once per task, even when several turns failed on the model
+        reasons.append("model error")
+    if task.answer_has or task.answer_not:
+        norm = _norm_answer(answer_text)
+        if task.answer_has and not any(_norm_answer(s) in norm for s in task.answer_has):
+            reasons.append(f"answer lacks any of: {', '.join(task.answer_has)}")
+        for s in task.answer_not:
+            if _norm_answer(s) in norm:
+                reasons.append(f"answer says: {s}")
 
     return Result(id=task.id, passed=not reasons, calls=calls, confirmations=confirmations,
                   seconds=seconds, answer=answer_text, reasons=reasons, category=task.category,
                   confirm=task.confirm, confirmed_ok=confirmed_ok, lang=answer_language(answer_text),
-                  want_lang=task.lang, forbid=task.forbid)
+                  want_lang=task.lang, forbid=task.forbid, request=task.request, turns=list(task.turns),
+                  answer_checked=bool(task.answer_has or task.answer_not))
 
 
 # Stopwords for answer_language: very common words per language that the other two do not share. A word
@@ -193,13 +224,23 @@ def _wrong_language(r: Result) -> bool:
     return r.want_lang != "any" and r.lang != "?" and r.lang != r.want_lang
 
 
+def _norm_answer(text: str) -> str:
+    """Casefold with non-breaking spaces turned into normal ones, for answer_has/answer_not matching."""
+    return text.replace("\u00a0", " ").casefold()
+
+
+def _answer_wrong(r: Result) -> bool:
+    """True when the last answer failed its task's answer_has or answer_not checks."""
+    return any(reason.startswith(("answer lacks", "answer says")) for reason in r.reasons)
+
+
 def summarize(results: list[Result], repeat: int = 1) -> dict:
     n = len(results)
     if not results:
         s = {"tasks": 0, "passed": 0, "success_rate": 0.0, "median_seconds": 0.0,
              "confirmations_per_task": 0.0, "failed": [], "by_category": {},
              "safety": {"forbidden_ok": 0, "unknown_tools": 0, "never_asked": 0, "refused_attempts": 0},
-             "language": {"wrong": 0, "unknown": 0}}
+             "language": {"wrong": 0, "unknown": 0}, "answers": {"checked": 0, "wrong": 0}}
         if repeat > 1:
             s.update({"repeat": repeat, "per_task": {}, "pass_all": 0, "pass_any": 0})
         return s
@@ -221,7 +262,9 @@ def summarize(results: list[Result], repeat: int = 1) -> dict:
                      "unknown_tools": sum(1 for r in results for _t, o in r.calls if o == "unknown"),
                      "never_asked": sum(1 for r in results if r.confirm == "no" and r.confirmed_ok > 0)},
           "language": {"wrong": sum(1 for r in results if _wrong_language(r)),
-                       "unknown": sum(1 for r in results if r.want_lang != "any" and r.lang == "?")}}
+                       "unknown": sum(1 for r in results if r.want_lang != "any" and r.lang == "?")},
+          "answers": {"checked": sum(1 for r in results if r.answer_checked),
+                      "wrong": sum(1 for r in results if _answer_wrong(r))}}
     if repeat > 1:
         runs: dict[str, list[bool]] = {}
         for r in results:
@@ -234,10 +277,13 @@ def summarize(results: list[Result], repeat: int = 1) -> dict:
 
 
 def _summary_line(s: dict) -> str:
+    # old JSON reports have no "answers" key; a missing one prints as 0/0
+    answers = s.get("answers") or {}
     line = (f"{s['passed']}/{s['tasks']} passed ({s['success_rate'] * 100:.1f}%), "
             f"median {s['median_seconds']:.1f} s, {s['confirmations_per_task']:.2f} confirmations per task, "
             f"safety: {s['safety']['forbidden_ok']} forbidden, {s['safety']['refused_attempts']} refused attempts, "
-            f"{s['safety']['unknown_tools']} unknown tools, language: {s['language']['wrong']} wrong")
+            f"{s['safety']['unknown_tools']} unknown tools, language: {s['language']['wrong']} wrong, "
+            f"answers: {answers.get('wrong', 0)}/{answers.get('checked', 0)} wrong")
     if s.get("repeat", 1) > 1:
         line += f", {s['pass_all']}/{len(s['per_task'])} pass every time"
     return line
@@ -250,13 +296,16 @@ def _category_table(s: dict) -> list[str]:
     return lines
 
 
-def write_report(results: list[Result], out_dir, stamp: str, model: str = "", repeat: int = 1) -> tuple[Path, Path]:
-    """Write {stamp}.json and {stamp}.md into out_dir; returns (json path, md path)."""
+def write_report(results: list[Result], out_dir, stamp: str, model: str = "", repeat: int = 1,
+                 partial: bool = False) -> tuple[Path, Path]:
+    """Write {stamp}.json and {stamp}.md into out_dir; returns (json path, md path).
+
+    partial marks a filtered run over a subset of the tasks; such reports never become the headline."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     s = summarize(results, repeat=repeat)
     json_path = out_dir / f"{stamp}.json"
-    json_path.write_text(json.dumps({"stamp": stamp, "model": model or "unknown",
+    json_path.write_text(json.dumps({"stamp": stamp, "model": model or "unknown", "partial": partial,
                                      "summary": s, "results": [asdict(r) for r in results]}, indent=2),
                          encoding="utf-8")
     lines = [f"# Iris eval {stamp}", "", f"Model: {model or 'unknown'}", "", _summary_line(s), ""]
@@ -266,9 +315,19 @@ def write_report(results: list[Result], out_dir, stamp: str, model: str = "", re
         lines.append(f"| {r.id} | {'pass' if r.passed else 'FAIL'} | "
                      f"{', '.join(f'{t}:{o}' for t, o in r.calls) or '-'} | {r.seconds:.1f} | "
                      f"{' ; '.join(r.reasons) or '-'} |")
+    lines += ["", "## Failed tasks"]
+    failed = [r for r in results if not r.passed]
+    for r in failed:
+        lines.append(f"- {r.id}: {r.request}")
+        lines += [f"  then: {t}" for t in r.turns]
+    if not failed:
+        lines.append("none")
     lines += ["", "## Wrong language"]
     wrong = [r for r in results if _wrong_language(r)]
     lines += ([f"- {r.id}: expected {r.want_lang}, got {r.lang}: {r.answer[:80]}" for r in wrong] or ["none"])
+    lines += ["", "## Wrong answers"]
+    wrong_answers = [r for r in results if _answer_wrong(r)]
+    lines += ([f'- {r.id}: {"; ".join(r.reasons)}: "{r.answer[:120]}"' for r in wrong_answers] or ["none"])
     md_path = out_dir / f"{stamp}.md"
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path, md_path
@@ -305,16 +364,38 @@ def _num_or(value, fallback):
     return fallback
 
 
-def history(results_dir, last: int = 10) -> dict:
-    """Read-only trend over the newest reports in results_dir; never writes anything there.
+def full_reports(results_dir) -> list[Path]:
+    """The *.json reports in results_dir, sorted by name, without the partial ones.
 
-    A report whose "results" is not a list is skipped (counted in "skipped"); summary numbers that are
-    not int/float fall back to values computed from results."""
+    A report whose JSON says "partial": true was a filtered run and never counts; a report
+    without the key, or one that cannot be read as JSON, counts as full (history() copes
+    with broken files)."""
+    d = Path(results_dir)
+    if not d.is_dir():
+        return []
+    out: list[Path] = []
+    for f in sorted(d.glob("*.json")):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            out.append(f)
+            continue
+        if isinstance(data, dict) and data.get("partial") is True:
+            continue
+        out.append(f)
+    return out
+
+
+def history(results_dir, last: int = 10) -> dict:
+    """Read-only trend over the newest full reports in results_dir; never writes anything there.
+
+    Partial (filtered) runs are not listed. A report whose "results" is not a list is skipped
+    (counted in "skipped"); summary numbers that are not int/float fall back to values computed from results."""
     out: dict = {"runs": [], "tasks": {}, "flaky": [], "skipped": 0}
     d = Path(results_dir)
     if not d.is_dir():
         return out
-    files = sorted(d.glob("*.json"))[-last:] if last > 0 else []
+    files = full_reports(results_dir)[-last:] if last > 0 else []
     per_task: dict[str, list[tuple[int, int]]] = {}
     for f in files:
         try:
@@ -376,10 +457,10 @@ def print_history(results_dir, last: int) -> int:
 
 
 def publish(results_dir, readme_path) -> int:
-    """Replace the eval block in the README with the newest report from results_dir."""
-    files = sorted(Path(results_dir).glob("*.json"))
+    """Replace the eval block in the README with the newest full report from results_dir."""
+    files = full_reports(results_dir)
     if not files:
-        print(f"no reports in {results_dir}")
+        print(f"no full reports in {results_dir}")
         return 2
     data = json.loads(files[-1].read_text(encoding="utf-8"))
     s = data["summary"]
@@ -407,6 +488,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--tasks", default="eval/tasks.toml")
     ap.add_argument("--out", default="eval/results")
     ap.add_argument("--only", action="append", default=None, metavar="ID")
+    ap.add_argument("--category", action="append", default=None, metavar="NAME")
+    ap.add_argument("--failed-from", default=None, metavar="PATH")
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--results", default="eval/results")
     ap.add_argument("--readme", default="README.md")
@@ -421,13 +504,50 @@ def main(argv: list[str]) -> int:
 
     tasks = load_tasks(Path(a.tasks))
     if a.only:
-        known = {t.id for t in tasks}
-        for tid in a.only:
-            if tid not in known:
-                print(f"unknown task: {tid}")
+        ids = [t.id for t in tasks]
+        for pat in a.only:
+            if not any(fnmatch.fnmatchcase(tid, pat) for tid in ids):
+                print(f"unknown task: {pat}")
                 return 2
-        wanted = set(a.only)
-        tasks = [t for t in tasks if t.id in wanted]
+    if a.category:
+        known_cats = {t.category for t in tasks}
+        for cat in a.category:
+            if cat not in known_cats:
+                print(f"unknown category: {cat}")
+                return 2
+    failed_ids = None
+    if a.failed_from:
+        failed_path = Path(a.failed_from)
+        try:
+            old = json.loads(failed_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            print(f"cannot read {failed_path}")
+            return 2
+        known_ids = {t.id for t in tasks}
+        failed_ids, gone = [], []
+        results = old.get("results") if isinstance(old, dict) else None
+        for r in results if isinstance(results, list) else []:  # a --repeat report lists each id several times
+            rid = r.get("id") if isinstance(r, dict) else None
+            if not isinstance(rid, str):
+                continue
+            if rid not in known_ids:
+                if rid not in gone:
+                    gone.append(rid)
+                    print(f"skipped (no longer a task): {rid}")
+            elif not r.get("passed") and rid not in failed_ids:
+                failed_ids.append(rid)
+        if not failed_ids:
+            print(f"nothing failed in {failed_path.name}")
+            return 0
+    partial = bool(a.only or a.category or failed_ids is not None)
+    if partial:
+        patterns = a.only if a.only else None
+        wanted_cats = set(a.category) if a.category else None
+        keep = set(failed_ids) if failed_ids is not None else None
+        tasks = [t for t in tasks
+                 if (patterns is None or any(fnmatch.fnmatchcase(t.id, p) for p in patterns))
+                 and (wanted_cats is None or t.category in wanted_cats)
+                 and (keep is None or t.id in keep)]
 
     llm = LMStudio()
     total = len(tasks) * a.repeat
@@ -439,7 +559,7 @@ def main(argv: list[str]) -> int:
             print(f"[{len(results)}/{total}] {r.id} {'pass' if r.passed else 'FAIL'} {r.seconds:.1f}s", flush=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     s = summarize(results, repeat=a.repeat)
-    _, md_path = write_report(results, a.out, stamp, model=effective_model(), repeat=a.repeat)
+    _, md_path = write_report(results, a.out, stamp, model=effective_model(), repeat=a.repeat, partial=partial)
     print(_summary_line(s))
     print(f"Report: {md_path}")
     return 0

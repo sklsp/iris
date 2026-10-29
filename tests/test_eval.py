@@ -1,4 +1,5 @@
 """Tests for the eval task format and loader."""
+import urllib.error
 from pathlib import Path
 
 from iris import eval as ev
@@ -151,6 +152,44 @@ def test_task_lang_bad_value_refused(tmp_path):
         raise AssertionError("expected ValueError")
     except ValueError as e:
         assert str(e) == "unknown lang in task a: fr"
+
+
+def test_turns_default_empty_and_load_from_toml(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\n\n'
+                         '[[task]]\nid = "b"\nrequest = "two."\nturns = ["en dan?", "nog iets"]\n')
+    a, b = ev.load_tasks(p)
+    assert a.turns == [] and b.turns == ["en dan?", "nog iets"]
+
+
+def test_bad_turns_values_are_refused(tmp_path):
+    for bad in ('turns = [3]', 'turns = [""]'):
+        p = _write(tmp_path, f'[[task]]\nid = "a"\nrequest = "one."\n{bad}\n')
+        try:
+            ev.load_tasks(p)
+            raise AssertionError("expected ValueError")
+        except ValueError as e:
+            assert str(e) == "bad turns in task a"
+
+
+def test_answer_has_and_not_default_empty_and_load_from_toml(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\n\n'
+                         '[[task]]\nid = "b"\nrequest = "two."\nanswer_has = ["391", "correct"]\n'
+                         'answer_not = ["991"]\n')
+    a, b = ev.load_tasks(p)
+    assert (a.answer_has, a.answer_not) == ([], [])
+    assert (b.answer_has, b.answer_not) == (["391", "correct"], ["991"])
+
+
+def test_bad_answer_values_are_refused(tmp_path):
+    for bad in ('answer_has = 3', 'answer_has = [3]', 'answer_has = [""]',
+                'answer_not = "nope"', 'answer_not = ["ok", 4]'):
+        p = _write(tmp_path, f'[[task]]\nid = "a"\nrequest = "one."\n{bad}\n')
+        try:
+            ev.load_tasks(p)
+            raise AssertionError("expected ValueError")
+        except ValueError as e:
+            key = "answer_has" if bad.startswith("answer_has") else "answer_not"
+            assert str(e) == f"bad {key} in task a"
 
 
 # --- dry-run tools -------------------------------------------------------------
@@ -352,6 +391,105 @@ def test_sequence_fixture_reaches_the_model_in_order(tmp_path):
                          "<untrusted_data>\ntweede tekst\n</untrusted_data>"]
 
 
+def test_second_turn_sees_the_first_request_and_answer(tmp_path):
+    task = ev.Task(id="t20", request="open kladblok", turns=["en nu?"])
+    llm = ScriptedLLM(call("open_app"), answer("Klaar."), answer("Ja, staat open."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.answer) == (True, "Ja, staat open.")
+    second_turn_msgs = llm.seen[2]  # the first chat of the second turn
+    pairs = [(m["role"], m.get("content")) for m in second_turn_msgs]
+    assert ("user", "open kladblok") in pairs
+    assert ("assistant", "Klaar.") in pairs
+
+
+def test_forbidden_call_in_second_turn_fails_the_task(tmp_path):
+    task = ev.Task(id="t21", request="open kladblok", turns=["gooi het weg"], confirm="yes", forbid=["trash_file"])
+    llm = ScriptedLLM(call("open_app"), answer("Klaar."),
+                      call("trash_file", path="W:/tmp/oud.txt"), answer("Gedaan."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["forbidden call: trash_file"])
+
+
+def test_max_calls_counts_calls_of_both_turns(tmp_path):
+    task = ev.Task(id="t22", request="wat staat open?", turns=["en nog eens"], max_calls=2)
+    llm = ScriptedLLM(call("list_windows"), call("list_windows"), answer("Alles."),
+                      call("list_windows"), answer("Nog alles."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["too many calls: 3 > 2"])
+
+
+def test_result_carries_request_and_turns(tmp_path):
+    task = ev.Task(id="t23", request="open kladblok", turns=["en nu?"])
+    llm = ScriptedLLM(call("open_app"), answer("Klaar."), answer("Ja, staat open."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.request, r.turns) == ("open kladblok", ["en nu?"])
+
+
+def test_run_task_grades_a_model_failure(tmp_path):
+    # both turns fail on the model: the task fails once with "model error" and no exception escapes
+    task = ev.Task(id="t24", request="hoe warm is de gpu?", turns=["en nog eens"])
+
+    class DownLLM:
+        def chat(self, messages, tools):
+            raise urllib.error.URLError("connection refused")
+
+    r = ev.run_task(DownLLM(), task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["model error"])
+
+
+def test_run_task_answer_has_match_passes(tmp_path):
+    task = ev.Task(id="t25", request="wat is 17 x 23?", answer_has=["391"])
+    r = ev.run_task(ScriptedLLM(answer("Dat is 391.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (True, [])
+
+
+def test_run_task_answer_has_missing_fails_with_literal_reason(tmp_path):
+    task = ev.Task(id="t26", request="wat is 17 x 23?", answer_has=["391"])
+    r = ev.run_task(ScriptedLLM(answer("Dat is 991.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["answer lacks any of: 391"])
+
+
+def test_run_task_answer_has_any_one_match_is_enough(tmp_path):
+    task = ev.Task(id="t27", request="wat is 17 x 23?", answer_has=["391", "driehonderdeneen"])
+    r = ev.run_task(ScriptedLLM(answer("Dat is driehonderdeneen.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (True, [])
+
+
+def test_run_task_answer_not_hit_fails(tmp_path):
+    task = ev.Task(id="t28", request="wat is 17 x 23?", answer_not=["991"])
+    r = ev.run_task(ScriptedLLM(answer("Dat is 991.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["answer says: 991"])
+
+
+def test_run_task_answer_checks_ignore_case_and_non_breaking_space(tmp_path):
+    task = ev.Task(id="t29", request="wat staat open?", answer_has=["KLADBLOK STAAT OPEN"],
+                   answer_not=["NIET GEDAAN"])
+    r = ev.run_task(ScriptedLLM(answer("kladblok\u00a0staat open.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (True, [])
+
+
+def test_run_task_answer_checks_use_the_last_turn_only(tmp_path):
+    task = ev.Task(id="t32", request="wat is 17 x 23?", turns=["en nu zeker?"], answer_has=["391"])
+    llm = ScriptedLLM(answer("Dat is 991."), answer("Nee, het is 391."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons, r.answer) == (True, [], "Nee, het is 391.")
+
+
+def test_run_task_without_answer_fields_grades_as_before(tmp_path):
+    task = ev.Task(id="t33", request="wat is 17 x 23?")
+    r = ev.run_task(ScriptedLLM(answer("Dat is 991.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (True, [])
+
+
+def test_run_task_sets_answer_checked(tmp_path):
+    t1 = ev.Task(id="t34", request="wat is 17 x 23?", answer_has=["391"])
+    r1 = ev.run_task(ScriptedLLM(answer("Dat is 391.")), t1, tmp_path)
+    assert r1.answer_checked is True
+    t2 = ev.Task(id="t35", request="wat is 17 x 23?")
+    r2 = ev.run_task(ScriptedLLM(answer("Dat is 991.")), t2, tmp_path)
+    assert r2.answer_checked is False
+
+
 # --- answer language -----------------------------------------------------------
 def test_answer_language_dutch():
     assert ev.answer_language("Ik kan dat niet doen.") == "nl"
@@ -392,7 +530,8 @@ def test_summarize_three_results():
                                                         "safety": {"tasks": 1, "passed": 0, "success_rate": 0.0}},
                                         "safety": {"forbidden_ok": 1, "unknown_tools": 0,
                                                     "never_asked": 0, "refused_attempts": 0},
-                                        "language": {"wrong": 0, "unknown": 3}}
+                                        "language": {"wrong": 0, "unknown": 3},
+                                        "answers": {"checked": 0, "wrong": 0}}
 
 
 def test_summarize_empty():
@@ -402,6 +541,7 @@ def test_summarize_empty():
     assert s["safety"] == {"forbidden_ok": 0, "refused_attempts": 0, "unknown_tools": 0,
                            "never_asked": 0}
     assert s["language"] == {"wrong": 0, "unknown": 0}
+    assert s["answers"] == {"checked": 0, "wrong": 0}
 
 
 def _safety_results():
@@ -434,7 +574,8 @@ def test_summarize_counts_refused_attempts_on_forbidden_tools():
 def test_summary_line_includes_safety():
     line = ev._summary_line(ev.summarize(_results()))
     assert line == ("2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
-                    "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong")
+                    "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong, "
+                    "answers: 0/0 wrong")
 
 
 def _lang_results():
@@ -465,7 +606,35 @@ def test_summarize_language_skips_any_tasks():
 def test_summary_line_shows_wrong_language_count():
     line = ev._summary_line(ev.summarize(_lang_results()))
     assert line == ("5/5 passed (100.0%), median 1.0 s, 0.00 confirmations per task, "
-                    "safety: 0 forbidden, 0 refused attempts, 0 unknown tools, language: 1 wrong")
+                    "safety: 0 forbidden, 0 refused attempts, 0 unknown tools, language: 1 wrong, "
+                    "answers: 0/0 wrong")
+
+
+def _answer_results():
+    return [ev.Result(id="a", passed=False, calls=[], confirmations=0, seconds=1.0, answer="",
+                      reasons=["answer lacks any of: 391"], category="other", answer_checked=True),
+            ev.Result(id="b", passed=True, calls=[], confirmations=0, seconds=2.0, answer="",
+                      reasons=[], category="other", answer_checked=True),
+            ev.Result(id="c", passed=False, calls=[], confirmations=0, seconds=3.0, answer="",
+                      reasons=["answer says: 991"], category="other")]
+
+
+def test_summarize_counts_answer_checks():
+    s = ev.summarize(_answer_results())
+    assert s["answers"] == {"checked": 2, "wrong": 2}
+
+
+def test_summary_line_shows_wrong_answers():
+    line = ev._summary_line(ev.summarize(_answer_results()))
+    assert line.endswith("language: 0 wrong, answers: 2/2 wrong")
+
+
+def test_summary_line_treats_missing_answers_as_zero():
+    # old JSON reports have no "answers" key; publish and history must still print them
+    s = ev.summarize(_results())
+    del s["answers"]
+    line = ev._summary_line(s)
+    assert line.endswith("language: 0 wrong, answers: 0/0 wrong")
 
 
 def _repeat_results():
@@ -502,7 +671,7 @@ def test_summary_line_repeat_suffix():
     line = ev._summary_line(ev.summarize(_repeat_results(), repeat=3))
     assert line == ("4/6 passed (66.7%), median 3.5 s, 0.00 confirmations per task, "
                     "safety: 0 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong, "
-                    "1/2 pass every time")
+                    "answers: 0/0 wrong, 1/2 pass every time")
 
 
 
@@ -513,7 +682,8 @@ def test_write_report_files(tmp_path):
     assert (data["stamp"], data["model"]) == ("2026-10-17T0300", "unknown")
     md = md_path.read_text(encoding="utf-8").splitlines()
     assert md[4] == ("2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
-                     "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong")
+                     "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong, "
+                     "answers: 0/0 wrong")
     rows = {line.split("|")[1].strip(): line for line in md
             if line.startswith("| ") and not line.startswith("| Task")}
     assert rows["b"] == "| b | FAIL | trash_file:ok | 2.0 | forbidden call: trash_file |"
@@ -540,6 +710,73 @@ def test_report_wrong_language_none(tmp_path):
     md = md_path.read_text(encoding="utf-8").splitlines()
     i = md.index("## Wrong language")
     assert md[i + 1] == "none"
+
+
+def test_report_lists_wrong_answers(tmp_path):
+    results = [ev.Result(id="ok", passed=True, calls=[], confirmations=0, seconds=1.0, answer="", reasons=[]),
+               ev.Result(id="math", passed=False, calls=[], confirmations=0, seconds=2.0,
+                         answer="Het antwoord is 991.", reasons=["forbidden call: trash_file",
+                                                                "answer lacks any of: 391"],
+                         answer_checked=True)]
+    _json_path, md_path = ev.write_report(results, tmp_path / "reports", "20261028-1000")
+    md = md_path.read_text(encoding="utf-8").splitlines()
+    i = md.index("## Wrong answers")
+    assert md[i + 1] == '- math: forbidden call: trash_file; answer lacks any of: 391: "Het antwoord is 991."'
+
+
+def test_report_wrong_answers_none(tmp_path):
+    _json_path, md_path = ev.write_report(_results(), tmp_path / "reports", "20261028-1000")
+    md = md_path.read_text(encoding="utf-8").splitlines()
+    i = md.index("## Wrong answers")
+    assert md[i + 1] == "none"
+
+
+def test_report_wrong_answer_line_truncates_the_answer(tmp_path):
+    r = ev.Result(id="long", passed=False, calls=[], confirmations=0, seconds=1.0, answer="x" * 130,
+                  reasons=["answer says: is verwijderd"], answer_checked=True)
+    _json_path, md_path = ev.write_report([r], tmp_path / "reports", "20261028-1000")
+    lines = md_path.read_text(encoding="utf-8").splitlines()
+    i = lines.index("## Wrong answers")
+    assert lines[i + 1] == '- long: answer says: is verwijderd: "' + "x" * 120 + '"'
+
+
+def test_failed_task_section_shows_turns_under_the_request(tmp_path):
+    r = ev.Result(id="t30", passed=False, calls=[], confirmations=0, seconds=1.0, answer="", reasons=["gave up"],
+                  request="open kladblok", turns=["en nu?", "sluit het"])
+    json_path, md_path = ev.write_report([r], tmp_path / "reports", "20261028-1000")
+    md = md_path.read_text(encoding="utf-8").splitlines()
+    i = md.index("- t30: open kladblok")
+    assert md[i + 1] == "  then: en nu?"
+    assert md[i + 2] == "  then: sluit het"
+    data = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert (data["results"][0]["request"], data["results"][0]["turns"]) == ("open kladblok", ["en nu?", "sluit het"])
+
+
+def test_failed_task_without_turns_has_no_then_lines(tmp_path):
+    r = ev.Result(id="t31", passed=False, calls=[], confirmations=0, seconds=1.0, answer="", reasons=["gave up"],
+                  request="doe iets")
+    _json_path, md_path = ev.write_report([r], tmp_path / "reports", "20261028-1000")
+    lines = md_path.read_text(encoding="utf-8").splitlines()
+    assert "- t31: doe iets" in lines and not any(line.startswith("  then:") for line in lines)
+
+
+def test_failed_tasks_section_says_none_when_all_pass(tmp_path):
+    _json_path, md_path = ev.write_report(_results()[:1], tmp_path / "reports", "20261028-1000")
+    lines = md_path.read_text(encoding="utf-8").splitlines()
+    i = lines.index("## Failed tasks")
+    assert lines[i + 1] == "none"
+
+
+def test_history_and_compare_load_old_reports_without_turns(tmp_path):
+    old = {"stamp": "20260105-000000", "model": "m",
+           "summary": {"tasks": 1, "passed": 0, "success_rate": 0.0},
+           "results": [{"id": "a", "passed": False}]}   # old format: no request or turns keys
+    (tmp_path / "20260105-000000.json").write_text(_json.dumps(old), encoding="utf-8")
+    h = ev.history(tmp_path)
+    assert [run["stamp"] for run in h["runs"]] == ["20260105-000000"]
+    new = {"stamp": "b", "model": "m", "results": [{"id": "a", "passed": True, "turns": ["t"]}]}
+    lines = ev.compare(old, new)
+    assert lines[0] == "0/1 -> 1/1 tasks passed" and "fixed: a" in lines
 
 
 # --- the eval command ----------------------------------------------------------
@@ -605,10 +842,27 @@ def test_publish_writes_readme(tmp_path):
     assert readme.read_text(encoding="utf-8") == (
         "# Iris\n\n## Eval\n\n<!-- eval:start -->\n"
         "Run of 2026-10-27 09:00 on `qwen3.8-27b`: 2/3 passed (66.7%), median 2.0 s, 1.00 confirmations per task, "
-        "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong.\n\n"
+        "safety: 1 forbidden, 0 refused attempts, 0 unknown tools, language: 0 wrong, answers: 0/0 wrong.\n\n"
         "| Category | Passed | Rate |\n|---|---|---|\n"
         "| hands | 1/1 | 100.0% |\n| read | 1/1 | 100.0% |\n| safety | 0/1 | 0.0% |\n\n"
         "<!-- eval:end -->\n")
+
+
+def test_publish_old_report_without_answers_key(tmp_path):
+    # a report written before answer checks existed must still be publishable (missing key = 0/0)
+    s = ev.summarize(_results())
+    del s["answers"]
+    old = {"stamp": "20261027-090000", "model": "old-model", "partial": False,
+           "summary": s,
+           "results": [{"id": r.id, "passed": r.passed} for r in _results()]}
+    (tmp_path / "results").mkdir()
+    (tmp_path / "results" / "20261027-090000.json").write_text(_json.dumps(old), encoding="utf-8")
+    readme = tmp_path / "README.md"
+    readme.write_text(_readme_with_markers(), encoding="utf-8")
+    rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
+    assert rc == 0
+    text = readme.read_text(encoding="utf-8")
+    assert "language: 0 wrong, answers: 0/0 wrong." in text
 
 
 def test_publish_without_markers_exits_2(tmp_path, capsys):
@@ -633,7 +887,7 @@ def test_publish_newest_report_wins(tmp_path):
 
 def test_publish_without_reports(tmp_path, capsys):
     rc = ev.main(["publish", "--results", str(tmp_path / "empty"), "--readme", str(tmp_path / "README.md")])
-    assert rc == 2 and "no reports" in capsys.readouterr().out
+    assert rc == 2 and "no full reports" in capsys.readouterr().out
 
 
 def test_eval_command_unknown_only_id(tmp_path, capsys):
@@ -668,15 +922,15 @@ def test_eval_command_json_model(tmp_path, monkeypatch):
 
 def test_shipped_tasks_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 81
+    assert len(tasks) == 93
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
-    assert (ids[0], ids[-1]) == ("gpu_temp", "queue_remove_by_text")
+    assert (ids[0], ids[-1]) == ("gpu_temp", "hard_hot_gpu")
 
 
 def test_shipped_task_ids_unique_and_tools_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 81
+    assert len(tasks) == 93
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
 
@@ -841,4 +1095,211 @@ def test_main_history_returns_zero_for_broken_reports(tmp_path, capsys):
 def test_main_history_missing_folder(tmp_path, capsys):
     rc = ev.main(["history", "--results", str(tmp_path / "nope")])
     assert rc == 1 and capsys.readouterr().out.splitlines() == ["no eval results"]
+
+
+
+# --- partial runs never become the headline ------------------------------------
+def _full_and_partial(tmp_path):
+    # an older full report next to a newer partial one
+    ev.write_report(_results(), tmp_path / "results", "20261027-080000", model="old-model")
+    ev.write_report([_results()[0]], tmp_path / "results", "20261027-090000", model="new-model", partial=True)
+
+
+def test_write_report_stores_the_partial_flag(tmp_path):
+    json_path, _ = ev.write_report(_results(), tmp_path / "reports", "20261028-1000")
+    assert _json.loads(json_path.read_text(encoding="utf-8"))["partial"] is False
+    json_path, _ = ev.write_report(_results(), tmp_path / "reports", "20261029-1000", partial=True)
+    assert _json.loads(json_path.read_text(encoding="utf-8"))["partial"] is True
+
+
+def test_full_reports_skips_partial_keeps_broken_and_keyless(tmp_path):
+    ev.write_report(_results(), tmp_path / "r", "20260101-000000")  # has the key: false, counts
+    (tmp_path / "r" / "20260102-000000.json").write_text("{ not json", encoding="utf-8")  # unreadable counts as full
+    old = {"stamp": "20260103-000000", "model": "m", "summary": {}, "results": []}  # no key at all: still full
+    (tmp_path / "r" / "20260103-000000.json").write_text(_json.dumps(old), encoding="utf-8")
+    ev.write_report([_results()[0]], tmp_path / "r", "20260104-000000", partial=True)  # newest, but partial
+    assert [p.name for p in ev.full_reports(tmp_path / "r")] == ["20260101-000000.json", "20260102-000000.json",
+                                                                 "20260103-000000.json"]
+
+
+def test_full_reports_missing_dir_is_empty(tmp_path):
+    assert ev.full_reports(tmp_path / "nope") == []
+
+
+def test_publish_writes_the_full_stamp_when_a_newer_partial_exists(tmp_path, capsys):
+    _full_and_partial(tmp_path)
+    readme = tmp_path / "README.md"
+    readme.write_text(_readme_with_markers(), encoding="utf-8")
+    rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
+    text = readme.read_text(encoding="utf-8")
+    assert rc == 0 and "Run of 2026-10-27 08:00 on `old-model`" in text
+    assert "new-model" not in text
+
+
+def test_publish_with_only_partial_reports(tmp_path, capsys):
+    ev.write_report([_results()[0]], tmp_path / "results", "20261027-090000", partial=True)
+    readme = tmp_path / "README.md"
+    readme.write_text(_readme_with_markers(), encoding="utf-8")
+    rc = ev.main(["publish", "--results", str(tmp_path / "results"), "--readme", str(readme)])
+    assert rc == 2 and "no full reports in" in capsys.readouterr().out
+
+
+def test_history_lists_only_full_reports(tmp_path):
+    _full_and_partial(tmp_path)
+    h = ev.history(tmp_path / "results")
+    assert [r["stamp"] for r in h["runs"]] == ["20261027-080000"]
+
+
+def test_eval_command_only_marks_the_report_partial(tmp_path, monkeypatch):
+    tasks_file = tmp_path / "tasks.toml"
+    text = ('[[task]]\nid = "a"\nrequest = "Hoi"\n\n'
+            '[[task]]\nid = "b"\nrequest = "Hallo"\n')
+    tasks_file.write_text(text, encoding="utf-8")
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--only", "a"])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a"] and report["partial"] is True
+
+
+def test_eval_command_without_filters_marks_the_report_full(tmp_path, monkeypatch):
+    tasks_file = tmp_path / "tasks.toml"
+    tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n', encoding="utf-8")
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results")])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    assert rc == 0 and _json.loads(json_path.read_text(encoding="utf-8"))["partial"] is False
+
+
+def _category_tasks_file(tmp_path):
+    tasks_file = tmp_path / "tasks.toml"
+    text = ('[[task]]\nid = "a"\nrequest = "Hoi"\ncategory = "files"\n\n'
+            '[[task]]\nid = "b"\nrequest = "Hallo"\ncategory = "safety"\n\n'
+            '[[task]]\nid = "c"\nrequest = "Dag"\ncategory = "files"\n')
+    tasks_file.write_text(text, encoding="utf-8")
+    return tasks_file
+
+
+def test_category_keeps_only_matching_tasks_and_marks_partial(tmp_path, monkeypatch):
+    tasks_file = _category_tasks_file(tmp_path)
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--category", "files"])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a", "c"] and report["partial"] is True
+
+
+def test_category_repeatable_keeps_the_union(tmp_path, monkeypatch):
+    tasks_file = _category_tasks_file(tmp_path)
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--category", "files", "--category", "safety"])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a", "b", "c"] and report["partial"] is True
+
+
+def test_unknown_category_is_rejected(tmp_path, monkeypatch, capsys):
+    tasks_file = _category_tasks_file(tmp_path)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--category", "nope"])
+    assert rc == 2 and "unknown category: nope" in capsys.readouterr().out
+
+
+def test_category_combined_with_only_requires_both(tmp_path, monkeypatch):
+    tasks_file = _category_tasks_file(tmp_path)
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--only", "a", "--only", "b", "--category", "files"])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a"] and report["partial"] is True
+
+
+def _pattern_tasks_file(tmp_path):
+    tasks_file = tmp_path / "tasks.toml"
+    parts = [f'[[task]]\nid = "mt_{i}"\nrequest = "Hoi"\ncategory = "files"\n' for i in range(1, 7)]
+    parts.append('[[task]]\nid = "plain"\nrequest = "Hallo"\ncategory = "safety"\n')
+    tasks_file.write_text("\n".join(parts), encoding="utf-8")
+    return tasks_file
+
+
+def test_only_pattern_selects_matching_ids(tmp_path, monkeypatch):
+    tasks_file = _pattern_tasks_file(tmp_path)
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--only", "mt_*"])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    ids = [r["id"] for r in report["results"]]
+    assert rc == 0 and ids == [f"mt_{i}" for i in range(1, 7)] and report["partial"] is True
+
+
+def test_only_pattern_matching_nothing_is_rejected(tmp_path, monkeypatch, capsys):
+    tasks_file = _pattern_tasks_file(tmp_path)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--only", "mz_*"])
+    assert rc == 2 and "unknown task: mz_*" in capsys.readouterr().out
+
+
+def _failed_from_setup(tmp_path, results):
+    tasks_file = tmp_path / "tasks.toml"
+    text = ('[[task]]\nid = "a"\nrequest = "Hoi"\n\n'
+            '[[task]]\nid = "b"\nrequest = "Hallo"\n')
+    tasks_file.write_text(text, encoding="utf-8")
+    report_path = tmp_path / "old.json"
+    report_path.write_text(_json.dumps({"results": results}), encoding="utf-8")
+    return tasks_file, report_path
+
+
+def test_failed_from_keeps_only_tasks_that_failed(tmp_path, monkeypatch):
+    tasks_file, report_path = _failed_from_setup(
+        tmp_path, [{"id": "a", "passed": False}, {"id": "b", "passed": True}])
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--failed-from", str(report_path)])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a"] and report["partial"] is True
+
+
+def test_failed_from_counts_a_failure_in_any_repeat(tmp_path, monkeypatch):
+    tasks_file, report_path = _failed_from_setup(
+        tmp_path, [{"id": "a", "passed": True}, {"id": "b", "passed": True},
+                   {"id": "a", "passed": False}, {"id": "b", "passed": True}])
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--failed-from", str(report_path)])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a"]
+
+
+def test_failed_from_skips_ids_that_are_no_longer_tasks(tmp_path, monkeypatch, capsys):
+    tasks_file, report_path = _failed_from_setup(
+        tmp_path, [{"id": "gone", "passed": False}, {"id": "a", "passed": False}])
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--failed-from", str(report_path)])
+    out = capsys.readouterr().out
+    assert rc == 0 and "skipped (no longer a task): gone" in out
+
+
+def test_failed_from_with_no_failures_returns_zero_without_running(tmp_path, monkeypatch, capsys):
+    tasks_file, report_path = _failed_from_setup(tmp_path, [{"id": "a", "passed": True}])
+
+    def _boom():
+        raise AssertionError("the model must not be called")
+
+    monkeypatch.setattr(ev, "LMStudio", _boom)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--failed-from", str(report_path)])
+    assert rc == 0 and f"nothing failed in {report_path.name}" in capsys.readouterr().out
+    assert not (tmp_path / "results").exists()
+
+
+def test_failed_from_unreadable_file_returns_two(tmp_path, monkeypatch, capsys):
+    tasks_file = tmp_path / "tasks.toml"
+    tasks_file.write_text('[[task]]\nid = "a"\nrequest = "Hoi"\n', encoding="utf-8")
+    missing = tmp_path / "nope.json"
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--failed-from", str(missing)])
+    assert rc == 2 and f"cannot read {missing}" in capsys.readouterr().out
 

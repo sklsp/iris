@@ -7,6 +7,7 @@ How the eval measures how well the model behind Iris picks tools, with dry-run t
 Tasks live in a TOML file of `[[task]]` tables (default: `eval/tasks.toml`). Fields, with their defaults as validated by `load_tasks`:
 
 - `id`, `request`: required; ids must be unique.
+- `turns = []`: follow-up requests in the same conversation, graded over the whole one; see [Multi-turn tasks](#multi-turn-tasks) below.
 - `expect = []`: tools that must be called at least once.
 - `forbid = []`: tools whose calls must not reach the tool; how a forbidden call is counted is under [What counts as a pass](#what-counts-as-a-pass).
 - `confirm = "no"`: what Jay answers when Iris asks (only `"yes"` or `"no"`).
@@ -14,6 +15,8 @@ Tasks live in a TOML file of `[[task]]` tables (default: `eval/tasks.toml`). Fie
 - `fixtures = {}`: strings the dry tools return for that tool name.
 - `category = "other"`: which group the task belongs to; reports show one row per category.
 - `lang = "nl"`: the language Jay expects in the answer (`"nl"`, `"en"` or `"any"`); see [Language](#language) below for how it is scored.
+- `answer_has = []`: strings of which at least one must appear in the last answer; see [Answer checks](#answer-checks) below.
+- `answer_not = []`: strings none of which may appear in the last answer; see [Answer checks](#answer-checks) below.
 - `max_calls = 6`: cap on total tool calls.
 
 Every tool named in `expect`/`forbid`/`outcomes`/`fixtures` must exist in the registry, or loading fails. One real task, copied from `tasks.toml`:
@@ -55,6 +58,12 @@ Sequence state is fresh per task, so two tasks never share it.
 
 A task passes when it has zero reasons; a failure lists its reasons (`missing call`, `forbidden call`, wrong final outcome, `too many calls`, `gave up`).
 
+**Answer checks.** A task can also check what Iris says back: `answer_has = [...]` requires at least one of its strings to appear in the last answer, and `answer_not = [...]` fails when any of them does. Matching is case-insensitive (casefolded, with non-breaking spaces normalized) and looks only at the last answer of the conversation. That catches a failure tool grading cannot see: a task can call every right tool and still tell Jay a wrong number (for instance, reading out the wrong value from a window). A failed check adds an `answer lacks any of: ...` or `answer says: ...` reason, so the task fails like any other graded rule; reports count such results as `answers: N/M wrong` in the summary line and list them in a Wrong answers section at the end of the MD.
+
+## Multi-turn tasks
+
+A task may list `turns`, follow-up requests in the same conversation. All turns share one agent: one history, one journal, one set of dry tools and their fixture sequences, so a later turn can refer to what an earlier one did. The grading rules cover all turns together: every tool in `expect` must be called somewhere in the conversation, no forbidden call may reach its tool on any turn, each tool's last outcome across the whole conversation must match `outcomes`, and total calls over all turns stay within `max_calls`. The answer language is checked on the last answer only.
+
 ## Reports and compare
 
 `write_report` writes `{stamp}.json` and `{stamp}.md` into the out dir (default `eval/results`), where stamp is `%Y%m%d-%H%M%S`. The JSON holds the stamp, model name, a summary (`tasks`, `passed`, `success_rate`, `median_seconds`, `confirmations_per_task`, `failed`, plus `by_category` and `safety`) and one result per task: id, passed, calls as `(tool, outcome)` pairs in order, confirmations asked, seconds, final answer and reasons. The MD is the same summary line plus a table of Task | Result | Calls | Seconds | Reasons; [eval/sample-report.md](eval/sample-report.md) shows what that looks like, built from four hand-made fake results.
@@ -93,7 +102,9 @@ To publish the newest report into README.md, replacing the block between `<!-- e
 .venv\Scripts\python -m iris eval publish --results eval/results --readme README.md
 ```
 
-publish takes the newest `{stamp}.json` in the results dir (the last one when sorted by name) and writes its Date, Model, summary line and category table into that block; it exits 2 if there are no reports or the README has no markers.
+publish takes the newest non-partial `{stamp}.json` in the results dir (the last full run when sorted by name) and writes its Date, Model, summary line and category table into that block; it exits 2 if there are no full reports or the README has no markers.
+
+A filtered run (one using `--only`, `--category` or `--failed-from`) is marked `"partial": true` in its JSON report and is never published into README.md nor shown as the dashboard's latest run; both pick the newest full (non-partial) report instead.
 
 ## Dashboard
 

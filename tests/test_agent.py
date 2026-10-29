@@ -1,6 +1,9 @@
 import json
+import urllib.error
 
-from iris.agent import MAX_STEPS, Agent, Journal, _describe
+import pytest
+
+from iris.agent import MAX_HISTORY_CHARS, MAX_STEPS, SYSTEM, Agent, Journal, _describe
 from iris.llm import Reply, ToolCall
 from iris.tools import CONFIRM, SAFE, TOOLS, Tool, _click_tier
 from iris.voice import is_yes
@@ -15,6 +18,19 @@ class ScriptedLLM:
     def chat(self, messages, tools):
         self.seen.append([dict(m) for m in messages])
         return self.replies.pop(0)
+
+
+class RaisingLLM:
+    """Plays back replies in order; an exception entry is raised instead of returned."""
+
+    def __init__(self, *replies):
+        self.replies = list(replies)
+
+    def chat(self, messages, tools):
+        r = self.replies.pop(0)
+        if isinstance(r, BaseException):
+            raise r
+        return r
 
 
 def call(name, **args):
@@ -142,3 +158,84 @@ def test_journal_creates_its_folder(tmp_path):
     path = tmp_path / "fresh" / "journal.jsonl"
     Journal(path).log(event="request", text="hoi")
     assert json.loads(path.read_text(encoding="utf-8"))["text"] == "hoi"
+
+
+def test_history_is_bounded_to_max_chars(tmp_path):
+    ran = []
+    big = Tool("big", "", {}, [], SAFE, lambda **kw: ran.append(("big", kw)) or "x" * 5000)
+    replies = []
+    for i in range(30):
+        replies += [call("big"), answer(f"turn {i} done")]
+    llm = ScriptedLLM(*replies)
+    a = Agent(llm, lambda q: True, Journal(tmp_path / "j.jsonl"), {"big": big})
+    for i in range(30):
+        assert a.handle(f"do thing {i}") == f"turn {i} done"
+        size = sum(len(json.dumps(m, ensure_ascii=False)) for m in a.messages)
+        users = [m for m in a.messages if m["role"] == "user"]
+        assert size <= MAX_HISTORY_CHARS or len(users) == 1
+    assert len(ran) == 30
+    assert a.messages[0] == {"role": "system", "content": SYSTEM}
+    assert a.messages[1]["role"] == "user"
+
+
+def test_short_session_keeps_every_turn(tmp_path):
+    ran = []
+    llm = ScriptedLLM(call("status"), answer("one."), call("status"), answer("two."),
+                      call("status"), answer("three."))
+    a = agent(tmp_path, llm, ran)
+    assert a.handle("first") == "one."
+    assert a.handle("second") == "two."
+    assert a.handle("third") == "three."
+    users = [m for m in a.messages if m["role"] == "user"]
+    assert [m["content"] for m in users] == ["first", "second", "third"]
+
+
+def test_one_huge_request_is_kept_and_answered(tmp_path):
+    ran = []
+    llm = ScriptedLLM(answer("Got it."))
+    a = agent(tmp_path, llm, ran)
+    huge = "y" * 100_000
+    assert a.handle(huge) == "Got it."
+    assert any(m["role"] == "user" and m["content"] == huge for m in a.messages)
+
+
+def test_llm_error_ends_the_turn_not_iris(tmp_path):
+    ran = []
+    llm = RaisingLLM(urllib.error.URLError("connection refused"))
+    a = agent(tmp_path, llm, ran)
+    before = [dict(m) for m in a.messages]
+    assert a.handle("hello") == "I can't reach the model in LM Studio right now. Try again in a moment."
+    assert a.messages == before
+    errors = [e for e in journal(tmp_path) if e["event"] == "llm_error"]
+    assert len(errors) == 1 and "URLError" in errors[0]["error"]
+
+
+def test_llm_error_keeps_earlier_turns_and_the_next_turn_works(tmp_path):
+    ran = []
+    llm = RaisingLLM(answer("one."), TimeoutError(), answer("three."))
+    a = agent(tmp_path, llm, ran)
+    assert a.handle("first") == "one."
+    before = [dict(m) for m in a.messages]
+    assert a.handle("second") == "I can't reach the model in LM Studio right now. Try again in a moment."
+    assert a.messages == before
+    users = [m["content"] for m in a.messages if m["role"] == "user"]
+    assert users == ["first"]
+    assert a.handle("third") == "three."
+
+
+def test_llm_error_after_a_tool_call_removes_the_whole_turn(tmp_path):
+    ran = []
+    http_400 = urllib.error.HTTPError("http://127.0.0.1:1234", 400, "context full", None, None)
+    llm = RaisingLLM(call("status"), http_400)
+    a = agent(tmp_path, llm, ran)
+    before = [dict(m) for m in a.messages]
+    assert a.handle("check") == "I can't reach the model in LM Studio right now. Try again in a moment."
+    assert a.messages == before
+    assert len(ran) == 1
+
+
+def test_runtime_error_from_chat_is_not_caught(tmp_path):
+    llm = RaisingLLM(RuntimeError("boom"))
+    a = agent(tmp_path, llm, [])
+    with pytest.raises(RuntimeError):
+        a.handle("hello")

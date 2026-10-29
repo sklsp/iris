@@ -691,6 +691,7 @@ function renderJournal(d){
       row.appendChild(el("span", "badge " + (TIER_CLASS[ev.tier] || ""), ev.tier || "?"));
       row.appendChild(el("span", "t-name num", ev.tool || "?"));
       if (ev.args && Object.keys(ev.args).length) row.appendChild(el("span", "t-args num", truncate(JSON.stringify(ev.args), 160)));
+      if (ev.error) row.appendChild(el("span", "t-args num", truncate(String(ev.error), 160)));   // errored rows show why, incl. the model's own failures
       row.appendChild(el("span", "badge " + (OUTCOME_CLASS[ev.outcome] || "o-declined"), ev.outcome || "?"));
       turn.appendChild(row);
     }

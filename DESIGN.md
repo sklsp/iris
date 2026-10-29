@@ -31,6 +31,10 @@ Everything runs on this machine: no cloud and no cost per command (PLAN.md).
 The brain is Qwen 3.8 27B in LM Studio, reached through its OpenAI-compatible API at `127.0.0.1:1234` with native tool calling; the client in `llm.py` is stdlib-only urllib.
 The model id resolves per request as environment (`IRIS_MODEL`) → `~/.iris/settings.json` → default, so switching models needs no restart and no code change.
 
+## A model failure ends the turn, not the session
+
+When LM Studio is down or answers with an error, `Agent.handle` catches it, journals an `llm_error` line and returns a spoken apology; the loop in `__main__.py` goes straight back to listening, so one bad request never kills the session. Before that, the failed turn is removed from the history: everything from the last user message onward (including any tool results already collected during the turn) is dropped. A half turn with tool results but no answer would confuse the next request, because the model would see results for a question it never answered and might act on them; dropping the partial turn keeps every conversation in memory whole, so a retry starts from clean history.
+
 ## Voice: wake word, end of speech, interrupting
 
 The ears are openWakeWord (ONNX variant, because tflite has no Windows wheels) with the `hey_jarvis` model by default (`IRIS_WAKEWORD` overrides), scoring each mic frame against a 0.5 threshold.

@@ -8,7 +8,8 @@ Python 3.11+ . Windows . 696 tests . 96% coverage
 
 A local voice agent that operates this Windows PC. You say what you want; Iris reads the screen through
 Windows UI Automation, picks tools with a local LLM (Qwen in LM Studio), asks before it changes anything,
-and answers out loud. No cloud, no cost per command. See [PLAN.md](PLAN.md) for where it is going.
+and answers out loud. Iris keeps about 40,000 characters of conversation and forgets the oldest requests first.
+No cloud, no cost per command. See [PLAN.md](PLAN.md) for where it is going.
 
 ## What it shows
 
@@ -17,7 +18,7 @@ and answers out loud. No cloud, no cost per command. See [PLAN.md](PLAN.md) for 
 - Windows UI Automation instead of screenshots: Iris reads named controls, not pixels
 - Risk tiers enforced in code with tests: safe / confirm / never, escalating with the arguments
 - Wake word and streaming TTS: openWakeWord and faster-whisper in, SAPI or Kokoro out
-- An eval harness: 81 dry-run tasks that measure how well the model picks tools
+- An eval harness: 93 dry-run tasks that measure how well the model picks tools
 - The design decisions, with reasons: [DESIGN.md](DESIGN.md), UI Automation over pixels, tiers in code, untrusted screen text, barge-in
 
 ```mermaid
@@ -70,15 +71,15 @@ flowchart LR
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-10-29 09:16 on `qwen3.8-27b`: 238/243 passed (97.9%), median 3.6 s, 0.38 confirmations per task, safety: 0 forbidden, 6 refused attempts, 0 unknown tools, language: 0 wrong, 78/81 pass every time.
+Run of 2026-10-29 15:08 on `qwen3.8-27b`: 273/279 passed (97.8%), median 3.8 s, 0.36 confirmations per task, safety: 0 forbidden, 2 refused attempts, 0 unknown tools, language: 2 wrong, answers: 3/27 wrong, 90/93 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 32/33 | 97.0% |
+| agents | 36/36 | 100.0% |
 | files | 12/12 | 100.0% |
-| hands | 43/45 | 95.6% |
-| read | 24/24 | 100.0% |
-| safety | 82/84 | 97.6% |
+| hands | 47/48 | 97.9% |
+| read | 30/33 | 90.9% |
+| safety | 103/105 | 98.1% |
 | skills | 45/45 | 100.0% |
 
 <!-- eval:end -->
@@ -223,7 +224,9 @@ the prompt as one argv item, so a queued prompt may span lines. The provider and
 assumed from the CLI call itself; if the first dispatch's checks find no new session, the same command runs once more
 before Iris gives up, and both rounds match against the original moment so a late-appearing session still counts. The
 retry only happens when Cline's history was readable and showed no new session after about 15 seconds; a session that
-registers later than that could still be started twice. If it does not start after all that, the queue stays untouched.
+registers later than that can still be running alongside the retry, so Iris reads the history once more and says how many
+sessions started (N) and that Jay should stop the extra one in Cline. If it does not start after all that,
+the queue stays untouched.
 Every outcome (nothing queued, Jay said no, started) is logged as an autopilot event that the dashboard's Activity tab
 shows with its own badge.
 
@@ -271,18 +274,25 @@ tab, not an error page.
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 81 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 93 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
+It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
+`answer_not` forbids them, so a wrong number fails the task even when every tool call was right.
 
 ```bash
 .venv\Scripts\python -m iris eval                          # all tasks, report in eval/results
 .venv\Scripts\python -m iris eval --only trash_declined    # one task (repeat --only for more)
+.venv\Scripts\python -m iris eval --category safety        # only one category (repeatable)
+.venv\Scripts\python -m iris eval --only "mt_*"            # fnmatch pattern over task ids
+.venv\Scripts\python -m iris eval --failed-from eval/results/<stamp>.json   # rerun its failures
 .venv\Scripts\python -m iris eval --repeat 3               # every task three times
 .venv\Scripts\python -m iris eval-compare eval/results/A.json eval/results/B.json
 ```
 
 Each run writes `<stamp>.json` and `<stamp>.md` with the success rate, the median time per task and the
 confirmations per task. The dashboard's Eval tab shows the latest run. LM Studio has to be running with the model
-Iris uses.
+Iris uses. A filtered run (`--only`, `--category` or `--failed-from`) is marked partial in its report and
+is never published here nor shown as the latest run on the dashboard; both pick the newest full run.
 
 ## Environment variables
 
@@ -324,4 +334,5 @@ Notepad took 5 s, and an edit request stopped at the confirmation. 149 tests cov
 model, the wake word and VAD on synthetic audio, the SAPI and Kokoro speakers with fakes, the window and URL
 tools with fake windows, the agent manager against temporary git repos, and the dashboard's sessions and
 Claude endpoints against temporary databases and controlled file times. Nothing in the suite touches the real
-desktop, the microphone, the LLM or your repos.
+desktop, the microphone, the LLM or your repos. When LM Studio is down or a model call fails, Iris says so,
+journals an `llm_error` and keeps listening.

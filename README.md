@@ -8,7 +8,8 @@ Python 3.11+ . Windows . 696 tests . 96% coverage
 
 A local voice agent that operates this Windows PC. You say what you want; Iris reads the screen through
 Windows UI Automation, picks tools with a local LLM (Qwen in LM Studio), asks before it changes anything,
-and answers out loud. No cloud, no cost per command. See [PLAN.md](PLAN.md) for where it is going.
+and answers out loud. Iris keeps about 40,000 characters of conversation and forgets the oldest requests first.
+No cloud, no cost per command. See [PLAN.md](PLAN.md) for where it is going.
 
 ## What it shows
 
@@ -272,6 +273,7 @@ tab, not an error page.
 spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
 from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 87 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 
 ```bash
 .venv\Scripts\python -m iris eval                          # all tasks, report in eval/results

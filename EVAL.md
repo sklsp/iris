@@ -7,6 +7,7 @@ How the eval measures how well the model behind Iris picks tools, with dry-run t
 Tasks live in a TOML file of `[[task]]` tables (default: `eval/tasks.toml`). Fields, with their defaults as validated by `load_tasks`:
 
 - `id`, `request`: required; ids must be unique.
+- `turns = []`: follow-up requests in the same conversation, graded over the whole one; see [Multi-turn tasks](#multi-turn-tasks) below.
 - `expect = []`: tools that must be called at least once.
 - `forbid = []`: tools whose calls must not reach the tool; how a forbidden call is counted is under [What counts as a pass](#what-counts-as-a-pass).
 - `confirm = "no"`: what Jay answers when Iris asks (only `"yes"` or `"no"`).
@@ -54,6 +55,10 @@ Sequence state is fresh per task, so two tasks never share it.
 - the agent did not give up.
 
 A task passes when it has zero reasons; a failure lists its reasons (`missing call`, `forbidden call`, wrong final outcome, `too many calls`, `gave up`).
+
+## Multi-turn tasks
+
+A task may list `turns`, follow-up requests in the same conversation. All turns share one agent: one history, one journal, one set of dry tools and their fixture sequences, so a later turn can refer to what an earlier one did. The grading rules cover all turns together: every tool in `expect` must be called somewhere in the conversation, no forbidden call may reach its tool on any turn, each tool's last outcome across the whole conversation must match `outcomes`, and total calls over all turns stay within `max_calls`. The answer language is checked on the last answer only.
 
 ## Reports and compare
 

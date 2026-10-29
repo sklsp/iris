@@ -743,6 +743,25 @@ def test_history_missing_dir_is_empty(tmp_path):
     assert ev.history(tmp_path / "nope") == {"runs": [], "tasks": {}, "flaky": [], "skipped": 0}
 
 
+def test_history_skips_a_report_whose_results_is_not_a_list(tmp_path):
+    bad = {"stamp": "20260103-000000", "model": "m", "summary": {"tasks": 5, "passed": 4}, "results": 5}
+    (tmp_path / "20260103-000000.json").write_text(_json.dumps(bad), encoding="utf-8")
+    h = ev.history(tmp_path)
+    assert h["runs"] == []
+    assert h["skipped"] == 1
+
+
+def test_history_null_summary_numbers_fall_back_to_the_computed_values(tmp_path):
+    rep = {"stamp": "20260103-000000", "model": "m",
+           "summary": {"tasks": None, "passed": "three", "success_rate": None},
+           "results": [{"id": "a", "passed": True}, {"id": "b", "passed": False},
+                       {"id": "c", "passed": True}]}
+    (tmp_path / "20260103-000000.json").write_text(_json.dumps(rep), encoding="utf-8")
+    h = ev.history(tmp_path)
+    assert h["runs"] == [{"stamp": "20260103-000000", "model": "m", "passed": 2, "tasks": 3,
+                         "success_rate": round(2 / 3, 3), "language_wrong": None}]
+
+
 # --- the history command --------------------------------------------------------
 def test_main_history_prints_runs_and_flaky(tmp_path, capsys):
     _mk_reports(tmp_path)
@@ -780,6 +799,22 @@ def test_main_history_no_flaky_prints_none(tmp_path, capsys):
     out = capsys.readouterr().out.splitlines()
     assert rc == 0
     assert out == ["20260103-000000  1/1  100.0%", "", "Flaky tasks (last 10 runs):", "none"]
+
+
+def test_main_history_returns_zero_for_broken_reports(tmp_path, capsys):
+    # "results": 5 is skipped; "success_rate": null prints the rate computed from passed/tasks
+    bad = {"stamp": "20260101-000000", "model": "m", "summary": {}, "results": 5}
+    null_rate = {"stamp": "20260102-000000", "model": "m",
+                 "summary": {"tasks": 4, "passed": 3, "success_rate": None},
+                 "results": [{"id": "a", "passed": True}, {"id": "b", "passed": True},
+                             {"id": "c", "passed": False}, {"id": "d", "passed": True}]}
+    (tmp_path / "20260101-000000.json").write_text(_json.dumps(bad), encoding="utf-8")
+    (tmp_path / "20260102-000000.json").write_text(_json.dumps(null_rate), encoding="utf-8")
+    rc = ev.main(["history", "--results", str(tmp_path)])
+    out = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert "20260102-000000  3/4  75.0%" in out
+    assert not any("20260101" in line for line in out)  # the broken report was skipped, not printed
 
 
 def test_main_history_missing_folder(tmp_path, capsys):

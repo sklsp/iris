@@ -295,8 +295,18 @@ def compare(a: dict, b: dict) -> list[str]:
     return lines
 
 
+def _num_or(value, fallback):
+    """value when it is an int/float (bools do not count), else the computed fallback."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+    return fallback
+
+
 def history(results_dir, last: int = 10) -> dict:
-    """Read-only trend over the newest reports in results_dir; never writes anything there."""
+    """Read-only trend over the newest reports in results_dir; never writes anything there.
+
+    A report whose "results" is not a list is skipped (counted in "skipped"); summary numbers that are
+    not int/float fall back to values computed from results."""
     out: dict = {"runs": [], "tasks": {}, "flaky": [], "skipped": 0}
     d = Path(results_dir)
     if not d.is_dir():
@@ -309,16 +319,16 @@ def history(results_dir, last: int = 10) -> dict:
         except (OSError, ValueError):
             out["skipped"] += 1
             continue
-        if not isinstance(data, dict) or "results" not in data:
+        if not isinstance(data, dict) or not isinstance(data.get("results"), list):
             out["skipped"] += 1
             continue
         results = [r for r in data["results"] if isinstance(r, dict) and "id" in r]
         s = data.get("summary")
         if not isinstance(s, dict):
             s = {}
-        passed = s.get("passed", sum(1 for r in results if r.get("passed")))
-        tasks_n = s.get("tasks", len(results))
-        rate = s.get("success_rate", round(passed / tasks_n, 3) if tasks_n else 0.0)
+        passed = _num_or(s.get("passed"), sum(1 for r in results if r.get("passed")))
+        tasks_n = _num_or(s.get("tasks"), len(results))
+        rate = _num_or(s.get("success_rate"), round(passed / tasks_n, 3) if tasks_n else 0.0)
         lang = s.get("language")
         out["runs"].append({"stamp": data.get("stamp", f.stem), "model": data.get("model", ""),
                             "passed": passed, "tasks": tasks_n, "success_rate": rate,
@@ -347,7 +357,8 @@ def print_history(results_dir, last: int) -> int:
         return 1
     h = history(results_dir, last=last)
     for r in h["runs"]:
-        line = f"{r['stamp']}  {r['passed']}/{r['tasks']}  {r['success_rate'] * 100:.1f}%"
+        rate = _num_or(r.get("success_rate"), round(r["passed"] / r["tasks"], 3) if r["tasks"] else 0.0)
+        line = f"{r['stamp']}  {r['passed']}/{r['tasks']}  {rate * 100:.1f}%"
         if r["language_wrong"] is not None:
             line += f"  language {r['language_wrong']} wrong"
         print(line)

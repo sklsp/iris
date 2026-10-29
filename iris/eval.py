@@ -121,6 +121,7 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
     seconds = time.perf_counter() - start
 
     calls, kinds, confirmations, confirmed_ok, gave_up = [], [], 0, 0, False
+    model_error = False
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
             e = json.loads(line)
@@ -135,6 +136,8 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
                     confirmed_ok += 1
         elif e.get("event") == "gave_up":
             gave_up = True
+        elif e.get("event") == "llm_error":
+            model_error = True
 
     reasons = []
     called = {name for name, _ in calls}
@@ -163,6 +166,9 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
         reasons.append(f"too many calls: {len(calls)} > {task.max_calls}")
     if gave_up:
         reasons.append("gave up")
+    if model_error:
+        # once per task, even when several turns failed on the model
+        reasons.append("model error")
 
     return Result(id=task.id, passed=not reasons, calls=calls, confirmations=confirmations,
                   seconds=seconds, answer=answer_text, reasons=reasons, category=task.category,

@@ -1,4 +1,5 @@
 """Tests for the eval task format and loader."""
+import urllib.error
 from pathlib import Path
 
 from iris import eval as ev
@@ -401,6 +402,18 @@ def test_result_carries_request_and_turns(tmp_path):
     llm = ScriptedLLM(call("open_app"), answer("Klaar."), answer("Ja, staat open."))
     r = ev.run_task(llm, task, tmp_path)
     assert (r.request, r.turns) == ("open kladblok", ["en nu?"])
+
+
+def test_run_task_grades_a_model_failure(tmp_path):
+    # both turns fail on the model: the task fails once with "model error" and no exception escapes
+    task = ev.Task(id="t24", request="hoe warm is de gpu?", turns=["en nog eens"])
+
+    class DownLLM:
+        def chat(self, messages, tools):
+            raise urllib.error.URLError("connection refused")
+
+    r = ev.run_task(DownLLM(), task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["model error"])
 
 
 # --- answer language -----------------------------------------------------------

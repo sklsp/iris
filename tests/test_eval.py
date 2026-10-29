@@ -1019,3 +1019,47 @@ def test_eval_command_without_filters_marks_the_report_full(tmp_path, monkeypatc
     (json_path,) = list((tmp_path / "results").glob("*.json"))
     assert rc == 0 and _json.loads(json_path.read_text(encoding="utf-8"))["partial"] is False
 
+
+def _category_tasks_file(tmp_path):
+    tasks_file = tmp_path / "tasks.toml"
+    text = ('[[task]]\nid = "a"\nrequest = "Hoi"\ncategory = "files"\n\n'
+            '[[task]]\nid = "b"\nrequest = "Hallo"\ncategory = "safety"\n\n'
+            '[[task]]\nid = "c"\nrequest = "Dag"\ncategory = "files"\n')
+    tasks_file.write_text(text, encoding="utf-8")
+    return tasks_file
+
+
+def test_category_keeps_only_matching_tasks_and_marks_partial(tmp_path, monkeypatch):
+    tasks_file = _category_tasks_file(tmp_path)
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--category", "files"])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a", "c"] and report["partial"] is True
+
+
+def test_category_repeatable_keeps_the_union(tmp_path, monkeypatch):
+    tasks_file = _category_tasks_file(tmp_path)
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--category", "files", "--category", "safety"])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a", "b", "c"] and report["partial"] is True
+
+
+def test_unknown_category_is_rejected(tmp_path, monkeypatch, capsys):
+    tasks_file = _category_tasks_file(tmp_path)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"), "--category", "nope"])
+    assert rc == 2 and "unknown category: nope" in capsys.readouterr().out
+
+
+def test_category_combined_with_only_requires_both(tmp_path, monkeypatch):
+    tasks_file = _category_tasks_file(tmp_path)
+    _monkey(monkeypatch)
+    rc = ev.main(["--tasks", str(tasks_file), "--out", str(tmp_path / "results"),
+                  "--only", "a", "--only", "b", "--category", "files"])
+    (json_path,) = list((tmp_path / "results").glob("*.json"))
+    report = _json.loads(json_path.read_text(encoding="utf-8"))
+    assert rc == 0 and [r["id"] for r in report["results"]] == ["a"] and report["partial"] is True
+

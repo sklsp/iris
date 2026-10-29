@@ -453,6 +453,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--tasks", default="eval/tasks.toml")
     ap.add_argument("--out", default="eval/results")
     ap.add_argument("--only", action="append", default=None, metavar="ID")
+    ap.add_argument("--category", action="append", default=None, metavar="NAME")
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--results", default="eval/results")
     ap.add_argument("--readme", default="README.md")
@@ -473,8 +474,17 @@ def main(argv: list[str]) -> int:
             if tid not in known:
                 print(f"unknown task: {tid}")
                 return 2
-        wanted = set(a.only)
-        tasks = [t for t in tasks if t.id in wanted]
+    if a.category:
+        known_cats = {t.category for t in tasks}
+        for cat in a.category:
+            if cat not in known_cats:
+                print(f"unknown category: {cat}")
+                return 2
+    if a.only or a.category:
+        wanted_ids = set(a.only) if a.only else None
+        wanted_cats = set(a.category) if a.category else None
+        tasks = [t for t in tasks
+                 if (wanted_ids is None or t.id in wanted_ids) and (wanted_cats is None or t.category in wanted_cats)]
         partial = True
 
     llm = LMStudio()

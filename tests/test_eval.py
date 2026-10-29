@@ -171,6 +171,27 @@ def test_bad_turns_values_are_refused(tmp_path):
             assert str(e) == "bad turns in task a"
 
 
+def test_answer_has_and_not_default_empty_and_load_from_toml(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\n\n'
+                         '[[task]]\nid = "b"\nrequest = "two."\nanswer_has = ["391", "correct"]\n'
+                         'answer_not = ["991"]\n')
+    a, b = ev.load_tasks(p)
+    assert (a.answer_has, a.answer_not) == ([], [])
+    assert (b.answer_has, b.answer_not) == (["391", "correct"], ["991"])
+
+
+def test_bad_answer_values_are_refused(tmp_path):
+    for bad in ('answer_has = 3', 'answer_has = [3]', 'answer_has = [""]',
+                'answer_not = "nope"', 'answer_not = ["ok", 4]'):
+        p = _write(tmp_path, f'[[task]]\nid = "a"\nrequest = "one."\n{bad}\n')
+        try:
+            ev.load_tasks(p)
+            raise AssertionError("expected ValueError")
+        except ValueError as e:
+            key = "answer_has" if bad.startswith("answer_has") else "answer_not"
+            assert str(e) == f"bad {key} in task a"
+
+
 # --- dry-run tools -------------------------------------------------------------
 def test_dry_tool_returns_fixture():
     assert ev.dry_tools({"list_windows": "WhatsApp"})["list_windows"].fn() == "WhatsApp"
@@ -414,6 +435,50 @@ def test_run_task_grades_a_model_failure(tmp_path):
 
     r = ev.run_task(DownLLM(), task, tmp_path)
     assert (r.passed, r.reasons) == (False, ["model error"])
+
+
+def test_run_task_answer_has_match_passes(tmp_path):
+    task = ev.Task(id="t25", request="wat is 17 x 23?", answer_has=["391"])
+    r = ev.run_task(ScriptedLLM(answer("Dat is 391.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (True, [])
+
+
+def test_run_task_answer_has_missing_fails_with_literal_reason(tmp_path):
+    task = ev.Task(id="t26", request="wat is 17 x 23?", answer_has=["391"])
+    r = ev.run_task(ScriptedLLM(answer("Dat is 991.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["answer lacks any of: 391"])
+
+
+def test_run_task_answer_has_any_one_match_is_enough(tmp_path):
+    task = ev.Task(id="t27", request="wat is 17 x 23?", answer_has=["391", "driehonderdeneen"])
+    r = ev.run_task(ScriptedLLM(answer("Dat is driehonderdeneen.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (True, [])
+
+
+def test_run_task_answer_not_hit_fails(tmp_path):
+    task = ev.Task(id="t28", request="wat is 17 x 23?", answer_not=["991"])
+    r = ev.run_task(ScriptedLLM(answer("Dat is 991.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["answer says: 991"])
+
+
+def test_run_task_answer_checks_ignore_case_and_non_breaking_space(tmp_path):
+    task = ev.Task(id="t29", request="wat staat open?", answer_has=["KLADBLOK STAAT OPEN"],
+                   answer_not=["NIET GEDAAN"])
+    r = ev.run_task(ScriptedLLM(answer("kladblok\u00a0staat open.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (True, [])
+
+
+def test_run_task_answer_checks_use_the_last_turn_only(tmp_path):
+    task = ev.Task(id="t32", request="wat is 17 x 23?", turns=["en nu zeker?"], answer_has=["391"])
+    llm = ScriptedLLM(answer("Dat is 991."), answer("Nee, het is 391."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons, r.answer) == (True, [], "Nee, het is 391.")
+
+
+def test_run_task_without_answer_fields_grades_as_before(tmp_path):
+    task = ev.Task(id="t33", request="wat is 17 x 23?")
+    r = ev.run_task(ScriptedLLM(answer("Dat is 991.")), task, tmp_path)
+    assert (r.passed, r.reasons) == (True, [])
 
 
 # --- answer language -----------------------------------------------------------

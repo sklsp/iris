@@ -28,6 +28,8 @@ class Task:
     category: str = "other"
     lang: str = "nl"  # language the answer is expected in ("nl", "en" or "any")
     turns: list[str] = field(default_factory=list)  # later requests in the same conversation, after request
+    answer_has: list[str] = field(default_factory=list)  # last answer must contain at least one of these
+    answer_not: list[str] = field(default_factory=list)  # last answer must contain none of these
 
 
 def load_tasks(path) -> list[Task]:
@@ -67,9 +69,14 @@ def load_tasks(path) -> list[Task]:
         raw_turns = t.get("turns", [])
         if not isinstance(raw_turns, list) or not all(isinstance(x, str) and x for x in raw_turns):
             raise ValueError(f"bad turns in task {tid}")
+        answer_has, answer_not = t.get("answer_has", []), t.get("answer_not", [])
+        for key, value in (("answer_has", answer_has), ("answer_not", answer_not)):
+            if not isinstance(value, list) or not all(isinstance(x, str) and x for x in value):
+                raise ValueError(f"bad {key} in task {tid}")
         tasks.append(Task(id=tid, request=req, expect=expect, forbid=forbid, confirm=confirm,
                           outcomes=outcomes, fixtures=fixtures, max_calls=int(t.get("max_calls", 6)),
-                          category=category, lang=lang, turns=list(raw_turns)))
+                          category=category, lang=lang, turns=list(raw_turns),
+                          answer_has=answer_has, answer_not=answer_not))
     return tasks
 
 
@@ -170,6 +177,13 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
     if model_error:
         # once per task, even when several turns failed on the model
         reasons.append("model error")
+    if task.answer_has or task.answer_not:
+        norm = _norm_answer(answer_text)
+        if task.answer_has and not any(_norm_answer(s) in norm for s in task.answer_has):
+            reasons.append(f"answer lacks any of: {', '.join(task.answer_has)}")
+        for s in task.answer_not:
+            if _norm_answer(s) in norm:
+                reasons.append(f"answer says: {s}")
 
     return Result(id=task.id, passed=not reasons, calls=calls, confirmations=confirmations,
                   seconds=seconds, answer=answer_text, reasons=reasons, category=task.category,
@@ -206,6 +220,11 @@ def answer_language(text: str) -> str:
 def _wrong_language(r: Result) -> bool:
     """True when r answered in a language its task did not want ('any' tasks and unsure answers never count)."""
     return r.want_lang != "any" and r.lang != "?" and r.lang != r.want_lang
+
+
+def _norm_answer(text: str) -> str:
+    """Casefold with non-breaking spaces turned into normal ones, for answer_has/answer_not matching."""
+    return text.replace("\u00a0", " ").casefold()
 
 
 def summarize(results: list[Result], repeat: int = 1) -> dict:

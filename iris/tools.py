@@ -259,7 +259,7 @@ def journal_today(today: str = "") -> str:
     if not path.exists():
         return "Nothing in the journal yet."
     day = today or date.today().isoformat()
-    requests = ok = refused = declined = errors = 0
+    requests = ok = refused = declined = errors = model_errors = 0
     with path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -283,9 +283,14 @@ def journal_today(today: str = "") -> str:
                     declined += 1
                 elif outcome == "error":
                     errors += 1
+            elif e.get("event") == "llm_error":
+                model_errors += 1
     calls = ok + refused + declined + errors
-    return (f"Today: {requests} requests, {calls} tool calls "
+    text = (f"Today: {requests} requests, {calls} tool calls "
             f"({ok} ok, {refused} refused, {declined} declined, {errors} errors).")
+    if model_errors:
+        text += f" {model_errors} model errors."
+    return text
 
 
 # --- windows (UI Automation) --------------------------------------------------

@@ -10,5 +10,5 @@ Branch: `self-extend` in W:/Iris. One item at a time, one commit per item.
 - [x] S4. the plan template (1005 passed in 24.11s)
 - [x] S5. eval tasks (1005 passed in 25.26s)
 - [x] S6. docs (1005 passed in 25.02s)
-- [ ] S7. no dashes
+- [x] S7. no dashes (0 U+2014/U+2013 in 11 files)
 - [ ] S8. final check

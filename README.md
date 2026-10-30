@@ -148,6 +148,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | timer_set | safe | set a countdown timer for minutes or until a clock time such as 15:00 (`at`); Iris says `message` out loud in Jay's language when it is done |
 | timer_list | safe | the running timers and how long each has left |
 | timer_cancel | safe | stop a timer by its number, or all of them with 0 |
+| capability_list | safe | the saved plans for skills Iris does not have yet, one per line |
 | press_keys | confirm | press shortcuts in a window, `^s` or `{TAB}` |
 | click | confirm | click a control by its name |
 | type_text | confirm | type into a window or a named field, optionally replacing what is there |
@@ -157,6 +158,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | queue_remove | confirm | remove one waiting prompt from the agent queue by its id (the number queue_list shows), asks first |
 | queue_move | confirm | move one waiting prompt one place up or down in the agent queue by its id, asks first |
 | cline_start | confirm | start a new Cline session through the Cline CLI with the next queued prompt for this agent; if a repo is given its newest PROGRESS run must be done, asks first |
+| request_capability | confirm | save a plan for a skill Iris cannot do yet; asks first and builds nothing |
 
 The tiers are enforced in code, not in the prompt:
 
@@ -243,6 +245,14 @@ sessions started (N) and that Jay should stop the extra one in Cline. If it does
 the queue stays untouched.
 Every outcome (nothing queued, Jay said no, started) is logged as an autopilot event that the dashboard's Activity tab
 shows with its own badge.
+
+## Self-extension
+
+When Jay asks for something Iris cannot do yet, she says so instead of guessing. If he agrees to her suggestion
+(`request_capability`, confirm), she saves the plan for the new skill in `~/.iris/capabilities`: a `.md` with his
+request and the plan plus a `.json` sidecar; `capability_list` (safe) lists what is saved. Saving a plan builds
+nothing: building the skill is a later step that always needs Jay's OK and review, and a self-built branch may never
+weaken an existing rule or touch the protected files ([DESIGN.md](DESIGN.md)).
 
 ## Dashboard
 

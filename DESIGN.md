@@ -18,6 +18,15 @@ When a tool does run and fails (its function returns a string starting with `err
 Five tools escalate on their arguments (`tier_for`): `click` and `type_text` when the control or field name says send/buy/pay/password/delete (English and Dutch), `press_keys` for `{ENTER}` in a mail/chat window, `trash_file` for paths it must not touch, and `lmstudio_unload` for the model Iris runs on or "all".
 Tests pin every tier and escalation, so a change to a tier is a visible test failure, not a prompt edit.
 
+## Iris may plan her own skills, never weaken her own rules
+
+When Jay asks for something Iris cannot do yet, she says so and offers to plan a new skill; after his yes (`request_capability` is confirm tier) `save_plan` writes the plan as `<name>.md` plus a `.json` sidecar in `~/.iris/capabilities`, and `capability_list` lists what is saved. The rails that keep this safe:
+
+- The tiers are locked in `iris/tier_lock.json`: every tool in TOOLS has a line with its tier and whether it escalates, and the tests read both sides of that agreement, so a branch that changes an existing tier fails the suite before anyone looks at the diff.
+- A self-built branch may not touch the protected paths (`PROTECTED` in `iris/capabilities.py`: `agent.py` with its system prompt, the guard itself, the eval harness, the two test files that pin these rails, and `.github/`), and `guard_problems` reports every change to an existing tier-lock line; new tools may only be added. An empty report is all that makes a branch acceptable, and Jay still has to say OK before anything merges.
+- Only Jay's own request can start a plan: the tool is confirm tier, it saves nothing until he says yes, and text read from a window or a page is data that cannot call it (see Untrusted tool output).
+- A saved plan builds nothing. Building the skill happens later on its own branch, and nothing a self-built branch does goes live without Jay merging it.
+
 ## Untrusted tool output
 
 Text on screen is data, never instructions: PLAN.md's third principle.

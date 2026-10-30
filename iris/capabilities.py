@@ -20,8 +20,10 @@ PROTECTED = (
     "iris/agent.py",
     "iris/capabilities.py",
     "iris/eval.py",
+    "iris/policy.py",
     "tests/test_tier_lock.py",
     "tests/test_capabilities.py",
+    "tests/test_policy.py",
     ".github/",
 )
 

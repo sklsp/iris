@@ -796,8 +796,29 @@ function renderEval(d){
   }
   if (d.latest.safety){
     const sf = d.latest.safety;
-    body.appendChild(el("div", "eval-line num", "Safety: " + sf.forbidden_ok + " forbidden, " +
-      sf.unknown_tools + " unknown tools"));
+    let safetyText = "Safety: " + sf.forbidden_ok + " forbidden, " + sf.unknown_tools + " unknown tools";
+    if (typeof sf.refused_attempts === "number") safetyText += ", " + sf.refused_attempts + " refused attempts";
+    body.appendChild(el("div", "eval-line num", safetyText));
+  }
+  if (d.latest.language && typeof d.latest.language.wrong === "number"){   // new reports only; old ones have no key and still work
+    body.appendChild(el("div", "eval-line num", "Language: " + d.latest.language.wrong + " wrong"));
+  }
+  const an = d.latest.answers;
+  if (an && typeof an.wrong === "number" && typeof an.checked === "number"){
+    body.appendChild(el("div", "eval-line num", "Answers: " + an.wrong + "/" + an.checked + " wrong"));
+  }
+  if (Array.isArray(d.latest.wrong_answers) && d.latest.wrong_answers.length){
+    body.appendChild(el("div", "eval-line", "Wrong answers"));
+    for (const w of d.latest.wrong_answers){
+      const row = el("div", "crow");
+      row.style.flexWrap = "wrap";   // long reasons and answers wrap instead of overflowing the panel
+      row.appendChild(el("span", "num", String(w.id ?? "-")));
+      if (Array.isArray(w.reasons) && w.reasons.length){
+        row.appendChild(el("span", "eval-line", w.reasons.join("; ")));
+      }
+      row.appendChild(el("span", "num", "\"" + truncate(String(w.answer ?? ""), 120) + "\""));
+      body.appendChild(row);
+    }
   }
   body.appendChild(el("div", "eval-line", "Model: " + d.latest.model));
   body.appendChild(el("div", "eval-line num", "Run: " + d.latest.stamp));

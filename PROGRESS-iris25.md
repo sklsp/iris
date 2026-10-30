@@ -2,5 +2,5 @@
 - [x] L2. a timer for a clock time (841 passed in 23.61s)
 - [x] L3. eval tasks for the new timer forms (841 passed in 24.27s)
 - [x] L4. docs (841 passed in 23.83s)
-- [ ] L5. no dashes
+- [x] L5. no dashes (no U+2014 or U+2013 in the 8 files changed since timers; 841 passed in 24.47s)
 - [ ] L6. final check

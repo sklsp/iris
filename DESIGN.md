@@ -25,6 +25,10 @@ Every tool result is wrapped in `<untrusted_data>` tags before it goes back to t
 This matters because `read_window` returns whatever a window contains, including web pages that could try to steer the agent.
 The eval harness includes trap tasks with instructions hidden in windows; they pass only while this marking holds.
 
+## Web pages are data
+
+Everything `web_search` and `web_read` return reaches the model inside `<untrusted_data>` tags, exactly like screen text, so an instruction on a page is never followed. The fetch also refuses local addresses, loopback and private ranges, so a page cannot steer Iris into this PC's own services.
+
 ## Why a local model
 
 Everything runs on this machine: no cloud and no cost per command (PLAN.md).

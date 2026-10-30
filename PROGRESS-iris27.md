@@ -5,5 +5,5 @@
 - [x] W3. web_read (891 passed in 25.32s)
 - [x] W4. web tasks in the eval (891 passed in 24.29s)
 - [x] W5. docs (891 passed in 25.23s)
-- [ ] W6. no dashes
+- [x] W6. no dashes (0 U+2014/U+2013 across all 10 files changed since timer-language; 891 passed in 24.41s)
 - [ ] W7. final check

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from iris import tools
+from tests.test_timers import make_timers
 
 
 class FakeWindow:
@@ -972,4 +973,99 @@ def test_calculate_is_registered_safe():
     assert t.tier == tools.SAFE
     assert t.required == ["expression"]
     assert "instead of working it out yourself" in t.description
+
+
+# --- timers --------------------------------------------------------------------
+@pytest.fixture
+def fake_timers(monkeypatch):
+    """A real Timers on a hand-advanced clock and recording scheduler, installed as tools.TIMERS."""
+    timers, start, clock, announced = make_timers()
+    monkeypatch.setattr(tools, "TIMERS", timers)
+    return timers, start, clock, announced
+
+
+def test_timer_set_whole_minutes(fake_timers):
+    assert tools.timer_set(10, "pasta") == "Timer 1 set for 10 minutes: pasta."
+
+
+def test_timer_set_one_minute_is_singular(fake_timers):
+    assert tools.timer_set(1) == "Timer 1 set for 1 minute."
+
+
+def test_timer_set_fractional_minutes_keep_the_decimal(fake_timers):
+    assert tools.timer_set(2.5, "tea") == "Timer 1 set for 2.5 minutes: tea."
+
+
+def test_timer_set_under_a_minute_says_seconds(fake_timers):
+    assert tools.timer_set(0.5) == "Timer 1 set for 30 seconds."
+
+
+def test_timer_set_refuses_zero_and_too_long(fake_timers):
+    assert tools.timer_set(0) == "error: seconds must be greater than zero"
+    assert tools.timer_set(-2, "pasta") == "error: seconds must be greater than zero"
+    assert tools.timer_set(1441) == "error: seconds must be at most 86400 (24 hours)"
+
+
+def test_timer_set_registers_a_scheduled_thread(fake_timers):
+    _, start, _, _ = fake_timers
+    tools.timer_set(10, "pasta")
+    assert [c[0] for c in start.calls] == [600.0]  # minutes became seconds
+
+
+def test_timer_list_empty(fake_timers):
+    assert tools.timer_list() == "No timers running."
+
+
+def test_timer_list_shows_each_timer_soonest_first(fake_timers):
+    _, _, clock, _ = fake_timers
+    tools.timer_set(10, "pasta")  # id 1, due at 600 s
+    tools.timer_set(2, "tea")     # id 2, due at 120 s
+    clock.advance(30)             # now = 30: tea has 90 s left, pasta 570 s
+    assert tools.timer_list() == (
+        "2. tea: 1 min 30 s left\n"
+        "1. pasta: 9 min 30 s left")
+
+
+def test_timer_cancel_one(fake_timers):
+    _, start, _, _ = fake_timers
+    tools.timer_set(5, "pasta")
+    assert tools.timer_cancel(1) == "Cancelled timer 1."
+    assert start.calls[0][2].cancelled is True  # the scheduled thread was cancelled too
+    assert tools.timer_list() == "No timers running."
+
+
+def test_timer_cancel_unknown_id(fake_timers):
+    assert tools.timer_cancel(7) == "error: no timer 7"
+
+
+def test_timer_cancel_zero_cancels_all(fake_timers):
+    tools.timer_set(5, "a")
+    tools.timer_set(6, "b")
+    assert tools.timer_cancel() == "Cancelled 2 timers."
+    assert tools.timer_list() == "No timers running."
+
+
+def test_timer_tools_refuse_to_run_without_a_timers(monkeypatch):
+    monkeypatch.setattr(tools, "TIMERS", None)
+    msg = "error: timers only work while Iris is running in voice or text mode"
+    assert tools.timer_set(5) == msg
+    assert tools.timer_list() == msg
+    assert tools.timer_cancel() == msg
+
+
+def test_timer_tools_are_registered_safe():
+    t = tools.TOOLS["timer_set"]
+    assert t.tier == tools.SAFE and t.required == ["minutes"]
+    assert "says out loud" in t.description
+    assert tools.TOOLS["timer_list"].tier == tools.SAFE
+    assert tools.TOOLS["timer_cancel"].required == []
+
+
+def test_set_announcer_installs_the_shared_timers(monkeypatch):
+    from iris.timers import Timers
+
+    monkeypatch.setattr(tools, "TIMERS", None)
+    announced: list[str] = []
+    tools.set_announcer(announced.append)
+    assert isinstance(tools.TIMERS, Timers)
 

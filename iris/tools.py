@@ -19,6 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from iris.timers import Timers
+
 SAFE, CONFIRM, NEVER = "safe", "confirm", "never"
 
 # Control names that mean an irreversible or outward-facing action, in English and Dutch. Matched as word
@@ -685,6 +687,68 @@ def calculate(expression: str) -> str:
     return f"{expression} = {text}"
 
 
+# --- timers -------------------------------------------------------------------
+TIMERS: Timers | None = None  # created by set_announcer when Iris starts in voice or text mode
+
+
+def set_announcer(announce: Callable[[str], object]) -> None:
+    """Create the shared Timers with this announce callback; called when Iris starts in voice or text mode."""
+    global TIMERS
+    TIMERS = Timers(announce=announce)
+
+
+def _duration_text(minutes: float) -> str:
+    """How long a timer runs, spoken: whole minutes without .0, under one minute as seconds."""
+    if minutes < 1:
+        s = round(minutes * 60)
+        return f"{s} second{'s' if s != 1 else ''}"
+    if minutes.is_integer():
+        n = int(minutes)
+        return f"{n} minute{'s' if n != 1 else ''}"
+    return f"{minutes} minutes"
+
+
+def _left_text(seconds: int) -> str:
+    m, s = divmod(seconds, 60)
+    return f"{m} min {s} s"
+
+
+def timer_set(minutes: float, label: str = "") -> str:
+    """Set a countdown timer; Iris says out loud when it is done."""
+    if TIMERS is None:
+        return "error: timers only work while Iris is running in voice or text mode"
+    try:
+        t = TIMERS.add(float(minutes) * 60, label)
+    except ValueError as exc:
+        return f"error: {exc}"
+    duration = _duration_text(t["seconds"] / 60)
+    if label:
+        return f"Timer {t['id']} set for {duration}: {label}."
+    return f"Timer {t['id']} set for {duration}."
+
+
+def timer_list() -> str:
+    """The running timers and how long each has left."""
+    if TIMERS is None:
+        return "error: timers only work while Iris is running in voice or text mode"
+    items = TIMERS.list()
+    if not items:
+        return "No timers running."
+    return "\n".join(f"{t['id']}. {t['label']}: {_left_text(t['left_seconds'])} left" for t in items)
+
+
+def timer_cancel(id: int = 0) -> str:
+    """Stop a timer by its number, or all timers with 0."""
+    if TIMERS is None:
+        return "error: timers only work while Iris is running in voice or text mode"
+    if id == 0:
+        n = TIMERS.cancel_all()
+        return f"Cancelled {n} timer{'s' if n != 1 else ''}."
+    if TIMERS.cancel(id):
+        return f"Cancelled timer {id}."
+    return f"error: no timer {id}"
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -780,4 +844,10 @@ TOOLS = {t.name: t for t in [
          "Jay's concept websites from conceptkit: every site with its port and stops, and the findings of check --all."
          " Read only.",
          {}, [], SAFE, concept_sites),
+    Tool("timer_set", "Set a countdown timer; Iris says out loud when it is done.",
+          {"minutes": {"type": "number"}, "label": S}, ["minutes"], SAFE, timer_set),
+    Tool("timer_list", "The running timers and how long each has left.", {}, [], SAFE, timer_list),
+    Tool("timer_cancel", "Stop a timer by its number, or all timers with 0.",
+          {"id": {"type": "integer"}}, [], SAFE, timer_cancel),
+
 ]}

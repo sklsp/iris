@@ -1,7 +1,7 @@
 # Iris timers run (night-iris24)
 
 - [x] R1. the timer module (804 passed in 24.73s)
-- [ ] R2. timer tools
+- [x] R2. timer tools (827 passed in 24.25s)
 - [ ] R3. Iris announces timers
 - [ ] R4. timers in the eval
 - [ ] R5. docs

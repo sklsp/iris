@@ -1,0 +1,142 @@
+{
+  "agents_status": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "calculate": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "click": {
+    "tier": "confirm",
+    "escalates": true
+  },
+  "cline_start": {
+    "tier": "confirm",
+    "escalates": false
+  },
+  "comfy_queue": {
+    "tier": "confirm",
+    "escalates": false
+  },
+  "comfy_status": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "comfy_workflows": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "concept_sites": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "focus_window": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "followups": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "gpu_check": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "journal_today": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "list_windows": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "lmstudio_load": {
+    "tier": "confirm",
+    "escalates": false
+  },
+  "lmstudio_models": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "lmstudio_unload": {
+    "tier": "confirm",
+    "escalates": true
+  },
+  "open_app": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "open_url": {
+    "tier": "safe",
+    "escalates": true
+  },
+  "press_keys": {
+    "tier": "confirm",
+    "escalates": true
+  },
+  "queue_add": {
+    "tier": "confirm",
+    "escalates": false
+  },
+  "queue_list": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "queue_move": {
+    "tier": "confirm",
+    "escalates": false
+  },
+  "queue_remove": {
+    "tier": "confirm",
+    "escalates": false
+  },
+  "queue_take": {
+    "tier": "confirm",
+    "escalates": false
+  },
+  "read_window": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "restore_trash": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "scroll": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "system_status": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "timer_cancel": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "timer_list": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "timer_set": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "trash_file": {
+    "tier": "confirm",
+    "escalates": true
+  },
+  "type_text": {
+    "tier": "confirm",
+    "escalates": true
+  },
+  "web_read": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "web_search": {
+    "tier": "safe",
+    "escalates": false
+  }
+}

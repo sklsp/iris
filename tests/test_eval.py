@@ -240,6 +240,29 @@ def test_dry_tiers_stay_the_same():
     assert ev.dry_tools({})["trash_file"].tier_of(trash_args) == real_trash.tier_of(trash_args)
 
 
+def test_dry_pure_tool_runs_for_real():
+    assert ev.dry_tools({})["calculate"].fn(expression="6*7") == "6*7 = 42"
+
+
+def test_dry_pure_tool_fixture_wins_over_the_real_fn():
+    assert ev.dry_tools({"calculate": "fixture"})["calculate"].fn(expression="6*7") == "fixture"
+
+
+def test_dry_non_pure_tool_still_returns_the_note():
+    assert ev.dry_tools({})["list_windows"].fn() == "ok (dry run of list_windows)"
+
+
+def test_dry_copies_keep_tier_and_pure_flag():
+    import iris.tools as tools
+
+    for name, real in tools.TOOLS.items():
+        copy = ev.dry_tools({})[name]
+        assert copy.tier == real.tier, name
+        assert copy.pure == real.pure, name
+    assert ev.dry_tools({})["calculate"].pure is True
+    assert ev.dry_tools({})["open_app"].pure is False
+
+
 # --- running one task ----------------------------------------------------------
 import json as _json  # noqa: E402
 

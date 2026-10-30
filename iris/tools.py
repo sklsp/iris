@@ -41,6 +41,7 @@ class Tool:
     tier: str
     fn: Callable[..., str]
     tier_for: Callable[[dict], str] | None = None  # argument-dependent escalation
+    pure: bool = False  # only computes, touches nothing on the PC; the eval runs it for real
 
     def tier_of(self, args: dict) -> str:
         return self.tier_for(args) if self.tier_for else self.tier
@@ -718,7 +719,7 @@ TOOLS = {t.name: t for t in [
     Tool("calculate",
          "Exact arithmetic on numbers. Use it for every multiplication, division or sum instead of working it out"
          " yourself, then say the result.",
-         {"expression": S}, ["expression"], SAFE, calculate),
+         {"expression": S}, ["expression"], SAFE, calculate, None, True),
     Tool("list_windows", "Titles of all open windows.", {}, [], SAFE, list_windows),
     Tool("read_window", "The named controls (buttons, fields, text) in a window. Title match is a substring.",
          {"title": S}, ["title"], SAFE, read_window),

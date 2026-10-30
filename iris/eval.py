@@ -81,19 +81,26 @@ def load_tasks(path) -> list[Task]:
 
 
 def dry_tools(fixtures: dict[str, str | list[str]]) -> dict[str, Tool]:
-    """A copy of the registry where every tool returns its fixture or a dry-run note. Never calls the real fn."""
+    """A copy of the registry where every tool returns its fixture or a dry-run note.
+
+    A pure tool without a fixture calls the real fn instead: calculate must really calculate in the eval."""
     out = {}
     counters: dict[str, int] = {}  # fresh per call to dry_tools: two tasks never share sequence state
     for name, real in TOOLS.items():
-        def fn(_name=name, **kwargs):
+        def fn(_name=name, _real=real, **kwargs):
             fx = fixtures.get(_name)
             if isinstance(fx, list):
                 i = counters.get(_name, 0)
                 counters[_name] = i + 1
                 return fx[min(i, len(fx) - 1)] if fx else f"ok (dry run of {_name})"
-            return fx if fx is not None else f"ok (dry run of {_name})"
+            if fx is not None:
+                return fx
+            if _real.pure:
+                return _real.fn(**kwargs)
+            return f"ok (dry run of {_name})"
         out[name] = Tool(name=real.name, description=real.description, params=real.params,
-                         required=real.required, tier=real.tier, fn=fn, tier_for=real.tier_for)
+                         required=real.required, tier=real.tier, fn=fn, tier_for=real.tier_for,
+                         pure=real.pure)
     return out
 
 

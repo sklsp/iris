@@ -45,7 +45,27 @@ def fake_urlopen(monkeypatch):
 
     fake = _Fake()
     monkeypatch.setattr(urllib.request, "urlopen", fake.urlopen)
+    monkeypatch.setattr(web, "_OPENER", type("Opener", (), {"open": staticmethod(fake.urlopen)})())
     return fake
+
+
+@pytest.mark.parametrize("target", ["http://127.0.0.1:8765/api/journal", "http://localhost/", "file:///C:/x"])
+def test_a_redirect_to_a_local_address_is_refused(target):
+    handler = web._CheckedRedirects()
+    req = urllib.request.Request("https://example.com/")
+    with pytest.raises(ValueError):
+        handler.redirect_request(req, None, 302, "Found", {}, target)
+
+
+def test_a_redirect_to_a_public_address_is_followed():
+    req = urllib.request.Request("https://example.com/")
+    new = web._CheckedRedirects().redirect_request(req, None, 302, "Found", {}, "https://example.org/page")
+    assert new is not None and new.full_url == "https://example.org/page"
+
+
+def test_an_unknown_charset_falls_back_to_utf8(fake_urlopen):
+    fake_urlopen.install(FakeResponse("héllo".encode(), content_type="text/html; charset=x-made-up"))
+    assert web.http_get("https://example.com/")[2] == "héllo"
 
 
 # --- normal page ---------------------------------------------------------------

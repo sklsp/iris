@@ -31,7 +31,7 @@ def http_get(url: str, timeout: float = 15, max_bytes: int = 2_000_000) -> tuple
     _refuse_local_host((parsed.hostname or "").lower())
 
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with _OPENER.open(request, timeout=timeout) as response:
         data = response.read(max_bytes + 1)
         if len(data) > max_bytes:
             raise ValueError("page too large")
@@ -44,8 +44,27 @@ def http_get(url: str, timeout: float = 15, max_bytes: int = 2_000_000) -> tuple
         match = _META_CHARSET.search(data[:2048])
         if match:
             charset = match.group(1).decode("ascii")
-    text = data.decode(charset or "utf-8", errors="replace")
+    try:
+        text = data.decode(charset or "utf-8", errors="replace")
+    except LookupError:  # a charset name Python does not know
+        text = data.decode("utf-8", errors="replace")
     return final_url, content_type, text
+
+
+class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only to another http(s) address that is not local: a public page that redirects to
+    127.0.0.1 must not reach this PC's own services. ponytail: a public name that resolves to a local IP
+    (DNS rebinding) still passes; check the resolved address if that ever matters."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl)
+        if target.scheme not in ("http", "https"):
+            raise ValueError("only http and https links")
+        _refuse_local_host((target.hostname or "").lower())
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_CheckedRedirects)
 
 
 def _refuse_local_host(host: str) -> None:

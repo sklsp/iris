@@ -468,6 +468,24 @@ def web_search(query: str) -> str:
     return "\n".join(blocks)
 
 
+def web_read(url: str) -> str:
+    """Read a web page as plain text with its final URL."""
+    from iris import web as _web
+
+    seen: dict[str, str] = {}
+
+    def get(u):
+        result = _web.http_get(u)
+        seen["final"] = result[0]
+        return result
+
+    try:
+        text = _web.read_text(url, get=get)
+    except (OSError, ValueError) as e:
+        return f"error: {e}"
+    return f"Source: {seen['final']}\n{text}"
+
+
 # --- files --------------------------------------------------------------------
 def _trash_dir() -> Path:
     d = Path(os.environ.get("IRIS_TRASH_DIR") or (Path.home() / ".iris" / "trash"))
@@ -869,6 +887,8 @@ TOOLS = {t.name: t for t in [
          "Search the web (DuckDuckGo) and list titles, links and snippets. "
          "Then use web_read on the best link to read it.",
          {"query": S}, ["query"], SAFE, web_search),
+    Tool("web_read", "Read the text of a web page (http or https links only).",
+         {"url": S}, ["url"], SAFE, web_read),
     Tool("trash_file",
          "Move a file or folder to Iris's trash (undoable with restore_trash). Never deletes permanently.",
          {"path": S}, ["path"], CONFIRM, trash_file, _trash_tier),

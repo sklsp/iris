@@ -59,6 +59,7 @@ flowchart LR
 | scroll | safe |  |
 | open_url | safe |  |
 | web_search | safe |  |
+| web_read | safe |  |
 | trash_file | confirm | the path is home or W:/ itself, outside them, or the Recycle Bin (never) |
 | restore_trash | safe |  |
 | agents_status | safe |  |
@@ -135,6 +136,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | open_app | safe | start an app, an `ms-settings:` page or a file |
 | open_url | safe | open an `http` or `https` URL; `file:`, `javascript:` and `data:` are refused |
 | web_search | safe | search the web (DuckDuckGo) and list titles, links and snippets; then use web_read on the best link to read it |
+| web_read | safe | read a web page as plain text with its final URL; http and https links only |
 | focus_window | safe | bring a window to the front and give it focus |
 | scroll | safe | scroll up or down in a window |
 | restore_trash | safe | put the most recently trashed item back |

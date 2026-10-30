@@ -246,3 +246,122 @@ def test_web_search_is_a_safe_tool():
     assert tool.tier == SAFE
     assert tool.required == ["query"]
 
+
+# --- read_text -----------------------------------------------------------------
+ARTICLE = (Path(__file__).resolve().parent / "fixtures" / "article.html").read_text(encoding="utf-8")
+
+
+def test_read_text_full_article():
+    def get(url):
+        return url, "text/html; charset=utf-8", ARTICLE
+
+    out = web.read_text("http://example.com/article", get=get)
+    assert out == (
+        "Title: The Lighthouse Keeper's Log\n"
+        "The Lighthouse Keeper's Log\n"
+        "For one hundred years the light on Gull Point burned every night, and the keeper wrote down "
+        "everything he saw.\n"
+        "What the log says\n"
+        "The entries are short. Weather, ships, oil levels, and once in a while a line about the gulls.\n"
+        "Fog on the 3rd, two ships passed close to the shoal\n"
+        "Lamp trimmed at dusk, wick replaced on the 9th\n"
+        "A pod of dolphins followed the ferry for a mile\n"
+        "The weather table\n"
+        "Date\n"
+        "Wind\n"
+        "Sea state\n"
+        "3 March\n"
+        "NW 6\n"
+        "Rough\n"
+        "9 March\n"
+        "E 3\n"
+        "Moderate\n"
+        "A sample entry\n"
+        "14 March. Clear at dawn. One trawler in, two out. Oil low - ordered more by letter."
+    )
+
+
+def test_read_text_skips_nav_footer_script_style():
+    def get(url):
+        return url, "text/html", ARTICLE
+
+    out = web.read_text("http://example.com/article", get=get)
+    for gone in ("Home", "About", "Contact", "Harbour Notes", "Search the archive",
+                 "Related:", "visitor number 48213", "font-family", "Privacy", "Terms"):
+        assert gone not in out, f"{gone!r} should have been skipped"
+
+
+def test_read_text_title_first_and_order():
+    def get(url):
+        return url, "text/html", ARTICLE
+
+    lines = web.read_text("http://example.com/article", get=get).splitlines()
+    assert lines[0] == "Title: The Lighthouse Keeper's Log"
+    positions = [lines.index(x) for x in (
+        "The Lighthouse Keeper's Log", "What the log says", "Fog on the 3rd, two ships passed close to the shoal",
+        "The weather table", "A sample entry")]
+    assert positions == sorted(positions)
+
+
+def test_read_text_truncates_over_max_chars():
+    def get(url):
+        return url, "text/html", "<html><head><title>t</title></head><body>" + "".join(
+            f"<p>line {i}</p>" for i in range(500)) + "</body></html>"
+
+    out = web.read_text("http://example.com/long", max_chars=100, get=get)
+    assert len(out) == 100 + len("\n[truncated]")
+    assert out.endswith("\n[truncated]")
+
+
+def test_read_text_at_max_chars_is_not_truncated():
+    def get(url):
+        return url, "text/html", "<html><body><p>abcde</p></body></html>"
+
+    assert web.read_text("http://example.com/exact", max_chars=5, get=get) == "abcde"
+
+
+def test_read_text_plain_is_returned_as_is():
+    def get(url):
+        return url, "text/plain; charset=utf-8", "hello\nworld  twice"
+
+    assert web.read_text("http://example.com/txt", get=get) == "hello\nworld  twice"
+
+
+def test_read_text_refuses_a_pdf():
+    def get(url):
+        return url, "application/pdf", "%PDF-1.4"
+
+    with pytest.raises(ValueError, match="not a web page \\(application/pdf\\)"):
+        web.read_text("http://example.com/doc.pdf", get=get)
+
+
+# --- web_read tool -------------------------------------------------------------
+def test_web_read_tool_prefixes_source(monkeypatch):
+    from iris import tools
+
+    def fake(url, max_bytes=1024 * 1024, timeout=15.0):
+        return ("http://example.com/real", "text/html",
+                "<html><head><title>T</title></head><body><p>Body text.</p></body></html>")
+
+    monkeypatch.setattr(web, "http_get", fake)
+    assert tools.web_read("http://example.com/start") == "Source: http://example.com/real\nTitle: T\nBody text."
+
+
+@pytest.mark.parametrize("exc", [OSError("connection refused"), ValueError("not a web page (application/pdf)")])
+def test_web_read_tool_error_text(monkeypatch, exc):
+    from iris import tools
+
+    def boom(url, max_bytes=1024 * 1024, timeout=15.0):
+        raise exc
+
+    monkeypatch.setattr(web, "http_get", boom)
+    assert tools.web_read("http://example.com/doc.pdf") == f"error: {exc}"
+
+
+def test_web_read_is_a_safe_tool():
+    from iris.tools import SAFE, TOOLS
+
+    tool = TOOLS["web_read"]
+    assert tool.tier == SAFE
+    assert tool.required == ["url"]
+

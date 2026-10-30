@@ -147,3 +147,91 @@ class _ResultParser(HTMLParser):
             self._title_parts.append(data)
         elif self._snippet_tag is not None and self._pending is not None:
             self._pending["snippet"] += data
+
+
+# --- read_text -----------------------------------------------------------------
+_SKIP_TAGS = frozenset({"script", "style", "noscript", "svg", "nav", "header", "footer", "aside", "form", "template"})
+_BLOCK_TAGS = frozenset({"h1", "h2", "h3", "h4", "p", "li", "td", "th", "pre"})
+
+
+class _TextExtractor(HTMLParser):
+    """Collects a page's readable text: the title, then headings, paragraphs, list items, table cells and pre blocks."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.title = ""
+        self.lines: list[str] = []
+        self._skip_depth = 0
+        self._in_title = False
+        self._title_parts: list[str] = []
+        self._block_tag: str | None = None
+        self._block_parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in _SKIP_TAGS:
+            self._skip_depth += 1
+            return
+        if self._skip_depth:
+            return
+        if tag == "title" and not self._in_title:
+            self._in_title = True
+            self._title_parts = []
+        elif tag in _BLOCK_TAGS:
+            self._flush_block()
+            self._block_tag = tag
+            self._block_parts = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in _SKIP_TAGS and self._skip_depth:
+            self._skip_depth -= 1
+            return
+        if self._skip_depth:
+            return
+        if tag == "title" and self._in_title:
+            self.title = _collapse("".join(self._title_parts))
+            self._in_title = False
+        elif tag == self._block_tag:
+            self._flush_block()
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        if self._in_title:
+            self._title_parts.append(data)
+        elif self._block_tag is not None:
+            self._block_parts.append(data)
+
+    def _flush_block(self) -> None:
+        line = _collapse("".join(self._block_parts))
+        self._block_tag = None
+        self._block_parts = []
+        if line:
+            self.lines.append(line)
+
+
+def read_text(url: str, max_chars: int = 6000, get=http_get) -> str:
+    """Fetch a page and return its readable text.
+
+    The title comes first as "Title: ...", then headings (h1 to h4), paragraphs, list items, table cells and pre
+    blocks in document order, each on its own line. Everything inside script, style, noscript, svg, nav, header,
+    footer, aside, form and template is skipped. text/plain comes back as is; any other type raises ValueError.
+    """
+    _, content_type, body = get(url)
+    media = content_type.split(";")[0].strip().lower()
+    if media == "text/plain":
+        out = body
+    elif media in ("text/html", "application/xhtml+xml"):
+        extractor = _TextExtractor()
+        extractor.feed(body)
+        extractor.close()
+        lines: list[str] = []
+        for line in ([f"Title: {extractor.title}"] if extractor.title else []) + extractor.lines:
+            if not line or (lines and line == lines[-1]):
+                continue
+            lines.append(line)
+        out = "\n".join(lines)
+    else:
+        raise ValueError(f"not a web page ({content_type})")
+    if len(out) > max_chars:
+        out = out[:max_chars] + "\n[truncated]"
+    return out

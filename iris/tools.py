@@ -17,6 +17,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from iris.timers import Timers
@@ -713,10 +714,44 @@ def _left_text(seconds: int) -> str:
     return f"{m} min {s} s"
 
 
-def timer_set(minutes: float, label: str = "", message: str = "") -> str:
-    """Set a countdown timer; Iris says out loud when it is done."""
+_AT_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+
+
+def _wall_now() -> datetime:
+    """The wall clock; a module function so tests can monkeypatch it."""
+    return datetime.now()
+
+
+def _seconds_until(at: str) -> float:
+    """Seconds until the wall clock next shows `at` (HH:MM); tomorrow when it already passed or is now."""
+    m = _AT_RE.fullmatch(at)
+    if m is None:
+        raise ValueError("at must look like 15:00")
+    hour, minute = int(m.group(1)), int(m.group(2))
+    now = _wall_now()
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
+def timer_set(minutes: float | None = None, label: str = "", message: str = "", at: str = "") -> str:
+    """Set a countdown timer for `minutes` or until the clock time `at`; Iris says out loud when it is done."""
     if TIMERS is None:
         return "error: timers only work while Iris is running in voice or text mode"
+    if at:
+        if minutes is not None:
+            return "error: give minutes or at, not both"
+        try:
+            t = TIMERS.add(_seconds_until(at), label, message)
+        except ValueError as exc:
+            return f"error: {exc}"
+        duration = _duration_text(t["seconds"] / 60)
+        if label:
+            return f"Timer {t['id']} set for {at} (in {duration}): {label}."
+        return f"Timer {t['id']} set for {at} (in {duration})."
+    if minutes is None:
+        return "error: give minutes or at"
     try:
         t = TIMERS.add(float(minutes) * 60, label, message)
     except ValueError as exc:
@@ -848,10 +883,11 @@ TOOLS = {t.name: t for t in [
           "Set a countdown timer; Iris says `message` out loud when it is done. "
           "Always pass message in Jay's language.",
           {"minutes": {"type": "number"}, "label": S,
+           "at": {"type": "string", "description": "A clock time such as 15:00 instead of minutes"},
            "message": {"type": "string",
                        "description": "What Iris says out loud when the timer is done, in the language Jay spoke, "
                                       "for example 'De pasta is klaar.'"}},
-          ["minutes"], SAFE, timer_set),
+          [], SAFE, timer_set),
     Tool("timer_list", "The running timers and how long each has left.", {}, [], SAFE, timer_list),
     Tool("timer_cancel", "Stop a timer by its number, or all timers with 0.",
           {"id": {"type": "integer"}}, [], SAFE, timer_cancel),

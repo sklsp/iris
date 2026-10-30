@@ -2,6 +2,7 @@
 
 import io
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -1017,6 +1018,46 @@ def test_timer_set_refuses_a_message_longer_than_200_characters(fake_timers):
     assert tools.timer_set(10, "pasta", "x" * 201) == "error: message too long"
 
 
+def test_timer_set_at_is_the_minutes_until_that_clock_time(fake_timers, monkeypatch):
+    _, start, _, _ = fake_timers
+    monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 30, 14, 30))
+    assert tools.timer_set(at="15:00") == "Timer 1 set for 15:00 (in 30 minutes)."
+    assert [c[0] for c in start.calls] == [1800.0]
+
+
+def test_timer_set_at_in_the_past_is_tomorrow(fake_timers, monkeypatch):
+    _, start, _, _ = fake_timers
+    monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 30, 15, 30))
+    assert tools.timer_set(at="15:00") == "Timer 1 set for 15:00 (in 1410 minutes)."
+    assert [c[0] for c in start.calls] == [84600.0]
+
+
+def test_timer_set_at_equal_to_now_is_24_hours(fake_timers, monkeypatch):
+    _, start, _, _ = fake_timers
+    monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 30, 15, 0))
+    assert tools.timer_set(at="15:00") == "Timer 1 set for 15:00 (in 1440 minutes)."
+    assert [c[0] for c in start.calls] == [86400.0]
+
+
+def test_timer_set_at_with_a_label(fake_timers, monkeypatch):
+    monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 30, 14, 30))
+    assert tools.timer_set(at="15:00", label="pasta") == "Timer 1 set for 15:00 (in 30 minutes): pasta."
+
+
+def test_timer_set_refuses_bad_at_formats(fake_timers, monkeypatch):
+    monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 30, 14, 30))
+    for bad in ("25:00", "3 uur", "15:7"):
+        assert tools.timer_set(at=bad) == "error: at must look like 15:00"
+
+
+def test_timer_set_refuses_both_minutes_and_at(fake_timers):
+    assert tools.timer_set(10, at="15:00") == "error: give minutes or at, not both"
+
+
+def test_timer_set_refuses_neither_minutes_nor_at(fake_timers):
+    assert tools.timer_set() == "error: give minutes or at"
+
+
 def test_timer_set_registers_a_scheduled_thread(fake_timers):
     _, start, _, _ = fake_timers
     tools.timer_set(10, "pasta")
@@ -1068,8 +1109,9 @@ def test_timer_tools_are_registered_safe():
     t = tools.TOOLS["timer_set"]
     expected = ("Set a countdown timer; Iris says `message` out loud when it is done. "
                 "Always pass message in Jay's language.")
-    assert t.tier == tools.SAFE and t.required == ["minutes"]
+    assert t.tier == tools.SAFE and t.required == []  # minutes or at, exactly one, so neither is required
     assert t.description == expected
+    assert "A clock time such as 15:00 instead of minutes" in t.params["at"]["description"]
     assert tools.TOOLS["timer_list"].tier == tools.SAFE
     assert tools.TOOLS["timer_cancel"].required == []
 

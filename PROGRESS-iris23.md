@@ -4,5 +4,7 @@
 - [x] T2. the Eval tab shows language, answers and refused attempts (790 passed in 22.88s)
 - [x] T3. history shows wrong answers (793 passed in 24.77s)
 - [x] T4. docs (793 passed in 23.49s)
-- [ ] T5. no dashes
+- [x] T5. no dashes (793 passed in 24.04s)
 - [ ] T6. final check
+
+T5 scan (`git diff --name-only calculator..HEAD`): scanned all 7 changed files for U+2014 and U+2013; none found.

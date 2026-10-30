@@ -852,6 +852,9 @@ function renderEvalHistory(d){
     if (typeof r.language_wrong === "number"){
       row.appendChild(el("span", "eh-lang num", "language " + r.language_wrong + " wrong"));
     }
+    if (typeof r.answers_wrong === "number"){
+      row.appendChild(el("span", "eh-lang num", "answers " + r.answers_wrong + " wrong"));
+    }
     body.appendChild(row);
   }
 }

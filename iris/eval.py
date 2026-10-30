@@ -421,9 +421,13 @@ def history(results_dir, last: int = 10) -> dict:
         tasks_n = _num_or(s.get("tasks"), len(results))
         rate = _num_or(s.get("success_rate"), round(passed / tasks_n, 3) if tasks_n else 0.0)
         lang = s.get("language")
+        ans = s.get("answers")
+        awrong = ans.get("wrong") if isinstance(ans, dict) else None
+        answers_wrong = int(awrong) if isinstance(awrong, (int, float)) and not isinstance(awrong, bool) else None
         out["runs"].append({"stamp": data.get("stamp", f.stem), "model": data.get("model", ""),
                             "passed": passed, "tasks": tasks_n, "success_rate": rate,
-                            "language_wrong": lang.get("wrong") if isinstance(lang, dict) else None})
+                            "language_wrong": lang.get("wrong") if isinstance(lang, dict) else None,
+                            "answers_wrong": answers_wrong})
         by: dict[str, list[bool]] = {}
         for r in results:
             by.setdefault(r["id"], []).append(bool(r.get("passed")))
@@ -452,6 +456,8 @@ def print_history(results_dir, last: int) -> int:
         line = f"{r['stamp']}  {r['passed']}/{r['tasks']}  {rate * 100:.1f}%"
         if r["language_wrong"] is not None:
             line += f"  language {r['language_wrong']} wrong"
+        if r["answers_wrong"] is not None:
+            line += f"  answers {r['answers_wrong']} wrong"
         print(line)
     print()
     print(f"Flaky tasks (last {last} runs):")

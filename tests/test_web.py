@@ -1,6 +1,7 @@
 """Tests for iris.web.http_get with a fake urlopen (no network)."""
 
 import urllib.request
+from pathlib import Path
 
 import pytest
 
@@ -144,3 +145,104 @@ def test_page_of_exactly_max_bytes_is_fine(fake_urlopen):
     fake_urlopen.install(FakeResponse(body=b"0123456789"))
     _, _, text = web.http_get("http://example.com/exact", max_bytes=10)
     assert text == "0123456789"
+
+
+# --- search --------------------------------------------------------------------
+FIXTURE = Path(__file__).parent / "fixtures" / "ddg_results.html"
+
+
+def _fixture_get(url):
+    assert url.startswith("https://html.duckduckgo.com/html/?q=")
+    return ("https://html.duckduckgo.com/html/", "text/html", FIXTURE.read_text(encoding="utf-8"))
+
+
+def test_search_returns_three_results_in_order_with_redirects_unwrapped():
+    results = web.search("test query", get=_fixture_get)
+    assert [r["url"] for r in results] == [
+        "https://www.example.com/first",
+        "https://www.example.org/second",
+        "https://www.example.com/third",
+    ]
+    assert [r["title"] for r in results] == ["First example page", "Second example page", "Third example page"]
+
+
+def test_search_snippets_collapse_whitespace_and_drop_markup():
+    results = web.search("test query", get=_fixture_get)
+    assert results[0]["snippet"] == "The first result about example topics, with a bold word inside."
+    assert results[1]["snippet"] == "The second result, a plain snippet without any markup at all."
+    assert results[2]["snippet"] == "The third result with odd spacing and a line break."
+
+
+def test_search_max_results():
+    results = web.search("test query", max_results=2, get=_fixture_get)
+    assert len(results) == 2
+    assert [r["title"] for r in results] == ["First example page", "Second example page"]
+
+
+def test_search_no_results():
+    def get(url):
+        return url, "text/html", "<html><body>no matches</body></html>"
+
+    assert web.search("nothing here", get=get) == []
+
+
+def test_search_plain_http_href_is_used_as_is():
+    html = '<a class="result__a" href="https://www.example.com/direct">Direct</a>'
+
+    def get(url):
+        return url, "text/html", html
+
+    assert web.search("direct", get=get)[0]["url"] == "https://www.example.com/direct"
+
+
+def test_search_encodes_the_query():
+    seen = []
+
+    def get(url):
+        seen.append(url)
+        return url, "text/html", ""
+
+    web.search("a b & c", get=get)
+    assert seen == ["https://html.duckduckgo.com/html/?q=a+b+%26+c"]
+
+
+
+# --- web_search tool -----------------------------------------------------------
+def test_web_search_tool_lists_numbered_results(monkeypatch):
+    from iris import tools
+
+    monkeypatch.setattr(web, "search", lambda query: [
+        {"title": "First example page", "url": "https://www.example.com/first", "snippet": "The first result."},
+        {"title": "Second example page", "url": "https://www.example.org/second", "snippet": "The second result."},
+    ])
+    assert tools.web_search("test query") == (
+        "1. First example page\n   https://www.example.com/first\n   The first result.\n"
+        "2. Second example page\n   https://www.example.org/second\n   The second result."
+    )
+
+
+def test_web_search_tool_no_results(monkeypatch):
+    from iris import tools
+
+    monkeypatch.setattr(web, "search", lambda query: [])
+    assert tools.web_search("nothing") == "No results for 'nothing'."
+
+
+@pytest.mark.parametrize("exc", [OSError("boom"), ValueError("page too large")])
+def test_web_search_tool_error_text(monkeypatch, exc):
+    from iris import tools
+
+    def boom(query):
+        raise exc
+
+    monkeypatch.setattr(web, "search", boom)
+    assert tools.web_search("test query") == f"error: search failed: {exc}"
+
+
+def test_web_search_is_a_safe_tool():
+    from iris.tools import SAFE, TOOLS
+
+    tool = TOOLS["web_search"]
+    assert tool.tier == SAFE
+    assert tool.required == ["query"]
+

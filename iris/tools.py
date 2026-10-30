@@ -453,6 +453,21 @@ def open_url(url: str) -> str:
     return f"opened {url}"
 
 
+# --- web ----------------------------------------------------------------------
+def web_search(query: str) -> str:
+    """Search the web (DuckDuckGo) and list titles, links and snippets."""
+    from iris.web import search
+
+    try:
+        results = search(query)
+    except (OSError, ValueError) as e:
+        return f"error: search failed: {e}"
+    if not results:
+        return f"No results for '{query}'."
+    blocks = [f"{n}. {r['title']}\n   {r['url']}\n   {r['snippet']}" for n, r in enumerate(results, 1)]
+    return "\n".join(blocks)
+
+
 # --- files --------------------------------------------------------------------
 def _trash_dir() -> Path:
     d = Path(os.environ.get("IRIS_TRASH_DIR") or (Path.home() / ".iris" / "trash"))
@@ -850,6 +865,10 @@ TOOLS = {t.name: t for t in [
           "amount": {"type": "integer"}}, ["window", "direction"], SAFE, scroll),
     Tool("open_url", "Open an http or https URL in the default browser. file:, javascript: and data: are refused.",
          {"url": S}, ["url"], SAFE, open_url, _open_url_tier),
+    Tool("web_search",
+         "Search the web (DuckDuckGo) and list titles, links and snippets. "
+         "Then use web_read on the best link to read it.",
+         {"query": S}, ["query"], SAFE, web_search),
     Tool("trash_file",
          "Move a file or folder to Iris's trash (undoable with restore_trash). Never deletes permanently.",
          {"path": S}, ["path"], CONFIRM, trash_file, _trash_tier),

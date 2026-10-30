@@ -12,6 +12,7 @@ import ipaddress
 import re
 import urllib.parse
 import urllib.request
+from html.parser import HTMLParser
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -67,3 +68,82 @@ def _charset_from_header(content_type_header: str) -> str | None:
             value = part[len("charset="):].strip().strip("'\"")
             return value or None
     return None
+
+
+# --- search --------------------------------------------------------------------
+def search(query: str, max_results: int = 5, get=http_get) -> list[dict]:
+    """Search DuckDuckGo (html endpoint) and return up to max_results dicts with title, url and snippet."""
+    page_url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote_plus(query)
+    _, _, html_text = get(page_url)
+    parser = _ResultParser()
+    parser.feed(html_text)
+    results = parser.results[:max_results]
+    for result in results:
+        result["snippet"] = _collapse(result["snippet"])
+    return results
+
+
+def _collapse(text: str) -> str:
+    """Every run of whitespace becomes a single space."""
+    return " ".join(text.split())
+
+
+def _is_ad(href: str) -> bool:
+    """DuckDuckGo ad links point at y.js or carry an ad_domain parameter."""
+    return "duckduckgo.com/y.js" in href or "ad_domain" in href
+
+
+def _unwrap_href(href: str) -> str:
+    """The target behind a DuckDuckGo redirect link; plain http(s) links come back unchanged."""
+    params = urllib.parse.parse_qs(urllib.parse.urlsplit(href).query)
+    uddg = params.get("uddg", [""])[0]
+    return uddg or href
+
+
+def _attr_classes(attrs: list[tuple[str, str | None]]) -> set[str]:
+    for name, value in attrs:
+        if name == "class" and value:
+            return set(value.split())
+    return set()
+
+
+class _ResultParser(HTMLParser):
+    """Collects result links (title, url) from html.duckduckgo.com and the snippet that follows each."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.results: list[dict] = []
+        self._pending: dict | None = None  # last title link seen, waiting for its snippet
+        self._title_tag: str | None = None
+        self._title_href = ""
+        self._title_parts: list[str] = []
+        self._snippet_tag: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        classes = _attr_classes(attrs)
+        href = dict(attrs).get("href") or ""
+        if "result__a" in classes and self._title_tag is None:
+            if _is_ad(href):
+                self._pending = None  # an ad's snippet must not attach to the previous result
+            else:
+                self._title_tag = tag
+                self._title_href = href
+                self._title_parts = []
+        elif "result__snippet" in classes and self._snippet_tag is None:
+            self._snippet_tag = tag
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == self._title_tag:
+            result = {"title": _collapse("".join(self._title_parts)), "url": _unwrap_href(self._title_href),
+                      "snippet": ""}
+            self.results.append(result)
+            self._pending = result
+            self._title_tag = None
+        if tag == self._snippet_tag:
+            self._snippet_tag = None
+
+    def handle_data(self, data: str) -> None:
+        if self._title_tag is not None:
+            self._title_parts.append(data)
+        elif self._snippet_tag is not None and self._pending is not None:
+            self._pending["snippet"] += data

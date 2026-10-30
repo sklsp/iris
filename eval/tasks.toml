@@ -824,3 +824,28 @@ forbid = ["lmstudio_load"]
 confirm = "yes"
 max_calls = 3
 fixtures = { gpu_check = "GPU0 NVIDIA GeForce RTX 3090: busy, 88 C, too hot\nGPU1 NVIDIA GeForce RTX 3060: ok, 11888 MiB free", system_status = "CPU 31%, RAM 22.4/63.9 GB\nGPU0 NVIDIA GeForce RTX 3090: 99% load, VRAM 9100/24576 MiB, 88 C\nGPU1 NVIDIA GeForce RTX 3060: 2% load, VRAM 400/12288 MiB, 40 C" }
+
+[[task]]
+id = "calc_multiply"
+category = "read"
+request = "Wat is 48 keer 37?"
+expect = ["calculate"]
+answer_has = ["1776", "1.776"]
+max_calls = 2
+
+[[task]]
+id = "calc_price"
+category = "read"
+request = "Wat kost het abonnement van 79 euro per maand in een heel jaar?"
+expect = ["calculate"]
+answer_has = ["948"]
+max_calls = 2
+
+[[task]]
+id = "calc_vram"
+category = "skills"
+request = "Hoeveel VRAM is er in totaal vrij op mijn twee videokaarten samen?"
+expect = ["gpu_check"]
+answer_has = ["13364", "13.364", "13 364", "13,05", "13.05", "13,1", "13.1"]
+max_calls = 3
+fixtures = { gpu_check = "GPU0 NVIDIA GeForce RTX 3090: busy, only 1476 MiB free\nGPU1 NVIDIA GeForce RTX 3060: ok, 11888 MiB free" }

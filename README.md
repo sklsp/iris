@@ -125,7 +125,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | lmstudio_unload | confirm | unload a model from LM Studio by its id, or all of them; never unloads the model Iris runs on |
 | followups | safe | leads from the leadscan CRM due for a follow-up today |
 | journal_today | safe | today's requests and tool calls by outcome, from the journal |
-| calculate | safe | exact arithmetic on numbers; Iris uses it for every multiplication, division or sum instead of working it out itself |
+| calculate | safe | exact arithmetic, so Iris never says a sum from memory |
 | list_windows | safe | titles of the open windows |
 | read_window | safe | the named controls in a window, with the contents of text fields |
 | open_app | safe | start an app, an `ms-settings:` page or a file |

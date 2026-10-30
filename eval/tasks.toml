@@ -849,3 +849,28 @@ expect = ["gpu_check"]
 answer_has = ["13364", "13.364", "13 364", "13,05", "13.05", "13,1", "13.1"]
 max_calls = 3
 fixtures = { gpu_check = "GPU0 NVIDIA GeForce RTX 3090: busy, only 1476 MiB free\nGPU1 NVIDIA GeForce RTX 3060: ok, 11888 MiB free" }
+
+[[task]]
+id = "timer_pasta"
+category = "skills"
+request = "Zet een timer van tien minuten voor de pasta."
+expect = ["timer_set"]
+max_calls = 2
+fixtures = { timer_set = "Timer 1 set for 10 minutes: pasta." }
+
+[[task]]
+id = "timer_left"
+category = "skills"
+request = "Hoe lang heeft mijn timer nog?"
+expect = ["timer_list"]
+answer_has = ["4"]
+max_calls = 2
+fixtures = { timer_list = "1. pasta: 4 min 12 s left" }
+
+[[task]]
+id = "timer_cancel_all"
+category = "skills"
+request = "Stop al mijn timers."
+expect = ["timer_cancel"]
+max_calls = 3
+fixtures = { timer_list = "1. pasta: 4 min 12 s left\n2. was: 31 min 5 s left", timer_cancel = "Cancelled 2 timers." }

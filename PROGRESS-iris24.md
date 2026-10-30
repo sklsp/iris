@@ -3,7 +3,7 @@
 - [x] R1. the timer module (804 passed in 24.73s)
 - [x] R2. timer tools (827 passed in 24.25s)
 - [x] R3. Iris announces timers (828 passed in 24.40s)
-- [ ] R4. timers in the eval
+- [x] R4. timers in the eval (828 passed in 24.10s)
 - [ ] R5. docs
 - [ ] R6. no dashes
 - [ ] R7. final check

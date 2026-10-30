@@ -73,6 +73,8 @@ flowchart LR
 | timer_set | safe | minutes or a clock time such as 15:00 (`at`); says `message` out loud in Jay's language when it is done |
 | timer_list | safe |  |
 | timer_cancel | safe |  |
+| request_capability | confirm |  |
+| capability_list | safe |  |
 
 ## Eval
 

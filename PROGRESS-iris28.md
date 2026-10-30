@@ -6,7 +6,7 @@ Branch: `self-extend` in W:/Iris. One item at a time, one commit per item.
 
 - [x] S1. the tier lock (966 passed in 26.57s)
 - [x] S2. the guard (973 passed in 24.28s)
-- [ ] S3. request_capability
+- [x] S3. request_capability (1002 passed in 22.53s)
 - [ ] S4. the plan template
 - [ ] S5. eval tasks
 - [ ] S6. docs

@@ -7,6 +7,10 @@
     "tier": "safe",
     "escalates": false
   },
+  "capability_list": {
+    "tier": "safe",
+    "escalates": false
+  },
   "click": {
     "tier": "confirm",
     "escalates": true
@@ -97,6 +101,10 @@
   },
   "read_window": {
     "tier": "safe",
+    "escalates": false
+  },
+  "request_capability": {
+    "tier": "confirm",
     "escalates": false
   },
   "restore_trash": {

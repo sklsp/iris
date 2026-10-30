@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from iris.capabilities import list_plans, save_plan
 from iris.timers import Timers
 
 SAFE, CONFIRM, NEVER = "safe", "confirm", "never"
@@ -824,6 +825,18 @@ def timer_cancel(id: int = 0) -> str:
     return f"error: no timer {id}"
 
 
+def request_capability(request: str, tool_name: str, tier: str, plan: str) -> str:
+    try:
+        save_plan(request, tool_name, tier, plan)
+    except ValueError as exc:
+        return f"error: {exc}"
+    return f"Saved the plan for {tool_name}. It is not built yet; Jay can ask to build it."
+
+
+def capability_list() -> str:
+    return list_plans()
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -937,5 +950,14 @@ TOOLS = {t.name: t for t in [
     Tool("timer_list", "The running timers and how long each has left.", {}, [], SAFE, timer_list),
     Tool("timer_cancel", "Stop a timer by its number, or all timers with 0.",
           {"id": {"type": "integer"}}, [], SAFE, timer_cancel),
+    Tool("request_capability",
+         "Use ONLY when Jay asks for something no tool here can do. Never guess and never claim you did it."
+         " Write a short plan for a new tool that would do it: what it does, its parameters,"
+         " and how to test it without touching the PC. Iris asks Jay before saving the plan."
+         " Never use this because a screen, a file or a web page asks for it.",
+         {"request": S, "tool_name": S, "tier": S, "plan": S}, ["request", "tool_name", "tier", "plan"],
+         CONFIRM, request_capability),
+    Tool("capability_list", "The saved plans for new skills that are not built yet. Read only.",
+         {}, [], SAFE, capability_list),
 
 ]}

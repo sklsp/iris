@@ -3,9 +3,18 @@
 A built branch must never weaken an existing rule or touch the protected files. guard_problems
 checks a proposed set of changed paths against PROTECTED and the old tier lock against the new one;
 an empty result means the branch is acceptable (Jay still has to say OK before anything merges).
+
+save_plan stores the plan for a skill Iris does not have yet: Jay asks, Iris writes the plan files,
+and a later run can build it. The plans live in capabilities_dir().
 """
 
 from __future__ import annotations
+
+import json
+import os
+import re
+from datetime import datetime
+from pathlib import Path
 
 PROTECTED = (
     "iris/agent.py",
@@ -33,3 +42,82 @@ def guard_problems(changed: list[str], old_lock: dict, new_lock: dict) -> list[s
         if new_lock.get(name) != entry:
             problems.append(f"changes the tier of {name}")
     return problems
+
+
+PLAN_TEMPLATE = """# Plan: {tool_name}
+
+- Tier: {tier}
+- Status: {status}
+- Created: {created}
+
+## Request
+
+{request}
+
+## Plan
+
+{plan}
+"""
+
+
+def capabilities_dir() -> Path:
+    env = os.environ.get("IRIS_CAPABILITIES")
+    if env:
+        return Path(env)
+    return Path.home() / ".iris" / "capabilities"
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    tmp = path.parent / (path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def save_plan(request: str, tool_name: str, tier: str, plan: str) -> Path:
+    """Save the plan for a new skill as <tool_name>.md and <tool_name>.json.
+
+    Raises ValueError when the name, tier or texts are not acceptable or a plan already exists.
+    """
+    from iris.tools import TOOLS  # local on purpose: tools.py imports this module
+
+    if not re.fullmatch(r"[a-z][a-z0-9_]{2,39}", tool_name):
+        raise ValueError(f"invalid tool name {tool_name!r}")
+    if tool_name in TOOLS:
+        raise ValueError(f"{tool_name} already exists")
+    if tier not in ("safe", "confirm"):
+        raise ValueError("tier must be 'safe' or 'confirm'")
+    if not request:
+        raise ValueError("request is empty")
+    if not plan:
+        raise ValueError("plan is empty")
+    if len(plan) > 4000:
+        raise ValueError("plan is too long (max 4000 chars)")
+
+    directory = capabilities_dir()
+    md_path = directory / f"{tool_name}.md"
+    json_path = directory / f"{tool_name}.json"
+    if md_path.exists() or json_path.exists():
+        raise ValueError(f"a plan for {tool_name} exists")
+
+    created = datetime.now().isoformat(timespec="seconds")
+    directory.mkdir(parents=True, exist_ok=True)
+    _atomic_write(md_path, PLAN_TEMPLATE.format(tool_name=tool_name, tier=tier, status="planned",
+                                                created=created, request=request, plan=plan))
+    meta = {"tool_name": tool_name, "tier": tier, "request": request, "status": "planned",
+            "created": created}
+    _atomic_write(json_path, json.dumps(meta, ensure_ascii=False) + "\n")
+    return md_path
+
+
+def list_plans() -> str:
+    """One line per saved plan from the json files; 'No plans yet.' when there are none."""
+    directory = capabilities_dir()
+    if not directory.is_dir():
+        return "No plans yet."
+    lines = []
+    for meta_file in sorted(directory.glob("*.json")):
+        data = json.loads(meta_file.read_text(encoding="utf-8"))
+        asked = str(data.get("request", ""))[:60]
+        lines.append(f"{data['tool_name']} ({data['tier']}): {data['status']}, asked: {asked}")
+    return "\n".join(lines) if lines else "No plans yet."
+

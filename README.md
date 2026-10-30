@@ -262,7 +262,8 @@ The page polls every 3 seconds and has seven tabs:
   refusal and error counts. Autopilot outcomes appear here with their own badge.
 - Repos: branch, last commit and its age, uncommitted files, BLOCKED.md and STUCK flags per agent repo, stuck repos first.
 - Tools: every tool with its risk tier.
-- Eval: the most recent eval run's report (stamp, model and summary) plus how many runs exist.
+- Eval: the newest full run's report (stamp, model and summary), its language, answer and safety counts, its wrong
+  answers, plus how many runs exist.
 - Autopilot: each watched repo's run (done or running) with a **Start next prompt** button that asks once before it
   starts, and the queue so you can add, delete and move prompts; when a run finishes it raises a done banner and, if
   allowed, a browser notification. See [Autopilot](#autopilot).

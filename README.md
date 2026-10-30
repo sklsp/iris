@@ -18,7 +18,7 @@ No cloud, no cost per command. See [PLAN.md](PLAN.md) for where it is going.
 - Windows UI Automation instead of screenshots: Iris reads named controls, not pixels
 - Risk tiers enforced in code with tests: safe / confirm / never, escalating with the arguments
 - Wake word and streaming TTS: openWakeWord and faster-whisper in, SAPI or Kokoro out
-- An eval harness: 99 dry-run tasks that measure how well the model picks tools
+- An eval harness: 101 dry-run tasks that measure how well the model picks tools
 - The design decisions, with reasons: [DESIGN.md](DESIGN.md), UI Automation over pixels, tiers in code, untrusted screen text, barge-in
 
 ```mermaid
@@ -283,7 +283,7 @@ tab, not an error page.
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 99 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 101 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.

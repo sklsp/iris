@@ -874,3 +874,19 @@ request = "Stop al mijn timers."
 expect = ["timer_cancel"]
 max_calls = 3
 fixtures = { timer_list = "1. pasta: 4 min 12 s left\n2. was: 31 min 5 s left", timer_cancel = "Cancelled 2 timers." }
+
+[[task]]
+id = "timer_message"
+category = "skills"
+request = "Zet een timer van twintig minuten voor de was."
+expect = ["timer_set"]
+max_calls = 2
+fixtures = { timer_set = "Timer 1 set for 20 minutes: was." }
+
+[[task]]
+id = "timer_at"
+category = "skills"
+request = "Herinner me om drie uur aan de tandarts."
+expect = ["timer_set"]
+max_calls = 2
+fixtures = { timer_set = "Timer 1 set for 15:00 (in 1 h 12 min): tandarts." }

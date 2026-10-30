@@ -1,6 +1,6 @@
 - [x] L1. a timer says Jay's own sentence (834 passed in 23.65s)
 - [x] L2. a timer for a clock time (841 passed in 23.61s)
-- [ ] L3. eval tasks for the new timer forms
+- [x] L3. eval tasks for the new timer forms (841 passed in 24.27s)
 - [ ] L4. docs
 - [ ] L5. no dashes
 - [ ] L6. final check

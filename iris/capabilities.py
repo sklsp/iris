@@ -59,6 +59,23 @@ PLAN_TEMPLATE = """# Plan: {tool_name}
 {plan}
 """
 
+# The fixed rules every plan carries, so the run that builds it knows the rails. Built from PROTECTED so the two
+# can never drift apart; no braces in here, it is appended to PLAN_TEMPLATE before .format().
+RULES = "\n".join([
+    "## Rules",
+    "",
+    "- Add the tool to iris/tools.py and TOOLS with exactly the tier above, and add its entry to iris/tier_lock.json.",
+    "- Never change the tier, the escalation or the entry of an existing tool.",
+    "- Tests go in tests/ and never touch the network, the desktop, LM Studio or files outside tmp_path.",
+    "- Append at least one eval task with fixtures to eval/tasks.toml.",
+    "- The gates must pass: ruff check iris tests, mypy, pytest with coverage.",
+    "- Never touch these protected paths:",
+    *[f"  - {p}" for p in PROTECTED],
+    "- One commit per step. No em dashes or en dashes.",
+    "",
+])
+PLAN_TEMPLATE += "\n" + RULES
+
 
 def capabilities_dir() -> Path:
     env = os.environ.get("IRIS_CAPABILITIES")

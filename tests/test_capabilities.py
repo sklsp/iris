@@ -187,3 +187,15 @@ def test_request_capability_tool_reports_validation_errors(tmp_path, monkeypatch
 def test_describe_request_capability():
     assert _describe("request_capability", {"tool_name": "printer_ink"}) == \
         "I can't do that yet. Save a plan to build a new skill 'printer_ink'?"
+
+
+def test_a_saved_plan_carries_the_rules_and_every_protected_path(tmp_path, monkeypatch):
+    from iris.capabilities import PROTECTED
+
+    _caps(tmp_path, monkeypatch)
+    md = save_plan("Maak een PowerPoint", "make_powerpoint", "confirm", "Use python-pptx.").read_text(encoding="utf-8")
+    assert "## Rules" in md
+    assert "Never change the tier, the escalation or the entry of an existing tool." in md
+    for p in PROTECTED:
+        assert f"  - {p}" in md
+    assert md.index("## Plan") < md.index("## Rules")

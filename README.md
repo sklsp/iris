@@ -68,7 +68,7 @@ flowchart LR
 | queue_move | confirm |  |
 | cline_start | confirm |  |
 | concept_sites | safe |  |
-| timer_set | safe |  |
+| timer_set | safe | minutes or a clock time such as 15:00 (`at`); says `message` out loud in Jay's language when it is done |
 | timer_list | safe |  |
 | timer_cancel | safe |  |
 
@@ -139,7 +139,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | agents_status | safe | branch, last commit and age, uncommitted files, BLOCKED.md and STUCK per agent repo |
 | queue_list | safe | prompts waiting in Jay's agent queue, oldest first, optionally for one agent |
 | concept_sites | safe | Jay's concept websites from conceptkit: sites, ports and check findings |
-| timer_set | safe | set a countdown timer; Iris says out loud when it is done |
+| timer_set | safe | set a countdown timer for minutes or until a clock time such as 15:00 (`at`); Iris says `message` out loud in Jay's language when it is done |
 | timer_list | safe | the running timers and how long each has left |
 | timer_cancel | safe | stop a timer by its number, or all of them with 0 |
 | press_keys | confirm | press shortcuts in a window, `^s` or `{TAB}` |

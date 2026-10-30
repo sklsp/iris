@@ -889,3 +889,82 @@ def test_read_only_tools_are_safe():
                  "followups", "journal_today", "agents_status", "queue_list", "concept_sites"):
         assert tools.TOOLS[name].tier == tools.SAFE, name
 
+
+# --- calculate ---------------------------------------------------------------
+def test_calculate_multiplication():
+    assert tools.calculate("17*23") == "17*23 = 391"
+
+
+def test_calculate_float_sum_rounds_to_twelve_significant_digits():
+    assert tools.calculate("0.1+0.2") == "0.1+0.2 = 0.3"
+
+
+def test_calculate_comma_is_a_decimal_separator():
+    assert tools.calculate("2,5 * 4") == "2,5 * 4 = 10"
+
+
+def test_calculate_division_gives_a_float():
+    assert tools.calculate("7/2") == "7/2 = 3.5"
+
+
+def test_calculate_negative_base_power():
+    assert tools.calculate("(-3)**2") == "(-3)**2 = 9"
+
+
+def test_calculate_subtraction_floor_division_modulo_and_unary_plus():
+    assert tools.calculate("5-2") == "5-2 = 3"
+    assert tools.calculate("7//2") == "7//2 = 3"
+    assert tools.calculate("7%2") == "7%2 = 1"
+    assert tools.calculate("+5") == "+5 = 5"
+
+
+def test_calculate_negative_exponent_gives_a_float():
+    assert tools.calculate("2**-2") == "2**-2 = 0.25"
+
+
+def test_calculate_allows_an_exponent_of_100():
+    assert tools.calculate("2**100") == "2**100 = 1267650600228229401496703205376"
+
+
+def test_calculate_refuses_an_exponent_above_100():
+    assert tools.calculate("2**101") == "error: exponent too large"
+
+
+def test_calculate_refuses_division_by_zero_in_all_three_forms():
+    assert tools.calculate("1/0") == "error: division by zero"
+    assert tools.calculate("5//0") == "error: division by zero"
+    assert tools.calculate("5%0") == "error: division by zero"
+
+
+def test_calculate_refuses_names_calls_strings_comparisons_and_subscripts():
+    for expr in ("__import__('os')", "x + 1", "'abc'", "1 < 2", "x[0]"):
+        assert tools.calculate(expr) == "error: only numbers and + - * / // % ** are allowed"
+
+
+def test_calculate_refuses_boolean_constants():
+    assert tools.calculate("True + 1") == "error: only numbers and + - * / // % ** are allowed"
+
+
+def test_calculate_refuses_a_malformed_expression():
+    assert tools.calculate("1 +") == "error: only numbers and + - * / // % ** are allowed"
+
+
+def test_calculate_refuses_an_expression_longer_than_200_chars():
+    assert tools.calculate("9" * 201) == "error: expression too long"
+
+
+def test_calculate_refuses_a_number_too_large():
+    assert tools.calculate("(1e308)**2") == "error: number too large"
+    assert tools.calculate("1e308*1e308") == "error: number too large"
+
+
+def test_calculate_formats_repeating_decimals_with_twelve_digits():
+    assert tools.calculate("1/3") == "1/3 = 0.333333333333"
+
+
+def test_calculate_is_registered_safe():
+    t = tools.TOOLS["calculate"]
+    assert t.tier == tools.SAFE
+    assert t.required == ["expression"]
+    assert "instead of working it out yourself" in t.description
+

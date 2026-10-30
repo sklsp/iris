@@ -7,7 +7,9 @@ never    refused, always (sending, buying, paying, passwords, deleting)
 
 from __future__ import annotations
 
+import ast
 import json
+import math
 import os
 import re
 import shutil
@@ -610,6 +612,75 @@ def concept_sites() -> str:
     return ("Sites:\n" + listed.stdout.strip() + "\n\nChecks:\n" + checked.stdout.strip())
 
 
+# --- math ---------------------------------------------------------------------
+class _CalcError(ValueError):
+    """A refused expression; .message is what goes back to Jay after 'error:'."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+def _calc_eval(node) -> int | float:
+    """The value of one allowed node: numbers and + - * / // % ** with unary signs. Raises _CalcError otherwise."""
+    if isinstance(node, ast.Expression):
+        return _calc_eval(node.body)
+    if isinstance(node, ast.Constant):
+        value = node.value
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise _CalcError("only numbers and + - * / // % ** are allowed")
+        return value
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        v = _calc_eval(node.operand)
+        return +v if isinstance(node.op, ast.UAdd) else -v
+    if isinstance(node, ast.BinOp):
+        left = _calc_eval(node.left)
+        right = _calc_eval(node.right)
+        op = node.op
+        if isinstance(op, ast.Pow):
+            if abs(right) > 100:
+                raise _CalcError("exponent too large")
+            return left ** right
+        if isinstance(op, ast.Add):
+            return left + right
+        if isinstance(op, ast.Sub):
+            return left - right
+        if isinstance(op, ast.Mult):
+            return left * right
+        if isinstance(op, ast.Div):
+            return left / right
+        if isinstance(op, ast.FloorDiv):
+            return left // right
+        if isinstance(op, ast.Mod):
+            return left % right
+    raise _CalcError("only numbers and + - * / // % ** are allowed")
+
+
+def calculate(expression: str) -> str:
+    """Exact arithmetic on numbers. Parsed with ast and walked by hand; never eval or exec."""
+    if len(expression) > 200:
+        return "error: expression too long"
+    try:
+        tree = ast.parse(expression.replace(",", "."), mode="eval")
+    except SyntaxError:
+        return "error: only numbers and + - * / // % ** are allowed"
+    try:
+        value = _calc_eval(tree)
+    except _CalcError as exc:
+        return f"error: {exc.message}"
+    except ZeroDivisionError:
+        return "error: division by zero"
+    except OverflowError:
+        return "error: number too large"
+    if isinstance(value, float) and not math.isfinite(value):
+        return "error: number too large"
+    if isinstance(value, float):
+        text = str(int(value)) if value.is_integer() else format(value, ".12g")
+    else:
+        text = str(value)
+    return f"{expression} = {text}"
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -644,6 +715,10 @@ TOOLS = {t.name: t for t in [
     Tool("journal_today",
          "How many requests and tool calls Iris handled today, by outcome. Read only.",
          {}, [], SAFE, journal_today),
+    Tool("calculate",
+         "Exact arithmetic on numbers. Use it for every multiplication, division or sum instead of working it out"
+         " yourself, then say the result.",
+         {"expression": S}, ["expression"], SAFE, calculate),
     Tool("list_windows", "Titles of all open windows.", {}, [], SAFE, list_windows),
     Tool("read_window", "The named controls (buttons, fields, text) in a window. Title match is a substring.",
          {"title": S}, ["title"], SAFE, read_window),

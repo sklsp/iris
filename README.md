@@ -48,6 +48,7 @@ flowchart LR
 | lmstudio_unload | confirm | the model is the one Iris runs on, or all |
 | followups | safe |  |
 | journal_today | safe |  |
+| calculate | safe |  |
 | list_windows | safe |  |
 | read_window | safe |  |
 | open_app | safe |  |
@@ -124,6 +125,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | lmstudio_unload | confirm | unload a model from LM Studio by its id, or all of them; never unloads the model Iris runs on |
 | followups | safe | leads from the leadscan CRM due for a follow-up today |
 | journal_today | safe | today's requests and tool calls by outcome, from the journal |
+| calculate | safe | exact arithmetic on numbers; Iris uses it for every multiplication, division or sum instead of working it out itself |
 | list_windows | safe | titles of the open windows |
 | read_window | safe | the named controls in a window, with the contents of text fields |
 | open_app | safe | start an app, an `ms-settings:` page or a file |

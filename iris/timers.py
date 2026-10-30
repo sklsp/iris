@@ -36,6 +36,7 @@ class _Timer:
     label: str
     due: float  # monotonic time when the timer is due
     handle: object  # what start() returned; cancelled on cancel/cancel_all
+    message: str = ""  # what Iris says out loud when it fires; empty keeps the English default
 
 
 class Timers:
@@ -54,19 +55,24 @@ class Timers:
         self._next_id = 1
         self._lock = threading.Lock()
 
-    def add(self, seconds: float, label: str = "") -> dict:
-        """Start a timer for `seconds` (0 < seconds <= 24 hours); returns its id, label and seconds."""
+    def add(self, seconds: float, label: str = "", message: str = "") -> dict:
+        """Start a timer for `seconds` (0 < seconds <= 24 hours); returns its id, label and seconds.
+
+        With a non-empty `message`, Iris says that sentence out loud when the timer fires instead of
+        the English default; longer than 200 characters is refused."""
         seconds = float(seconds)
         if seconds <= 0:
             raise ValueError("seconds must be greater than zero")
         if seconds > MAX_SECONDS:
             raise ValueError(f"seconds must be at most {MAX_SECONDS} (24 hours)")
+        if len(message) > 200:
+            raise ValueError("message too long")
         with self._lock:
             timer_id = self._next_id
             self._next_id += 1
             due = self._now() + seconds
             handle = self._start(seconds, lambda: self._fire(timer_id))
-            self._timers[timer_id] = _Timer(label=label, due=due, handle=handle)
+            self._timers[timer_id] = _Timer(label=label, due=due, handle=handle, message=message)
         return {"id": timer_id, "label": label, "seconds": seconds}
 
     def cancel(self, timer_id: int) -> bool:
@@ -104,5 +110,10 @@ class Timers:
             entry = self._timers.pop(timer_id, None)
         if entry is None:
             return  # cancelled before it fired: never announces
-        text = f"Timer {entry.label} is done." if entry.label else "Timer done."
+        if entry.message:
+            text = entry.message  # Jay's own sentence, in his language
+        elif entry.label:
+            text = f"Timer {entry.label} is done."
+        else:
+            text = "Timer done."
         self._announce(text)

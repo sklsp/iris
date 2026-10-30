@@ -1006,6 +1006,17 @@ def test_timer_set_refuses_zero_and_too_long(fake_timers):
     assert tools.timer_set(1441) == "error: seconds must be at most 86400 (24 hours)"
 
 
+def test_timer_set_passes_the_message_through_to_the_announce(fake_timers):
+    _, start, _, announced = fake_timers
+    tools.timer_set(10, "pasta", "De pasta is klaar.")
+    start.calls[0][1]()  # fire by hand
+    assert announced == ["De pasta is klaar."]
+
+
+def test_timer_set_refuses_a_message_longer_than_200_characters(fake_timers):
+    assert tools.timer_set(10, "pasta", "x" * 201) == "error: message too long"
+
+
 def test_timer_set_registers_a_scheduled_thread(fake_timers):
     _, start, _, _ = fake_timers
     tools.timer_set(10, "pasta")
@@ -1055,10 +1066,19 @@ def test_timer_tools_refuse_to_run_without_a_timers(monkeypatch):
 
 def test_timer_tools_are_registered_safe():
     t = tools.TOOLS["timer_set"]
+    expected = ("Set a countdown timer; Iris says `message` out loud when it is done. "
+                "Always pass message in Jay's language.")
     assert t.tier == tools.SAFE and t.required == ["minutes"]
-    assert "says out loud" in t.description
+    assert t.description == expected
     assert tools.TOOLS["timer_list"].tier == tools.SAFE
     assert tools.TOOLS["timer_cancel"].required == []
+
+
+def test_timer_set_schema_describes_the_message_param():
+    m = tools.TOOLS["timer_set"].params["message"]
+    assert m["type"] == "string"
+    assert "in the language Jay spoke" in m["description"]
+    assert "'De pasta is klaar.'" in m["description"]
 
 
 def test_set_announcer_installs_the_shared_timers(monkeypatch):

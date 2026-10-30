@@ -1,0 +1,6 @@
+- [x] L1. a timer says Jay's own sentence (834 passed in 23.65s)
+- [ ] L2. a timer for a clock time
+- [ ] L3. eval tasks for the new timer forms
+- [ ] L4. docs
+- [ ] L5. no dashes
+- [ ] L6. final check

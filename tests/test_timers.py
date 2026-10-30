@@ -139,3 +139,24 @@ def test_add_refuses_more_than_24_hours_but_allows_exactly_24():
     with pytest.raises(ValueError, match="at most 86400"):
         timers.add(MAX_SECONDS + 1)
     assert timers.add(MAX_SECONDS)["id"] == 1  # exactly one day is allowed
+
+
+def test_fire_with_a_message_announces_exactly_that_message():
+    timers, start, _, announced = make_timers()
+    timers.add(60, "pasta", "De pasta is klaar.")
+    start.calls[0][1]()  # fire by hand
+    assert announced == ["De pasta is klaar."]
+
+
+def test_fire_without_a_message_keeps_the_english_default():
+    timers, start, _, announced = make_timers()
+    timers.add(60, "pasta")
+    start.calls[0][1]()
+    assert announced == ["Timer pasta is done."]
+
+
+def test_add_refuses_a_message_longer_than_200_characters_but_allows_exactly_200():
+    timers, _, _, _ = make_timers()
+    with pytest.raises(ValueError, match="message too long"):
+        timers.add(60, "pasta", "x" * 201)
+    assert timers.add(60, "pasta", "y" * 200)["id"] == 1  # exactly 200 is allowed

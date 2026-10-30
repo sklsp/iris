@@ -713,12 +713,12 @@ def _left_text(seconds: int) -> str:
     return f"{m} min {s} s"
 
 
-def timer_set(minutes: float, label: str = "") -> str:
+def timer_set(minutes: float, label: str = "", message: str = "") -> str:
     """Set a countdown timer; Iris says out loud when it is done."""
     if TIMERS is None:
         return "error: timers only work while Iris is running in voice or text mode"
     try:
-        t = TIMERS.add(float(minutes) * 60, label)
+        t = TIMERS.add(float(minutes) * 60, label, message)
     except ValueError as exc:
         return f"error: {exc}"
     duration = _duration_text(t["seconds"] / 60)
@@ -844,8 +844,14 @@ TOOLS = {t.name: t for t in [
          "Jay's concept websites from conceptkit: every site with its port and stops, and the findings of check --all."
          " Read only.",
          {}, [], SAFE, concept_sites),
-    Tool("timer_set", "Set a countdown timer; Iris says out loud when it is done.",
-          {"minutes": {"type": "number"}, "label": S}, ["minutes"], SAFE, timer_set),
+    Tool("timer_set",
+          "Set a countdown timer; Iris says `message` out loud when it is done. "
+          "Always pass message in Jay's language.",
+          {"minutes": {"type": "number"}, "label": S,
+           "message": {"type": "string",
+                       "description": "What Iris says out loud when the timer is done, in the language Jay spoke, "
+                                      "for example 'De pasta is klaar.'"}},
+          ["minutes"], SAFE, timer_set),
     Tool("timer_list", "The running timers and how long each has left.", {}, [], SAFE, timer_list),
     Tool("timer_cancel", "Stop a timer by its number, or all timers with 0.",
           {"id": {"type": "integer"}}, [], SAFE, timer_cancel),

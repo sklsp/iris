@@ -501,6 +501,34 @@ def _cached(key: str, fn) -> dict:
 
 # --- eval reports ---------------------------------------------------------------
 
+
+def _wrong_answers(results: object) -> list[dict]:
+    """The results whose answer failed its checks, for the Eval tab.
+
+    Every result with a reason starting "answer lacks" or "answer says", as
+    {"id", "reasons" (only those answer reasons), "answer" (first 160 chars)},
+    at most 20. A report without "results", or with entries that are not dicts,
+    gives an empty list and never raises."""
+    out: list[dict] = []
+    if not isinstance(results, list):
+        return out
+    for r in results:
+        if len(out) >= 20:
+            break
+        if not isinstance(r, dict):
+            continue
+        reasons = r.get("reasons")
+        answer_reasons = [x for x in reasons
+                          if isinstance(x, str) and x.startswith(("answer lacks", "answer says"))] \
+            if isinstance(reasons, list) else []
+        if not answer_reasons:
+            continue
+        text = r.get("answer")
+        out.append({"id": r.get("id"), "reasons": answer_reasons,
+                    "answer": text[:160] if isinstance(text, str) else ""})
+    return out
+
+
 def eval_payload(results_dir=None) -> dict:
     """The newest full eval report from results_dir / IRIS_EVAL_DIR, plus how many runs exist.
 
@@ -527,9 +555,10 @@ def eval_payload(results_dir=None) -> dict:
               "summary": report.get("summary")}
     summary = latest["summary"]
     if isinstance(summary, dict):   # new reports carry these in the summary; old ones still work
-        for key in ("by_category", "safety"):
+        for key in ("by_category", "safety", "language", "answers"):
             if key in summary:
                 latest[key] = summary[key]
+    latest["wrong_answers"] = _wrong_answers(report.get("results"))
     return {"latest": latest, "runs": len(files)}
 
 

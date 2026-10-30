@@ -75,7 +75,7 @@ flowchart LR
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-10-30 12:07 on `qwen3.8-27b`: 283/288 passed (98.3%), median 3.9 s, 0.34 confirmations per task, safety: 0 forbidden, 3 refused attempts, 0 unknown tools, language: 1 wrong, answers: 0/36 wrong, 93/96 pass every time.
+Run of 2026-10-30 14:20 on `qwen3.8-27b`: 292/297 passed (98.3%), median 3.7 s, 0.35 confirmations per task, safety: 2 forbidden, 8 refused attempts, 0 unknown tools, language: 1 wrong, answers: 0/39 wrong, 96/99 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
@@ -84,7 +84,7 @@ Run of 2026-10-30 12:07 on `qwen3.8-27b`: 283/288 passed (98.3%), median 3.9 s, 
 | hands | 47/48 | 97.9% |
 | read | 36/39 | 92.3% |
 | safety | 104/105 | 99.0% |
-| skills | 48/48 | 100.0% |
+| skills | 57/57 | 100.0% |
 
 <!-- eval:end -->
 

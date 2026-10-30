@@ -2,11 +2,13 @@
 
 import io
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from iris import tools
+from tests.test_timers import make_timers
 
 
 class FakeWindow:
@@ -889,3 +891,251 @@ def test_read_only_tools_are_safe():
                  "followups", "journal_today", "agents_status", "queue_list", "concept_sites"):
         assert tools.TOOLS[name].tier == tools.SAFE, name
 
+
+# --- calculate ---------------------------------------------------------------
+def test_calculate_multiplication():
+    assert tools.calculate("17*23") == "17*23 = 391"
+
+
+def test_calculate_float_sum_rounds_to_twelve_significant_digits():
+    assert tools.calculate("0.1+0.2") == "0.1+0.2 = 0.3"
+
+
+def test_calculate_comma_is_a_decimal_separator():
+    assert tools.calculate("2,5 * 4") == "2,5 * 4 = 10"
+
+
+def test_calculate_division_gives_a_float():
+    assert tools.calculate("7/2") == "7/2 = 3.5"
+
+
+def test_calculate_negative_base_power():
+    assert tools.calculate("(-3)**2") == "(-3)**2 = 9"
+
+
+def test_calculate_subtraction_floor_division_modulo_and_unary_plus():
+    assert tools.calculate("5-2") == "5-2 = 3"
+    assert tools.calculate("7//2") == "7//2 = 3"
+    assert tools.calculate("7%2") == "7%2 = 1"
+    assert tools.calculate("+5") == "+5 = 5"
+
+
+def test_calculate_negative_exponent_gives_a_float():
+    assert tools.calculate("2**-2") == "2**-2 = 0.25"
+
+
+def test_calculate_allows_an_exponent_of_100():
+    assert tools.calculate("2**100") == "2**100 = 1267650600228229401496703205376"
+
+
+def test_calculate_refuses_an_exponent_above_100():
+    assert tools.calculate("2**101") == "error: exponent too large"
+
+
+def test_calculate_refuses_nested_powers_that_grow_without_bound():
+    assert tools.calculate("((9**99)**99)**99") == "error: number too large"
+    assert tools.calculate("(9**99)**9") == "(9**99)**9 = " + str(9 ** 891)
+
+
+def test_calculate_refuses_division_by_zero_in_all_three_forms():
+    assert tools.calculate("1/0") == "error: division by zero"
+    assert tools.calculate("5//0") == "error: division by zero"
+    assert tools.calculate("5%0") == "error: division by zero"
+
+
+def test_calculate_refuses_names_calls_strings_comparisons_and_subscripts():
+    for expr in ("__import__('os')", "x + 1", "'abc'", "1 < 2", "x[0]"):
+        assert tools.calculate(expr) == "error: only numbers and + - * / // % ** are allowed"
+
+
+def test_calculate_refuses_boolean_constants():
+    assert tools.calculate("True + 1") == "error: only numbers and + - * / // % ** are allowed"
+
+
+def test_calculate_refuses_a_malformed_expression():
+    assert tools.calculate("1 +") == "error: only numbers and + - * / // % ** are allowed"
+
+
+def test_calculate_refuses_an_expression_longer_than_200_chars():
+    assert tools.calculate("9" * 201) == "error: expression too long"
+
+
+def test_calculate_refuses_a_number_too_large():
+    assert tools.calculate("(1e308)**2") == "error: number too large"
+    assert tools.calculate("1e308*1e308") == "error: number too large"
+
+
+def test_calculate_formats_repeating_decimals_with_twelve_digits():
+    assert tools.calculate("1/3") == "1/3 = 0.333333333333"
+
+
+def test_calculate_is_registered_safe():
+    t = tools.TOOLS["calculate"]
+    assert t.tier == tools.SAFE
+    assert t.required == ["expression"]
+    assert "instead of working it out yourself" in t.description
+
+
+# --- timers --------------------------------------------------------------------
+@pytest.fixture
+def fake_timers(monkeypatch):
+    """A real Timers on a hand-advanced clock and recording scheduler, installed as tools.TIMERS."""
+    timers, start, clock, announced = make_timers()
+    monkeypatch.setattr(tools, "TIMERS", timers)
+    return timers, start, clock, announced
+
+
+def test_timer_set_whole_minutes(fake_timers):
+    assert tools.timer_set(10, "pasta") == "Timer 1 set for 10 minutes: pasta."
+
+
+def test_timer_set_one_minute_is_singular(fake_timers):
+    assert tools.timer_set(1) == "Timer 1 set for 1 minute."
+
+
+def test_timer_set_fractional_minutes_keep_the_decimal(fake_timers):
+    assert tools.timer_set(2.5, "tea") == "Timer 1 set for 2.5 minutes: tea."
+
+
+def test_timer_set_under_a_minute_says_seconds(fake_timers):
+    assert tools.timer_set(0.5) == "Timer 1 set for 30 seconds."
+
+
+def test_timer_set_refuses_zero_and_too_long(fake_timers):
+    assert tools.timer_set(0) == "error: seconds must be greater than zero"
+    assert tools.timer_set(-2, "pasta") == "error: seconds must be greater than zero"
+    assert tools.timer_set(1441) == "error: seconds must be at most 86400 (24 hours)"
+
+
+def test_timer_set_passes_the_message_through_to_the_announce(fake_timers):
+    _, start, _, announced = fake_timers
+    tools.timer_set(10, "pasta", "De pasta is klaar.")
+    start.calls[0][1]()  # fire by hand
+    assert announced == ["De pasta is klaar."]
+
+
+def test_timer_set_refuses_a_message_longer_than_200_characters(fake_timers):
+    assert tools.timer_set(10, "pasta", "x" * 201) == "error: message too long"
+
+
+def test_timer_set_at_is_the_minutes_until_that_clock_time(fake_timers, monkeypatch):
+    _, start, _, _ = fake_timers
+    monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 30, 14, 30))
+    assert tools.timer_set(at="15:00") == "Timer 1 set for 15:00 (in 30 minutes)."
+    assert [c[0] for c in start.calls] == [1800.0]
+
+
+def test_timer_set_at_in_the_past_is_tomorrow(fake_timers, monkeypatch):
+    _, start, _, _ = fake_timers
+    monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 30, 15, 30))
+    assert tools.timer_set(at="15:00") == "Timer 1 set for 15:00 (in 23 h 30 min)."
+    assert [c[0] for c in start.calls] == [84600.0]
+
+
+def test_timer_set_at_equal_to_now_is_24_hours(fake_timers, monkeypatch):
+    _, start, _, _ = fake_timers
+    monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 30, 15, 0))
+    assert tools.timer_set(at="15:00") == "Timer 1 set for 15:00 (in 24 h)."
+    assert [c[0] for c in start.calls] == [86400.0]
+
+
+def test_timer_set_at_with_a_label(fake_timers, monkeypatch):
+    monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 30, 14, 30))
+    assert tools.timer_set(at="15:00", label="pasta") == "Timer 1 set for 15:00 (in 30 minutes): pasta."
+
+
+def test_timer_set_refuses_bad_at_formats(fake_timers, monkeypatch):
+    monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 30, 14, 30))
+    for bad in ("25:00", "3 uur", "15:7"):
+        assert tools.timer_set(at=bad) == "error: at must look like 15:00"
+
+
+def test_timer_set_refuses_both_minutes_and_at(fake_timers):
+    assert tools.timer_set(10, at="15:00") == "error: give minutes or at, not both"
+
+
+def test_timer_set_refuses_neither_minutes_nor_at(fake_timers):
+    assert tools.timer_set() == "error: give minutes or at"
+
+
+def test_timer_set_registers_a_scheduled_thread(fake_timers):
+    _, start, _, _ = fake_timers
+    tools.timer_set(10, "pasta")
+    assert [c[0] for c in start.calls] == [600.0]  # minutes became seconds
+
+
+def test_timer_list_empty(fake_timers):
+    assert tools.timer_list() == "No timers running."
+
+
+def test_timer_list_shows_each_timer_soonest_first(fake_timers):
+    _, _, clock, _ = fake_timers
+    tools.timer_set(10, "pasta")  # id 1, due at 600 s
+    tools.timer_set(2, "tea")     # id 2, due at 120 s
+    clock.advance(30)             # now = 30: tea has 90 s left, pasta 570 s
+    assert tools.timer_list() == (
+        "2. tea: 1 min 30 s left\n"
+        "1. pasta: 9 min 30 s left")
+
+
+def test_timer_cancel_one(fake_timers):
+    _, start, _, _ = fake_timers
+    tools.timer_set(5, "pasta")
+    assert tools.timer_cancel(1) == "Cancelled timer 1."
+    assert start.calls[0][2].cancelled is True  # the scheduled thread was cancelled too
+    assert tools.timer_list() == "No timers running."
+
+
+def test_timer_cancel_unknown_id(fake_timers):
+    assert tools.timer_cancel(7) == "error: no timer 7"
+
+
+def test_timer_cancel_zero_cancels_all(fake_timers):
+    tools.timer_set(5, "a")
+    tools.timer_set(6, "b")
+    assert tools.timer_cancel() == "Cancelled 2 timers."
+    assert tools.timer_list() == "No timers running."
+
+
+def test_timer_tools_refuse_to_run_without_a_timers(monkeypatch):
+    monkeypatch.setattr(tools, "TIMERS", None)
+    msg = "error: timers only work while Iris is running in voice or text mode"
+    assert tools.timer_set(5) == msg
+    assert tools.timer_list() == msg
+    assert tools.timer_cancel() == msg
+
+
+def test_timer_tools_are_registered_safe():
+    t = tools.TOOLS["timer_set"]
+    expected = ("Set a countdown timer; Iris says `message` out loud when it is done. "
+                "Always pass message in Jay's language.")
+    assert t.tier == tools.SAFE and t.required == []  # minutes or at, exactly one, so neither is required
+    assert t.description == expected
+    assert "A clock time such as 15:00 instead of minutes" in t.params["at"]["description"]
+    assert tools.TOOLS["timer_list"].tier == tools.SAFE
+    assert tools.TOOLS["timer_cancel"].required == []
+
+
+def test_timer_set_schema_describes_the_message_param():
+    m = tools.TOOLS["timer_set"].params["message"]
+    assert m["type"] == "string"
+    assert "in the language Jay spoke" in m["description"]
+    assert "'De pasta is klaar.'" in m["description"]
+
+
+def test_set_announcer_installs_the_shared_timers(monkeypatch):
+    from iris.timers import Timers
+
+    monkeypatch.setattr(tools, "TIMERS", None)
+    announced: list[str] = []
+    tools.set_announcer(announced.append)
+    assert isinstance(tools.TIMERS, Timers)
+
+
+
+def test_duration_text_never_reads_out_a_long_fraction():
+    assert tools._duration_text(549.9862859333333) == "9 h 10 min"
+    assert tools._duration_text(12.7) == "13 minutes"
+    assert tools._duration_text(1.5) == "1.5 minutes"
+    assert tools._duration_text(60) == "1 h"
+    assert tools._duration_text(10) == "10 minutes"

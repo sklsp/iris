@@ -907,6 +907,25 @@ def _new_report(stamp):
                        "results": []})
 
 
+def _answer_report(stamp):
+    """A report from the current eval: the summary has language and answers, and two of its
+    results failed their answer checks."""
+    return json.dumps({
+        "stamp": stamp, "model": "test-model",
+        "summary": {"passed": 1, "tasks": 3,
+                    "by_category": {}, "safety": {"forbidden_ok": 0, "unknown_tools": 0, "never_asked": 0},
+                    "language": {"wrong": 2, "unknown": 0},
+                    "answers": {"checked": 3, "wrong": 2}},
+        "results": [
+            {"id": "calc-17x23", "passed": False, "answer": "991",
+             "reasons": ["answer says 991, expected 391"]},
+            {"id": "greet-nl", "passed": False, "answer": "Hello there!",
+             "reasons": ["missing call: say", "answer lacks groetse"]},
+            {"id": "files-list", "passed": True, "answer": "", "reasons": []},
+        ],
+    })
+
+
 def test_eval_payload_latest_and_runs(tmp_path, monkeypatch):
     (tmp_path / "20261012-090000.json").write_text(_report("20261012-090000"), encoding="utf-8")
     (tmp_path / "20261013-090000.json").write_text(_report("20261013-090000"), encoding="utf-8")
@@ -940,6 +959,46 @@ def test_eval_payload_old_report_has_no_new_keys(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
     p = d.eval_payload()   # an old result without the keys still works, no error
     assert "by_category" not in p["latest"] and "safety" not in p["latest"]
+
+
+def test_eval_payload_new_report_has_language_answers_and_wrong_answers(tmp_path, monkeypatch):
+    (tmp_path / "20261013-090000.json").write_text(_answer_report("20261013-090000"), encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    p = d.eval_payload()
+    assert p["latest"]["language"] == {"wrong": 2, "unknown": 0}
+    assert p["latest"]["answers"] == {"checked": 3, "wrong": 2}
+    assert p["latest"]["wrong_answers"] == [
+        {"id": "calc-17x23", "reasons": ["answer says 991, expected 391"], "answer": "991"},
+        {"id": "greet-nl", "reasons": ["answer lacks groetse"], "answer": "Hello there!"},
+    ]
+
+
+def test_eval_payload_old_report_has_no_language_or_answers(tmp_path, monkeypatch):
+    (tmp_path / "20261013-090000.json").write_text(_report("20261013-090000"), encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    p = d.eval_payload()   # an old result without the keys still works, no error
+    assert "language" not in p["latest"] and "answers" not in p["latest"]
+    assert p["latest"]["wrong_answers"] == []
+
+
+def test_eval_payload_wrong_answers_ignores_non_dict_results(tmp_path, monkeypatch):
+    report = json.loads(_answer_report("20261013-090000"))
+    report["results"].insert(0, "not a dict")
+    (tmp_path / "20261013-090000.json").write_text(json.dumps(report), encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    p = d.eval_payload()   # a broken entry must not take the dashboard down
+    assert [w["id"] for w in p["latest"]["wrong_answers"]] == ["calc-17x23", "greet-nl"]
+
+
+def test_eval_payload_wrong_answers_is_capped_at_twenty(tmp_path, monkeypatch):
+    report = json.loads(_answer_report("20261013-090000"))
+    for i in range(25):
+        report["results"].append({"id": f"t{i}", "passed": False, "answer": "x",
+                                  "reasons": ["answer says x"]})
+    (tmp_path / "20261013-090000.json").write_text(json.dumps(report), encoding="utf-8")
+    monkeypatch.setenv("IRIS_EVAL_DIR", str(tmp_path))
+    p = d.eval_payload()
+    assert len(p["latest"]["wrong_answers"]) == 20
 
 
 def test_api_eval_route(server, tmp_path, monkeypatch):

@@ -7,12 +7,14 @@ journal, input and voice objects. No microphone, no network, no real TTS.
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 import iris.__main__ as imain
 import iris.dashboard as idash
 import iris.eval as ieval
+import iris.tools as itools
 import iris.voice as ivoice
 
 
@@ -285,4 +287,32 @@ def test_voice_mode_uses_session_context_manager_and_async_speech(tmp_path, monk
     assert session.blocking_said == ["Proceed?"]
     assert session.entered == 1
     assert session.exited == 1
+
+
+def test_main_installs_timers_that_speak_through_say(tmp_path, monkeypatch, capsys):
+    """main() calls set_announcer(say), so a timer fired by hand is printed like any other answer."""
+    from iris.timers import Timers
+
+    holder = _install_agent(monkeypatch)
+    started: list[tuple[float, object]] = []
+
+    def fake_start(seconds, fn):
+        handle = SimpleNamespace(run=fn, cancel=lambda: None)
+        started.append((seconds, handle))
+        return handle
+
+    monkeypatch.setattr(itools, "TIMERS", None)
+    monkeypatch.setattr(itools, "Timers", lambda announce: Timers(announce=announce, start=fake_start))
+    monkeypatch.setattr(sys, "argv", ["iris", "--journal", str(tmp_path / "j.jsonl")])
+    _scripted_input(monkeypatch, ["quit"])
+
+    imain.main()
+
+    assert holder["agent"].requests == []
+    assert itools.TIMERS is not None, "main must install the shared timers with say as announcer"
+    capsys.readouterr()  # drop "Iris: Ready."
+    assert itools.timer_set(0.5, "pasta") == "Timer 1 set for 30 seconds: pasta."
+    started[0][1].run()  # fire the timer by hand instead of waiting on a thread
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["Iris: Timer pasta is done."]
 

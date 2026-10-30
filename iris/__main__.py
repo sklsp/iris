@@ -12,6 +12,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+from iris import tools
 from iris.agent import Agent, Journal
 from iris.llm import LMStudio
 from iris.voice import is_yes, speak
@@ -82,6 +83,8 @@ def main() -> None:
         def confirm(question: str) -> bool:
             session.speak(question)
             return is_yes(session.next_command())
+
+    tools.set_announcer(say)  # timers speak through the same say as everything else
 
     agent = Agent(LMStudio(), confirm, Journal(Path(a.journal)))
     try:

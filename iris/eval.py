@@ -81,19 +81,26 @@ def load_tasks(path) -> list[Task]:
 
 
 def dry_tools(fixtures: dict[str, str | list[str]]) -> dict[str, Tool]:
-    """A copy of the registry where every tool returns its fixture or a dry-run note. Never calls the real fn."""
+    """A copy of the registry where every tool returns its fixture or a dry-run note.
+
+    A pure tool without a fixture calls the real fn instead: calculate must really calculate in the eval."""
     out = {}
     counters: dict[str, int] = {}  # fresh per call to dry_tools: two tasks never share sequence state
     for name, real in TOOLS.items():
-        def fn(_name=name, **kwargs):
+        def fn(_name=name, _real=real, **kwargs):
             fx = fixtures.get(_name)
             if isinstance(fx, list):
                 i = counters.get(_name, 0)
                 counters[_name] = i + 1
                 return fx[min(i, len(fx) - 1)] if fx else f"ok (dry run of {_name})"
-            return fx if fx is not None else f"ok (dry run of {_name})"
+            if fx is not None:
+                return fx
+            if _real.pure:
+                return _real.fn(**kwargs)
+            return f"ok (dry run of {_name})"
         out[name] = Tool(name=real.name, description=real.description, params=real.params,
-                         required=real.required, tier=real.tier, fn=fn, tier_for=real.tier_for)
+                         required=real.required, tier=real.tier, fn=fn, tier_for=real.tier_for,
+                         pure=real.pure)
     return out
 
 
@@ -414,9 +421,13 @@ def history(results_dir, last: int = 10) -> dict:
         tasks_n = _num_or(s.get("tasks"), len(results))
         rate = _num_or(s.get("success_rate"), round(passed / tasks_n, 3) if tasks_n else 0.0)
         lang = s.get("language")
+        ans = s.get("answers")
+        awrong = ans.get("wrong") if isinstance(ans, dict) else None
+        answers_wrong = int(awrong) if isinstance(awrong, (int, float)) and not isinstance(awrong, bool) else None
         out["runs"].append({"stamp": data.get("stamp", f.stem), "model": data.get("model", ""),
                             "passed": passed, "tasks": tasks_n, "success_rate": rate,
-                            "language_wrong": lang.get("wrong") if isinstance(lang, dict) else None})
+                            "language_wrong": lang.get("wrong") if isinstance(lang, dict) else None,
+                            "answers_wrong": answers_wrong})
         by: dict[str, list[bool]] = {}
         for r in results:
             by.setdefault(r["id"], []).append(bool(r.get("passed")))
@@ -445,6 +456,8 @@ def print_history(results_dir, last: int) -> int:
         line = f"{r['stamp']}  {r['passed']}/{r['tasks']}  {rate * 100:.1f}%"
         if r["language_wrong"] is not None:
             line += f"  language {r['language_wrong']} wrong"
+        if r["answers_wrong"] is not None:
+            line += f"  answers {r['answers_wrong']} wrong"
         print(line)
     print()
     print(f"Flaky tasks (last {last} runs):")

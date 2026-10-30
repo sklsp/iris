@@ -7,7 +7,9 @@ never    refused, always (sending, buying, paying, passwords, deleting)
 
 from __future__ import annotations
 
+import ast
 import json
+import math
 import os
 import re
 import shutil
@@ -15,7 +17,10 @@ import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
+
+from iris.timers import Timers
 
 SAFE, CONFIRM, NEVER = "safe", "confirm", "never"
 
@@ -39,6 +44,7 @@ class Tool:
     tier: str
     fn: Callable[..., str]
     tier_for: Callable[[dict], str] | None = None  # argument-dependent escalation
+    pure: bool = False  # only computes, touches nothing on the PC; the eval runs it for real
 
     def tier_of(self, args: dict) -> str:
         return self.tier_for(args) if self.tier_for else self.tier
@@ -447,6 +453,39 @@ def open_url(url: str) -> str:
     return f"opened {url}"
 
 
+# --- web ----------------------------------------------------------------------
+def web_search(query: str) -> str:
+    """Search the web (DuckDuckGo) and list titles, links and snippets."""
+    from iris.web import search
+
+    try:
+        results = search(query)
+    except (OSError, ValueError) as e:
+        return f"error: search failed: {e}"
+    if not results:
+        return f"No results for '{query}'."
+    blocks = [f"{n}. {r['title']}\n   {r['url']}\n   {r['snippet']}" for n, r in enumerate(results, 1)]
+    return "\n".join(blocks)
+
+
+def web_read(url: str) -> str:
+    """Read a web page as plain text with its final URL."""
+    from iris import web as _web
+
+    seen: dict[str, str] = {}
+
+    def get(u):
+        result = _web.http_get(u)
+        seen["final"] = result[0]
+        return result
+
+    try:
+        text = _web.read_text(url, get=get)
+    except (OSError, ValueError) as e:
+        return f"error: {e}"
+    return f"Source: {seen['final']}\n{text}"
+
+
 # --- files --------------------------------------------------------------------
 def _trash_dir() -> Path:
     d = Path(os.environ.get("IRIS_TRASH_DIR") or (Path.home() / ".iris" / "trash"))
@@ -610,6 +649,181 @@ def concept_sites() -> str:
     return ("Sites:\n" + listed.stdout.strip() + "\n\nChecks:\n" + checked.stdout.strip())
 
 
+# --- math ---------------------------------------------------------------------
+class _CalcError(ValueError):
+    """A refused expression; .message is what goes back to Jay after 'error:'."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+def _calc_eval(node) -> int | float:
+    """The value of one allowed node: numbers and + - * / // % ** with unary signs. Raises _CalcError otherwise."""
+    if isinstance(node, ast.Expression):
+        return _calc_eval(node.body)
+    if isinstance(node, ast.Constant):
+        value = node.value
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise _CalcError("only numbers and + - * / // % ** are allowed")
+        return value
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        v = _calc_eval(node.operand)
+        return +v if isinstance(node.op, ast.UAdd) else -v
+    if isinstance(node, ast.BinOp):
+        left = _calc_eval(node.left)
+        right = _calc_eval(node.right)
+        op = node.op
+        if isinstance(op, ast.Pow):
+            if abs(right) > 100:
+                raise _CalcError("exponent too large")
+            # nested powers ((9**99)**99)**99 pass the exponent rule but grow without bound: cap the result size
+            if isinstance(left, int) and isinstance(right, int) and right > 0 and left.bit_length() * right > 4000:
+                raise _CalcError("number too large")
+            return left ** right
+        if isinstance(op, ast.Add):
+            return left + right
+        if isinstance(op, ast.Sub):
+            return left - right
+        if isinstance(op, ast.Mult):
+            return left * right
+        if isinstance(op, ast.Div):
+            return left / right
+        if isinstance(op, ast.FloorDiv):
+            return left // right
+        if isinstance(op, ast.Mod):
+            return left % right
+    raise _CalcError("only numbers and + - * / // % ** are allowed")
+
+
+def calculate(expression: str) -> str:
+    """Exact arithmetic on numbers. Parsed with ast and walked by hand; never eval or exec."""
+    if len(expression) > 200:
+        return "error: expression too long"
+    try:
+        tree = ast.parse(expression.replace(",", "."), mode="eval")
+    except SyntaxError:
+        return "error: only numbers and + - * / // % ** are allowed"
+    try:
+        value = _calc_eval(tree)
+    except _CalcError as exc:
+        return f"error: {exc.message}"
+    except ZeroDivisionError:
+        return "error: division by zero"
+    except OverflowError:
+        return "error: number too large"
+    if isinstance(value, float) and not math.isfinite(value):
+        return "error: number too large"
+    if isinstance(value, float):
+        text = str(int(value)) if value.is_integer() else format(value, ".12g")
+    else:
+        text = str(value)
+    return f"{expression} = {text}"
+
+
+# --- timers -------------------------------------------------------------------
+TIMERS: Timers | None = None  # created by set_announcer when Iris starts in voice or text mode
+
+
+def set_announcer(announce: Callable[[str], object]) -> None:
+    """Create the shared Timers with this announce callback; called when Iris starts in voice or text mode."""
+    global TIMERS
+    TIMERS = Timers(announce=announce)
+
+
+def _duration_text(minutes: float) -> str:
+    """How long a timer runs, spoken: under one minute as seconds, else whole minutes (1.5 stays 1.5), an hour or
+    more as "2 h 10 min". A clock-time timer gives fractions like 549.986, which must never be read out."""
+    if minutes < 1:
+        s = round(minutes * 60)
+        return f"{s} second{'s' if s != 1 else ''}"
+    if minutes >= 60:
+        h, m = divmod(round(minutes), 60)
+        return f"{h} h {m} min" if m else f"{h} h"
+    if minutes.is_integer():
+        n = int(minutes)
+        return f"{n} minute{'s' if n != 1 else ''}"
+    if (minutes * 2).is_integer():
+        return f"{minutes} minutes"
+    n = round(minutes)
+    return f"{n} minute{'s' if n != 1 else ''}"
+
+
+def _left_text(seconds: int) -> str:
+    m, s = divmod(seconds, 60)
+    return f"{m} min {s} s"
+
+
+_AT_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+
+
+def _wall_now() -> datetime:
+    """The wall clock; a module function so tests can monkeypatch it."""
+    return datetime.now()
+
+
+def _seconds_until(at: str) -> float:
+    """Seconds until the wall clock next shows `at` (HH:MM); tomorrow when it already passed or is now."""
+    m = _AT_RE.fullmatch(at)
+    if m is None:
+        raise ValueError("at must look like 15:00")
+    hour, minute = int(m.group(1)), int(m.group(2))
+    now = _wall_now()
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
+def timer_set(minutes: float | None = None, label: str = "", message: str = "", at: str = "") -> str:
+    """Set a countdown timer for `minutes` or until the clock time `at`; Iris says out loud when it is done."""
+    if TIMERS is None:
+        return "error: timers only work while Iris is running in voice or text mode"
+    if at:
+        if minutes is not None:
+            return "error: give minutes or at, not both"
+        try:
+            t = TIMERS.add(_seconds_until(at), label, message)
+        except ValueError as exc:
+            return f"error: {exc}"
+        duration = _duration_text(t["seconds"] / 60)
+        if label:
+            return f"Timer {t['id']} set for {at} (in {duration}): {label}."
+        return f"Timer {t['id']} set for {at} (in {duration})."
+    if minutes is None:
+        return "error: give minutes or at"
+    try:
+        t = TIMERS.add(float(minutes) * 60, label, message)
+    except ValueError as exc:
+        return f"error: {exc}"
+    duration = _duration_text(t["seconds"] / 60)
+    if label:
+        return f"Timer {t['id']} set for {duration}: {label}."
+    return f"Timer {t['id']} set for {duration}."
+
+
+def timer_list() -> str:
+    """The running timers and how long each has left."""
+    if TIMERS is None:
+        return "error: timers only work while Iris is running in voice or text mode"
+    items = TIMERS.list()
+    if not items:
+        return "No timers running."
+    return "\n".join(f"{t['id']}. {t['label']}: {_left_text(t['left_seconds'])} left" for t in items)
+
+
+def timer_cancel(id: int = 0) -> str:
+    """Stop a timer by its number, or all timers with 0."""
+    if TIMERS is None:
+        return "error: timers only work while Iris is running in voice or text mode"
+    if id == 0:
+        n = TIMERS.cancel_all()
+        return f"Cancelled {n} timer{'s' if n != 1 else ''}."
+    if TIMERS.cancel(id):
+        return f"Cancelled timer {id}."
+    return f"error: no timer {id}"
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -644,6 +858,10 @@ TOOLS = {t.name: t for t in [
     Tool("journal_today",
          "How many requests and tool calls Iris handled today, by outcome. Read only.",
          {}, [], SAFE, journal_today),
+    Tool("calculate",
+         "Exact arithmetic on numbers. Use it for every multiplication, division or sum instead of working it out"
+         " yourself, then say the result.",
+         {"expression": S}, ["expression"], SAFE, calculate, None, True),
     Tool("list_windows", "Titles of all open windows.", {}, [], SAFE, list_windows),
     Tool("read_window", "The named controls (buttons, fields, text) in a window. Title match is a substring.",
          {"title": S}, ["title"], SAFE, read_window),
@@ -665,6 +883,12 @@ TOOLS = {t.name: t for t in [
           "amount": {"type": "integer"}}, ["window", "direction"], SAFE, scroll),
     Tool("open_url", "Open an http or https URL in the default browser. file:, javascript: and data: are refused.",
          {"url": S}, ["url"], SAFE, open_url, _open_url_tier),
+    Tool("web_search",
+         "Search the web (DuckDuckGo) and list titles, links and snippets. "
+         "Then use web_read on the best link to read it.",
+         {"query": S}, ["query"], SAFE, web_search),
+    Tool("web_read", "Read the text of a web page (http or https links only).",
+         {"url": S}, ["url"], SAFE, web_read),
     Tool("trash_file",
          "Move a file or folder to Iris's trash (undoable with restore_trash). Never deletes permanently.",
          {"path": S}, ["path"], CONFIRM, trash_file, _trash_tier),
@@ -701,4 +925,17 @@ TOOLS = {t.name: t for t in [
          "Jay's concept websites from conceptkit: every site with its port and stops, and the findings of check --all."
          " Read only.",
          {}, [], SAFE, concept_sites),
+    Tool("timer_set",
+          "Set a countdown timer; Iris says `message` out loud when it is done. "
+          "Always pass message in Jay's language.",
+          {"minutes": {"type": "number"}, "label": S,
+           "at": {"type": "string", "description": "A clock time such as 15:00 instead of minutes"},
+           "message": {"type": "string",
+                       "description": "What Iris says out loud when the timer is done, in the language Jay spoke, "
+                                      "for example 'De pasta is klaar.'"}},
+          [], SAFE, timer_set),
+    Tool("timer_list", "The running timers and how long each has left.", {}, [], SAFE, timer_list),
+    Tool("timer_cancel", "Stop a timer by its number, or all timers with 0.",
+          {"id": {"type": "integer"}}, [], SAFE, timer_cancel),
+
 ]}

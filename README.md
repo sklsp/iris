@@ -18,7 +18,7 @@ No cloud, no cost per command. See [PLAN.md](PLAN.md) for where it is going.
 - Windows UI Automation instead of screenshots: Iris reads named controls, not pixels
 - Risk tiers enforced in code with tests: safe / confirm / never, escalating with the arguments
 - Wake word and streaming TTS: openWakeWord and faster-whisper in, SAPI or Kokoro out
-- An eval harness: 93 dry-run tasks that measure how well the model picks tools
+- An eval harness: 104 dry-run tasks that measure how well the model picks tools
 - The design decisions, with reasons: [DESIGN.md](DESIGN.md), UI Automation over pixels, tiers in code, untrusted screen text, barge-in
 
 ```mermaid
@@ -48,6 +48,7 @@ flowchart LR
 | lmstudio_unload | confirm | the model is the one Iris runs on, or all |
 | followups | safe |  |
 | journal_today | safe |  |
+| calculate | safe |  |
 | list_windows | safe |  |
 | read_window | safe |  |
 | open_app | safe |  |
@@ -57,6 +58,8 @@ flowchart LR
 | focus_window | safe |  |
 | scroll | safe |  |
 | open_url | safe |  |
+| web_search | safe | searches DuckDuckGo, lists titles, links and snippets |
+| web_read | safe | reads a page as plain text, local addresses refused |
 | trash_file | confirm | the path is home or W:/ itself, outside them, or the Recycle Bin (never) |
 | restore_trash | safe |  |
 | agents_status | safe |  |
@@ -67,20 +70,23 @@ flowchart LR
 | queue_move | confirm |  |
 | cline_start | confirm |  |
 | concept_sites | safe |  |
+| timer_set | safe | minutes or a clock time such as 15:00 (`at`); says `message` out loud in Jay's language when it is done |
+| timer_list | safe |  |
+| timer_cancel | safe |  |
 
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-10-29 15:08 on `qwen3.8-27b`: 273/279 passed (97.8%), median 3.8 s, 0.36 confirmations per task, safety: 0 forbidden, 2 refused attempts, 0 unknown tools, language: 2 wrong, answers: 3/27 wrong, 90/93 pass every time.
+Run of 2026-10-30 16:43 on `qwen3.8-27b`: 307/312 passed (98.4%), median 3.7 s, 0.32 confirmations per task, safety: 0 forbidden, 2 refused attempts, 0 unknown tools, language: 2 wrong, answers: 0/45 wrong, 101/104 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 36/36 | 100.0% |
+| agents | 35/36 | 97.2% |
 | files | 12/12 | 100.0% |
 | hands | 47/48 | 97.9% |
-| read | 30/33 | 90.9% |
-| safety | 103/105 | 98.1% |
-| skills | 45/45 | 100.0% |
+| read | 42/45 | 93.3% |
+| safety | 108/108 | 100.0% |
+| skills | 63/63 | 100.0% |
 
 <!-- eval:end -->
 
@@ -124,16 +130,22 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | lmstudio_unload | confirm | unload a model from LM Studio by its id, or all of them; never unloads the model Iris runs on |
 | followups | safe | leads from the leadscan CRM due for a follow-up today |
 | journal_today | safe | today's requests and tool calls by outcome, from the journal |
+| calculate | safe | exact arithmetic, so Iris never says a sum from memory |
 | list_windows | safe | titles of the open windows |
 | read_window | safe | the named controls in a window, with the contents of text fields |
 | open_app | safe | start an app, an `ms-settings:` page or a file |
 | open_url | safe | open an `http` or `https` URL; `file:`, `javascript:` and `data:` are refused |
+| web_search | safe | searches DuckDuckGo, lists titles, links and snippets |
+| web_read | safe | reads a page as plain text, local addresses refused |
 | focus_window | safe | bring a window to the front and give it focus |
 | scroll | safe | scroll up or down in a window |
 | restore_trash | safe | put the most recently trashed item back |
 | agents_status | safe | branch, last commit and age, uncommitted files, BLOCKED.md and STUCK per agent repo |
 | queue_list | safe | prompts waiting in Jay's agent queue, oldest first, optionally for one agent |
 | concept_sites | safe | Jay's concept websites from conceptkit: sites, ports and check findings |
+| timer_set | safe | set a countdown timer for minutes or until a clock time such as 15:00 (`at`); Iris says `message` out loud in Jay's language when it is done |
+| timer_list | safe | the running timers and how long each has left |
+| timer_cancel | safe | stop a timer by its number, or all of them with 0 |
 | press_keys | confirm | press shortcuts in a window, `^s` or `{TAB}` |
 | click | confirm | click a control by its name |
 | type_text | confirm | type into a window or a named field, optionally replacing what is there |
@@ -260,7 +272,8 @@ The page polls every 3 seconds and has seven tabs:
   refusal and error counts. Autopilot outcomes appear here with their own badge.
 - Repos: branch, last commit and its age, uncommitted files, BLOCKED.md and STUCK flags per agent repo, stuck repos first.
 - Tools: every tool with its risk tier.
-- Eval: the most recent eval run's report (stamp, model and summary) plus how many runs exist.
+- Eval: the newest full run's report (stamp, model and summary), its language, answer and safety counts, its wrong
+  answers, plus how many runs exist.
 - Autopilot: each watched repo's run (done or running) with a **Start next prompt** button that asks once before it
   starts, and the queue so you can add, delete and move prompts; when a run finishes it raises a done banner and, if
   allowed, a browser notification. See [Autopilot](#autopilot).
@@ -274,7 +287,7 @@ tab, not an error page.
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 93 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 104 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.

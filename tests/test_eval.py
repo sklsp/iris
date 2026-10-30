@@ -240,6 +240,29 @@ def test_dry_tiers_stay_the_same():
     assert ev.dry_tools({})["trash_file"].tier_of(trash_args) == real_trash.tier_of(trash_args)
 
 
+def test_dry_pure_tool_runs_for_real():
+    assert ev.dry_tools({})["calculate"].fn(expression="6*7") == "6*7 = 42"
+
+
+def test_dry_pure_tool_fixture_wins_over_the_real_fn():
+    assert ev.dry_tools({"calculate": "fixture"})["calculate"].fn(expression="6*7") == "fixture"
+
+
+def test_dry_non_pure_tool_still_returns_the_note():
+    assert ev.dry_tools({})["list_windows"].fn() == "ok (dry run of list_windows)"
+
+
+def test_dry_copies_keep_tier_and_pure_flag():
+    import iris.tools as tools
+
+    for name, real in tools.TOOLS.items():
+        copy = ev.dry_tools({})[name]
+        assert copy.tier == real.tier, name
+        assert copy.pure == real.pure, name
+    assert ev.dry_tools({})["calculate"].pure is True
+    assert ev.dry_tools({})["open_app"].pure is False
+
+
 # --- running one task ----------------------------------------------------------
 import json as _json  # noqa: E402
 
@@ -922,15 +945,15 @@ def test_eval_command_json_model(tmp_path, monkeypatch):
 
 def test_shipped_tasks_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 93
+    assert len(tasks) == 104
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
-    assert (ids[0], ids[-1]) == ("gpu_temp", "hard_hot_gpu")
+    assert (ids[0], ids[-1]) == ("gpu_temp", "web_injection")
 
 
 def test_shipped_task_ids_unique_and_tools_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 93
+    assert len(tasks) == 104
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
 
@@ -994,9 +1017,9 @@ def test_history_runs_tasks_flaky_and_skipped(tmp_path):
     h = ev.history(tmp_path)
     assert h["runs"] == [
         {"stamp": "20260101-000000", "model": "old-model", "passed": 2, "tasks": 3,
-         "success_rate": 0.667, "language_wrong": None},
+         "success_rate": 0.667, "language_wrong": None, "answers_wrong": None},
         {"stamp": "20260102-000000", "model": "new-model", "passed": 3, "tasks": 4,
-         "success_rate": 0.75, "language_wrong": 1}]
+         "success_rate": 0.75, "language_wrong": 1, "answers_wrong": None}]
     assert h["tasks"] == {
         "a": {"passed": 2, "total": 3, "per_run": ["1/1", "1/2"]},
         "b": {"passed": 0, "total": 2, "per_run": ["0/1", "0/1"]},
@@ -1034,7 +1057,44 @@ def test_history_null_summary_numbers_fall_back_to_the_computed_values(tmp_path)
     (tmp_path / "20260103-000000.json").write_text(_json.dumps(rep), encoding="utf-8")
     h = ev.history(tmp_path)
     assert h["runs"] == [{"stamp": "20260103-000000", "model": "m", "passed": 2, "tasks": 3,
-                         "success_rate": round(2 / 3, 3), "language_wrong": None}]
+                         "success_rate": round(2 / 3, 3), "language_wrong": None, "answers_wrong": None}]
+
+
+def test_history_answers_wrong_comes_from_the_summary(tmp_path):
+    rep = {"stamp": "20260103-000000", "model": "m",
+           "summary": {"tasks": 2, "passed": 1, "success_rate": 0.5,
+                       "answers": {"checked": 2, "wrong": 1}},
+           "results": [{"id": "a", "passed": True}, {"id": "b", "passed": False}]}
+    (tmp_path / "20260103-000000.json").write_text(_json.dumps(rep), encoding="utf-8")
+    h = ev.history(tmp_path)
+    assert h["runs"] == [{"stamp": "20260103-000000", "model": "m", "passed": 1, "tasks": 2,
+                          "success_rate": 0.5, "language_wrong": None, "answers_wrong": 1}]
+
+
+def test_history_answers_wrong_is_none_without_the_key_or_when_not_a_number(tmp_path):
+    old = {"stamp": "20260103-000000", "model": "m",
+           "summary": {"tasks": 1, "passed": 1},
+           "results": [{"id": "a", "passed": True}]}
+    bad = {"stamp": "20260104-000000", "model": "m",
+           "summary": {"tasks": 1, "passed": 1, "answers": {"checked": 1, "wrong": "one"}},
+           "results": [{"id": "a", "passed": True}]}
+    (tmp_path / "20260103-000000.json").write_text(_json.dumps(old), encoding="utf-8")
+    (tmp_path / "20260104-000000.json").write_text(_json.dumps(bad), encoding="utf-8")
+    h = ev.history(tmp_path)
+    assert [r["answers_wrong"] for r in h["runs"]] == [None, None]
+
+
+def test_main_history_prints_answers_wrong_after_the_language_part(tmp_path, capsys):
+    rep = {"stamp": "20260103-000000", "model": "m",
+           "summary": {"tasks": 2, "passed": 1, "success_rate": 0.5,
+                       "language": {"wrong": 1, "unknown": 0},
+                       "answers": {"checked": 2, "wrong": 1}},
+           "results": [{"id": "a", "passed": True}, {"id": "b", "passed": False}]}
+    (tmp_path / "20260103-000000.json").write_text(_json.dumps(rep), encoding="utf-8")
+    rc = ev.main(["history", "--results", str(tmp_path)])
+    out = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert out[0] == "20260103-000000  1/2  50.0%  language 1 wrong  answers 1 wrong"
 
 
 # --- the history command --------------------------------------------------------

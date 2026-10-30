@@ -641,6 +641,9 @@ def _calc_eval(node) -> int | float:
         if isinstance(op, ast.Pow):
             if abs(right) > 100:
                 raise _CalcError("exponent too large")
+            # nested powers ((9**99)**99)**99 pass the exponent rule but grow without bound: cap the result size
+            if isinstance(left, int) and isinstance(right, int) and right > 0 and left.bit_length() * right > 4000:
+                raise _CalcError("number too large")
             return left ** right
         if isinstance(op, ast.Add):
             return left + right

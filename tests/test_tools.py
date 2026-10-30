@@ -930,6 +930,11 @@ def test_calculate_refuses_an_exponent_above_100():
     assert tools.calculate("2**101") == "error: exponent too large"
 
 
+def test_calculate_refuses_nested_powers_that_grow_without_bound():
+    assert tools.calculate("((9**99)**99)**99") == "error: number too large"
+    assert tools.calculate("(9**99)**9") == "(9**99)**9 = " + str(9 ** 891)
+
+
 def test_calculate_refuses_division_by_zero_in_all_three_forms():
     assert tools.calculate("1/0") == "error: division by zero"
     assert tools.calculate("5//0") == "error: division by zero"

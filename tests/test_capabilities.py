@@ -8,7 +8,7 @@ import pytest
 
 from iris import tools
 from iris.agent import _describe
-from iris.capabilities import capabilities_dir, guard_problems, list_plans, save_plan
+from iris.capabilities import PLAN_TEMPLATE, capabilities_dir, guard_problems, list_plans, save_plan
 
 
 def _lock(tier="confirm", escalates=True):
@@ -112,6 +112,32 @@ def test_save_plan_accepts_boundary_lengths(tmp_path, monkeypatch):
     name = "a" * 40  # the longest allowed name
     save_plan("a request", name, "confirm", "x" * 4000)  # the longest allowed plan
     assert (caps / f"{name}.md").exists()
+
+
+# --- PLAN_TEMPLATE: what a plan file must contain ---------------------------------
+
+def test_plan_md_contains_every_required_field(tmp_path, monkeypatch):
+    _caps(tmp_path, monkeypatch)
+    request = "I want Iris to check the printer ink level"
+    plan = "Read the ink level from the printer status window."
+    md = save_plan(request, "printer_ink", "confirm", plan).read_text(encoding="utf-8")
+    assert "# Plan: printer_ink" in md
+    assert "- Tier: confirm" in md
+    assert "- Status: planned" in md
+    assert request in md  # Jay's request, verbatim
+    assert plan in md
+
+
+def test_plan_md_has_the_created_timestamp(tmp_path, monkeypatch):
+    _caps(tmp_path, monkeypatch)
+    md = save_plan("a request", "new_tool", "safe", "a plan").read_text(encoding="utf-8")
+    created = re.search(r"- Created: (\S+)", md).group(1)
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", created)
+
+
+def test_plan_template_placeholders_are_pinned():
+    fields = set(re.findall(r"\{(\w+)\}", PLAN_TEMPLATE))
+    assert fields == {"tool_name", "tier", "status", "created", "request", "plan"}
 
 
 # --- capability_list: one line per saved plan ------------------------------------

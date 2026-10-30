@@ -1028,14 +1028,14 @@ def test_timer_set_at_is_the_minutes_until_that_clock_time(fake_timers, monkeypa
 def test_timer_set_at_in_the_past_is_tomorrow(fake_timers, monkeypatch):
     _, start, _, _ = fake_timers
     monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 30, 15, 30))
-    assert tools.timer_set(at="15:00") == "Timer 1 set for 15:00 (in 1410 minutes)."
+    assert tools.timer_set(at="15:00") == "Timer 1 set for 15:00 (in 23 h 30 min)."
     assert [c[0] for c in start.calls] == [84600.0]
 
 
 def test_timer_set_at_equal_to_now_is_24_hours(fake_timers, monkeypatch):
     _, start, _, _ = fake_timers
     monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 30, 15, 0))
-    assert tools.timer_set(at="15:00") == "Timer 1 set for 15:00 (in 1440 minutes)."
+    assert tools.timer_set(at="15:00") == "Timer 1 set for 15:00 (in 24 h)."
     assert [c[0] for c in start.calls] == [86400.0]
 
 
@@ -1131,3 +1131,11 @@ def test_set_announcer_installs_the_shared_timers(monkeypatch):
     tools.set_announcer(announced.append)
     assert isinstance(tools.TIMERS, Timers)
 
+
+
+def test_duration_text_never_reads_out_a_long_fraction():
+    assert tools._duration_text(549.9862859333333) == "9 h 10 min"
+    assert tools._duration_text(12.7) == "13 minutes"
+    assert tools._duration_text(1.5) == "1.5 minutes"
+    assert tools._duration_text(60) == "1 h"
+    assert tools._duration_text(10) == "10 minutes"

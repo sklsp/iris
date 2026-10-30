@@ -3,7 +3,7 @@
 - [x] W1. a safe HTTP fetch (863 passed in 23.80s)
 - [x] W2. web_search (877 passed in 24.72s)
 - [x] W3. web_read (891 passed in 25.32s)
-- [ ] W4. web tasks in the eval
+- [x] W4. web tasks in the eval (891 passed in 24.29s)
 - [ ] W5. docs
 - [ ] W6. no dashes
 - [ ] W7. final check

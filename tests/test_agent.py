@@ -149,7 +149,7 @@ def test_describe_asks_clearer_questions_for_trash_and_keys():
 
 def test_describe_asks_for_cline_start_without_the_prompt_text():
     desc = _describe("cline_start", {"agent": "leadscan"})
-    assert desc == "Start a new Cline session for leadscan in W:/Iris with the next queued prompt?"
+    assert desc == "Start a new Cline session for leadscan in the default folder with the next queued prompt?"
     with_repo = _describe("cline_start", {"agent": "leadscan", "repo": "acme"})
     assert with_repo == "Start a new Cline session for leadscan in acme with the next queued prompt?"
 

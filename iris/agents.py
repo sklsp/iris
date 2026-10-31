@@ -1,8 +1,8 @@
 """The agent manager: what are my other agents up to? Read only, safe by construction.
 
-Reads iris/agents.toml for the repo list, then for each git repo reports the branch, the last commit
-with its age, the number of uncommitted files, whether BLOCKED.md exists, and a STUCK flag when
-there are uncommitted changes but nothing committed for over an hour.
+Reads ~/.iris/agents.toml (else the shipped iris/agents.toml) for the repo list, then for each git repo
+reports the branch, the last commit with its age, the number of uncommitted files, whether BLOCKED.md
+exists, and a STUCK flag when there are uncommitted changes but nothing committed for over an hour.
 
 Everything here only runs git commands that cannot write: rev-parse, log, status. No checkout, no
 commit, no add.
@@ -17,9 +17,11 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-CONFIG = Path(os.environ.get("IRIS_AGENTS_TOML") or (Path(__file__).with_name("agents.toml")))
-DEFAULT_REPOS = ["W:/Ledger", "W:/feedbot", "W:/acme-render", "W:/Iris"]
-DEFAULT_WORKTREES = ["C:/Users/Jayde/.cline/worktrees"]
+_USER_TOML = Path.home() / ".iris" / "agents.toml"   # the user's own list wins over the shipped example
+CONFIG = Path(os.environ.get("IRIS_AGENTS_TOML")
+              or (_USER_TOML if _USER_TOML.exists() else Path(__file__).with_name("agents.toml")))
+DEFAULT_REPOS: list[str] = []
+DEFAULT_WORKTREES = [str(Path.home() / ".cline" / "worktrees")]
 DEFAULT_STUCK_MINUTES = 60
 GIT_TIMEOUT = 10  # seconds; a repo on a spinning disk must not hang the voice loop
 

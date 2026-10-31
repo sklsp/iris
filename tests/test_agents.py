@@ -154,10 +154,10 @@ def test_config_defaults_and_overrides(tmp_path):
     assert load_config(tmp_path / "agents.toml").stuck_minutes == 60  # defaults, not a crash
 
 
-def test_shipped_config_watches_leadscan():
+def test_shipped_config_is_an_empty_example():
     shipped = Path(__file__).resolve().parents[1] / "iris" / "agents.toml"
     cfg = load_config(shipped)
-    assert "W:/leadscan" in cfg.repos
+    assert cfg.repos == [] and cfg.stuck_minutes == 60
 
 
 def test_repos_come_from_the_env_var(monkeypatch, tmp_path):

@@ -21,13 +21,24 @@ def config_path() -> Path:
     return Path(os.environ.get("IRIS_CONFIG") or (Path.home() / ".iris" / "config.toml"))
 
 
+def raw() -> dict:
+    """The file as parsed; {} when it is missing or broken."""
+    try:
+        return tomllib.loads(config_path().read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
+        return {}
+
+
+def get(key: str, default: str = "") -> str:
+    """One optional string setting, such as cline_cli; the default when it is missing or not a string."""
+    value = raw().get(key)
+    return value if isinstance(value, str) and value.strip() else default
+
+
 def load() -> dict:
     """DEFAULTS overlaid with the file's keys; a key with the wrong type keeps its default."""
     out = dict(DEFAULTS)
-    try:
-        data = tomllib.loads(config_path().read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
-        return out
+    data = raw()
     if isinstance(data.get("name"), str) and data["name"].strip():
         out["name"] = data["name"].strip()
     if isinstance(data.get("plugins"), list):

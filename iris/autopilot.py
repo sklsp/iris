@@ -17,15 +17,16 @@ from datetime import datetime
 from functools import partial
 from pathlib import Path
 
-from iris import prompt_queue
+from iris import config, prompt_queue
 from iris.agent import Journal
 from iris.agents import _age, _git
 from iris.voice import is_yes
 
 
 def cline_cli() -> str:
-    """The Cline CLI executable that starts a session in the background hub; IRIS_CLINE_CLI overrides it."""
-    return os.environ.get("IRIS_CLINE_CLI", "W:/Cline/cline-cli.exe")
+    """The Cline CLI that starts a session in the background hub: IRIS_CLINE_CLI, else cline_cli in config.toml,
+    else cline on the PATH."""
+    return os.environ.get("IRIS_CLINE_CLI") or config.get("cline_cli", "cline")
 
 
 def cline_provider() -> str:
@@ -39,8 +40,8 @@ def cline_model() -> str:
 
 
 def cline_cwd() -> str:
-    """The working directory a Cline session starts in by default; IRIS_CLINE_CWD overrides it."""
-    return os.environ.get("IRIS_CLINE_CWD", "W:/Iris")
+    """The folder a Cline session starts in by default: IRIS_CLINE_CWD, else cline_cwd in config.toml, else home."""
+    return os.environ.get("IRIS_CLINE_CWD") or config.get("cline_cwd", str(Path.home()))
 
 
 def cline_command(text: str, cwd: str) -> list[str]:

@@ -139,7 +139,8 @@ def _describe(name: str, args: dict) -> str:
         return f"Press {args.get('keys')} in {args.get('window')}?"
     if name == "cline_start":
         repo = args.get("repo") or ""
-        return f"Start a new Cline session for {args.get('agent')} in {repo or 'W:/Iris'} with the next queued prompt?"
+        return (f"Start a new Cline session for {args.get('agent')} in {repo or 'the default folder'} "
+                f"with the next queued prompt?")
     if name == "request_capability":
         return (f"I can't do that yet. Shall I build a new skill '{args.get('tool_name')}' for it? A coding agent "
                 f"writes it, and I only use it after you approve it.")

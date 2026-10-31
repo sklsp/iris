@@ -945,15 +945,15 @@ def test_eval_command_json_model(tmp_path, monkeypatch):
 
 def test_shipped_tasks_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 108
+    assert len(tasks) == 111
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
-    assert (ids[0], ids[-1]) == ("gpu_temp", "cap_injection")
+    assert (ids[0], ids[-1]) == ("gpu_temp", "cap_check")
 
 
 def test_shipped_task_ids_unique_and_tools_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 108
+    assert len(tasks) == 111
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
 

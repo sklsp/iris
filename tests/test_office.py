@@ -1,8 +1,11 @@
-"""Tests for iris.office: making Word documents, with a real python-docx on tmp_path only."""
+"""Tests for iris.office: making Word documents and PowerPoint presentations, with real python-docx and
+python-pptx on tmp_path only."""
 
 import sys
+from datetime import date
 
 from docx import Document
+from pptx import Presentation
 
 from iris import office, tools
 
@@ -74,6 +77,66 @@ def test_make_document_without_python_docx_says_install_the_extra(tmp_path, monk
         "error: install the office extra: pip install iris[office]"
 
 
+# --- make_presentation ---------------------------------------------------------------
+
+def test_make_presentation_makes_a_title_slide_and_content_slides(tmp_path):
+    p = tmp_path / "deck.pptx"
+    slides = [{"title": "One", "bullets": ["a", "b"], "notes": "n1"}, {"title": "Two", "bullets": ["c"]}]
+    assert office.make_presentation(str(p), "My Deck", slides) == f"made {p} (2 slides)"
+
+    prs = Presentation(str(p))
+    assert len(prs.slides) == 3
+    title_slide, one, two = prs.slides
+    assert title_slide.shapes.title.text == "My Deck"
+    assert title_slide.placeholders[1].text == date.today().isoformat()
+    assert one.shapes.title.text == "One"
+    assert [q.text for q in one.placeholders[1].text_frame.paragraphs] == ["a", "b"]
+    assert one.notes_slide.notes_text_frame.text == "n1"
+    assert two.shapes.title.text == "Two"
+    assert [q.text for q in two.placeholders[1].text_frame.paragraphs] == ["c"]
+
+
+def test_make_presentation_bare_name_goes_to_iris_folder_and_adds_pptx(tmp_path, monkeypatch):
+    home = _home(tmp_path, monkeypatch)
+    p = home / "Documents" / "Iris" / "deck.pptx"
+    assert office.make_presentation("deck", "T", []) == f"made {p} (0 slides)"
+    assert p.exists()
+
+
+def test_make_presentation_more_than_40_slides_is_an_error(tmp_path):
+    p = tmp_path / "big.pptx"
+    slides = [{"title": str(i), "bullets": ["b"]} for i in range(41)]
+    assert office.make_presentation(str(p), "T", slides) == "error: at most 40 slides, got 41"
+    assert not p.exists()
+
+
+def test_make_presentation_more_than_12_bullets_is_an_error(tmp_path):
+    p = tmp_path / "many.pptx"
+    slides = [{"title": "One", "bullets": [str(i) for i in range(13)]}]
+    assert office.make_presentation(str(p), "T", slides) == "error: at most 12 bullets per slide"
+    assert not p.exists()
+
+
+def test_make_presentation_replaces_an_existing_file_and_trashes_the_old_one(tmp_path, monkeypatch):
+    p = tmp_path / "old.pptx"
+    old = Presentation()
+    old.slides.add_slide(old.slide_layouts[0])
+    old.save(str(p))
+    trash = tmp_path / "trash"
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(trash))
+
+    assert office.make_presentation(str(p), "New", []) == f"made {p} (0 slides)"
+    assert Presentation(str(p)).slides[0].shapes.title.text == "New"
+    trashed = [x for x in trash.iterdir() if not x.name.endswith(".json")]
+    assert len(trashed) == 1 and trashed[0].name.endswith("old.pptx")
+
+
+def test_make_presentation_without_python_pptx_says_install_the_extra(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "pptx", None)
+    assert office.make_presentation(str(tmp_path / "x.pptx"), "T", []) == \
+        "error: install the office extra: pip install iris[office]"
+
+
 # --- _new_file_tier ---------------------------------------------------------------
 
 def test_new_file_tier_is_safe_for_a_new_file_in_a_folder(tmp_path, monkeypatch):
@@ -108,3 +171,31 @@ def test_new_file_tier_is_never_outside_home_and_folders(tmp_path, monkeypatch):
 def test_new_file_tier_is_never_in_a_system_directory(tmp_path, monkeypatch):
     _home(tmp_path, monkeypatch)
     assert tools.TOOLS["make_document"].tier_of({"path": "C:/Windows/report.docx"}) == tools.NEVER
+
+
+# --- make_presentation tiers ---------------------------------------------------------------
+
+def test_presentation_tier_is_safe_for_a_new_file_in_a_folder(tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    work.mkdir()
+    _cfg(tmp_path, monkeypatch, f'folders = ["{work.as_posix()}"]\n')
+    assert tools.TOOLS["make_presentation"].tier_of({"path": str(work / "new.pptx")}) == tools.SAFE
+
+
+def test_presentation_tier_is_confirm_when_the_file_already_exists(tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "old.pptx").write_text("x", encoding="utf-8")
+    _cfg(tmp_path, monkeypatch, f'folders = ["{work.as_posix()}"]\n')
+    assert tools.TOOLS["make_presentation"].tier_of({"path": str(work / "old.pptx")}) == tools.CONFIRM
+
+
+def test_presentation_tier_is_never_outside_home_and_folders(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    outside = tmp_path / "outside.pptx"
+    assert tools.TOOLS["make_presentation"].tier_of({"path": str(outside)}) == tools.NEVER
+
+
+def test_presentation_tier_is_never_in_a_system_directory(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    assert tools.TOOLS["make_presentation"].tier_of({"path": "C:/Windows/deck.pptx"}) == tools.NEVER

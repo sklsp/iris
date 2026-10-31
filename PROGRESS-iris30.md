@@ -2,8 +2,8 @@
 
 - [x] T1. The folders setting and reading files (1138 passed in 32.11s)
 - [x] T2. Writing, moving and copying files (1181 passed in 32.27s)
-- [ ] T3. Word documents
-- [ ] T4. PowerPoint presentations
+- [x] T3. Word documents (1197 passed in 33.83s)
+- [x] T4. PowerPoint presentations (1213 passed in 33.17s)
 - [ ] T5. Spreadsheets
 - [ ] T6. Clipboard, media keys and locking the screen
 - [ ] T7. Screenshot, closing a window and the clock

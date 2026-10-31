@@ -151,7 +151,7 @@ def _copy_tier(args: dict) -> str:
 def _new_file_tier(args: dict) -> str:
     """Office tools that create a file: safe in a writable folder, confirm when the file already exists."""
     p = files.resolve_target(str(args.get("path", "")))
-    if not _writable(p):
+    if not _writable(str(p)):
         return NEVER
     if p.exists():
         return CONFIRM

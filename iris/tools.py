@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from iris.files import copy_file, find_files, list_folder, make_folder, move_file, read_file, write_file
-from iris.office import make_document
+from iris.office import make_document, make_presentation
 from iris.policy import (
     _MAIL_CHAT,
     _NEVER_WORDS,
@@ -993,4 +993,14 @@ TOOLS = {t.name: t for t in [
          "Make a Word .docx for the user from a title and simple markdown content; use it when the user wants a"
          " document, report or letter as a file. A bare name goes to ~/Documents/Iris.",
          {"path": S, "title": S, "content": S}, ["path", "title", "content"], SAFE, make_document, _new_file_tier),
+    Tool("make_presentation",
+         "Make a PowerPoint .pptx for the user from a title and slide entries; use it when the user wants slides"
+         " or a deck about a topic. Write the actual content yourself: real titles and bullets, 4 to 8 slides"
+         " unless the user asks otherwise; for a research topic use web_search and web_read first.",
+         {"path": S, "title": S,
+          "slides": {"type": "array", "items": {"type": "object",
+                                                "properties": {"title": S,
+                                                              "bullets": {"type": "array", "items": S},
+                                                              "notes": S}}}},
+         ["path", "title", "slides"], SAFE, make_presentation, _new_file_tier),
 ]}

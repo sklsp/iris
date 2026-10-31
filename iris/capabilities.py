@@ -76,6 +76,8 @@ RULES = "\n".join([
     "- The gates must pass: ruff check iris tests, mypy, pytest with coverage.",
     "- Never touch these protected paths:",
     *[f"  - {p}" for p in PROTECTED],
+    "- You work in your own copy of Iris on the branch made for you; never switch branches, never push, never merge.",
+    "- Write progress to the PROGRESS file named in your prompt; one commit per step.",
     "- One commit per step. No em dashes or en dashes.",
     "",
 ])

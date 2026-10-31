@@ -214,6 +214,15 @@ def test_a_saved_plan_carries_the_rules_and_every_protected_path(tmp_path, monke
     assert md.index("## Plan") < md.index("## Rules")
 
 
+def test_rules_tell_the_builder_where_it_works():
+    from iris.capabilities import RULES
+
+    work = ("- You work in your own copy of Iris on the branch made for you; "
+            "never switch branches, never push, never merge.")
+    progress = "- Write progress to the PROGRESS file named in your prompt; one commit per step."
+    assert work in RULES and progress in RULES
+
+
 # --- prepare_build: a build happens in its own worktree ---------------------------
 
 class _FakeRun:

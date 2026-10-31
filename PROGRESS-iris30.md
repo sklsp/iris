@@ -5,7 +5,7 @@
 - [x] T3. Word documents (1197 passed in 33.83s)
 - [x] T4. PowerPoint presentations (1213 passed in 33.17s)
 - [x] T5. Spreadsheets (1228 passed in 33.37s)
-- [ ] T6. Clipboard, media keys and locking the screen
+- [x] T6. Clipboard, media keys and locking the screen (1261 passed in 33.58s)
 - [ ] T7. Screenshot, closing a window and the clock
 - [ ] T8. Opening apps from the Start menu
 - [ ] T9. Weather

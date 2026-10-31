@@ -27,6 +27,14 @@
     "tier": "confirm",
     "escalates": false
   },
+  "clipboard_read": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "clipboard_write": {
+    "tier": "safe",
+    "escalates": false
+  },
   "comfy_queue": {
     "tier": "confirm",
     "escalates": false
@@ -75,6 +83,10 @@
     "tier": "safe",
     "escalates": false
   },
+  "lock_screen": {
+    "tier": "safe",
+    "escalates": false
+  },
   "lmstudio_load": {
     "tier": "confirm",
     "escalates": false
@@ -102,6 +114,10 @@
   "make_spreadsheet": {
     "tier": "safe",
     "escalates": true
+  },
+  "media_key": {
+    "tier": "safe",
+    "escalates": false
   },
   "move_file": {
     "tier": "confirm",

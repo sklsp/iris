@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from iris.desktop import clipboard_read, clipboard_write, lock_screen, media_key
 from iris.files import copy_file, find_files, list_folder, make_folder, move_file, read_file, write_file
 from iris.office import make_document, make_presentation, make_spreadsheet
 from iris.policy import (
@@ -1012,4 +1013,21 @@ TOOLS = {t.name: t for t in [
                                                 "properties": {"name": S,
                                                               "rows": {"type": "array"}}}}},
          ["path", "sheets"], SAFE, make_spreadsheet, _new_file_tier),
+    Tool("clipboard_read",
+         "The text on the user's clipboard; use it when the user says 'what did I copy' or wants to reuse copied"
+         " text. Read only.",
+         {}, [], SAFE, clipboard_read),
+    Tool("clipboard_write",
+         "Put text on the user's clipboard so they can paste it somewhere else.",
+         {"text": S}, ["text"], SAFE, clipboard_write),
+    Tool("media_key",
+         "Press a media key: play_pause, next, previous, volume_up, volume_down or mute. times repeats it (1 to 10);"
+         " for 'louder' use 5.",
+         {"key": {"type": "string",
+                  "enum": ["play_pause", "next", "previous", "volume_up", "volume_down", "mute"]},
+          "times": {"type": "integer"}}, ["key"], SAFE, media_key),
+    Tool("lock_screen",
+         "Lock the user's Windows session; use it when the user asks to lock or secure their screen.",
+         {}, [], SAFE, lock_screen),
+
 ]}

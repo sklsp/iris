@@ -72,10 +72,15 @@ class LMStudio:
         return self.model if self.model is not None else effective_model()
 
     def chat(self, messages: list[dict], tools: list[dict]) -> Reply:
-        body = {"model": self._model(), "messages": messages, "tools": tools, "temperature": 0.3, "max_tokens": 4096}
+        # Qwen reasons before it acts: 1500 to 2500 tokens on an open request, so 4096 cut some replies off.
+        body = {"model": self._model(), "messages": messages, "tools": tools, "temperature": 0.3, "max_tokens": 8192}
         req = urllib.request.Request(self.url, json.dumps(body).encode(), {"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
-            msg = json.load(r)["choices"][0]["message"]
+            choice = json.load(r)["choices"][0]
+        msg = choice["message"]
+        if choice.get("finish_reason") == "length" and not msg.get("content") and not msg.get("tool_calls"):
+            # an empty reply would make Iris say nothing; as a ValueError the agent reports a model error instead
+            raise ValueError("the model ran out of tokens while thinking")
         calls = []
         for c in msg.get("tool_calls") or []:
             try:

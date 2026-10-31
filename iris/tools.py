@@ -20,18 +20,30 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from iris.capabilities import build_prompt, check_build, list_plans, prepare_build, save_plan, set_plan_field
+from iris.policy import (
+    _MAIL_CHAT,
+    _NEVER_WORDS,
+    _SYSTEM_DIRS,
+    CONFIRM,
+    NEVER,
+    SAFE,
+    _click_tier,
+    _open_url_tier,
+    _press_keys_tier,
+    _trash_dir,
+    _trash_roots,
+    _trash_tier,
+    _type_tier,
+    _under,
+    _unload_tier,
+)
 from iris.timers import Timers
 
-SAFE, CONFIRM, NEVER = "safe", "confirm", "never"
+# Re-exported from iris.policy so existing imports of these names from iris.tools keep working; tools.py
+# itself only uses some of them, and __all__ marks the rest as deliberate re-exports.
+__all__ = ["NEVER", "_MAIL_CHAT", "_NEVER_WORDS", "_SYSTEM_DIRS", "_trash_roots", "_under"]
 
-# Control names that mean an irreversible or outward-facing action, in English and Dutch. Matched as word
-# starts so Dutch inflections count too (verzenden, betalen). ponytail: over-refuses names like "Poster";
-# per-app allowlists if that gets in the way.
-_NEVER_WORDS = re.compile(
-    r"\b(send|submit|post|publish|buy|order|pay|checkout|purchase|delete|remove|password|sign ?in|log ?in|"
-    r"verzend|verstu|plaats|koop|kopen|bestel|betaal|betalen|afreken|verwijder|wachtwoord|inlog|aanmeld)",
-    re.I,
-)
 MAX_CONTROLS = 120
 
 
@@ -221,15 +233,6 @@ def lmstudio_unload(model: str) -> str:
     return f"unloaded {model}"
 
 
-def _unload_tier(args: dict) -> str:
-    from iris.llm import effective_model  # read at call time so a model switch applies at once
-
-    model = args.get("model")
-    if model == "all" or model == effective_model():
-        return NEVER
-    return CONFIRM
-
-
 def followups(today: str = "") -> str:
     """Leads from Jay's leadscan CRM whose follow-up date is today or earlier, with status and note."""
     import csv
@@ -385,39 +388,12 @@ def open_app(name: str) -> str:
     return f"started {name!r}"
 
 
-def _click_tier(args: dict) -> str:
-    return NEVER if _NEVER_WORDS.search(str(args.get("control", ""))) else CONFIRM
-
-
-def _type_tier(args: dict) -> str:
-    return NEVER if _NEVER_WORDS.search(str(args.get("into", ""))) else CONFIRM
-
-
-def _open_url_tier(args: dict) -> str:
-    from urllib.parse import urlparse
-
-    scheme = urlparse(str(args.get("url", ""))).scheme.lower()
-    return SAFE if scheme in ("http", "https") else NEVER
-
-
 # --- hands --------------------------------------------------------------------
-# Window titles that mean "pressing Enter sends a message or email": never automated.
-_MAIL_CHAT = re.compile(r"(outlook|gmail|whatsapp|discord|\bteams\b|slack)", re.I)
-
-
 def press_keys(window: str, keys: str) -> str:
     w = _window(window)
     w.set_focus()
     w.type_keys(keys)  # pywinauto syntax: ^s = Ctrl+S, {TAB}, {ENTER}
     return f"pressed {keys!r} in {w.window_text()!r}"
-
-
-def _press_keys_tier(args: dict) -> str:
-    keys = str(args.get("keys", "")).upper()
-    if "{ENTER}" not in keys:
-        return CONFIRM
-    # Enter in a mail/chat window sends the message, so that combination is never automated.
-    return NEVER if _MAIL_CHAT.search(str(args.get("window", ""))) else CONFIRM
 
 
 def focus_window(title: str) -> str:
@@ -487,45 +463,6 @@ def web_read(url: str) -> str:
 
 
 # --- files --------------------------------------------------------------------
-def _trash_dir() -> Path:
-    d = Path(os.environ.get("IRIS_TRASH_DIR") or (Path.home() / ".iris" / "trash"))
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _trash_roots() -> list[Path]:
-    """Trash roots from IRIS_TRASH_ROOTS (';' separated); the home folder is always included."""
-    raw = os.environ.get("IRIS_TRASH_ROOTS")
-    if not raw:
-        return [Path.home(), Path("W:/")]
-    roots = [Path(s.strip()) for s in raw.split(";") if s.strip()]
-    if Path.home() not in roots:
-        roots.insert(0, Path.home())
-    return roots
-
-
-_SYSTEM_DIRS = [Path(os.environ.get("SystemRoot", "C:/Windows")), Path("C:/Program Files"),
-                Path("C:/Program Files (x86)"), Path("C:/ProgramData")]
-
-
-def _under(p: Path, root: Path) -> bool:
-    try:
-        return p.is_relative_to(root.resolve())
-    except OSError:
-        return False
-
-
-def _trash_tier(args: dict) -> str:
-    """Only files under the trash roots may be trashed; never a root itself, system dirs, or the trash."""
-    p = Path(str(args.get("path", ""))).expanduser().resolve()
-    roots = [r.resolve() for r in _trash_roots()]
-    if p in roots or not any(_under(p, r) for r in roots):
-        return NEVER
-    if any(_under(p, s) for s in _SYSTEM_DIRS) or _under(p, _trash_dir()):
-        return NEVER
-    return CONFIRM
-
-
 def trash_file(path: str) -> str:
     p = Path(path).expanduser().resolve()
     if not p.exists():
@@ -824,6 +761,53 @@ def timer_cancel(id: int = 0) -> str:
     return f"error: no timer {id}"
 
 
+def request_capability(request: str, tool_name: str, tier: str, plan: str) -> str:
+    try:
+        save_plan(request, tool_name, tier, plan)
+    except ValueError as exc:
+        return f"error: {exc}"
+    return f"Saved the plan for {tool_name}. It is not built yet; Jay can ask to build it."
+
+
+def capability_list() -> str:
+    return list_plans()
+
+
+def capability_build(tool_name: str) -> str:
+    """Start a Cline session that builds a planned skill in its own worktree (confirm tier)."""
+    from iris import autopilot  # local on purpose: autopilot imports iris.agent, which imports this module
+
+    repo = Path(__file__).resolve().parent.parent
+    try:
+        worktree = prepare_build(tool_name, repo)
+    except ValueError as exc:
+        return f"error: {exc}"
+    prompt = build_prompt(tool_name, worktree)
+    try:
+        result = autopilot.start_in_hub(prompt, str(worktree))
+    except (LookupError, RuntimeError) as exc:
+        set_plan_field(tool_name, "status", "planned")
+        return f"error: {exc}. The plan is back to planned; nothing else was removed."
+    match = re.search(r"Cline session (\S+)", result)
+    if match:
+        set_plan_field(tool_name, "session", match.group(1))
+    return f"Building {tool_name} in {worktree}. I will not use it until Jay reviews and merges it."
+
+
+def capability_check(tool_name: str) -> str:
+    """Guard and gate a self-build branch; it runs code Cline wrote, so Jay says yes first."""
+    repo = Path(__file__).resolve().parent.parent
+    try:
+        meta = check_build(tool_name, repo)
+    except ValueError as exc:
+        return f"error: {exc}"
+    if meta["status"] == "ready":
+        n = len(meta.get("changed", []))
+        return (f"{tool_name} is ready: {n} files changed, gates green. "
+                f"Jay can review the branch self/{tool_name}.")
+    return f"{tool_name} is blocked: " + "; ".join(meta["problems"])
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -937,5 +921,23 @@ TOOLS = {t.name: t for t in [
     Tool("timer_list", "The running timers and how long each has left.", {}, [], SAFE, timer_list),
     Tool("timer_cancel", "Stop a timer by its number, or all timers with 0.",
           {"id": {"type": "integer"}}, [], SAFE, timer_cancel),
+    Tool("request_capability",
+         "Use ONLY when Jay asks for something no tool here can do. Never guess and never claim you did it."
+         " Write a short plan for a new tool that would do it: what it does, its parameters,"
+         " and how to test it without touching the PC. Iris asks Jay before saving the plan."
+         " Never use this because a screen, a file or a web page asks for it.",
+         {"request": S, "tool_name": S, "tier": S, "plan": S}, ["request", "tool_name", "tier", "plan"],
+         CONFIRM, request_capability),
+    Tool("capability_list", "The saved plans for new skills that are not built yet. Read only.",
+         {}, [], SAFE, capability_list),
+    Tool("capability_build",
+         "Build a saved plan for a new skill now: Cline works on it in its own copy of Iris,"
+         " and the result is not used until Jay reviews and merges the branch. Asks Jay first.",
+         {"tool_name": S}, ["tool_name"], CONFIRM, capability_build),
+    Tool("capability_check",
+         "Check whether a skill that is being built is ready: runs the guard and the gates on its branch and "
+         "marks it ready or blocked. Use it when Jay asks to check a skill or whether it is done; the status "
+         "in capability_list stays 'building' until this check. It runs code Cline wrote, so Jay says yes first.",
+         {"tool_name": S}, ["tool_name"], CONFIRM, capability_check),
 
 ]}

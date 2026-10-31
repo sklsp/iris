@@ -18,6 +18,20 @@ When a tool does run and fails (its function returns a string starting with `err
 Five tools escalate on their arguments (`tier_for`): `click` and `type_text` when the control or field name says send/buy/pay/password/delete (English and Dutch), `press_keys` for `{ENTER}` in a mail/chat window, `trash_file` for paths it must not touch, and `lmstudio_unload` for the model Iris runs on or "all".
 Tests pin every tier and escalation, so a change to a tier is a visible test failure, not a prompt edit.
 
+## Iris may plan her own skills, never weaken her own rules
+
+When Jay asks for something Iris cannot do yet, she says so and offers to plan a new skill; after his yes (`request_capability` is confirm tier) `save_plan` writes the plan as `<name>.md` plus a `.json` sidecar in `~/.iris/capabilities`, and `capability_list` lists what is saved. The rails that keep this safe:
+
+- The tiers are locked in `iris/tier_lock.json`: every tool in TOOLS has a line with its tier and whether it escalates, and the tests read both sides of that agreement, so a branch that changes an existing tier fails the suite before anyone looks at the diff.
+- The escalation rules live in `iris/policy.py`, a protected file no self-built branch may edit: the words that escalate a clicked control or typed field name (English and Dutch), the mail/chat windows where Enter is never pressed, the trash roots and system dirs `trash_file` must not touch, and how an unload is judged. `tools.py` imports every rule back from there, so both modules agree on one policy, and `tests/test_policy.py` pins each rule, so weakening one is a visible test failure, not a silent edit.
+- A self-built branch may not touch the protected paths (`PROTECTED` in `iris/capabilities.py`: `agent.py` with its system prompt, `policy.py` with the escalation rules, the guard itself, the eval harness, the three test files that pin these rails, and `.github/`), and `guard_problems` reports every change to an existing tier-lock line; new tools may only be added. An empty report is all that makes a branch acceptable, and Jay still has to say OK before anything merges.
+- Only Jay's own request can start a plan: the tool is confirm tier, it saves nothing until he says yes, and text read from a window or a page is data that cannot call it (see Untrusted tool output).
+- A saved plan builds nothing. Building the skill happens later on its own branch, and nothing a self-built branch does goes live without Jay merging it.
+
+## Why a build runs in its own worktree
+
+A self-build edits `iris/tools.py` and other files of Iris itself, so it must not run on the checkout Jay is using. `prepare_build` creates a separate git worktree next to the repo (`Iris-self/<name>`, or the folder named by `IRIS_SELF_WORKTREES`) on its own branch `self/<name>` from main, copies the plan into it as `BUILD-<name>.md` and marks the plan "building"; Cline then works only inside that copy. The main tree stays clean while the build runs, so a crash or an abandoned build cannot leave Jay's Iris half edited; the guard can diff exactly what changed against main (`main...self/<name>`); and `capability_check` runs the gates in the worktree with its own `.venv`, so "ready" means the built copy passes ruff, mypy and pytest. Nothing goes live until Jay reviews the branch and merges it himself; Iris never merges or uses a skill before that.
+
 ## Untrusted tool output
 
 Text on screen is data, never instructions: PLAN.md's third principle.

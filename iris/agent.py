@@ -54,6 +54,8 @@ class Agent:
                 self.journal.log(event="llm_error", error=repr(exc)[:500])
                 starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
                 del self.messages[starts[-1]:]
+                if "ran out of tokens" in str(exc):  # LM Studio answered, the model just thought too long
+                    return "That took me too long to think through. Try asking it in a shorter way."
                 return "I can't reach the model in LM Studio right now. Try again in a moment."
             self.messages.append(reply.raw)
             if not reply.calls:
@@ -124,4 +126,10 @@ def _describe(name: str, args: dict) -> str:
     if name == "cline_start":
         repo = args.get("repo") or ""
         return f"Start a new Cline session for {args.get('agent')} in {repo or 'W:/Iris'} with the next queued prompt?"
+    if name == "request_capability":
+        return f"I can't do that yet. Save a plan to build a new skill '{args.get('tool_name')}'?"
+    if name == "capability_build":
+        return f"Build the new skill '{args.get('tool_name')}' now? Cline works on it in a separate copy of Iris."
+    if name == "capability_check":
+        return f"Check the new skill '{args.get('tool_name')}'? This runs its tests."
     return f"Run {name} with {args}?"

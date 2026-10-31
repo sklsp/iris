@@ -1,0 +1,46 @@
+"""`iris doctor`: check the setup and say what to fix, one line per check. Never changes anything."""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+
+from iris import config
+from iris.registry import PLUGINS
+
+
+def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
+    """(ok, line) per check; payload is the LM Studio model list (tests pass one in)."""
+    from iris.dashboard import lmstudio_payload
+    from iris.llm import BASE_URL, effective_model
+
+    out: list[tuple[bool, str]] = []
+    out.append((sys.version_info >= (3, 11), f"Python {sys.version.split()[0]} (3.11 or newer needed)"))
+    out.append((sys.platform == "win32", f"platform {sys.platform} (Iris drives Windows through UI Automation)"))
+    out.append((importlib.util.find_spec("pywinauto") is not None, "pywinauto installed"))
+    cfg = config.load()
+    out.append((config.config_path().exists(),
+                f"config {config.config_path()} (optional; the defaults are used without it)"))
+    unknown = [p for p in cfg["plugins"] if p not in PLUGINS]
+    out.append((not unknown, f"plugins {cfg['plugins'] or 'none'}"
+                + (f"; unknown: {', '.join(unknown)} (known: {', '.join(PLUGINS)})" if unknown else "")))
+    p = payload if payload is not None else lmstudio_payload()
+    model = effective_model()
+    if not p.get("reachable"):
+        out.append((False, f"LM Studio not reachable at {BASE_URL}: start it and its local server"))
+    else:
+        ids = [m["id"] for m in p["models"]]
+        out.append((model in ids, f"model {model} " + ("available in LM Studio" if model in ids
+                                                       else "not found in LM Studio: download it or set IRIS_MODEL")))
+    voice = all(importlib.util.find_spec(m) is not None for m in ("faster_whisper", "sounddevice", "openwakeword"))
+    out.append((voice, "voice extras installed" if voice else "voice extras missing: pip install -e .[voice]"))
+    return out
+
+
+def main() -> int:
+    results = checks()
+    for ok, line in results:
+        print(f"{'ok ' if ok else 'FIX'} {line}")
+    # voice and the config file are optional; everything else must pass
+    required = [ok for (ok, line) in results if not line.startswith(("voice", "config"))]
+    return 0 if all(required) else 1

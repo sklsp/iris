@@ -13,6 +13,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -139,4 +142,56 @@ def list_plans() -> str:
         asked = str(data.get("request", ""))[:60]
         lines.append(f"{data['tool_name']} ({data['tier']}): {data['status']}, asked: {asked}")
     return "\n".join(lines) if lines else "No plans yet."
+
+
+def worktree_for(tool_name: str) -> Path:
+    """Where the self-build for tool_name works: IRIS_SELF_WORKTREES, else Iris-self next to the repo."""
+    env = os.environ.get("IRIS_SELF_WORKTREES")
+    if env:
+        return Path(env) / tool_name
+    repo = Path(__file__).resolve().parent.parent  # the parent of the iris package
+    return repo.parent / "Iris-self" / tool_name
+
+
+def branch_for(tool_name: str) -> str:
+    return f"self/{tool_name}"
+
+
+def prepare_build(
+    tool_name: str,
+    repo: Path,
+    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> Path:
+    """Start the self-build for a planned skill in its own worktree and branch.
+
+    The plan must exist with status "planned" (else ValueError), and the worktree folder must not
+    exist yet. Runs `git -C <repo> worktree add <worktree> -b self/<tool_name> main`; a non-zero
+    return raises RuntimeError with the last stderr line. Copies the plan .md into the worktree as
+    BUILD-<tool_name>.md and marks the plan json "building". Never touches the repo's own working
+    tree or current branch.
+    """
+    directory = capabilities_dir()
+    md_path = directory / f"{tool_name}.md"
+    json_path = directory / f"{tool_name}.json"
+    meta = json.loads(json_path.read_text(encoding="utf-8")) if json_path.exists() else None
+    if meta is None or meta.get("status") != "planned":
+        raise ValueError(f"no planned skill {tool_name}")
+
+    worktree = worktree_for(tool_name)
+    if worktree.exists():
+        raise ValueError(f"a worktree for {tool_name} already exists")
+
+    argv = ["git", "-C", str(repo), "worktree", "add", str(worktree), "-b", branch_for(tool_name), "main"]
+    result = run(argv, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        lines = [line for line in result.stderr.splitlines() if line.strip()]
+        raise RuntimeError(lines[-1] if lines else "git worktree add failed")
+
+    worktree.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(md_path, worktree / f"BUILD-{tool_name}.md")
+    meta["status"] = "building"
+    meta["worktree"] = str(worktree)
+    meta["branch"] = branch_for(tool_name)
+    _atomic_write(json_path, json.dumps(meta, ensure_ascii=False) + "\n")
+    return worktree
 

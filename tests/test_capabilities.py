@@ -3,12 +3,22 @@
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from iris import tools
 from iris.agent import _describe
-from iris.capabilities import PLAN_TEMPLATE, capabilities_dir, guard_problems, list_plans, save_plan
+from iris.capabilities import (
+    PLAN_TEMPLATE,
+    branch_for,
+    capabilities_dir,
+    guard_problems,
+    list_plans,
+    prepare_build,
+    save_plan,
+    worktree_for,
+)
 
 
 def _lock(tier="confirm", escalates=True):
@@ -199,3 +209,105 @@ def test_a_saved_plan_carries_the_rules_and_every_protected_path(tmp_path, monke
     for p in PROTECTED:
         assert f"  - {p}" in md
     assert md.index("## Plan") < md.index("## Rules")
+
+
+# --- prepare_build: a build happens in its own worktree ---------------------------
+
+class _FakeRun:
+    def __init__(self, code=0, stderr=""):
+        self.code = code
+        self.stderr = stderr
+        self.calls = []
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append((argv, kwargs))
+        return SimpleNamespace(returncode=self.code, stdout="", stderr=self.stderr)
+
+
+def _planned(tmp_path, monkeypatch, tool="printer_ink"):
+    caps = _caps(tmp_path, monkeypatch)
+    save_plan("a request", tool, "safe", "a plan")
+    wt_root = tmp_path / "wt"
+    monkeypatch.setenv("IRIS_SELF_WORKTREES", str(wt_root))
+    return caps, wt_root
+
+
+def test_worktree_for_uses_the_env_folder(monkeypatch):
+    monkeypatch.setenv("IRIS_SELF_WORKTREES", "/tmp/wts")
+    assert worktree_for("printer_ink") == Path("/tmp/wts/printer_ink")
+
+
+def test_worktree_for_falls_back_next_to_the_repo(monkeypatch):
+    monkeypatch.delenv("IRIS_SELF_WORKTREES", raising=False)
+    repo = Path(__file__).resolve().parent.parent
+    assert worktree_for("printer_ink") == repo.parent / "Iris-self" / "printer_ink"
+
+
+def test_branch_for():
+    assert branch_for("printer_ink") == "self/printer_ink"
+
+
+def test_prepare_build_runs_the_exact_git_command(tmp_path, monkeypatch):
+    _planned(tmp_path, monkeypatch)
+    wt_root = tmp_path / "wt"
+    repo = tmp_path / "repo"
+    fake = _FakeRun()
+    prepare_build("printer_ink", repo, run=fake)
+    argv, kwargs = fake.calls[0]
+    assert argv == ["git", "-C", str(repo), "worktree", "add", str(wt_root / "printer_ink"),
+                    "-b", "self/printer_ink", "main"]
+    assert kwargs == {"capture_output": True, "text": True, "check": False}
+
+
+def test_prepare_build_copies_the_plan_and_updates_the_json(tmp_path, monkeypatch):
+    caps, wt_root = _planned(tmp_path, monkeypatch)
+    md = caps / "printer_ink.md"
+    worktree = prepare_build("printer_ink", tmp_path / "repo", run=_FakeRun())
+    assert worktree == wt_root / "printer_ink"
+    built = worktree / "BUILD-printer_ink.md"
+    assert built.read_text(encoding="utf-8") == md.read_text(encoding="utf-8")
+    meta = json.loads((caps / "printer_ink.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "building"
+    assert meta["worktree"] == str(worktree)
+    assert meta["branch"] == "self/printer_ink"
+
+
+def test_prepare_build_refuses_an_unknown_plan(tmp_path, monkeypatch):
+    _planned(tmp_path, monkeypatch)
+    fake = _FakeRun()
+    with pytest.raises(ValueError, match="no planned skill ghost_tool"):
+        prepare_build("ghost_tool", tmp_path / "repo", run=fake)
+    assert fake.calls == []
+
+
+def test_prepare_build_refuses_a_plan_that_is_already_building(tmp_path, monkeypatch):
+    _planned(tmp_path, monkeypatch)
+    repo = tmp_path / "repo"
+    prepare_build("printer_ink", repo, run=_FakeRun())
+    with pytest.raises(ValueError, match="no planned skill printer_ink"):
+        prepare_build("printer_ink", repo, run=_FakeRun())
+
+
+def test_prepare_build_refuses_an_existing_worktree_folder(tmp_path, monkeypatch):
+    _planned(tmp_path, monkeypatch)
+    (tmp_path / "wt" / "printer_ink").mkdir(parents=True)
+    fake = _FakeRun()
+    with pytest.raises(ValueError, match="a worktree for printer_ink already exists"):
+        prepare_build("printer_ink", tmp_path / "repo", run=fake)
+    assert fake.calls == []
+
+
+def test_prepare_build_raises_on_git_failure(tmp_path, monkeypatch):
+    caps, _ = _planned(tmp_path, monkeypatch)
+    fake = _FakeRun(code=1, stderr="fatal: not a git repository\nerror: bad thing happened")
+    with pytest.raises(RuntimeError, match="bad thing happened"):
+        prepare_build("printer_ink", tmp_path / "repo", run=fake)
+    meta = json.loads((caps / "printer_ink.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "planned"
+
+
+def test_prepare_build_git_failure_with_empty_stderr(tmp_path, monkeypatch):
+    _planned(tmp_path, monkeypatch)
+    with pytest.raises(RuntimeError, match="git worktree add failed"):
+        prepare_build("printer_ink", tmp_path / "repo", run=_FakeRun(code=1))
+

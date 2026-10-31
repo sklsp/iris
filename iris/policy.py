@@ -14,7 +14,7 @@ import os
 import re
 from pathlib import Path
 
-from iris import config
+from iris import config, files
 
 SAFE, CONFIRM, NEVER = "safe", "confirm", "never"
 
@@ -146,3 +146,13 @@ def _move_tier(args: dict) -> str:
 
 def _copy_tier(args: dict) -> str:
     return NEVER if not _writable(str(args.get("destination", ""))) else CONFIRM
+
+
+def _new_file_tier(args: dict) -> str:
+    """Office tools that create a file: safe in a writable folder, confirm when the file already exists."""
+    p = files.resolve_target(str(args.get("path", "")))
+    if not _writable(p):
+        return NEVER
+    if p.exists():
+        return CONFIRM
+    return SAFE

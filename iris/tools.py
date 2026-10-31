@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from iris.files import copy_file, find_files, list_folder, make_folder, move_file, read_file, write_file
+from iris.office import make_document
 from iris.policy import (
     _MAIL_CHAT,
     _NEVER_WORDS,
@@ -32,6 +33,7 @@ from iris.policy import (
     _copy_tier,
     _make_folder_tier,
     _move_tier,
+    _new_file_tier,
     _open_url_tier,
     _press_keys_tier,
     _read_tier,
@@ -987,4 +989,8 @@ TOOLS = {t.name: t for t in [
          "Copy a file or folder (folders with all their contents) for the user. An existing destination is an"
          " error unless it's a folder, in which case the copy goes into that folder.",
          {"source": S, "destination": S}, ["source", "destination"], CONFIRM, copy_file, _copy_tier),
+    Tool("make_document",
+         "Make a Word .docx for the user from a title and simple markdown content; use it when the user wants a"
+         " document, report or letter as a file. A bare name goes to ~/Documents/Iris.",
+         {"path": S, "title": S, "content": S}, ["path", "title", "content"], SAFE, make_document, _new_file_tier),
 ]}

@@ -87,6 +87,10 @@
     "tier": "confirm",
     "escalates": true
   },
+  "make_document": {
+    "tier": "safe",
+    "escalates": true
+  },
   "make_folder": {
     "tier": "safe",
     "escalates": true

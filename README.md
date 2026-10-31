@@ -143,6 +143,7 @@ are in the eval either way.
 | make_folder | safe | outside home or a configured folder, in a system directory, or in Iris's trash (never) |
 | move_file | confirm | source or destination outside home or a configured folder, in a system dir, or in the trash (never) |
 | copy_file | confirm | destination outside home or a configured folder, in a system dir, or in the trash (never) |
+| make_document | safe | outside home or a configured folder (never); an existing file is replaced (confirm) |
 
 ## Eval
 
@@ -238,6 +239,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | make_folder | safe | creates a folder with any missing parents; never overwrites an existing path |
 | move_file | confirm | moves a file or folder, creating missing destination folders; into an existing folder it goes inside it; never overwrites |
 | copy_file | confirm | copies a file or folder (with all its contents); never overwrites |
+| make_document | safe | makes a Word .docx for the user from a title and simple markdown; a bare name goes to ~/Documents/Iris; an existing file is replaced, old one trashed first |
 
 The tiers are enforced in code, not in the prompt:
 
@@ -250,6 +252,8 @@ The tiers are enforced in code, not in the prompt:
   `~/.iris/trash`).
 - `write_file` with `overwrite=true` never deletes either: the old file first goes to Iris's trash, so it can be
   restored like anything else.
+- Office tools such as `make_document` replace an existing file the same way: the old one first goes to Iris's
+  trash, so it can be restored like anything else.
 
 `trash_file` moves files to Iris's own trash dir instead of the Windows Recycle Bin. send2trash cannot
 tell you the original path back out of the Recycle Bin, so `restore_trash` (which needs that path) would

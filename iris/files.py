@@ -148,19 +148,17 @@ def _slide_no(n: str) -> int:
 # --- writing, moving and copying -------------------------------------------------
 
 
-def _target(path: str) -> Path:
-    """A bare file name goes to ~/Documents/Iris (created when missing); anything else is used as given."""
+def resolve_target(path: str) -> Path:
+    """A bare file name goes to ~/Documents/Iris; anything else is used as given. Pure, no side effects."""
     p = Path(path).expanduser()
     if len(p.parts) == 1:
-        d = Path.home() / "Documents" / "Iris"
-        d.mkdir(parents=True, exist_ok=True)
-        return d / p.name
+        return Path.home() / "Documents" / "Iris" / p.name
     return p
 
 
 def write_file(path: str, text: str, overwrite: bool = False) -> str:
     """Write UTF-8 text to a file. Overwriting sends the old file to Iris's trash first, so it can be restored."""
-    p = _target(path)
+    p = resolve_target(path)
     if p.exists():
         if not overwrite:
             return f"error: {p} exists; say overwrite to replace it"

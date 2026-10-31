@@ -144,6 +144,8 @@ def _describe(name: str, args: dict) -> str:
         return f"Move {args.get('source')} to {args.get('destination')}?"
     if name == "copy_file":
         return f"Copy {args.get('source')} to {args.get('destination')}?"
+    if name == "make_document":
+        return f"Make {args.get('path')} as a Word document?"
     if name == "press_keys":
         return f"Press {args.get('keys')} in {args.get('window')}?"
     if name == "cline_start":

@@ -54,6 +54,8 @@ class Agent:
                 self.journal.log(event="llm_error", error=repr(exc)[:500])
                 starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
                 del self.messages[starts[-1]:]
+                if "ran out of tokens" in str(exc):  # LM Studio answered, the model just thought too long
+                    return "That took me too long to think through. Try asking it in a shorter way."
                 return "I can't reach the model in LM Studio right now. Try again in a moment."
             self.messages.append(reply.raw)
             if not reply.calls:

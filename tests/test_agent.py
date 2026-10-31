@@ -239,3 +239,14 @@ def test_runtime_error_from_chat_is_not_caught(tmp_path):
     a = agent(tmp_path, llm, [])
     with pytest.raises(RuntimeError):
         a.handle("hello")
+
+
+def test_a_model_that_ran_out_of_tokens_gets_its_own_answer(tmp_path):
+    from iris.agent import Agent, Journal
+
+    class LLM:
+        def chat(self, messages, tools):
+            raise ValueError("the model ran out of tokens while thinking")
+
+    answer = Agent(LLM(), lambda q: True, Journal(tmp_path / "j.jsonl"), {}).handle("Maak een PowerPoint")
+    assert answer == "That took me too long to think through. Try asking it in a shorter way."

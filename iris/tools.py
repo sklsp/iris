@@ -935,7 +935,9 @@ TOOLS = {t.name: t for t in [
          " and the result is not used until Jay reviews and merges the branch. Asks Jay first.",
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_build),
     Tool("capability_check",
-         "Check a built skill with the guard and the gates; it runs code Cline wrote, so Jay says yes first.",
+         "Check whether a skill that is being built is ready: runs the guard and the gates on its branch and "
+         "marks it ready or blocked. Use it when Jay asks to check a skill or whether it is done; the status "
+         "in capability_list stays 'building' until this check. It runs code Cline wrote, so Jay says yes first.",
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_check),
 
 ]}

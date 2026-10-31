@@ -1,8 +1,14 @@
-"""Tests for iris.desktop: clipboard, media keys and locking the screen, with fakes only (no real desktop)."""
+"""Tests for iris.desktop: clipboard, media keys, locking the screen, screenshots, closing windows and the clock.
+
+Fakes only (no real desktop).
+"""
 
 import subprocess
+from datetime import datetime
 
-from iris import desktop, tools
+import pytest
+
+from iris import agent, desktop, tools
 
 
 class _User32:
@@ -136,3 +142,104 @@ def test_lock_screen_calls_lock_work_station(monkeypatch):
 def test_desktop_tools_are_safe(tmp_path):
     for name in ("clipboard_read", "clipboard_write", "media_key", "lock_screen"):
         assert tools.TOOLS[name].tier_of({}) == tools.SAFE
+
+
+# --- screenshot --------------------------------------------------------------------
+
+def test_screenshot_passes_the_path_as_an_argument(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append((cmd, kw))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(desktop.subprocess, "run", fake_run)
+    target = tmp_path / "shot.png"
+    assert desktop.screenshot(str(target)) == f"saved {target}"
+    cmd, kw = calls[0]
+    assert cmd[:3] == ["powershell", "-NoProfile", "-Command"]
+    script = cmd[3]
+    assert cmd[-1] == str(target)  # the path is an argument to the script, not pasted into its text
+    assert "CopyFromScreen" in script and "VirtualScreen" in script
+    assert target.name not in script
+    assert kw["timeout"] == 30
+
+
+def test_screenshot_default_goes_to_pictures_iris_with_a_timestamp(tmp_path, monkeypatch):
+    class _Path(desktop.Path):
+        @classmethod
+        def home(cls):
+            return tmp_path
+
+    monkeypatch.setattr(desktop, "Path", _Path)
+    monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 31, 14, 5))
+    monkeypatch.setattr(desktop.subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(None, 0, stdout="", stderr=""))
+    assert desktop.screenshot() == f"saved {tmp_path / 'Pictures' / 'Iris' / 'screenshot-20261031-140500.png'}"
+
+
+def test_screenshot_failure_is_an_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(desktop.subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(None, 1, stdout="", stderr="x"))
+    assert desktop.screenshot(str(tmp_path / "shot.png")) == "error: could not save a screenshot"
+
+
+def test_screenshot_timeout_is_an_error(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired("powershell", 30)
+
+    monkeypatch.setattr(desktop.subprocess, "run", boom)
+    assert desktop.screenshot(str(tmp_path / "shot.png")) == "error: could not save a screenshot"
+
+
+# --- close_window --------------------------------------------------------------------
+
+class _Win:
+    def __init__(self, title):
+        self.title = title
+        self.closed = 0
+
+    def window_text(self):
+        return self.title
+
+    def close(self):
+        self.closed += 1
+
+
+def test_close_window_closes_the_first_matching_window(monkeypatch):
+    win = _Win("Notepad - report.txt")
+    monkeypatch.setattr(tools, "_window", lambda title: win)
+    assert desktop.close_window("notepad") == "closed 'Notepad - report.txt'"
+    assert win.closed == 1
+
+
+def test_close_window_without_a_match_raises_lookup_error(monkeypatch):
+    def boom(title):
+        raise LookupError(f"no window whose title contains {title!r}")
+
+    monkeypatch.setattr(tools, "_window", boom)
+    with pytest.raises(LookupError):
+        desktop.close_window("nope")
+
+
+def test_describe_asks_before_closing_a_window():
+    assert (agent._describe("close_window", {"title": "Notepad"})
+            == "Close the window Notepad? Unsaved work may ask to be saved.")
+
+
+# --- clock ---------------------------------------------------------------------------
+
+def test_clock_formats_weekday_date_time_and_iso_week(monkeypatch):
+    monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 1, 5, 9, 5))
+    assert desktop.clock() == "Monday 5 January 2026, 09:05, week 2"
+
+
+# --- tiers for the new tools (pinned literally) --------------------------------------
+
+def test_screenshot_and_clock_are_safe():
+    assert tools.TOOLS["screenshot"].tier_of({}) == tools.SAFE
+    assert tools.TOOLS["clock"].tier_of({}) == tools.SAFE
+
+
+def test_close_window_is_confirm():
+    assert tools.TOOLS["close_window"].tier_of({"title": "Notepad"}) == tools.CONFIRM

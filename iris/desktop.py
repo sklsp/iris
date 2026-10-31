@@ -1,7 +1,9 @@
-"""Desktop actions for the user: reading and writing the clipboard, pressing media keys, locking the screen."""
+"""Desktop actions for the user: clipboard, media keys, locking the screen, screenshots, closing windows and clock."""
 
+import os
 import subprocess
 from ctypes import windll
+from pathlib import Path
 
 _MEDIA_KEYS = {
     "play_pause": 0xB3,
@@ -59,3 +61,50 @@ def lock_screen() -> str:
     """Lock the user's Windows session."""
     windll.user32.LockWorkStation()
     return "the screen is locked"
+
+
+_SCREENSHOT_PS = (
+    "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing;"
+    "$b = [System.Windows.Forms.SystemInformation]::VirtualScreen;"
+    "$bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height;"
+    "$g = [System.Drawing.Graphics]::FromImage($bmp);"
+    "$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $bmp.Size);"
+    "$bmp.Save($args[0], [System.Drawing.Imaging.ImageFormat]::Png);"
+    "$g.Dispose(); $bmp.Dispose()"
+)
+
+
+def screenshot(path: str = "") -> str:
+    """Save a PNG of the whole screen; without a path it goes to ~/Pictures/Iris/screenshot-YYYYMMDD-HHMMSS.png."""
+    from iris.tools import _wall_now  # local: tools imports this module at top level
+
+    if not path:
+        p = Path.home() / "Pictures" / "Iris" / f"screenshot-{_wall_now():%Y%m%d-%H%M%S}.png"
+    else:
+        p = Path(path).expanduser()
+    os.makedirs(p.parent, exist_ok=True)
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", _SCREENSHOT_PS, str(p)],
+                           capture_output=True, text=True, timeout=30)
+    except (subprocess.TimeoutExpired, OSError):
+        return "error: could not save a screenshot"
+    if r.returncode != 0:
+        return "error: could not save a screenshot"
+    return f"saved {p}"
+
+
+def close_window(title: str) -> str:
+    """Close the first window whose title contains `title`; WM_CLOSE, so the app can still ask to save."""
+    from iris.tools import _window  # local: tools imports this module at top level
+
+    w = _window(title)
+    w.close()
+    return f"closed {w.window_text()!r}"
+
+
+def clock() -> str:
+    """The local date and time, weekday and ISO week, e.g. 'Friday 31 October 2026, 14:05, week 44'."""
+    from iris.tools import _wall_now  # local: tools imports this module at top level
+
+    now = _wall_now()
+    return f"{now:%A} {now.day} {now:%B} {now.year}, {now:%H:%M}, week {now.isocalendar()[1]}"

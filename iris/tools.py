@@ -20,7 +20,15 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from iris.desktop import clipboard_read, clipboard_write, lock_screen, media_key
+from iris.desktop import (
+    clipboard_read,
+    clipboard_write,
+    clock,
+    close_window,
+    lock_screen,
+    media_key,
+    screenshot,
+)
 from iris.files import copy_file, find_files, list_folder, make_folder, move_file, read_file, write_file
 from iris.office import make_document, make_presentation, make_spreadsheet
 from iris.policy import (
@@ -1029,5 +1037,16 @@ TOOLS = {t.name: t for t in [
     Tool("lock_screen",
          "Lock the user's Windows session; use it when the user asks to lock or secure their screen.",
          {}, [], SAFE, lock_screen),
+    Tool("screenshot",
+         "Save a PNG of the whole screen for the user; use it when they ask for a picture of their screen or what"
+         " is on it. Without a path it goes to ~/Pictures/Iris with a timestamp.",
+         {"path": S}, [], SAFE, screenshot),
+    Tool("close_window",
+         "Close the first window whose title contains the given text (WM_CLOSE, so the app can still ask to save);"
+         " use it when the user asks to close an app or window.",
+         {"title": S}, ["title"], CONFIRM, close_window),
+    Tool("clock",
+         "The local date and time, weekday and ISO week; use it when the user asks what time or day it is.",
+         {}, [], SAFE, clock),
 
 ]}

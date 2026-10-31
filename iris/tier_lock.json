@@ -218,5 +218,17 @@
   "capability_remove": {
     "tier": "confirm",
     "escalates": false
+  },
+  "screenshot": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "close_window": {
+    "tier": "confirm",
+    "escalates": false
+  },
+  "clock": {
+    "tier": "safe",
+    "escalates": false
   }
 }

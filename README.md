@@ -150,6 +150,9 @@ are in the eval either way.
 | clipboard_write | safe |  |
 | media_key | safe |  |
 | lock_screen | safe |  |
+| screenshot | safe |  |
+| close_window | confirm |  |
+| clock | safe |  |
 
 ## Eval
 

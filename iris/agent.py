@@ -128,4 +128,6 @@ def _describe(name: str, args: dict) -> str:
         return f"I can't do that yet. Save a plan to build a new skill '{args.get('tool_name')}'?"
     if name == "capability_build":
         return f"Build the new skill '{args.get('tool_name')}' now? Cline works on it in a separate copy of Iris."
+    if name == "capability_check":
+        return f"Check the new skill '{args.get('tool_name')}'? This runs its tests."
     return f"Run {name} with {args}?"

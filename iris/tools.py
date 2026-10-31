@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from iris.capabilities import build_prompt, list_plans, prepare_build, save_plan, set_plan_field
+from iris.capabilities import build_prompt, check_build, list_plans, prepare_build, save_plan, set_plan_field
 from iris.policy import (
     _MAIL_CHAT,
     _NEVER_WORDS,
@@ -794,6 +794,20 @@ def capability_build(tool_name: str) -> str:
     return f"Building {tool_name} in {worktree}. I will not use it until Jay reviews and merges it."
 
 
+def capability_check(tool_name: str) -> str:
+    """Guard and gate a self-build branch; it runs code Cline wrote, so Jay says yes first."""
+    repo = Path(__file__).resolve().parent.parent
+    try:
+        meta = check_build(tool_name, repo)
+    except ValueError as exc:
+        return f"error: {exc}"
+    if meta["status"] == "ready":
+        n = len(meta.get("changed", []))
+        return (f"{tool_name} is ready: {n} files changed, gates green. "
+                f"Jay can review the branch self/{tool_name}.")
+    return f"{tool_name} is blocked: " + "; ".join(meta["problems"])
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -920,5 +934,8 @@ TOOLS = {t.name: t for t in [
          "Build a saved plan for a new skill now: Cline works on it in its own copy of Iris,"
          " and the result is not used until Jay reviews and merges the branch. Asks Jay first.",
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_build),
+    Tool("capability_check",
+         "Check a built skill with the guard and the gates; it runs code Cline wrote, so Jay says yes first.",
+         {"tool_name": S}, ["tool_name"], CONFIRM, capability_check),
 
 ]}

@@ -2,6 +2,7 @@
 
 import json
 import re
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +15,7 @@ from iris.capabilities import (
     branch_for,
     build_prompt,
     capabilities_dir,
+    check_build,
     guard_problems,
     list_plans,
     prepare_build,
@@ -388,4 +390,161 @@ def test_capability_build_refuses_a_not_planned_skill(tmp_path, monkeypatch):
     result = tools.capability_build("ghost_tool")
     assert result == "error: no planned skill ghost_tool"
     assert calls == []
+
+
+class _GitRun:
+    """Fake run for check_build: answers git diff/show and the three gates by argv."""
+
+    def __init__(self, changed=(), old_lock=None, new_lock=None, gate_failures=None):
+        self.changed = list(changed)
+        self.old_lock = {} if old_lock is None else old_lock
+        self.new_lock = {} if new_lock is None else new_lock
+        self.gate_failures = dict(gate_failures or {})
+        self.calls = []
+
+    def __call__(self, argv, **kwargs):
+        text = " ".join(str(a) for a in argv)
+        self.calls.append((list(argv), kwargs))
+        if "--name-only" in text:
+            return subprocess.CompletedProcess(list(argv), 0, stdout="\n".join(self.changed), stderr="")
+        if "main:iris/tier_lock.json" in text:
+            return subprocess.CompletedProcess(list(argv), 0, stdout=json.dumps(self.old_lock), stderr="")
+        if ":iris/tier_lock.json" in text:
+            return subprocess.CompletedProcess(list(argv), 0, stdout=json.dumps(self.new_lock), stderr="")
+        for gate, marker in (("ruff", "-m ruff"), ("mypy", "-m mypy"), ("pytest", "-m pytest")):
+            if marker in text:
+                if gate in self.gate_failures:
+                    code, output = self.gate_failures[gate]
+                    return subprocess.CompletedProcess(list(argv), code, stdout="", stderr=output)
+                return subprocess.CompletedProcess(list(argv), 0, stdout="ok", stderr="")
+        raise AssertionError(f"unexpected command: {text}")
+
+
+def _building(tmp_path, monkeypatch, with_venv=True):
+    """A plan for printer_ink in status building, with its worktree folder (and maybe a .venv python)."""
+    monkeypatch.setenv("IRIS_CAPABILITIES", str(tmp_path / "caps"))
+    caps = tmp_path / "caps"
+    wt = tmp_path / "wt-printer_ink"
+    if with_venv:
+        py = wt / ".venv" / "Scripts" / "python.exe"
+        py.parent.mkdir(parents=True)
+        py.write_text("", encoding="utf-8")
+    caps.mkdir()
+    meta = {"tool_name": "printer_ink", "tier": "confirm", "status": "building",
+            "created": "2026-10-31T00:00:00", "request": "r", "plan": "p",
+            "worktree": str(wt), "branch": "self/printer_ink"}
+    (caps / "printer_ink.json").write_text(json.dumps(meta) + "\n", encoding="utf-8")
+    return caps, wt
+
+
+def _saved(caps):
+    return json.loads((caps / "printer_ink.json").read_text(encoding="utf-8"))
+
+
+def test_check_build_clean_ready(tmp_path, monkeypatch):
+    caps, wt = _building(tmp_path, monkeypatch)
+    run = _GitRun(changed=["iris/tools.py", "tests/test_tools.py"])
+    meta = check_build("printer_ink", tmp_path / "repo", run=run)
+    assert meta["status"] == "ready"
+    assert meta["problems"] == []
+    assert meta["changed"] == ["iris/tools.py", "tests/test_tools.py"]
+    saved = _saved(caps)
+    assert saved["status"] == "ready" and saved["problems"] == [] and "checked" in saved
+    ruff = [argv for argv, _ in run.calls if "-m ruff" in " ".join(argv)][0]
+    assert ruff[0] == str(wt / ".venv" / "Scripts" / "python.exe")
+
+
+def test_check_build_runs_gates_in_the_worktree(tmp_path, monkeypatch):
+    caps, wt = _building(tmp_path, monkeypatch)
+    run = _GitRun(changed=["iris/tools.py"])
+    check_build("printer_ink", tmp_path / "repo", run=run)
+    for marker in ("-m ruff", "-m mypy", "-m pytest"):
+        gate = [kwargs for argv, kwargs in run.calls if marker in " ".join(argv)]
+        assert len(gate) == 1 and gate[0]["cwd"] == str(wt) and gate[0]["timeout"] == 900
+
+
+def test_check_build_uses_repo_venv_when_worktree_has_none(tmp_path, monkeypatch):
+    caps, wt = _building(tmp_path, monkeypatch, with_venv=False)
+    repo = tmp_path / "repo"
+    py = repo / ".venv" / "Scripts" / "python.exe"
+    py.parent.mkdir(parents=True)
+    py.write_text("", encoding="utf-8")
+    run = _GitRun(changed=["iris/tools.py"])
+    check_build("printer_ink", repo, run=run)
+    ruff = [argv for argv, _ in run.calls if "-m ruff" in " ".join(argv)][0]
+    assert ruff[0] == str(py)
+
+
+def test_check_build_protected_path(tmp_path, monkeypatch):
+    caps, wt = _building(tmp_path, monkeypatch)
+    run = _GitRun(changed=["iris/tools.py", "iris/agent.py"])
+    meta = check_build("printer_ink", tmp_path / "repo", run=run)
+    assert meta["status"] == "blocked"
+    assert meta["problems"] == ["touches protected path iris/agent.py"]
+    saved = _saved(caps)
+    assert saved["status"] == "blocked" and saved["problems"] == ["touches protected path iris/agent.py"]
+    assert not any("-m ruff" in " ".join(argv) for argv, _ in run.calls)
+
+
+def test_check_build_changed_tier(tmp_path, monkeypatch):
+    caps, wt = _building(tmp_path, monkeypatch)
+    old = {"click": {"tier": "confirm", "escalates": True}}
+    new = {"click": {"tier": "safe", "escalates": False}}
+    run = _GitRun(changed=["iris/tools.py"], old_lock=old, new_lock=new)
+    meta = check_build("printer_ink", tmp_path / "repo", run=run)
+    assert meta["status"] == "blocked"
+    assert meta["problems"] == ["changes the tier of click"]
+    assert _saved(caps)["status"] == "blocked"
+
+
+def test_check_build_no_commits(tmp_path, monkeypatch):
+    caps, wt = _building(tmp_path, monkeypatch)
+    run = _GitRun(changed=[])
+    meta = check_build("printer_ink", tmp_path / "repo", run=run)
+    assert meta["status"] == "blocked"
+    assert meta["problems"] == ["no commits yet"]
+    assert _saved(caps)["status"] == "blocked"
+    assert not any("-m pytest" in " ".join(argv) for argv, _ in run.calls)
+
+
+def test_check_build_failing_pytest(tmp_path, monkeypatch):
+    caps, wt = _building(tmp_path, monkeypatch)
+    run = _GitRun(changed=["iris/tools.py"], gate_failures={"pytest": (1, "3 failed in 2s")})
+    meta = check_build("printer_ink", tmp_path / "repo", run=run)
+    assert meta["status"] == "blocked"
+    assert meta["problems"] == ["pytest failed: 3 failed in 2s"]
+    assert _saved(caps)["status"] == "blocked"
+
+
+def test_check_build_not_building(tmp_path, monkeypatch):
+    caps, wt = _building(tmp_path, monkeypatch)
+    (caps / "printer_ink.json").write_text(
+        json.dumps({"tool_name": "printer_ink", "status": "planned"}) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="no build to check"):
+        check_build("printer_ink", tmp_path / "repo", run=_GitRun())
+
+
+def test_capability_check_ready_message(tmp_path, monkeypatch):
+    _building(tmp_path, monkeypatch)
+    fake = {"status": "ready", "problems": [], "changed": ["iris/tools.py", "tests/test_tools.py"]}
+    monkeypatch.setattr("iris.tools.check_build", lambda name, repo: fake)
+    assert tools.capability_check("printer_ink") == (
+        "printer_ink is ready: 2 files changed, gates green. Jay can review the branch self/printer_ink.")
+
+
+def test_capability_check_blocked_message(tmp_path, monkeypatch):
+    _building(tmp_path, monkeypatch)
+    fake = {"status": "blocked", "problems": ["no commits yet"], "changed": []}
+    monkeypatch.setattr("iris.tools.check_build", lambda name, repo: fake)
+    assert tools.capability_check("printer_ink") == "printer_ink is blocked: no commits yet"
+
+
+def test_capability_check_no_build(tmp_path, monkeypatch):
+    _building(tmp_path, monkeypatch)
+
+    def boom(name, repo):
+        raise ValueError(f"no build to check for {name}")
+
+    monkeypatch.setattr("iris.tools.check_build", boom)
+    assert tools.capability_check("printer_ink") == "error: no build to check for printer_ink"
 

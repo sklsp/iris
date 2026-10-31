@@ -204,6 +204,82 @@ def build_prompt(tool_name: str, worktree: Path) -> str:
             f"Do NOT call attempt_completion until every step is done.")
 
 
+GATES = (
+    ("ruff", ["-m", "ruff", "check", "iris", "tests"]),
+    ("mypy", ["-m", "mypy"]),
+    ("pytest", ["-m", "pytest", "-q", "-p", "no:cacheprovider"]),
+)
+
+
+def _git(run: Callable[..., subprocess.CompletedProcess[str]], argv: list[str]) -> str:
+    """Run one git command and return its stdout; a non-zero exit raises RuntimeError with the last stderr line."""
+    result = run(argv, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        lines = [line for line in result.stderr.splitlines() if line.strip()]
+        raise RuntimeError(lines[-1] if lines else "git failed")
+    return result.stdout
+
+
+def _venv_python(where: Path) -> Path | None:
+    """The .venv python of a folder (Windows and POSIX layout), or None when it has none."""
+    for parts in ((".venv", "Scripts", "python.exe"), (".venv", "bin", "python")):
+        candidate = where.joinpath(*parts)
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def check_build(
+    tool_name: str,
+    repo: Path,
+    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict:
+    """Guard and gate a self-build branch; store the outcome in the plan json.
+
+    The plan must be "building", "ready" or "blocked" (else ValueError). Changed paths come from
+    `git -C <repo> diff --name-only main...self/<tool_name>`; guard_problems compares them with
+    PROTECTED and the tier lock on both sides of the branch, plus "no commits yet" when nothing
+    changed. Only a clean guard runs the three gates in the worktree (its own .venv python if it
+    has one, else the repo's), each with timeout=900; a failing gate adds "<gate> failed: <last
+    output line>". The json gets "status" ("ready" or "blocked"), "problems" and "checked"; the
+    returned dict is that meta plus "changed".
+    """
+    directory = capabilities_dir()
+    json_path = directory / f"{tool_name}.json"
+    meta = json.loads(json_path.read_text(encoding="utf-8")) if json_path.exists() else None
+    if meta is None or meta.get("status") not in ("building", "ready", "blocked"):
+        raise ValueError(f"no build to check for {tool_name}")
+
+    worktree = Path(meta["worktree"])
+    branch = branch_for(tool_name)
+    diff_out = _git(run, ["git", "-C", str(repo), "diff", "--name-only", f"main...{branch}"])
+    changed = [line.strip() for line in diff_out.splitlines() if line.strip()]
+    old_lock = json.loads(_git(run, ["git", "-C", str(repo), "show", "main:iris/tier_lock.json"]))
+    new_lock = json.loads(_git(run, ["git", "-C", str(repo), "show", f"{branch}:iris/tier_lock.json"]))
+
+    problems = guard_problems(changed, old_lock, new_lock)
+    if not changed:
+        problems.append("no commits yet")
+
+    if not problems:
+        python = _venv_python(worktree) or _venv_python(repo)
+        if python is None:
+            raise RuntimeError(f"no .venv python in {worktree} or {repo}")
+        for gate, args in GATES:
+            result = run([str(python), *args], cwd=str(worktree), capture_output=True, text=True, timeout=900)
+            if result.returncode != 0:
+                output = (result.stdout + "\n" + result.stderr).strip()
+                lines = [line for line in output.splitlines() if line.strip()]
+                problems.append(f"{gate} failed: {lines[-1] if lines else ''}")
+
+    meta["status"] = "ready" if not problems else "blocked"
+    meta["problems"] = problems
+    meta["checked"] = datetime.now().isoformat(timespec="seconds")
+    _atomic_write(json_path, json.dumps(meta, ensure_ascii=False) + "\n")
+    meta["changed"] = changed
+    return meta
+
+
 def set_plan_field(tool_name: str, field: str, value: str) -> None:
     """Set one field on a saved plan's json (the session id after a start, or status back to planned)."""
     path = capabilities_dir() / f"{tool_name}.json"

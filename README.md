@@ -76,6 +76,7 @@ flowchart LR
 | request_capability | confirm |  |
 | capability_list | safe |  |
 | capability_build | confirm |  |
+| capability_check | confirm |  |
 
 ## Eval
 
@@ -161,6 +162,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | cline_start | confirm | start a new Cline session through the Cline CLI with the next queued prompt for this agent; if a repo is given its newest PROGRESS run must be done, asks first |
 | request_capability | confirm | save a plan for a skill Iris cannot do yet; asks first and builds nothing |
 | capability_build | confirm | build a saved plan for a new skill now: Cline works on it in its own copy of Iris, not used until Jay reviews and merges the branch; asks first |
+| capability_check | confirm | check a built skill with the guard and the gates; it runs code Cline wrote, so Jay says yes first |
 
 The tiers are enforced in code, not in the prompt:
 

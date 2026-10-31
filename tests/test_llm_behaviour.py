@@ -7,6 +7,8 @@ sent and the exact Reply parsed back. No server, no model, no internet.
 import io
 import json
 
+import pytest
+
 from iris.llm import LMStudio, Reply, ToolCall, effective_model
 
 
@@ -81,7 +83,7 @@ def test_chat_sends_full_body_and_parses_plain_text_reply(monkeypatch):
         "messages": [{"role": "user", "content": "hi"}],
         "tools": [],
         "temperature": 0.3,
-        "max_tokens": 4096,
+        "max_tokens": 8192,
     }
     assert seen["timeout"] == 5
 
@@ -132,3 +134,14 @@ def test_chat_defaults_missing_arguments_to_empty_dict(monkeypatch):
     reply = lm.chat([], [])
 
     assert reply.calls == [ToolCall(id="c3", name="say", args={})]
+
+
+def test_chat_raises_when_the_model_ran_out_of_tokens_before_answering(monkeypatch):
+    _fake_urlopen(monkeypatch, {"choices": [{"finish_reason": "length", "message": {"content": ""}}]})
+    with pytest.raises(ValueError, match="ran out of tokens"):
+        LMStudio(base_url="http://h:1/v1", model="m").chat([], [])
+
+
+def test_chat_keeps_a_cut_off_reply_that_still_has_text(monkeypatch):
+    _fake_urlopen(monkeypatch, {"choices": [{"finish_reason": "length", "message": {"content": "Half an ans"}}]})
+    assert LMStudio(base_url="http://h:1/v1", model="m").chat([], []).text == "Half an ans"

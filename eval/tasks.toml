@@ -978,7 +978,7 @@ fixtures = { capability_list = "make_powerpoint (confirm): planned, asked: Maak 
 [[task]]
 id = "cap_check"
 category = "agents"
-request = "Is de PowerPoint-skill al klaar?"
+request = "Controleer of de PowerPoint-skill klaar is."
 expect = ["capability_check"]
 confirm = "yes"
 answer_has = ["klaar", "ready", "groen"]

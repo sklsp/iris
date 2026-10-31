@@ -320,7 +320,8 @@ def watch(announce: Callable[[str], object], interval: float = 30, stop: threadi
             for name in finished_builds():
                 try:
                     result = check_fn(name)
-                except (OSError, ValueError) as exc:
+                except Exception as exc:  # noqa: BLE001 - one bad build must never stop the watcher
+                    _save_meta(name, {**meta(name), "status": "blocked", "problems": [f"check failed: {exc}"]})
                     announce(f"I could not check the new skill {name}: {exc}")
                     continue
                 if result["status"] == "ready":

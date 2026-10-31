@@ -217,3 +217,17 @@ def test_the_capability_tools_report_in_plain_words(monkeypatch):
     _planned("other_one")
     monkeypatch.setattr(skills, "start_build", lambda name: "started")
     assert tools.capability_build("other_one") == "Building other_one. I will say when it is ready."
+
+
+def test_a_crashing_check_blocks_that_skill_and_the_watcher_goes_on():
+    _built("crashy_one")
+    said = []
+    stop = threading.Event()
+
+    def boom(name):
+        stop.set()
+        raise RuntimeError("disk on fire")
+
+    skills.watch(said.append, interval=0, stop=stop, check_fn=boom).join(5)
+    assert said == ["I could not check the new skill crashy_one: disk on fire"]
+    assert skills.meta("crashy_one")["status"] == "blocked"

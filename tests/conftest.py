@@ -8,3 +8,4 @@ def _journal_in_tmp(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "iris-journal.jsonl"))
     monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "iris-config.toml"))
     monkeypatch.setenv("IRIS_SKILLS", str(tmp_path / "iris-skills"))
+    monkeypatch.setenv("IRIS_START_MENU", str(tmp_path / "start-menu"))

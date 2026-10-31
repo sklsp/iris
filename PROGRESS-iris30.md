@@ -7,7 +7,7 @@
 - [x] T5. Spreadsheets (1228 passed in 33.37s)
 - [x] T6. Clipboard, media keys and locking the screen (1261 passed in 33.58s)
 - [x] T7. Screenshot, closing a window and the clock (1286 passed in 35.26s)
-- [ ] T8. Opening apps from the Start menu
+- [x] T8. Opening apps from the Start menu (1306 passed in 33.01s)
 - [ ] T9. Weather
 - [ ] T10. Email drafts
 - [ ] T11. Notes

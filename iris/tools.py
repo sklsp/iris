@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from iris.desktop import (
+    _start_menu_folders,
     clipboard_read,
     clipboard_write,
     clock,
@@ -28,6 +29,7 @@ from iris.desktop import (
     lock_screen,
     media_key,
     screenshot,
+    start_menu_match,
 )
 from iris.files import copy_file, find_files, list_folder, make_folder, move_file, read_file, write_file
 from iris.office import make_document, make_presentation, make_spreadsheet
@@ -400,6 +402,10 @@ def type_text(window: str, text: str, into: str = "", replace: bool = False) -> 
 
 
 def open_app(name: str) -> str:
+    match = start_menu_match(name, _start_menu_folders())
+    if match is not None:
+        os.startfile(str(match))  # the Start menu shortcut for this name
+        return f"started {match.stem}"
     os.startfile(name)  # ShellExecute: app names on PATH/App Paths, ms-settings: URIs, files
     return f"started {name!r}"
 
@@ -882,7 +888,8 @@ TOOLS = {t.name: t for t in [
     Tool("list_windows", "Titles of all open windows.", {}, [], SAFE, list_windows),
     Tool("read_window", "The named controls (buttons, fields, text) in a window. Title match is a substring.",
          {"title": S}, ["title"], SAFE, read_window),
-    Tool("open_app", "Start an app by name (notepad, explorer, chrome), an ms-settings: URI, or a file path.",
+    Tool("open_app", "Start an app by name (notepad, explorer, chrome), an ms-settings: URI, or a file path. "
+         "Works with the name as it appears in the Start menu, such as Spotify or Word.",
          {"name": S}, ["name"], SAFE, open_app),
     Tool("click", "Click the control with this name in the window whose title contains `window`.",
          {"window": S, "control": S}, ["window", "control"], CONFIRM, click, _click_tier),

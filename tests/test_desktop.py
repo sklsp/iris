@@ -234,6 +234,114 @@ def test_clock_formats_weekday_date_time_and_iso_week(monkeypatch):
     assert desktop.clock() == "Monday 5 January 2026, 09:05, week 2"
 
 
+# --- _start_menu_folders -----------------------------------------------------------
+
+def test_start_menu_folders_come_from_the_env_var(tmp_path, monkeypatch):
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    monkeypatch.setenv("IRIS_START_MENU", f"{a}; {b} ;")
+    assert desktop._start_menu_folders() == [a, b]
+
+
+def test_start_menu_folders_default_to_the_two_real_windows_ones(tmp_path, monkeypatch):
+    monkeypatch.delenv("IRIS_START_MENU")
+    monkeypatch.setenv("ProgramData", str(tmp_path / "pd"))
+    monkeypatch.setenv("AppData", str(tmp_path / "ad"))
+    assert desktop._start_menu_folders() == [
+        tmp_path / "pd" / "Microsoft/Windows/Start Menu/Programs",
+        tmp_path / "ad" / "Microsoft/Windows/Start Menu/Programs",
+    ]
+
+
+# --- start_menu_match ----------------------------------------------------------------
+
+def _menu(tmp_path, *names):
+    menu = tmp_path / "menu"
+    menu.mkdir()
+    for n in names:
+        (menu / n).write_bytes(b"\x40")  # the .lnk content is irrelevant to the match
+    return menu
+
+
+def test_start_menu_match_exact_is_case_insensitive(tmp_path):
+    menu = _menu(tmp_path, "Spotify.lnk", "Word.lnk")
+    assert desktop.start_menu_match("sPoTiFy", [menu]) == menu / "Spotify.lnk"
+
+
+def test_start_menu_match_starts_with_when_there_is_no_exact(tmp_path):
+    menu = _menu(tmp_path, "Word Online.lnk")
+    assert desktop.start_menu_match("word", [menu]) == menu / "Word Online.lnk"
+
+
+def test_start_menu_match_contains_as_a_last_resort(tmp_path):
+    menu = _menu(tmp_path, "Microsoft Word.lnk")
+    assert desktop.start_menu_match("word", [menu]) == menu / "Microsoft Word.lnk"
+
+
+def test_start_menu_match_exact_beats_starts_with_and_contains(tmp_path):
+    menu = _menu(tmp_path, "WordPad.lnk", "Word.lnk", "Microsoft Word.lnk")
+    assert desktop.start_menu_match("word", [menu]) == menu / "Word.lnk"
+
+
+def test_start_menu_match_shortest_stem_wins_within_a_rank(tmp_path):
+    menu = _menu(tmp_path, "Words.lnk", "Word Online.lnk")
+    assert desktop.start_menu_match("word", [menu]) == menu / "Words.lnk"
+
+
+def test_start_menu_match_searches_subfolders_of_every_folder(tmp_path):
+    sub = tmp_path / "a" / "Accessories"
+    sub.mkdir(parents=True)
+    (sub / "Notepad.lnk").write_bytes(b"\x40")
+    assert desktop.start_menu_match("notepad", [tmp_path / "missing", tmp_path / "b", tmp_path / "a"]) == \
+        sub / "Notepad.lnk"
+
+
+def test_start_menu_match_ignores_files_that_are_not_lnk(tmp_path):
+    menu = _menu(tmp_path, "Spotify.txt", "spotify.url")
+    assert desktop.start_menu_match("spotify", [menu]) is None
+
+
+def test_start_menu_match_no_match_is_none(tmp_path):
+    menu = _menu(tmp_path, "Word.lnk")
+    assert desktop.start_menu_match("excel", [menu]) is None
+
+
+def test_start_menu_match_missing_folder_is_none(tmp_path):
+    assert desktop.start_menu_match("word", [tmp_path / "nope"]) is None
+
+
+@pytest.mark.parametrize("name", ["ms-settings:", "C:/x/y.lnk", "C:\\x\\y.lnk", "notepad.exe", "NOTEPAD.EXE", ""])
+def test_start_menu_match_skips_paths_uris_and_exes(tmp_path, name):
+    menu = _menu(tmp_path, "ms-settings.lnk", "notepad.exe.lnk")  # both would match if the search ran
+    assert desktop.start_menu_match(name, [menu]) is None
+
+
+# --- open_app with a Start menu shortcut ---------------------------------------------
+
+def test_open_app_starts_the_start_menu_shortcut(tmp_path, monkeypatch):
+    menu = _menu(tmp_path, "Spotify.lnk")
+    monkeypatch.setenv("IRIS_START_MENU", str(menu))
+    started = []
+    monkeypatch.setattr(tools.os, "startfile", lambda name: started.append(name))
+    assert tools.open_app("spotify") == "started Spotify"
+    assert started == [str(menu / "Spotify.lnk")]
+
+
+def test_open_app_falls_back_to_shell_execute_without_a_match(tmp_path, monkeypatch):
+    menu = tmp_path / "menu"
+    menu.mkdir()  # empty: no shortcut for this name
+    monkeypatch.setenv("IRIS_START_MENU", str(menu))
+    started = []
+    monkeypatch.setattr(tools.os, "startfile", lambda name: started.append(name))
+    assert tools.open_app("notepad") == "started 'notepad'"
+    assert started == ["notepad"]
+
+
+def test_open_app_description_mentions_the_start_menu():
+    d = tools.TOOLS["open_app"].description
+    assert "Works with the name as it appears in the Start menu, such as Spotify or Word." in d
+
+
 # --- tiers for the new tools (pinned literally) --------------------------------------
 
 def test_screenshot_and_clock_are_safe():

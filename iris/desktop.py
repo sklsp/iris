@@ -108,3 +108,42 @@ def clock() -> str:
 
     now = _wall_now()
     return f"{now:%A} {now.day} {now:%B} {now.year}, {now:%H:%M}, week {now.isocalendar()[1]}"
+
+
+# --- opening apps ------------------------------------------------------------------
+
+def _start_menu_folders() -> list[Path]:
+    """Start menu folders from IRIS_START_MENU (';' separated); the two real Windows ones otherwise."""
+    raw = os.environ.get("IRIS_START_MENU")
+    if not raw:
+        sub = Path("Microsoft/Windows/Start Menu/Programs")
+        return [Path(os.environ.get("ProgramData", "C:/ProgramData")) / sub,
+                Path(os.environ.get("AppData", str(Path.home() / "AppData" / "Roaming"))) / sub]
+    return [Path(s.strip()) for s in raw.split(";") if s.strip()]
+
+
+def start_menu_match(name: str, folders: list[Path]) -> Path | None:
+    """The .lnk under `folders` whose stem equals `name` (case-insensitive), else starts with it, else contains it;
+    the shortest stem wins. Names that are paths or URIs skip the search."""
+    if not name or ":" in name or "/" in name or "\\" in name or name.lower().endswith(".exe"):
+        return None
+    needle = name.lower()
+    best: tuple[int, int, str] | None = None
+    hit: Path | None = None
+    for folder in folders:
+        if not folder.is_dir():
+            continue
+        for lnk in folder.rglob("*.lnk"):
+            stem = lnk.stem.lower()
+            if stem == needle:
+                rank = 0
+            elif stem.startswith(needle):
+                rank = 1
+            elif needle in stem:
+                rank = 2
+            else:
+                continue
+            key = (rank, len(stem), str(lnk))
+            if best is None or key < best:
+                best, hit = key, lnk
+    return hit

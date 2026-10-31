@@ -135,6 +135,15 @@ def _describe(name: str, args: dict) -> str:
         return f"Type '{str(args.get('text'))[:60]}' into {where}?"
     if name == "trash_file":
         return f"Move {args.get('path')} to the trash?"
+    if name == "write_file":
+        q = f"Write {args.get('path')}?"
+        if args.get("overwrite"):
+            q += " It replaces the old file; the old one goes to the trash."
+        return q
+    if name == "move_file":
+        return f"Move {args.get('source')} to {args.get('destination')}?"
+    if name == "copy_file":
+        return f"Copy {args.get('source')} to {args.get('destination')}?"
     if name == "press_keys":
         return f"Press {args.get('keys')} in {args.get('window')}?"
     if name == "cline_start":

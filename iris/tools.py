@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from iris.files import find_files, list_folder, read_file
+from iris.files import copy_file, find_files, list_folder, make_folder, move_file, read_file, write_file
 from iris.policy import (
     _MAIL_CHAT,
     _NEVER_WORDS,
@@ -29,6 +29,9 @@ from iris.policy import (
     NEVER,
     SAFE,
     _click_tier,
+    _copy_tier,
+    _make_folder_tier,
+    _move_tier,
     _open_url_tier,
     _press_keys_tier,
     _read_tier,
@@ -38,6 +41,7 @@ from iris.policy import (
     _type_tier,
     _under,
     _unload_tier,
+    _write_tier,
 )
 from iris.timers import Timers
 
@@ -968,4 +972,19 @@ TOOLS = {t.name: t for t in [
     Tool("read_file",
          "A file as text: plain text, .docx/.pptx from their XML or .pdf (needs pypdf); max 20000 chars.",
          {"path": S}, ["path"], SAFE, read_file, _read_tier),
+    Tool("write_file",
+         "Write UTF-8 text to a file for the user; a bare name goes to ~/Documents/Iris. With overwrite=true an"
+         " existing file is replaced and the old one first goes to Iris's trash, so it can be restored.",
+         {"path": S, "text": S, "overwrite": {"type": "boolean"}}, ["path", "text"], CONFIRM, write_file, _write_tier),
+    Tool("make_folder",
+         "Create a folder with any missing parents. An existing path is an error; it never overwrites.",
+         {"path": S}, ["path"], SAFE, make_folder, _make_folder_tier),
+    Tool("move_file",
+         "Move a file or folder for the user. An existing destination is an error unless it's a folder,"
+         " in which case the item goes into that folder.",
+         {"source": S, "destination": S}, ["source", "destination"], CONFIRM, move_file, _move_tier),
+    Tool("copy_file",
+         "Copy a file or folder (folders with all their contents) for the user. An existing destination is an"
+         " error unless it's a folder, in which case the copy goes into that folder.",
+         {"source": S, "destination": S}, ["source", "destination"], CONFIRM, copy_file, _copy_tier),
 ]}

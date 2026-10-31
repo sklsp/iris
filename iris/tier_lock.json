@@ -43,6 +43,10 @@
     "tier": "safe",
     "escalates": false
   },
+  "copy_file": {
+    "tier": "confirm",
+    "escalates": true
+  },
   "focus_window": {
     "tier": "safe",
     "escalates": false
@@ -80,6 +84,14 @@
     "escalates": false
   },
   "lmstudio_unload": {
+    "tier": "confirm",
+    "escalates": true
+  },
+  "make_folder": {
+    "tier": "safe",
+    "escalates": true
+  },
+  "move_file": {
     "tier": "confirm",
     "escalates": true
   },
@@ -166,6 +178,10 @@
   "web_search": {
     "tier": "safe",
     "escalates": false
+  },
+  "write_file": {
+    "tier": "confirm",
+    "escalates": true
   },
   "capability_approve": {
     "tier": "confirm",

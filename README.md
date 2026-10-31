@@ -139,6 +139,10 @@ are in the eval either way.
 | find_files | safe |  |
 | list_folder | safe |  |
 | read_file | safe |  |
+| write_file | confirm | outside home or a configured folder, in a system directory, or in Iris's trash (never) |
+| make_folder | safe | outside home or a configured folder, in a system directory, or in Iris's trash (never) |
+| move_file | confirm | source or destination outside home or a configured folder, in a system dir, or in the trash (never) |
+| copy_file | confirm | destination outside home or a configured folder, in a system dir, or in the trash (never) |
 
 ## Eval
 
@@ -230,6 +234,10 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | find_files | safe | paths of files whose name contains `query`, under home and the configured folders |
 | list_folder | safe | the entries of a folder, with a trailing / on folders |
 | read_file | safe | a file as text: plain text, PDF or .docx/.pptx; long output truncated |
+| write_file | confirm | writes UTF-8 text to a file; a bare name goes to ~/Documents/Iris; with overwrite=true the old file first goes to Iris's trash |
+| make_folder | safe | creates a folder with any missing parents; never overwrites an existing path |
+| move_file | confirm | moves a file or folder, creating missing destination folders; into an existing folder it goes inside it; never overwrites |
+| copy_file | confirm | copies a file or folder (with all its contents); never overwrites |
 
 The tiers are enforced in code, not in the prompt:
 
@@ -240,6 +248,8 @@ The tiers are enforced in code, not in the prompt:
 - `trash_file` never deletes permanently. Iris's trash holds the file plus a `.json` sidecar with the
   original path, and `restore_trash` puts it back. `IRIS_TRASH_DIR` moves the trash (default
   `~/.iris/trash`).
+- `write_file` with `overwrite=true` never deletes either: the old file first goes to Iris's trash, so it can be
+  restored like anything else.
 
 `trash_file` moves files to Iris's own trash dir instead of the Windows Recycle Bin. send2trash cannot
 tell you the original path back out of the Recycle Bin, so `restore_trash` (which needs that path) would

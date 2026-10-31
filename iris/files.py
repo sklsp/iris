@@ -2,6 +2,7 @@
 
 import os
 import re
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -142,3 +143,75 @@ def _office_text(p: Path, suffix: str) -> str:
 def _slide_no(n: str) -> int:
     m = re.search(r"\d+", n)
     return int(m.group()) if m else 0
+
+
+# --- writing, moving and copying -------------------------------------------------
+
+
+def _target(path: str) -> Path:
+    """A bare file name goes to ~/Documents/Iris (created when missing); anything else is used as given."""
+    p = Path(path).expanduser()
+    if len(p.parts) == 1:
+        d = Path.home() / "Documents" / "Iris"
+        d.mkdir(parents=True, exist_ok=True)
+        return d / p.name
+    return p
+
+
+def write_file(path: str, text: str, overwrite: bool = False) -> str:
+    """Write UTF-8 text to a file. Overwriting sends the old file to Iris's trash first, so it can be restored."""
+    p = _target(path)
+    if p.exists():
+        if not overwrite:
+            return f"error: {p} exists; say overwrite to replace it"
+        from iris.tools import trash_file  # same mechanism as the trash_file tool, no copy of its logic
+        trash_file(str(p))
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+    return f"wrote {len(text)} characters to {p}"
+
+
+def make_folder(path: str) -> str:
+    """Create a folder with any missing parents. An existing path is an error."""
+    p = Path(path).expanduser()
+    if p.exists():
+        return f"error: {p} already exists"
+    p.mkdir(parents=True, exist_ok=False)
+    return f"made folder {p}"
+
+
+def _destination(destination: str, name: str) -> Path:
+    """An existing destination folder means 'into that folder'."""
+    d = Path(destination).expanduser()
+    if d.is_dir():
+        return d / name
+    return d
+
+
+def move_file(source: str, destination: str) -> str:
+    """Move a file or folder. Never overwrites; an existing destination is an error unless it's a folder."""
+    s = Path(source).expanduser()
+    if not s.exists():
+        return f"error: no such file or folder: {s}"
+    d = _destination(destination, s.name)
+    if d.exists():
+        return f"error: {d} already exists; never overwrites"
+    d.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(s), str(d))
+    return f"moved {s} to {d}"
+
+
+def copy_file(source: str, destination: str) -> str:
+    """Copy a file or folder (folders with all their contents). Never overwrites."""
+    s = Path(source).expanduser()
+    if not s.exists():
+        return f"error: no such file or folder: {s}"
+    d = _destination(destination, s.name)
+    if d.exists():
+        return f"error: {d} already exists; never overwrites"
+    d.parent.mkdir(parents=True, exist_ok=True)
+    if s.is_dir():
+        shutil.copytree(s, d)
+    else:
+        shutil.copy2(s, d)
+    return f"copied {s} to {d}"

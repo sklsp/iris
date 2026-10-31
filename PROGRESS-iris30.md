@@ -1,7 +1,7 @@
 # Iris base tools run (night-iris30)
 
 - [x] T1. The folders setting and reading files (1138 passed in 32.11s)
-- [ ] T2. Writing, moving and copying files
+- [x] T2. Writing, moving and copying files (1181 passed in 32.27s)
 - [ ] T3. Word documents
 - [ ] T4. PowerPoint presentations
 - [ ] T5. Spreadsheets

@@ -1,4 +1,4 @@
-"""Tests for iris.files: find_files, list_folder and read_file, plus their tiers."""
+"""Tests for iris.files: finding, listing, reading, writing, moving and copying files, plus their tiers."""
 
 import os
 import time
@@ -232,4 +232,190 @@ def test_read_file_never_reads_secret_looking_files(name):
 @pytest.mark.parametrize("name", ["notes.txt", "report.docx", "slides.pptx", "paper.pdf", ".env.bak"])
 def test_read_file_is_safe_for_everything_else(name):
     assert tools.TOOLS["read_file"].tier_of({"path": f"C:/Users/jay/{name}"}) == tools.SAFE
+
+
+# --- write_file ------------------------------------------------------------------
+
+
+def test_write_file_writes_utf8_text_to_the_iris_folder(tmp_path, monkeypatch):
+    home = _home(tmp_path, monkeypatch)
+    out = files.write_file("notes.txt", "héllo")
+    p = home / "Documents" / "Iris" / "notes.txt"
+    assert p.read_text(encoding="utf-8") == "héllo"
+    assert out == f"wrote 5 characters to {p}"
+
+
+def test_write_file_refuses_to_overwrite_without_saying_so(tmp_path):
+    p = tmp_path / "a.txt"
+    p.write_text("old", encoding="utf-8")
+    assert files.write_file(str(p), "new") == f"error: {p} exists; say overwrite to replace it"
+    assert p.read_text(encoding="utf-8") == "old"
+
+
+def test_write_file_overwrite_puts_the_old_file_in_the_trash(tmp_path, monkeypatch):
+    trash = tmp_path / "trash"
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(trash))
+    p = tmp_path / "a.txt"
+    p.write_text("old", encoding="utf-8")
+    out = files.write_file(str(p), "new", overwrite=True)
+    assert out == f"wrote 3 characters to {p}"
+    assert p.read_text(encoding="utf-8") == "new"
+    trashed = [x for x in trash.iterdir() if not x.name.endswith(".json")]
+    assert len(trashed) == 1
+    assert trashed[0].read_text(encoding="utf-8") == "old"
+    assert any(x.name.endswith(".json") for x in trash.iterdir())  # the same mechanism as trash_file
+
+
+# --- make_folder -------------------------------------------------------------------
+
+
+def test_make_folder_creates_missing_parents(tmp_path):
+    target = tmp_path / "a" / "b"
+    out = files.make_folder(str(target))
+    assert target.is_dir()
+    assert out == f"made folder {target}"
+
+
+def test_make_folder_refuses_an_existing_path(tmp_path):
+    p = tmp_path / "x"
+    p.mkdir()
+    assert files.make_folder(str(p)) == f"error: {p} already exists"
+
+
+# --- move_file and copy_file ---------------------------------------------------------
+
+
+def test_move_file_moves_a_file_and_creates_missing_parents(tmp_path):
+    s = tmp_path / "a.txt"
+    s.write_text("x", encoding="utf-8")
+    d = tmp_path / "sub" / "a.txt"
+    out = files.move_file(str(s), str(d))
+    assert not s.exists()
+    assert d.read_text(encoding="utf-8") == "x"
+    assert out == f"moved {s} to {d}"
+
+
+def test_move_file_into_an_existing_folder(tmp_path):
+    s = tmp_path / "a.txt"
+    s.write_text("x", encoding="utf-8")
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    files.move_file(str(s), str(dest))
+    assert (dest / "a.txt").read_text(encoding="utf-8") == "x"
+
+
+def test_move_file_never_overwrites(tmp_path):
+    s = tmp_path / "a.txt"
+    s.write_text("new", encoding="utf-8")
+    d = tmp_path / "b.txt"
+    d.write_text("old", encoding="utf-8")
+    assert files.move_file(str(s), str(d)) == f"error: {d} already exists; never overwrites"
+    assert s.exists() and d.read_text(encoding="utf-8") == "old"
+
+
+def test_move_file_says_so_when_the_source_is_missing(tmp_path):
+    out = files.move_file(str(tmp_path / "nope.txt"), str(tmp_path / "d"))
+    assert out.startswith("error: no such file or folder:")
+
+
+def test_copy_file_copies_a_folder_with_its_contents(tmp_path):
+    s = tmp_path / "proj"
+    (s / "deep").mkdir(parents=True)
+    (s / "a.txt").write_text("1", encoding="utf-8")
+    (s / "deep" / "b.txt").write_text("2", encoding="utf-8")
+    out = files.copy_file(str(s), str(tmp_path / "copy"))
+    assert s.exists()  # the source stays
+    assert (tmp_path / "copy" / "a.txt").read_text(encoding="utf-8") == "1"
+    assert (tmp_path / "copy" / "deep" / "b.txt").read_text(encoding="utf-8") == "2"
+    assert out.startswith("copied ")
+
+
+def test_copy_file_never_overwrites(tmp_path):
+    s = tmp_path / "a.txt"
+    s.write_text("new", encoding="utf-8")
+    d = tmp_path / "b.txt"
+    d.write_text("old", encoding="utf-8")
+    assert files.copy_file(str(s), str(d)) == f"error: {d} already exists; never overwrites"
+    assert s.exists() and d.read_text(encoding="utf-8") == "old"
+
+
+# --- tiers for the new tools ----------------------------------------------------------
+
+
+def test_new_tools_have_their_base_tiers():
+    assert tools.TOOLS["write_file"].tier == tools.CONFIRM
+    assert tools.TOOLS["make_folder"].tier == tools.SAFE
+    assert tools.TOOLS["move_file"].tier == tools.CONFIRM
+    assert tools.TOOLS["copy_file"].tier == tools.CONFIRM
+
+
+def test_write_tier_confirms_inside_folders_and_never_outside(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    work = tmp_path / "work"
+    work.mkdir()
+    outside = tmp_path / "outside"
+    _cfg(tmp_path, monkeypatch, f'folders = ["{work.as_posix()}"]\n')
+    assert tools.TOOLS["write_file"].tier_of({"path": str(work / "a.txt")}) == tools.CONFIRM
+    assert tools.TOOLS["write_file"].tier_of({"path": str(outside / "b.txt")}) == tools.NEVER
+
+
+def test_make_folder_tier_is_safe_inside_and_never_outside(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    work = tmp_path / "work"
+    work.mkdir()
+    outside = tmp_path / "outside"
+    _cfg(tmp_path, monkeypatch, f'folders = ["{work.as_posix()}"]\n')
+    assert tools.TOOLS["make_folder"].tier_of({"path": str(work / "new")}) == tools.SAFE
+    assert tools.TOOLS["make_folder"].tier_of({"path": str(outside / "new")}) == tools.NEVER
+
+
+def test_move_tier_never_when_the_destination_or_source_is_outside(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    work = tmp_path / "work"
+    work.mkdir()
+    outside = tmp_path / "outside"
+    _cfg(tmp_path, monkeypatch, f'folders = ["{work.as_posix()}"]\n')
+    assert tools.TOOLS["move_file"].tier_of(
+        {"source": str(work / "a"), "destination": str(outside / "b")}) == tools.NEVER
+    assert tools.TOOLS["move_file"].tier_of(
+        {"source": str(outside / "a"), "destination": str(work / "b")}) == tools.NEVER
+    assert tools.TOOLS["move_file"].tier_of(
+        {"source": str(work / "a"), "destination": str(work / "b")}) == tools.CONFIRM
+
+
+def test_copy_tier_checks_only_the_destination(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    work = tmp_path / "work"
+    work.mkdir()
+    outside = tmp_path / "outside"
+    _cfg(tmp_path, monkeypatch, f'folders = ["{work.as_posix()}"]\n')
+    assert tools.TOOLS["copy_file"].tier_of(
+        {"source": str(outside / "a"), "destination": str(work / "b")}) == tools.CONFIRM
+    assert tools.TOOLS["copy_file"].tier_of(
+        {"source": str(work / "a"), "destination": str(outside / "b")}) == tools.NEVER
+
+
+def test_write_tier_never_in_system_dirs_even_when_configured(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    sysroot = os.environ.get("SystemRoot", "C:/Windows")
+    _cfg(tmp_path, monkeypatch, f'folders = ["{sysroot}"]\n')
+    assert tools.TOOLS["write_file"].tier_of({"path": str(Path(sysroot) / "system32" / "x.txt")}) == tools.NEVER
+
+
+def test_write_tier_never_in_the_trash(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    trash = tmp_path / "trash"
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(trash))
+    _cfg(tmp_path, monkeypatch, f'folders = ["{tmp_path.as_posix()}"]\n')
+    assert tools.TOOLS["write_file"].tier_of({"path": str(trash / "x.txt")}) == tools.NEVER
+
+
+def test_describe_names_the_new_file_actions():
+    from iris import agent
+
+    assert agent._describe("write_file", {"path": "a.txt"}) == "Write a.txt?"
+    assert (agent._describe("write_file", {"path": "a.txt", "overwrite": True})
+            == "Write a.txt? It replaces the old file; the old one goes to the trash.")
+    assert agent._describe("move_file", {"source": "a", "destination": "b"}) == "Move a to b?"
+    assert agent._describe("copy_file", {"source": "a", "destination": "b"}) == "Copy a to b?"
 

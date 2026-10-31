@@ -114,3 +114,35 @@ def _trash_tier(args: dict) -> str:
     if any(_under(p, s) for s in _SYSTEM_DIRS) or _under(p, _trash_dir()):
         return NEVER
     return CONFIRM
+
+
+def _writable(path: str) -> bool:
+    """The resolved path is under a config folder, not in a system dir and not in the trash."""
+    p = Path(str(path)).expanduser().resolve()
+    if any(_under(p, s) for s in _SYSTEM_DIRS):
+        return False
+    if _under(p, _trash_dir()):
+        return False
+    return any(_under(p, r.resolve()) for r in config.folders())
+
+
+def _write_tier(args: dict) -> str:
+    """Writing is never outside the writable folders; inside them it always asks first."""
+    return NEVER if not _writable(str(args.get("path", ""))) else CONFIRM
+
+
+def _make_folder_tier(args: dict) -> str:
+    return NEVER if not _writable(str(args.get("path", ""))) else SAFE
+
+
+def _move_tier(args: dict) -> str:
+    """Moving never touches the source or the destination outside the writable folders."""
+    if not _writable(str(args.get("destination", ""))):
+        return NEVER
+    if not _writable(str(args.get("source", ""))):
+        return NEVER
+    return CONFIRM
+
+
+def _copy_tier(args: dict) -> str:
+    return NEVER if not _writable(str(args.get("destination", ""))) else CONFIRM

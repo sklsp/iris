@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from iris.capabilities import list_plans, save_plan
+from iris.capabilities import build_prompt, list_plans, prepare_build, save_plan, set_plan_field
 from iris.policy import (
     _MAIL_CHAT,
     _NEVER_WORDS,
@@ -773,6 +773,27 @@ def capability_list() -> str:
     return list_plans()
 
 
+def capability_build(tool_name: str) -> str:
+    """Start a Cline session that builds a planned skill in its own worktree (confirm tier)."""
+    from iris import autopilot  # local on purpose: autopilot imports iris.agent, which imports this module
+
+    repo = Path(__file__).resolve().parent.parent
+    try:
+        worktree = prepare_build(tool_name, repo)
+    except ValueError as exc:
+        return f"error: {exc}"
+    prompt = build_prompt(tool_name, worktree)
+    try:
+        result = autopilot.start_in_hub(prompt, str(worktree))
+    except (LookupError, RuntimeError) as exc:
+        set_plan_field(tool_name, "status", "planned")
+        return f"error: {exc}. The plan is back to planned; nothing else was removed."
+    match = re.search(r"Cline session (\S+)", result)
+    if match:
+        set_plan_field(tool_name, "session", match.group(1))
+    return f"Building {tool_name} in {worktree}. I will not use it until Jay reviews and merges it."
+
+
 S = {"type": "string"}
 TOOLS = {t.name: t for t in [
     Tool("system_status", "CPU, RAM and per-GPU load, VRAM and temperature.", {}, [], SAFE, system_status),
@@ -895,5 +916,9 @@ TOOLS = {t.name: t for t in [
          CONFIRM, request_capability),
     Tool("capability_list", "The saved plans for new skills that are not built yet. Read only.",
          {}, [], SAFE, capability_list),
+    Tool("capability_build",
+         "Build a saved plan for a new skill now: Cline works on it in its own copy of Iris,"
+         " and the result is not used until Jay reviews and merges the branch. Asks Jay first.",
+         {"tool_name": S}, ["tool_name"], CONFIRM, capability_build),
 
 ]}

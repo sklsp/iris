@@ -195,3 +195,19 @@ def prepare_build(
     _atomic_write(json_path, json.dumps(meta, ensure_ascii=False) + "\n")
     return worktree
 
+
+def build_prompt(tool_name: str, worktree: Path) -> str:
+    """The text Cline gets for a self-build of tool_name in its own worktree."""
+    return (f"Read {worktree}/BUILD-{tool_name}.md and follow it. "
+            f"You work in {worktree} on branch self/{tool_name}, made for you; never switch or create branches, "
+            f"never push. Write progress to {worktree}/PROGRESS-{tool_name}.md. "
+            f"Do NOT call attempt_completion until every step is done.")
+
+
+def set_plan_field(tool_name: str, field: str, value: str) -> None:
+    """Set one field on a saved plan's json (the session id after a start, or status back to planned)."""
+    path = capabilities_dir() / f"{tool_name}.json"
+    meta = json.loads(path.read_text(encoding="utf-8"))
+    meta[field] = value
+    _atomic_write(path, json.dumps(meta, ensure_ascii=False) + "\n")
+

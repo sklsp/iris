@@ -12,6 +12,7 @@ from iris.agent import _describe
 from iris.capabilities import (
     PLAN_TEMPLATE,
     branch_for,
+    build_prompt,
     capabilities_dir,
     guard_problems,
     list_plans,
@@ -310,4 +311,81 @@ def test_prepare_build_git_failure_with_empty_stderr(tmp_path, monkeypatch):
     _planned(tmp_path, monkeypatch)
     with pytest.raises(RuntimeError, match="git worktree add failed"):
         prepare_build("printer_ink", tmp_path / "repo", run=_FakeRun(code=1))
+
+
+# --- capability_build: the confirm tool that starts Cline -------------------------
+
+def test_build_prompt_is_the_exact_text_for_cline(tmp_path):
+    wt = tmp_path / "wt" / "printer_ink"
+    assert build_prompt("printer_ink", wt) == (
+        f"Read {wt}/BUILD-printer_ink.md and follow it. You work in {wt} on branch self/printer_ink, made for you; "
+        f"never switch or create branches, never push. Write progress to {wt}/PROGRESS-printer_ink.md. "
+        f"Do NOT call attempt_completion until every step is done.")
+
+
+def test_describe_capability_build():
+    assert _describe("capability_build", {"tool_name": "printer_ink"}) == \
+        "Build the new skill 'printer_ink' now? Cline works on it in a separate copy of Iris."
+
+
+def _planned_and_patched(tmp_path, monkeypatch):
+    caps = _caps(tmp_path, monkeypatch)
+    save_plan("a request", "printer_ink", "safe", "a plan")
+    wt_root = tmp_path / "wt"
+    monkeypatch.setenv("IRIS_SELF_WORKTREES", str(wt_root))
+    fake_wt = wt_root / "printer_ink"
+
+    def fake_prepare(name, repo):  # the real prepare_build's json side effects, without git
+        meta = json.loads((caps / f"{name}.json").read_text(encoding="utf-8"))
+        meta["status"] = "building"
+        meta["worktree"] = str(fake_wt)
+        meta["branch"] = branch_for(name)
+        (caps / f"{name}.json").write_text(json.dumps(meta, ensure_ascii=False) + "\n", encoding="utf-8")
+        return fake_wt
+
+    monkeypatch.setattr(tools, "prepare_build", fake_prepare)
+    return caps, fake_wt
+
+
+def test_capability_build_starts_cline_and_stores_the_session(tmp_path, monkeypatch):
+    caps, fake_wt = _planned_and_patched(tmp_path, monkeypatch)
+    calls = []
+
+    def start(prompt, cwd):
+        calls.append((prompt, cwd))
+        return f"started Cline session abc123 in {cwd}"
+
+    monkeypatch.setattr("iris.autopilot.start_in_hub", start)
+    result = tools.capability_build("printer_ink")
+    assert result == (f"Building printer_ink in {fake_wt}. I will not use it until Jay reviews and merges it.")
+    prompt, cwd = calls[0]
+    assert prompt == build_prompt("printer_ink", fake_wt)
+    assert cwd == str(fake_wt)
+    meta = json.loads((caps / "printer_ink.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "building"
+    assert meta["session"] == "abc123"
+
+
+def test_capability_build_failed_start_goes_back_to_planned(tmp_path, monkeypatch):
+    caps, fake_wt = _planned_and_patched(tmp_path, monkeypatch)
+
+    def start(prompt, cwd):
+        raise RuntimeError("Cline did not start a session after two tries: no output")
+
+    monkeypatch.setattr("iris.autopilot.start_in_hub", start)
+    result = tools.capability_build("printer_ink")
+    assert result == ("error: Cline did not start a session after two tries: no output. "
+                      "The plan is back to planned; nothing else was removed.")
+    meta = json.loads((caps / "printer_ink.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "planned"
+    assert meta["worktree"] == str(fake_wt)  # nothing else was removed
+
+
+def test_capability_build_refuses_a_not_planned_skill(tmp_path, monkeypatch):
+    _caps(tmp_path, monkeypatch)
+    calls = []
+    monkeypatch.setattr("iris.autopilot.start_in_hub", lambda prompt, cwd: calls.append((prompt, cwd)))
+    result = tools.capability_build("ghost_tool")
+    assert result == "error: no planned skill ghost_tool"
+    assert calls == []
 

@@ -7,6 +7,10 @@
     "tier": "safe",
     "escalates": false
   },
+  "capability_build": {
+    "tier": "confirm",
+    "escalates": false
+  },
   "capability_list": {
     "tier": "safe",
     "escalates": false

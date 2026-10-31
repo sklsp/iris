@@ -99,6 +99,10 @@
     "tier": "safe",
     "escalates": true
   },
+  "make_spreadsheet": {
+    "tier": "safe",
+    "escalates": true
+  },
   "move_file": {
     "tier": "confirm",
     "escalates": true

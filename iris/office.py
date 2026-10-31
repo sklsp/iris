@@ -1,4 +1,5 @@
-"""Office files for the user: Word .docx from a title and simple markdown, PowerPoint .pptx from slides."""
+"""Office files for the user: Word .docx from a title and simple markdown, PowerPoint .pptx from slides,
+and spreadsheet .xlsx from named worksheets of rows."""
 
 import re
 from datetime import date
@@ -135,3 +136,43 @@ def make_presentation(path: str, title: str, slides: list) -> str:
     p.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(p))
     return f"made {p} ({len(slides)} slides)"
+
+
+def make_spreadsheet(path: str, sheets: list) -> str:
+    """Make a spreadsheet .xlsx for the user from named worksheets of rows.
+
+    Each entry becomes one worksheet; its first row is the header and gets bold text on a light gray fill. At most
+    50 rows per sheet (more is an error, nothing written). A bare name goes to ~/Documents/Iris; ".xlsx" is added
+    when missing. When the file already exists it is replaced: the old one goes to Iris's trash first.
+    """
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill
+    except ImportError:
+        return "error: install the office extra: pip install iris[office]"
+
+    for s in sheets:
+        if len(s.get("rows", [])) > 50:
+            return f"error: at most 50 rows per sheet, got {len(s['rows'])}"
+
+    p = files.resolve_target(path)
+    if not p.suffix:
+        p = p.with_suffix(".xlsx")
+    if p.exists():
+        from iris.tools import trash_file  # lazy: tools imports this module
+
+        trash_file(str(p))
+    wb = Workbook()
+    header_font = Font(bold=True)
+    header_fill = PatternFill("solid", fgColor="D9D9D9")
+    for i, s in enumerate(sheets):
+        ws = wb.active if i == 0 else wb.create_sheet(str(s.get("name", "")))
+        ws.title = str(s.get("name", ""))
+        for row in s.get("rows", []):
+            ws.append(list(row))
+        for cell in ws[1]:  # the first row is the header
+            cell.font = header_font
+            cell.fill = header_fill
+    p.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(str(p))
+    return f"made {p} ({len(sheets)} sheets)"

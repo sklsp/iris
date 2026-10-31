@@ -145,6 +145,7 @@ are in the eval either way.
 | copy_file | confirm | destination outside home or a configured folder, in a system dir, or in the trash (never) |
 | make_document | safe | outside home or a configured folder (never); an existing file is replaced (confirm) |
 | make_presentation | safe | outside home or a configured folder (never); an existing file is replaced (confirm) |
+| make_spreadsheet | safe | outside home or a configured folder (never); an existing file is replaced (confirm) |
 
 ## Eval
 
@@ -242,6 +243,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | copy_file | confirm | copies a file or folder (with all its contents); never overwrites |
 | make_document | safe | makes a Word .docx for the user from a title and simple markdown; a bare name goes to ~/Documents/Iris; an existing file is replaced, old one trashed first |
 | make_presentation | safe | makes a PowerPoint .pptx for the user from a title and slide entries (title slide with the date, then one content slide per entry); a bare name goes to ~/Documents/Iris; at most 40 slides and 12 bullets each; an existing file is replaced, old one trashed first |
+| make_spreadsheet | safe | makes a spreadsheet .xlsx for the user from named worksheets of rows; the first row of each sheet is a bold header on light gray; a bare name goes to ~/Documents/Iris; at most 50 rows per sheet; an existing file is replaced, old one trashed first |
 
 The tiers are enforced in code, not in the prompt:
 

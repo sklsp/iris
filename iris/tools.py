@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from iris.files import copy_file, find_files, list_folder, make_folder, move_file, read_file, write_file
-from iris.office import make_document, make_presentation
+from iris.office import make_document, make_presentation, make_spreadsheet
 from iris.policy import (
     _MAIL_CHAT,
     _NEVER_WORDS,
@@ -1003,4 +1003,13 @@ TOOLS = {t.name: t for t in [
                                                               "bullets": {"type": "array", "items": S},
                                                               "notes": S}}}},
          ["path", "title", "slides"], SAFE, make_presentation, _new_file_tier),
+    Tool("make_spreadsheet",
+         "Make a spreadsheet .xlsx for the user from named worksheets of rows; use it when the user wants a table,"
+         " list or data file. Write the actual content yourself: real headers and data rows about the topic; for a"
+         " research topic use web_search and web_read first.",
+         {"path": S,
+          "sheets": {"type": "array", "items": {"type": "object",
+                                                "properties": {"name": S,
+                                                              "rows": {"type": "array"}}}}},
+         ["path", "sheets"], SAFE, make_spreadsheet, _new_file_tier),
 ]}

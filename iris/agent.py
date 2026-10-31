@@ -148,6 +148,8 @@ def _describe(name: str, args: dict) -> str:
         return f"Make {args.get('path')} as a Word document?"
     if name == "make_presentation":
         return f"Make {args.get('path')} as a PowerPoint presentation?"
+    if name == "make_spreadsheet":
+        return f"Make {args.get('path')} as a spreadsheet?"
     if name == "press_keys":
         return f"Press {args.get('keys')} in {args.get('window')}?"
     if name == "cline_start":

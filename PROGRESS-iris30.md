@@ -4,7 +4,7 @@
 - [x] T2. Writing, moving and copying files (1181 passed in 32.27s)
 - [x] T3. Word documents (1197 passed in 33.83s)
 - [x] T4. PowerPoint presentations (1213 passed in 33.17s)
-- [ ] T5. Spreadsheets
+- [x] T5. Spreadsheets (1228 passed in 33.37s)
 - [ ] T6. Clipboard, media keys and locking the screen
 - [ ] T7. Screenshot, closing a window and the clock
 - [ ] T8. Opening apps from the Start menu

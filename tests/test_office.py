@@ -1,10 +1,11 @@
-"""Tests for iris.office: making Word documents and PowerPoint presentations, with real python-docx and
-python-pptx on tmp_path only."""
+"""Tests for iris.office: making Word documents, PowerPoint presentations and spreadsheets, with real
+python-docx, python-pptx and openpyxl on tmp_path only."""
 
 import sys
 from datetime import date
 
 from docx import Document
+from openpyxl import Workbook, load_workbook
 from pptx import Presentation
 
 from iris import office, tools
@@ -137,6 +138,56 @@ def test_make_presentation_without_python_pptx_says_install_the_extra(tmp_path, 
         "error: install the office extra: pip install iris[office]"
 
 
+# --- make_spreadsheet ----------------------------------------------------------------
+
+def test_make_spreadsheet_makes_named_sheets_with_bold_gray_header(tmp_path):
+    p = tmp_path / "data.xlsx"
+    sheets = [{"name": "A", "rows": [["h1", "h2"], ["x", 1]]}, {"name": "B", "rows": [["only"]]}]
+    assert office.make_spreadsheet(str(p), sheets) == f"made {p} (2 sheets)"
+
+    wb = load_workbook(str(p))
+    assert wb.sheetnames == ["A", "B"]
+    a, b = wb["A"], wb["B"]
+    assert [(c.value, c.font.bold) for c in a[1]] == [("h1", True), ("h2", True)]
+    assert [c.fill.fgColor.rgb for c in a[1]] == ["00D9D9D9", "00D9D9D9"]
+    assert [(c.value, bool(c.font.bold)) for c in a[2]] == [("x", False), (1, False)]
+    assert b["A1"].value == "only" and b["A1"].font.bold is True
+
+
+def test_make_spreadsheet_bare_name_goes_to_iris_folder_and_adds_xlsx(tmp_path, monkeypatch):
+    home = _home(tmp_path, monkeypatch)
+    p = home / "Documents" / "Iris" / "data.xlsx"
+    assert office.make_spreadsheet("data", [{"name": "S", "rows": []}]) == f"made {p} (1 sheets)"
+    assert p.exists()
+
+
+def test_make_spreadsheet_more_than_50_rows_is_an_error(tmp_path):
+    p = tmp_path / "big.xlsx"
+    sheets = [{"name": "A", "rows": [[str(i)] for i in range(51)]}]
+    assert office.make_spreadsheet(str(p), sheets) == "error: at most 50 rows per sheet, got 51"
+    assert not p.exists()
+
+
+def test_make_spreadsheet_replaces_an_existing_file_and_trashes_the_old_one(tmp_path, monkeypatch):
+    p = tmp_path / "old.xlsx"
+    old = Workbook()
+    old.active.title = "Old"
+    old.save(str(p))
+    trash = tmp_path / "trash"
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(trash))
+
+    assert office.make_spreadsheet(str(p), [{"name": "New", "rows": []}]) == f"made {p} (1 sheets)"
+    assert load_workbook(str(p)).sheetnames == ["New"]
+    trashed = [x for x in trash.iterdir() if not x.name.endswith(".json")]
+    assert len(trashed) == 1 and trashed[0].name.endswith("old.xlsx")
+
+
+def test_make_spreadsheet_without_openpyxl_says_install_the_extra(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "openpyxl", None)
+    assert office.make_spreadsheet(str(tmp_path / "x.xlsx"), []) == \
+        "error: install the office extra: pip install iris[office]"
+
+
 # --- _new_file_tier ---------------------------------------------------------------
 
 def test_new_file_tier_is_safe_for_a_new_file_in_a_folder(tmp_path, monkeypatch):
@@ -199,3 +250,31 @@ def test_presentation_tier_is_never_outside_home_and_folders(tmp_path, monkeypat
 def test_presentation_tier_is_never_in_a_system_directory(tmp_path, monkeypatch):
     _home(tmp_path, monkeypatch)
     assert tools.TOOLS["make_presentation"].tier_of({"path": "C:/Windows/deck.pptx"}) == tools.NEVER
+
+
+# --- make_spreadsheet tiers ---------------------------------------------------------------
+
+def test_spreadsheet_tier_is_safe_for_a_new_file_in_a_folder(tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    work.mkdir()
+    _cfg(tmp_path, monkeypatch, f'folders = ["{work.as_posix()}"]\n')
+    assert tools.TOOLS["make_spreadsheet"].tier_of({"path": str(work / "new.xlsx")}) == tools.SAFE
+
+
+def test_spreadsheet_tier_is_confirm_when_the_file_already_exists(tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "old.xlsx").write_text("x", encoding="utf-8")
+    _cfg(tmp_path, monkeypatch, f'folders = ["{work.as_posix()}"]\n')
+    assert tools.TOOLS["make_spreadsheet"].tier_of({"path": str(work / "old.xlsx")}) == tools.CONFIRM
+
+
+def test_spreadsheet_tier_is_never_outside_home_and_folders(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    outside = tmp_path / "outside.xlsx"
+    assert tools.TOOLS["make_spreadsheet"].tier_of({"path": str(outside)}) == tools.NEVER
+
+
+def test_spreadsheet_tier_is_never_in_a_system_directory(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    assert tools.TOOLS["make_spreadsheet"].tier_of({"path": "C:/Windows/data.xlsx"}) == tools.NEVER

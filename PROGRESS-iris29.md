@@ -7,5 +7,5 @@
 - [x] B5. plans tell the builder where it works (1079 passed in 25.60s)
 - [x] B6. eval tasks (1079 passed in 25.13s)
 - [x] B7. docs (1079 passed in 25.21s)
-- [ ] B8. no dashes
+- [x] B8. no dashes (1079 passed in 26.38s)
 - [ ] B9. final check

@@ -15,6 +15,9 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = ["pywinauto>=0.6.9", "psutil>=5.9"]
 
+[project.scripts]
+iris = "iris.__main__:main"
+
 [project.urls]
 Repository = "https://github.com/sklsp/Iris"
 

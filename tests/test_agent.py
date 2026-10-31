@@ -3,7 +3,7 @@ import urllib.error
 
 import pytest
 
-from iris.agent import MAX_HISTORY_CHARS, MAX_STEPS, SYSTEM, Agent, Journal, _describe
+from iris.agent import MAX_HISTORY_CHARS, MAX_STEPS, Agent, Journal, _describe, system_prompt
 from iris.llm import Reply, ToolCall
 from iris.tools import CONFIRM, SAFE, TOOLS, Tool, _click_tier
 from iris.voice import is_yes
@@ -174,7 +174,7 @@ def test_history_is_bounded_to_max_chars(tmp_path):
         users = [m for m in a.messages if m["role"] == "user"]
         assert size <= MAX_HISTORY_CHARS or len(users) == 1
     assert len(ran) == 30
-    assert a.messages[0] == {"role": "system", "content": SYSTEM}
+    assert a.messages[0] == {"role": "system", "content": system_prompt()}
     assert a.messages[1]["role"] == "user"
 
 

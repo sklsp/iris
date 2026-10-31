@@ -77,7 +77,7 @@ def test_missing_window_error_tells_the_model_to_stop_retrying(monkeypatch):
         tools.focus_window("Spotify")
     assert str(exc.value) == (
         "no window whose title contains 'Spotify'; it is not open now. Call list_windows once to check, "
-        "then tell Jay instead of retrying.")
+        "then tell the user instead of retrying.")
 
 
 # --- scroll -------------------------------------------------------------------
@@ -1108,7 +1108,7 @@ def test_timer_tools_refuse_to_run_without_a_timers(monkeypatch):
 def test_timer_tools_are_registered_safe():
     t = tools.TOOLS["timer_set"]
     expected = ("Set a countdown timer; Iris says `message` out loud when it is done. "
-                "Always pass message in Jay's language.")
+                "Always pass message in the user's language.")
     assert t.tier == tools.SAFE and t.required == []  # minutes or at, exactly one, so neither is required
     assert t.description == expected
     assert "A clock time such as 15:00 instead of minutes" in t.params["at"]["description"]
@@ -1119,7 +1119,7 @@ def test_timer_tools_are_registered_safe():
 def test_timer_set_schema_describes_the_message_param():
     m = tools.TOOLS["timer_set"].params["message"]
     assert m["type"] == "string"
-    assert "in the language Jay spoke" in m["description"]
+    assert "in the language the user spoke" in m["description"]
     assert "'De pasta is klaar.'" in m["description"]
 
 

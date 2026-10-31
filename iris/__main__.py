@@ -2,7 +2,8 @@
 python -m iris --voice         wake word mode: say "hey jarvis" (IRIS_WAKEWORD), stop on silence, hear answers
 python -m iris --push-to-talk  old voice mode: press Enter to stop recording
 python -m iris dashboard       read-only status page at http://127.0.0.1:8765 (add --port N if taken)
-python -m iris autopilot       wait for a run in --repo to finish, then ask before starting the next queued prompt"""
+python -m iris autopilot       wait for a run in --repo to finish, then ask before starting the next queued prompt
+python -m iris doctor          check the setup (LM Studio, model, config, plugins, voice) and say what to fix"""
 
 from __future__ import annotations
 
@@ -43,6 +44,10 @@ def main() -> None:
                 port = int(args[i + 1])
         serve(port=port)
         return
+    if len(sys.argv) > 1 and sys.argv[1] == "doctor":
+        from iris.doctor import main as doctor_main
+
+        raise SystemExit(doctor_main())
     if len(sys.argv) > 1 and sys.argv[1] == "autopilot":
         from iris.autopilot import autopilot_main
 

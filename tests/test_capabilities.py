@@ -188,7 +188,7 @@ def test_capabilities_dir_falls_back_to_home(monkeypatch):
 def test_request_capability_tool_saves_and_reports(tmp_path, monkeypatch):
     _caps(tmp_path, monkeypatch)
     out = tools.request_capability("a request", "new_tool", "safe", "a plan")
-    assert out == "Saved the plan for new_tool. It is not built yet; Jay can ask to build it."
+    assert out == "Saved the plan for new_tool. It is not built yet; the user can ask to build it."
 
 
 def test_request_capability_tool_reports_validation_errors(tmp_path, monkeypatch):
@@ -368,7 +368,7 @@ def test_capability_build_starts_cline_and_stores_the_session(tmp_path, monkeypa
 
     monkeypatch.setattr("iris.autopilot.start_in_hub", start)
     result = tools.capability_build("printer_ink")
-    assert result == (f"Building printer_ink in {fake_wt}. I will not use it until Jay reviews and merges it.")
+    assert result == (f"Building printer_ink in {fake_wt}. I will not use it until the user reviews and merges it.")
     prompt, cwd = calls[0]
     assert prompt == build_prompt("printer_ink", fake_wt)
     assert cwd == str(fake_wt)
@@ -544,7 +544,7 @@ def test_capability_check_ready_message(tmp_path, monkeypatch):
     fake = {"status": "ready", "problems": [], "changed": ["iris/tools.py", "tests/test_tools.py"]}
     monkeypatch.setattr("iris.tools.check_build", lambda name, repo: fake)
     assert tools.capability_check("printer_ink") == (
-        "printer_ink is ready: 2 files changed, gates green. Jay can review the branch self/printer_ink.")
+        "printer_ink is ready: 2 files changed, gates green. the user can review the branch self/printer_ink.")
 
 
 def test_capability_check_blocked_message(tmp_path, monkeypatch):

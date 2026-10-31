@@ -262,13 +262,18 @@ def check_build(
     problems = guard_problems(changed, old_lock, new_lock)
     if not changed:
         problems.append("no commits yet")
+    problems += policy_mentions(_git(run, ["git", "-C", str(repo), "diff", "-U0", f"main...{branch}"]))
 
     if not problems:
         python = _venv_python(worktree) or _venv_python(repo)
         if python is None:
             raise RuntimeError(f"no .venv python in {worktree} or {repo}")
         for gate, args in GATES:
-            result = run([str(python), *args], cwd=str(worktree), capture_output=True, text=True, timeout=900)
+            try:
+                result = run([str(python), *args], cwd=str(worktree), capture_output=True, text=True, timeout=900)
+            except subprocess.TimeoutExpired:
+                problems.append(f"{gate} timed out")
+                continue
             if result.returncode != 0:
                 output = (result.stdout + "\n" + result.stderr).strip()
                 lines = [line for line in output.splitlines() if line.strip()]
@@ -280,6 +285,25 @@ def check_build(
     _atomic_write(json_path, json.dumps(meta, ensure_ascii=False) + "\n")
     meta["changed"] = changed
     return meta
+
+
+def policy_mentions(diff_text: str) -> list[str]:
+    """A self-built branch may not reach into the policy from an unprotected file (for example by rebinding
+    iris.policy._NEVER_WORDS at import). One problem per file whose added lines mention "policy"; protected
+    files are already refused by guard_problems. ponytail: a word match, so a docstring that says policy is
+    refused too; Jay can still merge by hand."""
+    problems: list[str] = []
+    path = ""
+    for line in diff_text.splitlines():
+        if line.startswith("+++ "):
+            path = line[4:].removeprefix("b/").strip()
+        elif line.startswith("+") and "policy" in line.lower() and path:
+            if any(path == p or path.startswith(p) for p in PROTECTED):
+                continue
+            problem = f"mentions the policy in {path}"
+            if problem not in problems:
+                problems.append(problem)
+    return problems
 
 
 def set_plan_field(tool_name: str, field: str, value: str) -> None:

@@ -404,7 +404,9 @@ def test_capability_build_refuses_a_not_planned_skill(tmp_path, monkeypatch):
 class _GitRun:
     """Fake run for check_build: answers git diff/show and the three gates by argv."""
 
-    def __init__(self, changed=(), old_lock=None, new_lock=None, gate_failures=None):
+    def __init__(self, changed=(), old_lock=None, new_lock=None, gate_failures=None, diff_text="", timeout=None):
+        self.diff_text = diff_text
+        self.timeout = timeout  # a gate name that raises TimeoutExpired
         self.changed = list(changed)
         self.old_lock = {} if old_lock is None else old_lock
         self.new_lock = {} if new_lock is None else new_lock
@@ -416,12 +418,16 @@ class _GitRun:
         self.calls.append((list(argv), kwargs))
         if "--name-only" in text:
             return subprocess.CompletedProcess(list(argv), 0, stdout="\n".join(self.changed), stderr="")
+        if "-U0" in text:
+            return subprocess.CompletedProcess(list(argv), 0, stdout=self.diff_text, stderr="")
         if "main:iris/tier_lock.json" in text:
             return subprocess.CompletedProcess(list(argv), 0, stdout=json.dumps(self.old_lock), stderr="")
         if ":iris/tier_lock.json" in text:
             return subprocess.CompletedProcess(list(argv), 0, stdout=json.dumps(self.new_lock), stderr="")
         for gate, marker in (("ruff", "-m ruff"), ("mypy", "-m mypy"), ("pytest", "-m pytest")):
             if marker in text:
+                if gate == self.timeout:
+                    raise subprocess.TimeoutExpired(argv, 900)
                 if gate in self.gate_failures:
                     code, output = self.gate_failures[gate]
                     return subprocess.CompletedProcess(list(argv), code, stdout="", stderr=output)
@@ -557,3 +563,42 @@ def test_capability_check_no_build(tmp_path, monkeypatch):
     monkeypatch.setattr("iris.tools.check_build", boom)
     assert tools.capability_check("printer_ink") == "error: no build to check for printer_ink"
 
+
+
+# --- the guard also reads the diff: no reaching into the policy from unprotected files -----
+
+_REBIND = (
+    "diff --git a/iris/tools.py b/iris/tools.py\n"
+    "+++ b/iris/tools.py\n"
+    "@@ -1,0 +2,2 @@\n"
+    "+import iris.policy\n"
+    "+iris.policy._NEVER_WORDS = re.compile('zzz')\n"
+)
+
+
+def test_policy_mentions_flags_an_unprotected_file_once():
+    from iris.capabilities import policy_mentions
+
+    assert policy_mentions(_REBIND) == ["mentions the policy in iris/tools.py"]
+
+
+def test_policy_mentions_ignores_removed_lines_and_clean_diffs():
+    from iris.capabilities import policy_mentions
+
+    clean = "+++ b/iris/tools.py\n+def printer_ink() -> str:\n-from iris.policy import CONFIRM\n"
+    assert policy_mentions(clean) == []
+
+
+def test_check_build_blocks_a_branch_that_rebinds_the_policy(tmp_path, monkeypatch):
+    caps, wt = _building(tmp_path, monkeypatch)
+    run = _GitRun(changed=["iris/tools.py"], diff_text=_REBIND)
+    meta = check_build("printer_ink", tmp_path / "repo", run=run)
+    assert meta["status"] == "blocked"
+    assert meta["problems"] == ["mentions the policy in iris/tools.py"]
+    assert not [argv for argv, _ in run.calls if "-m pytest" in " ".join(argv)]  # no gates on a dirty guard
+
+
+def test_check_build_a_gate_that_times_out_blocks(tmp_path, monkeypatch):
+    caps, wt = _building(tmp_path, monkeypatch)
+    meta = check_build("printer_ink", tmp_path / "repo", run=_GitRun(changed=["iris/tools.py"], timeout="pytest"))
+    assert meta["status"] == "blocked" and meta["problems"] == ["pytest timed out"]

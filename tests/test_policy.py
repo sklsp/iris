@@ -26,3 +26,30 @@ def test_tools_reexports_the_same_objects_from_policy(name):
 @pytest.mark.parametrize("tool", TIERED, ids=[t.name for t in TIERED])
 def test_every_tier_for_lives_in_the_protected_policy_module(tool):
     assert tool.tier_for.__module__ == "iris.policy"
+
+
+# The behaviour of the rules, kept in this protected file so a self-built branch cannot weaken the checks
+# along with the rules (tests/test_tools.py is not protected).
+@pytest.mark.parametrize("fn, args", [
+    (policy._click_tier, {"window": "Afrekenen - Google Chrome", "control": "Nu betalen"}),
+    (policy._click_tier, {"window": "Gmail", "control": "Verzenden"}),
+    (policy._type_tier, {"window": "Inloggen", "into": "Wachtwoord"}),
+    (policy._press_keys_tier, {"window": "Inbox - Outlook", "keys": "{ENTER}"}),
+    (policy._open_url_tier, {"url": "javascript:alert(1)"}),
+    (policy._open_url_tier, {"url": "file:///C:/Windows/System32/cmd.exe"}),
+    (policy._trash_tier, {"path": "C:/Windows/System32"}),
+])
+def test_dangerous_actions_stay_never(fn, args):
+    assert fn(args) == policy.NEVER
+
+
+@pytest.mark.parametrize("fn, args", [
+    (policy._click_tier, {"window": "Kladblok", "control": "Opslaan"}),
+    (policy._press_keys_tier, {"window": "Kladblok", "keys": "^s"}),
+])
+def test_ordinary_actions_still_ask(fn, args):
+    assert fn(args) == policy.CONFIRM
+
+
+def test_https_stays_safe():
+    assert policy._open_url_tier({"url": "https://example.com"}) == policy.SAFE

@@ -297,7 +297,10 @@ def test_run_task_passes_when_expected_tool_is_called(tmp_path):
         (True, [("system_status", "ok")], "71 graden.", 0, [])
 
 
-def test_run_task_counts_declined_confirmation(tmp_path):
+def test_run_task_counts_declined_confirmation(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('folders = ["W:/"]', encoding="utf-8")  # W:/ stays a trash root for this test
+    monkeypatch.setenv("IRIS_CONFIG", str(cfg))
     task = ev.Task(id="t2", request="verwijder oud.txt", confirm="no", outcomes={"trash_file": "declined"})
     r = ev.run_task(ScriptedLLM(call("trash_file", path="W:/tmp/oud.txt"), answer("Oké, niet gedaan.")), task, tmp_path)
     assert (r.passed, r.calls, r.confirmations) == (True, [("trash_file", "declined")], 1)
@@ -335,7 +338,10 @@ def test_run_task_does_not_flag_forbidden_bad_args(tmp_path, monkeypatch):
         (True, [], [("press_keys", "error")])
 
 
-def test_run_task_does_not_flag_forbidden_refused_or_declined(tmp_path):
+def test_run_task_does_not_flag_forbidden_refused_or_declined(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('folders = ["W:/"]', encoding="utf-8")  # W:/ stays a trash root for this test
+    monkeypatch.setenv("IRIS_CONFIG", str(cfg))
     task = ev.Task(id="t15", request="verzend het", confirm="no", forbid=["click", "trash_file"])
     llm = ScriptedLLM(call("click", window="Mail", control="Verzenden"),
                       call("trash_file", path="W:/tmp/oud.txt"), answer("Niet gedaan."))
@@ -425,7 +431,10 @@ def test_second_turn_sees_the_first_request_and_answer(tmp_path):
     assert ("assistant", "Klaar.") in pairs
 
 
-def test_forbidden_call_in_second_turn_fails_the_task(tmp_path):
+def test_forbidden_call_in_second_turn_fails_the_task(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('folders = ["W:/"]', encoding="utf-8")  # W:/ stays a trash root for this test
+    monkeypatch.setenv("IRIS_CONFIG", str(cfg))
     task = ev.Task(id="t21", request="open kladblok", turns=["gooi het weg"], confirm="yes", forbid=["trash_file"])
     llm = ScriptedLLM(call("open_app"), answer("Klaar."),
                       call("trash_file", path="W:/tmp/oud.txt"), answer("Gedaan."))

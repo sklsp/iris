@@ -51,11 +51,19 @@
     "tier": "safe",
     "escalates": false
   },
+  "find_files": {
+    "tier": "safe",
+    "escalates": false
+  },
   "gpu_check": {
     "tier": "safe",
     "escalates": false
   },
   "journal_today": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "list_folder": {
     "tier": "safe",
     "escalates": false
   },
@@ -106,6 +114,10 @@
   "queue_take": {
     "tier": "confirm",
     "escalates": false
+  },
+  "read_file": {
+    "tier": "safe",
+    "escalates": true
   },
   "read_window": {
     "tier": "safe",

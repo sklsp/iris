@@ -6,6 +6,7 @@ applies to the next request without a restart.
     name = "Jay"                 # how Iris refers to you in its instructions
     plugins = ["lmstudio"]       # opt-in tool groups, see iris.registry.PLUGINS
     builder = ["claude", "-p", "{prompt}"]   # the coding agent that builds new skills; Cline when unset
+    folders = ["W:/"]           # extra folders file tools may search and trash_file may touch
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import os
 import tomllib
 from pathlib import Path
 
-DEFAULTS: dict = {"name": "the user", "plugins": [], "builder": []}
+DEFAULTS: dict = {"name": "the user", "plugins": [], "builder": [], "folders": []}
 
 
 def config_path() -> Path:
@@ -45,4 +46,16 @@ def load() -> dict:
         out["plugins"] = [p for p in data["plugins"] if isinstance(p, str)]
     if isinstance(data.get("builder"), list) and all(isinstance(a, str) for a in data["builder"]):
         out["builder"] = data["builder"]
+    if isinstance(data.get("folders"), list):
+        out["folders"] = [f for f in data["folders"] if isinstance(f, str)]
+    return out
+
+
+def folders() -> list[Path]:
+    """The home folder first, then every configured folder, expanded and without duplicates."""
+    out = [Path.home()]
+    for f in load().get("folders", []):
+        p = Path(f).expanduser()
+        if p not in out:
+            out.append(p)
     return out

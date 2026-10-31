@@ -1,0 +1,144 @@
+"""File tools for Iris: find files by name, list folders and read text, PDF or Office files."""
+
+import os
+import re
+import zipfile
+from pathlib import Path
+
+from iris import config
+
+MAX_CHARS = 20_000
+_SKIP_DIRS = {"AppData", "node_modules", ".git", ".venv", "__pycache__"}
+_TEXT_SUFFIXES = {".txt", ".md", ".csv", ".json", ".py", ".log", ".html", ".xml", ".toml", ".ini", ".yaml"}
+
+
+def find_files(name: str, folder: str = "") -> str:
+    """Files and folders whose name contains `name`, newest first; read only."""
+    q = name.lower()
+    if folder:
+        root0 = Path(folder).expanduser()
+        if not root0.is_dir():
+            return f"error: no such folder: {root0}"
+        roots = [root0]
+    else:
+        roots = config.folders()
+    hits: list[tuple[float, Path]] = []
+    scanned = 0
+    note = ""
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for dirpath, dirnames, filenames in os.walk(root):
+            current = Path(dirpath)
+            if _in_trash(current):
+                dirnames[:] = []  # never search inside Iris's trash
+                continue
+            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _SKIP_DIRS]
+            scanned += len(filenames) + len(dirnames)
+            for entry in (*filenames, *dirnames):
+                if q in entry.lower():
+                    hits.append((_mtime(current / entry), current / entry))
+            if len(hits) >= 30:
+                note = "\n[stopped after 30 hits]"
+                break
+            if scanned >= 20_000:
+                note = "\n[stopped after scanning 20000 entries]"
+                break
+        else:
+            continue
+        break
+    if not hits:
+        return f"No files named {name} found." + note
+    lines = [str(p) for _, p in sorted(hits, key=lambda h: h[0], reverse=True)]
+    return "\n".join(lines[:30]) + note
+
+
+def _in_trash(p: Path) -> bool:
+    try:
+        trash = Path(os.environ.get("IRIS_TRASH_DIR", "~/.iris/trash")).expanduser().resolve()
+        return p.resolve() == trash
+    except OSError:
+        return False
+
+
+def _mtime(p: Path) -> float:
+    try:
+        return p.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def list_folder(path: str) -> str:
+    """The entries of a folder: folders first with a trailing /, then files with their size in KB."""
+    p = Path(path).expanduser()
+    if not p.is_dir():
+        return f"error: no such folder: {p}"
+    dirs = sorted(e.name + "/" for e in p.iterdir() if e.is_dir())
+    files_ = [f"{e.name} {e.stat().st_size // 1024} KB"
+              for e in sorted(p.iterdir(), key=lambda e: e.name) if not e.is_dir()]
+    lines = dirs + files_
+    if len(lines) > 100:
+        return "\n".join(lines[:100]) + f"\n... and {len(lines) - 100} more"
+    return "\n".join(lines) if lines else "(empty)"
+
+
+def read_file(path: str) -> str:
+    """A file as text: plain text, .docx/.pptx from their XML or .pdf via pypdf; at most 20000 characters."""
+    p = Path(path).expanduser()
+    if not p.is_file():
+        return f"error: no such file: {p}"
+    suffix = p.suffix.lower()
+    try:
+        if suffix == ".pdf":
+            text = _pdf_text(p)
+        elif suffix in (".docx", ".pptx"):
+            text = _office_text(p, suffix)
+        else:
+            raw = p.read_bytes()
+            if suffix in _TEXT_SUFFIXES:
+                text = raw.decode("utf-8", "replace")
+            else:
+                try:
+                    text = raw.decode("utf-8")  # any file that decodes as UTF-8 is read as text
+                except UnicodeDecodeError:
+                    return "error: cannot read this kind of file"
+    except Exception as e:  # a corrupt or unreadable file must not crash the agent loop
+        return f"error: could not read {p.name}: {e}"
+    if len(text) > MAX_CHARS:
+        text = text[:MAX_CHARS] + "... (truncated)"
+    return text if text.strip() else "(empty file)"
+
+
+def _pdf_text(p: Path) -> str:
+    try:
+        import pypdf
+    except ImportError:
+        return "error: install pypdf to read PDF files"
+    reader = pypdf.PdfReader(str(p))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def _office_text(p: Path, suffix: str) -> str:
+    """The text of a .docx or .pptx from its XML: paragraphs on separate lines, pptx slide by slide."""
+    import xml.etree.ElementTree as ET
+
+    with zipfile.ZipFile(p) as z:
+        if suffix == ".docx":
+            root = ET.fromstring(z.read("word/document.xml"))
+            return "\n".join(
+                "".join(t.text or "" for t in para.iter() if t.tag.endswith("}t"))
+                for para in root.iter() if para.tag.endswith("}p")
+            )
+        slides = sorted((n for n in z.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)),
+                        key=_slide_no)
+        lines = []
+        for i, slide in enumerate(slides, 1):
+            root = ET.fromstring(z.read(slide))
+            text = "".join(t.text or "" for t in root.iter() if t.tag.endswith("}t"))
+            lines.append(f"Slide {i}: {text}")
+        return "\n".join(lines)
+
+
+def _slide_no(n: str) -> int:
+    m = re.search(r"\d+", n)
+    return int(m.group()) if m else 0

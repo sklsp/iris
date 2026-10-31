@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from iris.files import find_files, list_folder, read_file
 from iris.policy import (
     _MAIL_CHAT,
     _NEVER_WORDS,
@@ -30,6 +31,7 @@ from iris.policy import (
     _click_tier,
     _open_url_tier,
     _press_keys_tier,
+    _read_tier,
     _trash_dir,
     _trash_roots,
     _trash_tier,
@@ -957,4 +959,13 @@ TOOLS = {t.name: t for t in [
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_approve),
     Tool("capability_remove", "Remove a skill Iris built (it goes to Iris's trash). Asks first.",
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_remove),
+    Tool("find_files",
+         "Files and folders whose name contains `name`, in home plus configured folders; newest first.",
+         {"name": S, "folder": S}, ["name"], SAFE, find_files),
+    Tool("list_folder",
+         "The entries of a folder: folders first with a trailing /, then files with their size in KB.",
+         {"path": S}, ["path"], SAFE, list_folder),
+    Tool("read_file",
+         "A file as text: plain text, .docx/.pptx from their XML or .pdf (needs pypdf); max 20000 chars.",
+         {"path": S}, ["path"], SAFE, read_file, _read_tier),
 ]}

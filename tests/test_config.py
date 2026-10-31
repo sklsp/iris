@@ -19,7 +19,7 @@ def test_config_sets_name_and_plugins(tmp_path, monkeypatch):
     path = tmp_path / "config.toml"
     path.write_text('name = " Jay "\nplugins = ["comfyui", 7]\n', encoding="utf-8")
     monkeypatch.setenv("IRIS_CONFIG", str(path))
-    assert config.load() == {"name": "Jay", "plugins": ["comfyui"], "builder": []}
+    assert config.load() == {"name": "Jay", "plugins": ["comfyui"], "builder": [], "folders": []}
     assert "Jay's Windows PC" in system_prompt()
     assert "Today is Friday 31 October 2026." in system_prompt(today="Friday 31 October 2026")
 
@@ -79,3 +79,31 @@ def test_doctor_checks_the_skill_builder(tmp_path, monkeypatch):
     (tmp_path / "config.toml").write_text(f'cline_cli = "{(tmp_path / "config.toml").as_posix()}"', encoding="utf-8")
     ok_lines = [ok for ok, line in doctor.checks({"reachable": False}) if line.startswith("skill builder Cline")]
     assert ok_lines == [True]
+
+
+def test_folders_are_read_from_the_config(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    path.write_text('folders = ["W:/", "D:/Projects"]\n', encoding="utf-8")
+    monkeypatch.setenv("IRIS_CONFIG", str(path))
+    assert config.load()["folders"] == ["W:/", "D:/Projects"]
+
+
+def test_folders_ignore_wrong_types(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    monkeypatch.setenv("IRIS_CONFIG", str(path))
+    path.write_text('folders = "W:/"\n', encoding="utf-8")  # a string is not a list
+    assert config.load()["folders"] == []
+    path.write_text('folders = [7, "D:/p"]\n', encoding="utf-8")  # non-strings are dropped
+    assert config.load()["folders"] == ["D:/p"]
+
+
+def test_folders_lists_home_first_then_configured_without_duplicates(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() on Windows
+    proj = tmp_path / "proj"
+    path = tmp_path / "config.toml"
+    path.write_text(f'folders = ["{proj.as_posix()}", "{home.as_posix()}"]\n', encoding="utf-8")
+    monkeypatch.setenv("IRIS_CONFIG", str(path))
+    assert config.folders() == [home, proj]  # home first; the duplicate of home is dropped
+

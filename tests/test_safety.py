@@ -133,7 +133,10 @@ TRASH_TIER = [
 
 
 @pytest.mark.parametrize("path, expected", TRASH_TIER, ids=[p.replace("\\", "/") for p, _ in TRASH_TIER])
-def test_trash_allows_files_under_the_roots_and_refuses_everything_else(path, expected, monkeypatch):
+def test_trash_allows_files_under_the_roots_and_refuses_everything_else(path, expected, tmp_path, monkeypatch):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('folders = ["W:/"]', encoding="utf-8")  # W:/ is a root only because the config says so
+    monkeypatch.setenv("IRIS_CONFIG", str(cfg))
     monkeypatch.delenv("IRIS_TRASH_DIR", raising=False)  # keep the default trash dir deterministic
     assert tools._trash_tier({"path": path}) == expected
 
@@ -148,10 +151,21 @@ def test_trash_roots_come_from_the_env_var(tmp_path, monkeypatch):
     assert tools._trash_tier({"path": str(Path.home() / "f.txt")}) == tools.CONFIRM
 
 
-def test_trash_roots_default_to_home_and_w_without_env(tmp_path, monkeypatch):
+def test_trash_roots_default_to_home_and_config_folders(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_TRASH_DIR", str(tmp_path / "trash"))
     monkeypatch.delenv("IRIS_TRASH_ROOTS", raising=False)
-    assert tools._trash_tier({"path": "W:/x.txt"}) == tools.CONFIRM  # W:/ is a root by default
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('folders = ["D:/proj"]', encoding="utf-8")
+    monkeypatch.setenv("IRIS_CONFIG", str(cfg))
+    assert tools._trash_tier({"path": "D:/proj/x.txt"}) == tools.CONFIRM  # a configured folder is a root
+    assert tools._trash_tier({"path": str(Path.home() / "x.txt")}) == tools.CONFIRM  # home always stays
+
+
+def test_trash_refuses_w_unless_the_config_allows_it(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(tmp_path / "trash"))
+    monkeypatch.delenv("IRIS_TRASH_ROOTS", raising=False)
+    # conftest points IRIS_CONFIG at a file that does not exist: no folders are configured
+    assert tools._trash_tier({"path": "W:/x.txt"}) == tools.NEVER  # W:/ is just another drive now
 
 
 # --- a declined action never runs -------------------------------------------------
@@ -276,6 +290,9 @@ def test_screen_text_cannot_change_a_tier(tmp_path):
 def test_trash_only_takes_allowed_paths(tmp_path, monkeypatch):
     trash = tmp_path / "trash"
     monkeypatch.setenv("IRIS_TRASH_DIR", str(trash))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('folders = ["W:/"]', encoding="utf-8")  # W:/ is a root only because the config says so
+    monkeypatch.setenv("IRIS_CONFIG", str(cfg))
     monkeypatch.chdir(tmp_path)  # a relative path resolves against a known dir under home
     cases = [
         (str(Path.home() / "Documents" / "oud.txt"), tools.CONFIRM),   # a file under the home folder

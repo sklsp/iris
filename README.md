@@ -117,7 +117,7 @@ are in the eval either way.
 | open_url | safe |  |
 | web_search | safe | searches DuckDuckGo, lists titles, links and snippets |
 | web_read | safe | reads a page as plain text, local addresses refused |
-| trash_file | confirm | the path is home or W:/ itself, outside them, or the Recycle Bin (never) |
+| trash_file | confirm | the path is home or a configured folder itself, outside them, or the Recycle Bin (never) |
 | restore_trash | safe |  |
 | agents_status | safe |  |
 | queue_list | safe |  |
@@ -136,6 +136,9 @@ are in the eval either way.
 | capability_check | confirm |  |
 | capability_approve | confirm |  |
 | capability_remove | confirm |  |
+| find_files | safe |  |
+| list_folder | safe |  |
+| read_file | safe |  |
 
 ## Eval
 
@@ -224,6 +227,9 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | capability_check | confirm | check a built skill: its files and its own tests, in a separate process |
 | capability_approve | confirm | approve a ready skill; only approved, unchanged code is ever offered to the model |
 | capability_remove | confirm | remove a skill; it goes to Iris's trash |
+| find_files | safe | paths of files whose name contains `query`, under home and the configured folders |
+| list_folder | safe | the entries of a folder, with a trailing / on folders |
+| read_file | safe | a file as text: plain text, PDF or .docx/.pptx; long output truncated |
 
 The tiers are enforced in code, not in the prompt:
 

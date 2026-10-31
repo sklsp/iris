@@ -14,6 +14,8 @@ import os
 import re
 from pathlib import Path
 
+from iris import config
+
 SAFE, CONFIRM, NEVER = "safe", "confirm", "never"
 
 # Control names that mean an irreversible or outward-facing action, in English and Dutch. Matched as word
@@ -61,6 +63,20 @@ def _press_keys_tier(args: dict) -> str:
     return NEVER if _MAIL_CHAT.search(str(args.get("window", ""))) else CONFIRM
 
 
+# File names that look like secrets; reading them is never automated.
+_SECRET_WORDS = re.compile(r"(password|wachtwoord|secret|token|credential|apikey|api_key|private)", re.I)
+_SECRET_SUFFIXES = (".key", ".pem", ".pfx", ".kdbx")
+
+
+def _read_tier(args: dict) -> str:
+    """Reading a file whose name looks like a secret is never automated; everything else is safe."""
+    name = Path(str(args.get("path", ""))).name.lower()
+    if (_SECRET_WORDS.search(name) or name.endswith(_SECRET_SUFFIXES) or name == ".env"
+            or name.startswith(("id_rsa", "id_ed25519"))):
+        return NEVER
+    return SAFE
+
+
 def _trash_dir() -> Path:
     d = Path(os.environ.get("IRIS_TRASH_DIR") or (Path.home() / ".iris" / "trash"))
     d.mkdir(parents=True, exist_ok=True)
@@ -68,10 +84,10 @@ def _trash_dir() -> Path:
 
 
 def _trash_roots() -> list[Path]:
-    """Trash roots from IRIS_TRASH_ROOTS (';' separated); the home folder is always included."""
+    """Trash roots from IRIS_TRASH_ROOTS (';' separated); config.folders() otherwise."""
     raw = os.environ.get("IRIS_TRASH_ROOTS")
     if not raw:
-        return [Path.home(), Path("W:/")]
+        return config.folders()
     roots = [Path(s.strip()) for s in raw.split(";") if s.strip()]
     if Path.home() not in roots:
         roots.insert(0, Path.home())

@@ -71,7 +71,8 @@ Work only in this folder: {folder}
    description = "The city"
 2. skill.py with `def run(**kwargs) -> str` taking exactly those parameters and returning a short text. It runs as a
    separate process. Only the Python standard library and packages that are already installed. Errors are returned
-   as text starting with "error:", never raised.
+   as text starting with "error:", never raised. Expand ~ and %VARIABLES% in any path argument
+   (os.path.expanduser and os.path.expandvars): the model often passes paths like %USERPROFILE%\Downloads.
 3. test_skill.py with pytest tests that import skill.py from this folder and never touch the network, the desktop or
    files outside pytest's tmp_path: fake those with monkeypatch.
 4. Run `{python} -I -m pytest -q -p no:cacheprovider test_skill.py` in this folder until it passes.

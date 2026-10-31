@@ -234,5 +234,9 @@
   "weather": {
     "tier": "safe",
     "escalates": false
+  },
+  "email_draft": {
+    "tier": "safe",
+    "escalates": false
   }
 }

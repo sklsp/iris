@@ -154,6 +154,7 @@ are in the eval either way.
 | close_window | confirm |  |
 | clock | safe |  |
 | weather | safe |  |
+| email_draft | safe |  |
 
 ## Eval
 

@@ -351,3 +351,40 @@ def test_screenshot_and_clock_are_safe():
 
 def test_close_window_is_confirm():
     assert tools.TOOLS["close_window"].tier_of({"title": "Notepad"}) == tools.CONFIRM
+
+
+# --- email_draft ---------------------------------------------------------------------
+
+def test_email_draft_opens_a_mailto_url(tmp_path, monkeypatch):
+    opened = []
+    monkeypatch.setattr(desktop.os, "startfile", lambda url: opened.append(url))
+    out = desktop.email_draft(to="jay@example.com", subject="Hello there", body="Line one\nLine two")
+    assert out == "opened a draft to jay@example.com; check it and press send yourself"
+    assert opened == ["mailto:jay%40example.com?subject=Hello%20there&body=Line%20one%0ALine%20two"]
+
+
+def test_email_draft_description_never_sends():
+    d = tools.TOOLS["email_draft"].description
+    assert "never sends" in d
+
+
+def test_email_draft_cuts_the_body_at_1500_characters(monkeypatch):
+    opened = []
+    monkeypatch.setattr(desktop.os, "startfile", lambda url: opened.append(url))
+    desktop.email_draft(to="j@x.com", subject="", body="a" * 2000)
+    assert opened[0].endswith("body=" + "a" * 1500 + "...")
+
+
+def test_email_draft_keeps_a_body_of_exactly_1500_whole(monkeypatch):
+    opened = []
+    monkeypatch.setattr(desktop.os, "startfile", lambda url: opened.append(url))
+    desktop.email_draft(to="j@x.com", subject="", body="a" * 1500)
+    assert opened[0].endswith("body=" + "a" * 1500)
+
+
+def test_email_draft_without_a_recipient_is_an_error():
+    assert desktop.email_draft() == "error: say who the email is for"
+
+
+def test_email_draft_is_safe():
+    assert tools.TOOLS["email_draft"].tier_of({}) == tools.SAFE

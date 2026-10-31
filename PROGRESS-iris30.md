@@ -9,7 +9,7 @@
 - [x] T7. Screenshot, closing a window and the clock (1286 passed in 35.26s)
 - [x] T8. Opening apps from the Start menu (1306 passed in 33.01s)
 - [x] T9. Weather (1320 passed in 35.12s)
-- [ ] T10. Email drafts
+- [x] T10. Email drafts (1331 passed in 37.56s)
 - [ ] T11. Notes
 - [ ] T12. Reminders that survive a restart
 - [ ] T13. Eval tasks for the new tools

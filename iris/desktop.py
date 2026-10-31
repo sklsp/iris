@@ -1,9 +1,11 @@
-"""Desktop actions for the user: clipboard, media keys, locking the screen, screenshots, closing windows and clock."""
+"""Desktop actions for the user: clipboard, media keys, locking the screen, screenshots, closing windows and clock,
+plus opening email drafts."""
 
 import os
 import subprocess
 from ctypes import windll
 from pathlib import Path
+from urllib.parse import quote
 
 _MEDIA_KEYS = {
     "play_pause": 0xB3,
@@ -147,3 +149,13 @@ def start_menu_match(name: str, folders: list[Path]) -> Path | None:
             if best is None or key < best:
                 best, hit = key, lnk
     return hit
+
+
+def email_draft(to: str = "", subject: str = "", body: str = "") -> str:
+    """Open a new message in the default mail app with a mailto: URL; it never sends, the user presses send."""
+    if not to.strip():
+        return "error: say who the email is for"
+    text = body[:1500] + ("..." if len(body) > 1500 else "")
+    url = f"mailto:{quote(to)}?subject={quote(subject)}&body={quote(text)}"
+    os.startfile(url)
+    return f"opened a draft to {to}; check it and press send yourself"

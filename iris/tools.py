@@ -26,6 +26,7 @@ from iris.desktop import (
     clipboard_write,
     clock,
     close_window,
+    email_draft,
     lock_screen,
     media_key,
     screenshot,
@@ -1060,5 +1061,9 @@ TOOLS = {t.name: t for t in [
          "The current weather for a place (or the city from config.toml) plus up to seven days of forecast; "
          "use it when the user asks about the weather or how warm or wet it will be.",
          {"place": S, "days": {"type": "integer"}}, [], SAFE, weather),
+    Tool("email_draft",
+         "Open a new email as a draft in the user's default mail app; it never sends, the user reviews and presses "
+         "send themselves. This is how Iris 'sends' an email.",
+         {"to": S, "subject": S, "body": S}, [], SAFE, email_draft),
 
 ]}

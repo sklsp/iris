@@ -6,6 +6,6 @@
 - [x] B4. capability_check (1078 passed in 25.75s)
 - [x] B5. plans tell the builder where it works (1079 passed in 25.60s)
 - [x] B6. eval tasks (1079 passed in 25.13s)
-- [ ] B7. docs
+- [x] B7. docs (1079 passed in 25.21s)
 - [ ] B8. no dashes
 - [ ] B9. final check

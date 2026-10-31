@@ -255,8 +255,11 @@ shows with its own badge.
 When Jay asks for something Iris cannot do yet, she says so instead of guessing. If he agrees to her suggestion
 (`request_capability`, confirm), she saves the plan for the new skill in `~/.iris/capabilities`: a `.md` with his
 request and the plan plus a `.json` sidecar; `capability_list` (safe) lists what is saved. Saving a plan builds
-nothing: building the skill is a later step that always needs Jay's OK and review, and a self-built branch may never
-weaken an existing rule or touch the protected files ([DESIGN.md](DESIGN.md)).
+nothing: the steps are plan, then build (`capability_build`, confirm), where Cline works on it in its own copy of
+Iris, in a separate git worktree on its own branch, then check (`capability_check`, confirm), which runs the guard
+plus the gates (ruff, mypy and pytest) against that branch. Jay reviews and merges; Iris never merges or uses a
+skill before that, and a self-built branch may never weaken an existing rule or touch the protected files
+([DESIGN.md](DESIGN.md)).
 
 ## Dashboard
 

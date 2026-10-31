@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from iris import config
+from iris.notes import find_notes
 from iris.registry import active_tools
 from iris.tools import CONFIRM, NEVER, Tool
 
@@ -152,6 +153,11 @@ def _describe(name: str, args: dict) -> str:
         return f"Make {args.get('path')} as a spreadsheet?"
     if name == "close_window":
         return f"Close the window {args.get('title')}? Unsaved work may ask to be saved."
+    if name == "note_remove":
+        matches = find_notes(str(args.get("query", "")))
+        if len(matches) == 1:
+            return f"Remove the note '{matches[0][:60]}'?"
+        return f"Remove the note matching {args.get('query')}?"
     if name == "press_keys":
         return f"Press {args.get('keys')} in {args.get('window')}?"
     if name == "cline_start":

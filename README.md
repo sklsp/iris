@@ -155,6 +155,9 @@ are in the eval either way.
 | clock | safe |  |
 | weather | safe |  |
 | email_draft | safe |  |
+| note_add | safe |  |
+| notes_read | safe |  |
+| note_remove | confirm |  |
 
 ## Eval
 

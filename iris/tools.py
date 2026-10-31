@@ -33,6 +33,7 @@ from iris.desktop import (
     start_menu_match,
 )
 from iris.files import copy_file, find_files, list_folder, make_folder, move_file, read_file, write_file
+from iris.notes import note_add, note_remove, notes_read
 from iris.office import make_document, make_presentation, make_spreadsheet
 from iris.policy import (
     _MAIL_CHAT,
@@ -1065,5 +1066,17 @@ TOOLS = {t.name: t for t in [
          "Open a new email as a draft in the user's default mail app; it never sends, the user reviews and presses "
          "send themselves. This is how Iris 'sends' an email.",
          {"to": S, "subject": S, "body": S}, [], SAFE, email_draft),
+    Tool("note_add",
+         "Add one line to the user's notes; use it when the user says 'note this', 'remember this' or wants a quick "
+         "reminder saved.",
+         {"text": S}, ["text"], SAFE, note_add),
+    Tool("notes_read",
+         "The user's recent notes, newest first, or the ones containing a query; use it when they ask what was noted "
+         "down or to find one of their notes.",
+         {"query": S, "last": {"type": "integer"}}, [], SAFE, notes_read),
+    Tool("note_remove",
+         "Remove one of the user's notes: the single note containing the query; use it when they ask to delete a "
+         "note. It errors if none or several match.",
+         {"query": S}, ["query"], CONFIRM, note_remove),
 
 ]}

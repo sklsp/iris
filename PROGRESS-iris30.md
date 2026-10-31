@@ -10,7 +10,7 @@
 - [x] T8. Opening apps from the Start menu (1306 passed in 33.01s)
 - [x] T9. Weather (1320 passed in 35.12s)
 - [x] T10. Email drafts (1331 passed in 37.56s)
-- [ ] T11. Notes
+- [x] T11. Notes (1366 passed in 30.85s)
 - [ ] T12. Reminders that survive a restart
 - [ ] T13. Eval tasks for the new tools
 - [ ] T14. Docs

@@ -238,5 +238,17 @@
   "email_draft": {
     "tier": "safe",
     "escalates": false
+  },
+  "note_add": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "notes_read": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "note_remove": {
+    "tier": "confirm",
+    "escalates": false
   }
 }

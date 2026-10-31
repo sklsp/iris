@@ -57,6 +57,7 @@ from iris.policy import (
     _write_tier,
 )
 from iris.timers import Timers
+from iris.weather import weather
 
 # Re-exported from iris.policy so existing imports of these names from iris.tools keep working; tools.py
 # itself only uses some of them, and __all__ marks the rest as deliberate re-exports.
@@ -1055,5 +1056,9 @@ TOOLS = {t.name: t for t in [
     Tool("clock",
          "The local date and time, weekday and ISO week; use it when the user asks what time or day it is.",
          {}, [], SAFE, clock),
+    Tool("weather",
+         "The current weather for a place (or the city from config.toml) plus up to seven days of forecast; "
+         "use it when the user asks about the weather or how warm or wet it will be.",
+         {"place": S, "days": {"type": "integer"}}, [], SAFE, weather),
 
 ]}

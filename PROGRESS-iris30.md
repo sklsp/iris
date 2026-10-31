@@ -8,7 +8,7 @@
 - [x] T6. Clipboard, media keys and locking the screen (1261 passed in 33.58s)
 - [x] T7. Screenshot, closing a window and the clock (1286 passed in 35.26s)
 - [x] T8. Opening apps from the Start menu (1306 passed in 33.01s)
-- [ ] T9. Weather
+- [x] T9. Weather (1320 passed in 35.12s)
 - [ ] T10. Email drafts
 - [ ] T11. Notes
 - [ ] T12. Reminders that survive a restart

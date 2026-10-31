@@ -230,5 +230,9 @@
   "clock": {
     "tier": "safe",
     "escalates": false
+  },
+  "weather": {
+    "tier": "safe",
+    "escalates": false
   }
 }

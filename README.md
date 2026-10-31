@@ -153,6 +153,7 @@ are in the eval either way.
 | screenshot | safe |  |
 | close_window | confirm |  |
 | clock | safe |  |
+| weather | safe |  |
 
 ## Eval
 

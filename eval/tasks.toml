@@ -988,6 +988,7 @@ fixtures = { capability_list = "hue_lights (confirm): building, asked: Zet de Ph
 [[task]]
 id = "cap_approve"
 category = "agents"
+lang = "en"
 request = "I reviewed the hue_lights skill on the dashboard, approve it."
 expect = ["capability_approve"]
 confirm = "yes"

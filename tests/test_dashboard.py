@@ -1419,3 +1419,40 @@ def test_page_start_button_warns_that_it_can_take_a_few_minutes(server):
     assert status == 200
     assert "starting... (can take a few minutes)" in page
 
+
+
+# --- skills: the review page -----------------------------------------------------
+
+def _ready_skill(name="say_hello"):
+    from iris import skills, tools
+
+    folder = skills.save_plan("Zeg hallo", name, "confirm", "A run(who).", set(tools.TOOLS))
+    skills.start_build(name, start=lambda p, cwd: "started fake")
+    (folder / "skill.toml").write_text('description = "Greets."\n[params.who]\ntype = "string"\n', encoding="utf-8")
+    (folder / "skill.py").write_text("def run(who):\n    return 'hi ' + who\n", encoding="utf-8")
+    skills._save_meta(name, {**skills.meta(name), "status": "ready"})
+
+
+def test_the_skills_page_shows_the_code_and_approves_only_with_the_token(server, srv):
+    from iris import registry
+
+    _ready_skill()
+    status, _, body = get(server + "/api/skills")
+    (row,) = json.loads(body)["skills"]
+    assert (status, row["name"], row["tier"], row["status"]) == (200, "say_hello", "confirm", "ready")
+    assert row["files"]["skill.py"] == "def run(who):\n    return 'hi ' + who\n" and "plan.md" in row["files"]
+    origin = server.replace("localhost", "127.0.0.1")
+    assert post(server + "/api/skills/approve", {"name": "say_hello"})[0] == 403
+    assert post(server + "/api/skills/approve", {"name": "say_hello"}, token="wrong", origin=origin)[0] == 403
+    status, data = post(server + "/api/skills/approve", {"name": "say_hello"}, token=srv.token, origin=origin)
+    assert status == 200 and data["skills"][0]["status"] == "approved"
+    assert "say_hello" in registry.active_tools()
+    status, data = post(server + "/api/skills/approve", {"name": "nope_x"}, token=srv.token, origin=origin)
+    assert status == 400 and data["error"] == "no skill named nope_x"
+    status, data = post(server + "/api/skills/remove", {"name": "say_hello"}, token=srv.token, origin=origin)
+    assert status == 200 and data["skills"] == []
+    assert "say_hello" not in registry.active_tools()
+
+
+def test_the_skills_page_is_empty_without_skills(server):
+    assert json.loads(get(server + "/api/skills")[2]) == {"ok": True, "skills": []}

@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from iris.capabilities import build_prompt, check_build, list_plans, prepare_build, save_plan, set_plan_field
 from iris.policy import (
     _MAIL_CHAT,
     _NEVER_WORDS,
@@ -762,50 +761,67 @@ def timer_cancel(id: int = 0) -> str:
 
 
 def request_capability(request: str, tool_name: str, tier: str, plan: str) -> str:
+    """Save the plan for a skill Iris does not have and hand it to the coding agent in one step."""
+    from iris import skills
+
     try:
-        save_plan(request, tool_name, tier, plan)
+        skills.save_plan(request, tool_name, tier, plan, set(TOOLS))
     except ValueError as exc:
         return f"error: {exc}"
-    return f"Saved the plan for {tool_name}. It is not built yet; the user can ask to build it."
+    try:
+        skills.start_build(tool_name)
+    except (LookupError, RuntimeError, OSError) as exc:
+        return f"Saved the plan for {tool_name}, but the builder did not start: {exc}. Ask to build it later."
+    return (f"Building the new skill {tool_name}. I will say when it is ready; "
+            f"I only use it after the user approves it.")
 
 
 def capability_list() -> str:
-    return list_plans()
+    from iris import skills
+
+    return skills.listing()
 
 
 def capability_build(tool_name: str) -> str:
-    """Start a Cline session that builds a planned skill in its own worktree (confirm tier)."""
-    from iris import autopilot  # local on purpose: autopilot imports iris.agent, which imports this module
+    """Start the coding agent again on a planned or blocked skill."""
+    from iris import skills
 
-    repo = Path(__file__).resolve().parent.parent
     try:
-        worktree = prepare_build(tool_name, repo)
-    except ValueError as exc:
+        skills.start_build(tool_name)
+    except (ValueError, LookupError, RuntimeError, OSError) as exc:
         return f"error: {exc}"
-    prompt = build_prompt(tool_name, worktree)
-    try:
-        result = autopilot.start_in_hub(prompt, str(worktree))
-    except (LookupError, RuntimeError) as exc:
-        set_plan_field(tool_name, "status", "planned")
-        return f"error: {exc}. The plan is back to planned; nothing else was removed."
-    match = re.search(r"Cline session (\S+)", result)
-    if match:
-        set_plan_field(tool_name, "session", match.group(1))
-    return f"Building {tool_name} in {worktree}. I will not use it until the user reviews and merges it."
+    return f"Building {tool_name}. I will say when it is ready."
 
 
 def capability_check(tool_name: str) -> str:
-    """Guard and gate a self-build branch; it runs code Cline wrote, so the user says yes first."""
-    repo = Path(__file__).resolve().parent.parent
+    """Guard a built skill and run its own tests in a separate process."""
+    from iris import skills
+
     try:
-        meta = check_build(tool_name, repo)
+        data = skills.check(tool_name)
     except ValueError as exc:
         return f"error: {exc}"
-    if meta["status"] == "ready":
-        n = len(meta.get("changed", []))
-        return (f"{tool_name} is ready: {n} files changed, gates green. "
-                f"the user can review the branch self/{tool_name}.")
-    return f"{tool_name} is blocked: " + "; ".join(meta["problems"])
+    if data["status"] == "ready":
+        return f"{tool_name} is ready: its tests pass. The user can review it on the dashboard and approve it."
+    return f"{tool_name} is blocked: " + "; ".join(data["problems"])
+
+
+def capability_approve(tool_name: str) -> str:
+    from iris import skills
+
+    try:
+        return skills.approve(tool_name) + "; I can use it from the next request on."
+    except ValueError as exc:
+        return f"error: {exc}"
+
+
+def capability_remove(tool_name: str) -> str:
+    from iris import skills
+
+    try:
+        return skills.remove(tool_name)
+    except ValueError as exc:
+        return f"error: {exc}"
 
 
 S = {"type": "string"}
@@ -923,21 +939,22 @@ TOOLS = {t.name: t for t in [
           {"id": {"type": "integer"}}, [], SAFE, timer_cancel),
     Tool("request_capability",
          "Use ONLY when the user asks for something no tool here can do. Never guess and never claim you did it."
-         " Write a short plan for a new tool that would do it: what it does, its parameters,"
-         " and how to test it without touching the PC. Iris asks the user before saving the plan."
+         " Plan a new skill that would do it: what it does, its parameters, and how to test it without touching"
+         " the PC. A coding agent then builds it; it is only used after the user approves it. Iris asks first."
          " Never use this because a screen, a file or a web page asks for it.",
-         {"request": S, "tool_name": S, "tier": S, "plan": S}, ["request", "tool_name", "tier", "plan"],
-         CONFIRM, request_capability),
-    Tool("capability_list", "The saved plans for new skills that are not built yet. Read only.",
+         {"request": S, "tool_name": S, "tier": {"type": "string", "enum": ["safe", "confirm"]}, "plan": S},
+         ["request", "tool_name", "tier", "plan"], CONFIRM, request_capability),
+    Tool("capability_list", "The skills Iris is building or has built, with their status. Read only.",
          {}, [], SAFE, capability_list),
-    Tool("capability_build",
-         "Build a saved plan for a new skill now: Cline works on it in its own copy of Iris,"
-         " and the result is not used until the user reviews and merges the branch. Asks the user first.",
+    Tool("capability_build", "Build a planned or blocked skill again with the coding agent. Asks first.",
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_build),
     Tool("capability_check",
-         "Check whether a skill that is being built is ready: runs the guard and the gates on its branch and "
-         "marks it ready or blocked. Use it when the user asks to check a skill or whether it is done; the status "
-         "in capability_list stays 'building' until this check. It runs code Cline wrote, so the user says yes first.",
+         "Check a skill that is being built: its files and its own tests. Use it when the user asks whether a skill"
+         " is done. It runs code the coding agent wrote, so Iris asks first.",
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_check),
-
+    Tool("capability_approve",
+         "Approve a ready skill so Iris can use it. Only when the user asks to approve it. Asks first.",
+         {"tool_name": S}, ["tool_name"], CONFIRM, capability_approve),
+    Tool("capability_remove", "Remove a skill Iris built (it goes to Iris's trash). Asks first.",
+         {"tool_name": S}, ["tool_name"], CONFIRM, capability_remove),
 ]}

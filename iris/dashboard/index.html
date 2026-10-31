@@ -228,6 +228,17 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .done-banner.show{display:flex}
 .btn-notify{appearance:none;background:#1a1d22;border:1px solid #23262c;color:#8a9099;font-family:inherit;font-size:11px;padding:2px 7px;border-radius:4px;cursor:pointer;line-height:1.5;margin-left:8px}
 .btn-notify:hover{color:#e6e6e6;border-color:#3a3f47}
+.sk{border-top:1px solid #23262c;padding:10px 0}
+.sk:first-child{border-top:none}
+.sk-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sk-name{font-weight:600}
+.sk-req{color:#8a9099;margin:4px 0}
+.sk-prob{color:#f85149;margin:4px 0}
+.sk-code{background:#0d0f12;border:1px solid #23262c;border-radius:6px;padding:8px;overflow:auto;max-height:420px;
+  font-size:12px;white-space:pre}
+.sk details{margin-top:6px}
+.sk summary{cursor:pointer;color:#8a9099}
+.sk-btns{margin-left:auto;display:flex;gap:6px}
 </style>
 </head>
 <body>
@@ -243,6 +254,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <button type="button" class="tab" data-tab="tools">Tools</button>
   <button type="button" class="tab" data-tab="eval">Eval</button>
   <button type="button" class="tab" data-tab="queue">Autopilot</button>
+  <button type="button" class="tab" data-tab="skills">Skills</button>
 </nav>
 <div id="done-banner" class="done-banner">
   <span id="done-banner-text"></span>
@@ -339,6 +351,14 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
           <textarea id="qp-text" rows="6" class="q-add-text" placeholder="Prompt text (Ctrl+Enter to add)"></textarea>
           <div id="qp-error" class="q-add-err"></div>
         </form>
+      </section>
+    </div>
+  </section>
+  <section id="skills-pane" class="pane hidden">
+    <div class="grid">
+      <section class="panel wide">
+        <h2>Skills Iris built</h2>
+        <div id="skills-body"><div class="empty">loading...</div></div>
       </section>
     </div>
   </section>
@@ -1229,6 +1249,55 @@ const RENDERERS = {
   "/api/claude": renderClaude
 };
 
+// --- skills: review what the coding agent built, then approve or remove it ---------
+const SKILL_STATUS = {approved: "t-safe", ready: "t-confirm", blocked: "t-never"};
+function renderSkills(d){
+  const body = $("skills-body");
+  body.replaceChildren();
+  if (!d || !d.ok){ body.appendChild(el("div", "empty", "could not load skills")); return; }
+  if (d.error) body.appendChild(el("div", "sk-prob", d.error));
+  if (!d.skills.length){
+    body.appendChild(el("div", "empty", "No skills yet. Ask Iris for something she cannot do, and she offers to build it."));
+    return;
+  }
+  for (const s of d.skills){
+    const card = el("div", "sk");
+    const head = el("div", "sk-head");
+    head.appendChild(el("span", "sk-name", s.name));
+    head.appendChild(el("span", "badge " + (TIER_CLASS[s.tier] || ""), s.tier));
+    head.appendChild(el("span", "badge " + (SKILL_STATUS[s.status] || ""), s.status));
+    const btns = el("span", "sk-btns");
+    if (s.status === "ready"){
+      const ok = el("button", "btn-start", "Approve");
+      ok.type = "button";
+      ok.onclick = () => skillAction("approve", s.name, "Approve " + s.name + "? Iris may then run this code on this PC.");
+      btns.appendChild(ok);
+    }
+    const rm = el("button", "btn-notify", "Remove");
+    rm.type = "button";
+    rm.onclick = () => skillAction("remove", s.name, "Remove " + s.name + "? It goes to Iris's trash.");
+    btns.appendChild(rm);
+    head.appendChild(btns);
+    card.appendChild(head);
+    card.appendChild(el("div", "sk-req", "Asked: " + s.request));
+    for (const p of s.problems || []) card.appendChild(el("div", "sk-prob", p));
+    for (const f of Object.keys(s.files)){
+      const det = el("details");
+      det.appendChild(el("summary", null, f));
+      det.appendChild(el("pre", "sk-code", s.files[f]));
+      card.appendChild(det);
+    }
+    body.appendChild(card);
+  }
+}
+async function loadSkills(){ renderSkills(await j("/api/skills")); }
+async function skillAction(action, name, question){
+  if (!window.confirm(question)) return;
+  const d = await postModel("/api/skills/" + action, {name: name});
+  if (d && d.ok) renderSkills(d);
+  else { await loadSkills(); if (d && d.error) $("skills-body").prepend(el("div", "sk-prob", d.error)); }
+}
+
 async function tick(){
   const results = await Promise.all(Object.keys(RENDERERS).map(u => j(u)));
   Object.keys(RENDERERS).forEach((u, i) => RENDERERS[u](results[i]));
@@ -1242,12 +1311,13 @@ tick();
 setInterval(tick, 3000);
 
 // --- tabs ------------------------------------------------------------------------
-const PANES = ["overview", "agents", "activity", "repos", "tools", "eval", "queue"];
+const PANES = ["overview", "agents", "activity", "repos", "tools", "eval", "queue", "skills"];
 function showTab(name){
   if (!PANES.includes(name)) name = "overview";
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   for (const p of PANES) $(p + "-pane").classList.toggle("hidden", p !== name);
   if (name === "eval") loadEval();   // the eval tab fetches when shown, not on every poll
+  if (name === "skills") loadSkills();
   if (name === "queue"){ loadQueue(); startRunsPolling(); }   // queue tab: fetch when shown; runs keep polling while visible
   else stopRunsPolling();
 }

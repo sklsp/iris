@@ -18,7 +18,7 @@ No cloud, no cost per command. See [PLAN.md](PLAN.md) for where it is going.
 - Windows UI Automation instead of screenshots: Iris reads named controls, not pixels
 - Risk tiers enforced in code with tests: safe / confirm / never, escalating with the arguments
 - Wake word and streaming TTS: openWakeWord and faster-whisper in, SAPI or Kokoro out
-- An eval harness: 111 dry-run tasks that measure how well the model picks tools
+- An eval harness: 114 dry-run tasks that measure how well the model picks tools
 - The design decisions, with reasons: [DESIGN.md](DESIGN.md), UI Automation over pixels, tiers in code, untrusted screen text, barge-in
 
 ```mermaid
@@ -77,6 +77,8 @@ flowchart LR
 | capability_list | safe |  |
 | capability_build | confirm |  |
 | capability_check | confirm |  |
+| capability_approve | confirm |  |
+| capability_remove | confirm |  |
 
 ## Eval
 
@@ -150,7 +152,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | timer_set | safe | set a countdown timer for minutes or until a clock time such as 15:00 (`at`); Iris says `message` out loud in Jay's language when it is done |
 | timer_list | safe | the running timers and how long each has left |
 | timer_cancel | safe | stop a timer by its number, or all of them with 0 |
-| capability_list | safe | the saved plans for skills Iris does not have yet, one per line |
+| capability_list | safe | the skills Iris is building or has built, with their status |
 | press_keys | confirm | press shortcuts in a window, `^s` or `{TAB}` |
 | click | confirm | click a control by its name |
 | type_text | confirm | type into a window or a named field, optionally replacing what is there |
@@ -160,9 +162,11 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | queue_remove | confirm | remove one waiting prompt from the agent queue by its id (the number queue_list shows), asks first |
 | queue_move | confirm | move one waiting prompt one place up or down in the agent queue by its id, asks first |
 | cline_start | confirm | start a new Cline session through the Cline CLI with the next queued prompt for this agent; if a repo is given its newest PROGRESS run must be done, asks first |
-| request_capability | confirm | save a plan for a skill Iris cannot do yet; asks first and builds nothing |
-| capability_build | confirm | build a saved plan for a new skill now: Cline works on it in its own copy of Iris, not used until Jay reviews and merges the branch; asks first |
-| capability_check | confirm | check a built skill with the guard and the gates; it runs code Cline wrote, so Jay says yes first |
+| request_capability | confirm | plan a skill Iris cannot do yet and hand it to the coding agent; asks first |
+| capability_build | confirm | build a planned or blocked skill again |
+| capability_check | confirm | check a built skill: its files and its own tests, in a separate process |
+| capability_approve | confirm | approve a ready skill; only approved, unchanged code is ever offered to the model |
+| capability_remove | confirm | remove a skill; it goes to Iris's trash |
 
 The tiers are enforced in code, not in the prompt:
 
@@ -252,14 +256,27 @@ shows with its own badge.
 
 ## Self-extension
 
-When Jay asks for something Iris cannot do yet, she says so instead of guessing. If he agrees to her suggestion
-(`request_capability`, confirm), she saves the plan for the new skill in `~/.iris/capabilities`: a `.md` with his
-request and the plan plus a `.json` sidecar; `capability_list` (safe) lists what is saved. Saving a plan builds
-nothing: the steps are plan, then build (`capability_build`, confirm), where Cline works on it in its own copy of
-Iris, in a separate git worktree on its own branch, then check (`capability_check`, confirm), which runs the guard
-plus the gates (ruff, mypy and pytest) against that branch. Jay reviews and merges; Iris never merges or uses a
-skill before that, and a self-built branch may never weaken an existing rule or touch the protected files
-([DESIGN.md](DESIGN.md)).
+When you ask for something no tool can do, Iris does not guess. She plans a new skill and, after one yes
+(`request_capability`, confirm), hands the plan to a coding agent: Cline by default, or any command in
+config.toml (`builder = ["claude", "-p", "{prompt}"]`). The agent works only in `~/.iris/skills/<name>/` and writes
+three files: `skill.toml` (description and parameters), `skill.py` (`run(**kwargs) -> str`) and `test_skill.py`.
+
+```mermaid
+flowchart LR
+  Ask[A request no tool can do] --> Plan[Plan, one yes] --> Build[Coding agent builds skill.py + tests]
+  Build --> Check[Guard + its own tests, separate process] -->|ready| Review[You review and approve]
+  Check -->|blocked| Build
+  Review --> Use[Offered to the model from the next request]
+```
+
+- **Checked:** when the agent is done, Iris checks the files, refuses code that reaches into Iris itself, and runs the
+  skill's own tests in a separate process. Then she says out loud whether it is ready or blocked.
+- **Approved, then frozen:** a skill is only offered to the model after you approve it (`capability_approve` or the
+  dashboard). The approval stores a hash of exactly that code and its tier; a changed file is never loaded again.
+- **Out of process:** an approved skill never runs inside Iris. Each call starts `python -I` on its `skill.py`, so it
+  can not change Iris's tiers or tools in memory, and a hang ends after 120 seconds.
+- **Tier from you:** the tier (safe or confirm, never more) is the one in the plan you said yes to, not one the
+  builder picks.
 
 ## Dashboard
 
@@ -306,7 +323,7 @@ tab, not an error page.
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 111 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 114 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.

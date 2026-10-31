@@ -5,6 +5,7 @@ applies to the next request without a restart.
 
     name = "Jay"                 # how Iris refers to you in its instructions
     plugins = ["lmstudio"]       # opt-in tool groups, see iris.registry.PLUGINS
+    builder = ["claude", "-p", "{prompt}"]   # the coding agent that builds new skills; Cline when unset
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import os
 import tomllib
 from pathlib import Path
 
-DEFAULTS: dict = {"name": "the user", "plugins": []}
+DEFAULTS: dict = {"name": "the user", "plugins": [], "builder": []}
 
 
 def config_path() -> Path:
@@ -31,4 +32,6 @@ def load() -> dict:
         out["name"] = data["name"].strip()
     if isinstance(data.get("plugins"), list):
         out["plugins"] = [p for p in data["plugins"] if isinstance(p, str)]
+    if isinstance(data.get("builder"), list) and all(isinstance(a, str) for a in data["builder"]):
+        out["builder"] = data["builder"]
     return out

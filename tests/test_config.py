@@ -19,7 +19,7 @@ def test_config_sets_name_and_plugins(tmp_path, monkeypatch):
     path = tmp_path / "config.toml"
     path.write_text('name = " Jay "\nplugins = ["comfyui", 7]\n', encoding="utf-8")
     monkeypatch.setenv("IRIS_CONFIG", str(path))
-    assert config.load() == {"name": "Jay", "plugins": ["comfyui"]}
+    assert config.load() == {"name": "Jay", "plugins": ["comfyui"], "builder": []}
     assert "Jay's Windows PC" in system_prompt()
     assert "Today is Friday 31 October 2026." in system_prompt(today="Friday 31 October 2026")
 

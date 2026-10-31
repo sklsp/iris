@@ -1,11 +1,10 @@
-"""The escalation rules for Iris's tools, in their own protected module.
+"""The escalation rules for Iris's tools, in one module apart from the tools themselves.
 
-A self-built branch must edit iris/tools.py to add a tool, so the rules that decide when an action
-escalates cannot live there: this file is in PROTECTED (iris/capabilities.py) and a built branch may
-not touch it. tools.py imports every name back from here, so both modules agree on one policy.
+tools.py imports every name back from here, so both modules agree on one policy. Skills Iris builds for herself
+never run inside Iris (iris.skills runs them as a separate process), so they can not change these rules.
 
 safe     runs immediately (reading, opening apps, status)
-confirm  asks Jay first (clicking, typing)
+confirm  asks the user first (clicking, typing)
 never    refused, always (sending, buying, paying, passwords, deleting)
 """
 

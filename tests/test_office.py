@@ -161,10 +161,10 @@ def test_make_spreadsheet_bare_name_goes_to_iris_folder_and_adds_xlsx(tmp_path, 
     assert p.exists()
 
 
-def test_make_spreadsheet_more_than_50_rows_is_an_error(tmp_path):
+def test_make_spreadsheet_more_than_5000_rows_is_an_error(tmp_path):
     p = tmp_path / "big.xlsx"
-    sheets = [{"name": "A", "rows": [[str(i)] for i in range(51)]}]
-    assert office.make_spreadsheet(str(p), sheets) == "error: at most 50 rows per sheet, got 51"
+    sheets = [{"name": "A", "rows": [[str(i)] for i in range(5001)]}]
+    assert office.make_spreadsheet(str(p), sheets) == "error: at most 5000 rows per sheet, got 5001"
     assert not p.exists()
 
 
@@ -278,3 +278,33 @@ def test_spreadsheet_tier_is_never_outside_home_and_folders(tmp_path, monkeypatc
 def test_spreadsheet_tier_is_never_in_a_system_directory(tmp_path, monkeypatch):
     _home(tmp_path, monkeypatch)
     assert tools.TOOLS["make_spreadsheet"].tier_of({"path": "C:/Windows/data.xlsx"}) == tools.NEVER
+
+
+# --- review fixes: formulas stay text, csv, sheet names, suffix-aware tiers ---------------------
+
+def test_text_that_looks_like_a_formula_stays_text(tmp_path):
+    import openpyxl
+
+    p = tmp_path / "t.xlsx"
+    rows = [["Naam", "Link"], ["x", '=HYPERLINK("http://evil.example","klik")'], ["y", "+1+1"], ["z", 42]]
+    office.make_spreadsheet(str(p), [{"name": "", "rows": rows}])
+    ws = openpyxl.load_workbook(p).active
+    assert ws.title == "Sheet1"
+    assert (ws["B2"].data_type, ws["B2"].value) == ("s", '=HYPERLINK("http://evil.example","klik")')
+    assert (ws["B3"].data_type, ws["B4"].value) == ("s", 42)
+    assert ws.column_dimensions["B"].width == 42
+
+
+def test_a_csv_path_writes_csv_and_escapes_formulas(tmp_path):
+    p = tmp_path / "t.csv"
+    assert office.make_spreadsheet(str(p), [{"name": "A", "rows": [["a", "b"], ["=1+1", 3]]}]) == f"made {p} (2 rows)"
+    assert p.read_text(encoding="utf-8-sig").splitlines() == ["a,b", "'=1+1,3"]
+
+
+def test_office_tiers_look_at_the_file_with_its_suffix(tmp_path, monkeypatch):
+    home = _home(tmp_path, monkeypatch)
+    iris_dir = home / "Documents" / "Iris"
+    iris_dir.mkdir(parents=True)
+    (iris_dir / "report.docx").write_text("x", encoding="utf-8")
+    assert tools.TOOLS["make_document"].tier_of({"path": "report"}) == tools.CONFIRM  # report means report.docx
+    assert tools.TOOLS["make_presentation"].tier_of({"path": "report"}) == tools.SAFE  # report.pptx is new

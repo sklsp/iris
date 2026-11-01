@@ -7,6 +7,8 @@ from ctypes import windll
 from pathlib import Path
 from urllib.parse import quote
 
+from iris import files
+
 _MEDIA_KEYS = {
     "play_pause": 0xB3,
     "next": 0xB0,
@@ -17,11 +19,15 @@ _MEDIA_KEYS = {
 }
 
 
+# PowerShell reads stdin and writes stdout in the console code page, which breaks é and ë; UTF-8 both ways.
+_UTF8 = "[Console]::InputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); "
+
+
 def clipboard_read() -> str:
     """The text on the user's clipboard (at most 20000 characters), or 'The clipboard is empty.' when there is none."""
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"],
-                           capture_output=True, text=True, timeout=10)
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", _UTF8 + "Get-Clipboard -Raw"],
+                           capture_output=True, text=True, encoding="utf-8", timeout=10)
     except subprocess.TimeoutExpired:
         return "error: reading the clipboard timed out"
     except OSError:
@@ -33,10 +39,13 @@ def clipboard_read() -> str:
 
 
 def clipboard_write(text: str) -> str:
-    """Put text on the user's clipboard, piped to Set-Clipboard so it never appears in the command line."""
+    """Put text on the user's clipboard; it goes in through the environment, never into the command line."""
+    if len(text) > 32000:  # an environment variable holds at most 32767 characters
+        return "error: at most 32000 characters fit on the clipboard this way"
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", "$input | Set-Clipboard"],
-                           input=text, capture_output=True, text=True, timeout=10)
+        # through the environment, which Windows passes as Unicode: stdin goes through the console code page
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value $env:IRIS_CLIP"],
+                           env={**os.environ, "IRIS_CLIP": text}, capture_output=True, text=True, timeout=10)
     except subprocess.TimeoutExpired:
         return "error: writing to the clipboard timed out"
     except OSError:
@@ -71,7 +80,7 @@ _SCREENSHOT_PS = (
     "$bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height;"
     "$g = [System.Drawing.Graphics]::FromImage($bmp);"
     "$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $bmp.Size);"
-    "$bmp.Save($args[0], [System.Drawing.Imaging.ImageFormat]::Png);"
+    "$bmp.Save($env:IRIS_SHOT_PATH, [System.Drawing.Imaging.ImageFormat]::Png);"
     "$g.Dispose(); $bmp.Dispose()"
 )
 
@@ -83,11 +92,12 @@ def screenshot(path: str = "") -> str:
     if not path:
         p = Path.home() / "Pictures" / "Iris" / f"screenshot-{_wall_now():%Y%m%d-%H%M%S}.png"
     else:
-        p = Path(path).expanduser()
+        p = files.resolve_target(path, ".png")
     os.makedirs(p.parent, exist_ok=True)
+    # the path goes in through the environment, never into the script text, so it can not run as PowerShell
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", _SCREENSHOT_PS, str(p)],
-                           capture_output=True, text=True, timeout=30)
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", _SCREENSHOT_PS],
+                           env={**os.environ, "IRIS_SHOT_PATH": str(p)}, capture_output=True, text=True, timeout=30)
     except (subprocess.TimeoutExpired, OSError):
         return "error: could not save a screenshot"
     if r.returncode != 0:

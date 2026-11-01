@@ -64,7 +64,8 @@ def _press_keys_tier(args: dict) -> str:
 
 
 # File names that look like secrets; reading them is never automated.
-_SECRET_WORDS = re.compile(r"(password|wachtwoord|secret|token|credential|apikey|api_key|private)", re.I)
+_SECRET_WORDS = re.compile(r"(password|wachtwoord|secret|token|credential|apikey|api_key|private"
+                           r"|(^|[^a-z])keys?([^a-z]|$))", re.I)  # key as a word: google_key.txt, not keyboard
 _SECRET_SUFFIXES = (".key", ".pem", ".pfx", ".kdbx")
 
 
@@ -128,7 +129,7 @@ def _writable(path: str) -> bool:
 
 def _write_tier(args: dict) -> str:
     """Writing is never outside the writable folders; inside them it always asks first."""
-    return NEVER if not _writable(str(args.get("path", ""))) else CONFIRM
+    return NEVER if not _writable(str(files.resolve_target(str(args.get("path", ""))))) else CONFIRM
 
 
 def _make_folder_tier(args: dict) -> str:
@@ -148,11 +149,24 @@ def _copy_tier(args: dict) -> str:
     return NEVER if not _writable(str(args.get("destination", ""))) else CONFIRM
 
 
-def _new_file_tier(args: dict) -> str:
-    """Office tools that create a file: safe in a writable folder, confirm when the file already exists."""
-    p = files.resolve_target(str(args.get("path", "")))
-    if not _writable(str(p)):
-        return NEVER
-    if p.exists():
-        return CONFIRM
-    return SAFE
+def _new_file_tier_for(suffix: str):
+    """The tier of a tool that creates one file with this suffix: NEVER outside the writable folders, CONFIRM when
+    the file exists (it is replaced; the old one goes to the trash first), else SAFE."""
+    def tier(args: dict) -> str:
+        p = files.resolve_target(str(args.get("path", "")), suffix)
+        if not _writable(str(p)):
+            return NEVER
+        return CONFIRM if p.exists() else SAFE
+    return tier
+
+
+_docx_tier = _new_file_tier_for(".docx")
+_pptx_tier = _new_file_tier_for(".pptx")
+_xlsx_tier = _new_file_tier_for(".xlsx")
+
+
+def _screenshot_tier(args: dict) -> str:
+    """No path means a new file in ~/Pictures/Iris: SAFE. A given path follows the new-file rules."""
+    return _new_file_tier_for(".png")(args) if args.get("path") else SAFE
+
+

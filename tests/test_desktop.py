@@ -46,8 +46,8 @@ def test_clipboard_read_returns_the_text(tmp_path, monkeypatch):
     monkeypatch.setattr(desktop.subprocess, "run", fake_run)
     assert desktop.clipboard_read() == "hello world"
     cmd, kw = calls[0]
-    assert cmd == ["powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"]
-    assert kw["timeout"] == 10
+    assert cmd == ["powershell", "-NoProfile", "-Command", desktop._UTF8 + "Get-Clipboard -Raw"]
+    assert (kw["timeout"], kw["encoding"]) == (10, "utf-8")  # é and ë survive the console code page
 
 
 def test_clipboard_read_empty_says_the_clipboard_is_empty(monkeypatch):
@@ -72,7 +72,7 @@ def test_clipboard_read_timeout_is_an_error(monkeypatch):
 
 # --- clipboard_write -----------------------------------------------------------------
 
-def test_clipboard_write_pipes_text_through_stdin(monkeypatch):
+def test_clipboard_write_passes_the_text_through_the_environment(monkeypatch):
     calls = []
 
     def fake_run(cmd, **kw):
@@ -80,11 +80,12 @@ def test_clipboard_write_pipes_text_through_stdin(monkeypatch):
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(desktop.subprocess, "run", fake_run)
-    assert desktop.clipboard_write("secret text") == "put 11 characters on the clipboard"
+    assert desktop.clipboard_write("geheim café") == "put 11 characters on the clipboard"
     cmd, kw = calls[0]
-    assert cmd == ["powershell", "-NoProfile", "-Command", "$input | Set-Clipboard"]
-    assert kw["input"] == "secret text"
-    assert "secret text" not in " ".join(cmd)
+    assert cmd == ["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value $env:IRIS_CLIP"]
+    assert kw["env"]["IRIS_CLIP"] == "geheim café"  # Unicode, unlike stdin through the console code page
+    assert "geheim" not in " ".join(cmd)
+    assert desktop.clipboard_write("x" * 32001) == "error: at most 32000 characters fit on the clipboard this way"
 
 
 def test_clipboard_write_failure_is_an_error(monkeypatch):
@@ -146,7 +147,7 @@ def test_desktop_tools_are_safe(tmp_path):
 
 # --- screenshot --------------------------------------------------------------------
 
-def test_screenshot_passes_the_path_as_an_argument(tmp_path, monkeypatch):
+def test_screenshot_passes_the_path_through_the_environment_never_the_script(tmp_path, monkeypatch):
     calls = []
 
     def fake_run(cmd, **kw):
@@ -154,15 +155,25 @@ def test_screenshot_passes_the_path_as_an_argument(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(desktop.subprocess, "run", fake_run)
-    target = tmp_path / "shot.png"
+    target = tmp_path / "shot'; Remove-Item x; '.png"  # a path that would run as PowerShell if pasted in
     assert desktop.screenshot(str(target)) == f"saved {target}"
     cmd, kw = calls[0]
-    assert cmd[:3] == ["powershell", "-NoProfile", "-Command"]
-    script = cmd[3]
-    assert cmd[-1] == str(target)  # the path is an argument to the script, not pasted into its text
-    assert "CopyFromScreen" in script and "VirtualScreen" in script
-    assert target.name not in script
-    assert kw["timeout"] == 30
+    assert cmd == ["powershell", "-NoProfile", "-Command", desktop._SCREENSHOT_PS]
+    assert kw["env"]["IRIS_SHOT_PATH"] == str(target)
+    assert "$env:IRIS_SHOT_PATH" in cmd[3] and "CopyFromScreen" in cmd[3] and "Remove-Item" not in cmd[3]
+
+
+def test_screenshot_tier_follows_the_new_file_rules(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / "Pictures").mkdir(parents=True)
+    (home / "Pictures" / "old.png").write_text("x", encoding="utf-8")
+    monkeypatch.setenv("USERPROFILE", str(home))
+    t = tools.TOOLS["screenshot"]
+    assert t.tier_of({}) == tools.SAFE
+    assert t.tier_of({"path": str(home / "Pictures" / "new.png")}) == tools.SAFE
+    assert t.tier_of({"path": str(home / "Pictures" / "old")}) == tools.CONFIRM  # old means old.png
+    assert t.tier_of({"path": "C:/Windows/shot.png"}) == tools.NEVER
+    assert t.tier_of({"path": str(tmp_path / "elsewhere.png")}) == tools.NEVER
 
 
 def test_screenshot_default_goes_to_pictures_iris_with_a_timestamp(tmp_path, monkeypatch):

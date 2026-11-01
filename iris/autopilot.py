@@ -1,4 +1,4 @@
-"""Autopilot: notice when a run is done, so Iris can ask Jay before starting the next one.
+"""Autopilot: notice when a run is done, so Iris can ask the user before starting the next one.
 
 A run is the newest PROGRESS-*.md in a repo root (by modification time). It counts as done when
 every checklist line is ticked or BLOCKED, the tree is clean and the last commit has been quiet
@@ -191,7 +191,7 @@ def start_in_hub(
 
 
 def cline_start(agent: str, repo: str = "") -> str:
-    """Start this agent's next queued prompt as a Cline session in the background hub. The tool layer asks Jay first."""
+    """Start this agent's next queued prompt as a Cline session in the background hub; the tool layer asks first."""
     if repo:
         done, reason = run_done(Path(repo))
         if not done:
@@ -218,7 +218,7 @@ def watch(
     journal: Journal | None = None,
     max_checks: int | None = None,
 ) -> str:
-    """Wait until the run in `repo` is done, then ask Jay once before starting the agent's next prompt.
+    """Wait until the run in `repo` is done, then ask the user once before starting the agent's next prompt.
 
     It returns after the first start or the first answer, so it never starts twice. The start callable receives
     (agent, str(repo)) so the new session runs in the repo that just finished. When journal is given, each outcome
@@ -243,7 +243,7 @@ def watch(
         return result
     answer = confirm(f"{repo} is done ({reason}). Start the next {agent} prompt?")
     if not answer:
-        result = "Jay said no"
+        result = "the user said no"
         if journal is not None:
             journal.log(event="autopilot", source="cli", repo=str(repo), agent=agent, answer=False, result=result)
         return result
@@ -323,7 +323,7 @@ def run_progress(repo: Path | str) -> dict:
 
 
 def autopilot_main(argv: list[str]) -> int:
-    """The CLI behind `python -m iris autopilot`: wait for the run in --repo to finish, ask Jay once, start."""
+    """The CLI behind `python -m iris autopilot`: wait for the run in --repo to finish, ask the user once, start."""
     ap = argparse.ArgumentParser(prog="iris autopilot", description=__doc__)
     ap.add_argument("--repo", required=True)
     ap.add_argument("--agent", required=True)

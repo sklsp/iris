@@ -13,7 +13,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from iris import skills, tools
+from iris import __version__, skills, tools
 from iris.agent import Agent, Journal
 from iris.llm import LMStudio
 from iris.voice import is_yes, speak
@@ -53,6 +53,7 @@ def main() -> None:
 
         raise SystemExit(autopilot_main(sys.argv[2:]))
     ap = argparse.ArgumentParser(prog="iris", description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    ap.add_argument("--version", action="version", version=f"iris {__version__}")
     ap.add_argument("--voice", action="store_true")
     ap.add_argument("--push-to-talk", action="store_true")
     ap.add_argument("--journal", default=str(Path.home() / ".iris" / "journal.jsonl"))

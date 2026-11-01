@@ -127,7 +127,7 @@ are in the eval either way.
 | queue_move | confirm |  |
 | cline_start | confirm |  |
 | concept_sites | safe |  |
-| timer_set | safe | minutes or a clock time such as 15:00 (`at`); says `message` out loud in Jay's language when it is done |
+| timer_set | safe | minutes or a clock time such as 15:00 (`at`); says `message` out loud in the user's language when it is done |
 | timer_list | safe |  |
 | timer_cancel | safe |  |
 | request_capability | confirm |  |
@@ -229,9 +229,9 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | scroll | safe | scroll up or down in a window |
 | restore_trash | safe | put the most recently trashed item back |
 | agents_status | safe | branch, last commit and age, uncommitted files, BLOCKED.md and STUCK per agent repo |
-| queue_list | safe | prompts waiting in Jay's agent queue, oldest first, optionally for one agent |
-| concept_sites | safe | Jay's concept websites from conceptkit: sites, ports and check findings |
-| timer_set | safe | set a countdown timer for minutes or until a clock time such as 15:00 (`at`); Iris says `message` out loud in Jay's language when it is done |
+| queue_list | safe | prompts waiting in the agent queue, oldest first, optionally for one agent |
+| concept_sites | safe | concept websites from conceptkit: sites, ports and check findings |
+| timer_set | safe | set a countdown timer for minutes or until a clock time such as 15:00 (`at`); Iris says `message` out loud in the user's language when it is done |
 | timer_list | safe | the running timers and how long each has left |
 | timer_cancel | safe | stop a timer by its number, or all of them with 0 |
 | capability_list | safe | the skills Iris is building or has built, with their status |
@@ -239,7 +239,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | click | confirm | click a control by its name |
 | type_text | confirm | type into a window or a named field, optionally replacing what is there |
 | trash_file | confirm | move a file or folder to Iris's trash, always undoable |
-| queue_add | confirm | put a prompt in Jay's agent queue for one agent, asks first |
+| queue_add | confirm | put a prompt in the agent queue for one agent, asks first |
 | queue_take | confirm | take the oldest waiting prompt out of the queue so it can be pasted with type_text, asks first |
 | queue_remove | confirm | remove one waiting prompt from the agent queue by its id (the number queue_list shows), asks first |
 | queue_move | confirm | move one waiting prompt one place up or down in the agent queue by its id, asks first |
@@ -322,8 +322,8 @@ chunk, so the wake word stops it between chunks; SAPI cannot be cut off mid-sent
 The repos live in [iris/agents.toml](iris/agents.toml):
 
 ```toml
-repos = ["W:/Ledger", "W:/feedbot", "W:/acme-render", "W:/Iris", "W:/leadscan"]
-worktrees = ["C:/Users/Jayde/.cline/worktrees"]
+repos = ["C:/code/my-app", "D:/work/api"]
+worktrees = ["C:/Users/you/.cline/worktrees"]
 stuck_minutes = 60
 ```
 
@@ -335,7 +335,7 @@ A repo is flagged STUCK when it has uncommitted changes and nothing committed fo
 
 ## The prompt queue
 
-Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first, as do removing one by its id (`queue_remove`; say "verwijder prompt 2 uit de wachtrij") and moving one up or down (`queue_move`; say "schuif prompt 1 omhoog"). To hand one to Cline, say so and Iris runs `cline_start`: it starts a new Cline session through the Cline CLI with the oldest queued prompt for that agent only after Jay says yes; if the start fails (say, the CLI is missing or the hub does not pick up the session) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
+Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first, as do removing one by its id (`queue_remove`; say "verwijder prompt 2 uit de wachtrij") and moving one up or down (`queue_move`; say "schuif prompt 1 omhoog"). To hand one to Cline, say so and Iris runs `cline_start`: it starts a new Cline session through the Cline CLI with the oldest queued prompt for that agent only after the user says yes; if the start fails (say, the CLI is missing or the hub does not pick up the session) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
 
 ## Autopilot
 
@@ -353,20 +353,20 @@ Start the next prompt?") and, if you clicked **Notify me** and allowed it, your 
 The terminal way waits in place instead of polling:
 
 ```bash
-.venv\Scripts\python -m iris autopilot --repo W:/Iris --agent qwen   # checks every 60 s, --every changes it
+.venv\Scripts\python -m iris autopilot --repo C:/code/my-app --agent qwen   # checks every 60 s, --every changes it
 ```
 
 It starts at most one task and exits after that first answer. Starting is `cline_start`: it runs the Cline CLI
-(`IRIS_CLINE_CLI`, default `W:/Cline/cline-cli.exe`) in the repo (or `IRIS_CLINE_CWD`, default W:/Iris) with `-z` and
+(`IRIS_CLINE_CLI`, config `cline_cli`, else `cline`) in the repo (or `IRIS_CLINE_CWD`, config `cline_cwd`, else home) with `-z` and
 the prompt as one argv item, so a queued prompt may span lines. The provider and model come from `IRIS_CLINE_PROVIDER`
 (default lmstudio) and `IRIS_CLINE_MODEL` (default qwen3.8-27b). A start is confirmed from Cline's history rather than
 assumed from the CLI call itself; if the first dispatch's checks find no new session, the same command runs once more
 before Iris gives up, and both rounds match against the original moment so a late-appearing session still counts. The
 retry only happens when Cline's history was readable and showed no new session after about 15 seconds; a session that
 registers later than that can still be running alongside the retry, so Iris reads the history once more and says how many
-sessions started (N) and that Jay should stop the extra one in Cline. If it does not start after all that,
+sessions started (N) and that the user should stop the extra one in Cline. If it does not start after all that,
 the queue stays untouched.
-Every outcome (nothing queued, Jay said no, started) is logged as an autopilot event that the dashboard's Activity tab
+Every outcome (nothing queued, the user said no, started) is logged as an autopilot event that the dashboard's Activity tab
 shows with its own badge.
 
 ## Self-extension
@@ -436,7 +436,7 @@ tab, not an error page.
 ## Eval
 
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
-spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
+spoken request plus what should happen: which tools must be called, which must never succeed, whether the user says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
 from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 191 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
@@ -481,14 +481,14 @@ is never published here nor shown as the latest run on the dashboard; both pick 
 | `IRIS_CLINE_PROVIDER` | `lmstudio` | the provider passed with -P to the Cline CLI |
 | `IRIS_CLINE_MODEL` | `qwen3.8-27b` | the model passed with -m to the Cline CLI |
 | `IRIS_CLINE_CWD` | config `cline_cwd`, else home | the working directory a Cline session starts in when no repo is given |
-| `IRIS_CONCEPTKIT_DIR` | `W:/conceptkit` | where concept_sites runs conceptkit |
+| `IRIS_CONCEPTKIT_DIR` | config `conceptkit_dir`, else `~/conceptkit` | where concept_sites runs conceptkit |
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
 | `IRIS_LMS_BIN` | lms on PATH | where the model control finds the LM Studio CLI |
 | `IRIS_SESSIONS_DB` | `~/.iris/sessions.db` | where the Sessions tab reads its rows from |
 | `IRIS_CLAUDE_DIR` | `~/.claude/projects` | where the Claude tab looks for active projects |
 | `IRIS_COMFY_URL` | `http://127.0.0.1:8188` | where comfy_status looks |
 | `IRIS_COMFY_WORKFLOWS` | `~/.iris/workflows` | the folder comfy_workflows lists .json files from |
-| `IRIS_LEADSCAN_DIR` | `W:/leadscan` | where followups reads out/pipeline.csv from |
+| `IRIS_LEADSCAN_DIR` | config `leadscan_dir`, else `~/leadscan` | where followups reads out/pipeline.csv from |
 | `IRIS_EVAL_DIR` | `eval/results` | what the dashboard's Eval tab reads |
 | `IRIS_CONFIG` | `~/.iris/config.toml` | the settings file |
 | `IRIS_SKILLS` | `~/.iris/skills` | where self-built skills live |

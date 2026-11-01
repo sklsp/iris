@@ -78,9 +78,7 @@ def make_document(path: str, title: str, content: str) -> str:
     except ImportError:
         return "error: install the office extra: pip install iris[office]"
 
-    p = files.resolve_target(path)
-    if not p.suffix:
-        p = p.with_suffix(".docx")
+    p = files.resolve_target(path, ".docx")
     if p.exists():
         from iris.tools import trash_file  # lazy: tools imports this module
 
@@ -112,9 +110,7 @@ def make_presentation(path: str, title: str, slides: list) -> str:
         if len(s.get("bullets", [])) > 12:
             return "error: at most 12 bullets per slide"
 
-    p = files.resolve_target(path)
-    if not p.suffix:
-        p = p.with_suffix(".pptx")
+    p = files.resolve_target(path, ".pptx")
     if p.exists():
         from iris.tools import trash_file  # lazy: tools imports this module
 
@@ -138,26 +134,40 @@ def make_presentation(path: str, title: str, slides: list) -> str:
     return f"made {p} ({len(slides)} slides)"
 
 
-def make_spreadsheet(path: str, sheets: list) -> str:
-    """Make a spreadsheet .xlsx for the user from named worksheets of rows.
+MAX_ROWS = 5000
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 
-    Each entry becomes one worksheet; its first row is the header and gets bold text on a light gray fill. At most
-    50 rows per sheet (more is an error, nothing written). A bare name goes to ~/Documents/Iris; ".xlsx" is added
-    when missing. When the file already exists it is replaced: the old one goes to Iris's trash first.
+
+def _cell(value):
+    """Numbers and booleans stay as they are; everything else is text. Text never becomes a formula, because the
+    content can come from a web page (an "=HYPERLINK(...)" or DDE trick must stay a plain string)."""
+    if isinstance(value, (bool, int, float)) or value is None:
+        return value
+    return str(value)
+
+
+def make_spreadsheet(path: str, sheets: list) -> str:
+    """Make a spreadsheet for the user from named worksheets of rows.
+
+    Each entry becomes one worksheet; its first row is the header (bold on light gray) and the columns get a width
+    that fits their text. At most 5000 rows per sheet (more is an error, nothing written). A bare name goes to
+    ~/Documents/Iris; ".xlsx" is added when the name has no suffix, and a path ending in .csv writes the first sheet
+    as CSV without the office extra. Text that starts like a formula stays text. When the file already exists it is
+    replaced: the old one goes to Iris's trash first.
     """
+    for s in sheets:
+        if len(s.get("rows", [])) > MAX_ROWS:
+            return f"error: at most {MAX_ROWS} rows per sheet, got {len(s['rows'])}"
+    p = files.resolve_target(path, ".xlsx")
+    if p.suffix.lower() == ".csv":
+        return _write_csv(p, sheets)
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill
+        from openpyxl.utils import get_column_letter
     except ImportError:
         return "error: install the office extra: pip install iris[office]"
 
-    for s in sheets:
-        if len(s.get("rows", [])) > 50:
-            return f"error: at most 50 rows per sheet, got {len(s['rows'])}"
-
-    p = files.resolve_target(path)
-    if not p.suffix:
-        p = p.with_suffix(".xlsx")
     if p.exists():
         from iris.tools import trash_file  # lazy: tools imports this module
 
@@ -166,13 +176,38 @@ def make_spreadsheet(path: str, sheets: list) -> str:
     header_font = Font(bold=True)
     header_fill = PatternFill("solid", fgColor="D9D9D9")
     for i, s in enumerate(sheets):
-        ws = wb.active if i == 0 else wb.create_sheet(str(s.get("name", "")))
-        ws.title = str(s.get("name", ""))
-        for row in s.get("rows", []):
-            ws.append(list(row))
-        for cell in ws[1]:  # the first row is the header
-            cell.font = header_font
-            cell.fill = header_fill
+        name = str(s.get("name") or f"Sheet{i + 1}")[:31]  # Excel's limit; an empty name is not allowed
+        ws = wb.active if i == 0 else wb.create_sheet(name)
+        ws.title = name
+        widths: dict[int, int] = {}
+        for r, row in enumerate(s.get("rows", []), 1):
+            for c, value in enumerate(row, 1):
+                cell = ws.cell(row=r, column=c, value=_cell(value))
+                if isinstance(cell.value, str) and cell.value.startswith(_FORMULA_START):
+                    cell.data_type = "s"  # openpyxl would store it as a formula
+                widths[c] = max(widths.get(c, 0), len(str(value)))
+                if r == 1:
+                    cell.font = header_font
+                    cell.fill = header_fill
+        for c, w in widths.items():
+            ws.column_dimensions[get_column_letter(c)].width = min(max(w + 2, 8), 60)
     p.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(p))
     return f"made {p} ({len(sheets)} sheets)"
+
+
+def _write_csv(p, sheets: list) -> str:
+    """The first sheet as CSV; text that starts like a formula gets a leading apostrophe so Excel shows it as text."""
+    import csv
+
+    rows = sheets[0].get("rows", []) if sheets else []
+    if p.exists():
+        from iris.tools import trash_file  # lazy: tools imports this module
+
+        trash_file(str(p))
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        for row in rows:
+            w.writerow(["'" + v if isinstance(v, str) and v.startswith(_FORMULA_START) else v for v in row])
+    return f"made {p} ({len(rows)} rows)"

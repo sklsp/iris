@@ -13,5 +13,10 @@
 - [x] T11. Notes (1366 passed in 30.85s)
 - [x] T12. Reminders that survive a restart (1401 passed in 35.49s)
 - [x] T13. Eval tasks for the new tools (1401 passed in 35.34s)
-- [ ] T14. Docs
-- [ ] T15. Final check
+- [x] T14. Docs (1401 passed in 34.63s)
+- [x] T15. Final check (1401 passed in 35.51s)
+
+Final gates (T15):
+- ruff: All checks passed!
+- mypy: Success: no issues found in 24 source files
+- pytest: 1401 passed in 35.51s

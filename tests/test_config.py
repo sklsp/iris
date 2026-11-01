@@ -120,3 +120,16 @@ def test_version_is_0_4_0(capsys, monkeypatch):
     with pytest.raises(SystemExit):
         imain.main()
     assert capsys.readouterr().out.strip() == "iris 0.4.0"
+
+
+def test_doctor_marks_optional_misses_and_exits_on_required_ones(capsys, monkeypatch):
+    from iris import doctor
+
+    monkeypatch.setattr(doctor, "checks", lambda: [(True, "Python 3.12"), (False, "voice extras missing"),
+                                                   (False, "skill builder Cline (cline) not found")])
+    assert doctor.main() == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["ok  Python 3.12", "--  voice extras missing", "--  skill builder Cline (cline) not found"]
+    monkeypatch.setattr(doctor, "checks", lambda: [(False, "LM Studio not reachable")])
+    assert doctor.main() == 1
+    assert capsys.readouterr().out.strip() == "FIX LM Studio not reachable"

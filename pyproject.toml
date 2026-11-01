@@ -28,7 +28,11 @@ tts = ["kokoro-onnx>=0.6"]  # optional Kokoro TTS (IRIS_TTS=kokoro); SAPI is the
 dev = ["pytest", "pytest-cov", "ruff", "mypy"]
 
 [tool.setuptools]
-packages = ["iris"]
+packages = ["iris", "iris.dashboard"]
+
+[tool.setuptools.package-data]
+iris = ["tier_lock.json", "agents.toml"]
+"iris.dashboard" = ["index.html"]
 
 [tool.setuptools.dynamic]
 version = {attr = "iris.__version__"}

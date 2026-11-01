@@ -107,3 +107,16 @@ def test_folders_lists_home_first_then_configured_without_duplicates(tmp_path, m
     monkeypatch.setenv("IRIS_CONFIG", str(path))
     assert config.folders() == [home, proj]  # home first; the duplicate of home is dropped
 
+
+
+def test_version_is_0_4_0(capsys, monkeypatch):
+    import sys
+
+    import pytest
+
+    from iris import __main__ as imain
+
+    monkeypatch.setattr(sys, "argv", ["iris", "--version"])
+    with pytest.raises(SystemExit):
+        imain.main()
+    assert capsys.readouterr().out.strip() == "iris 0.4.0"

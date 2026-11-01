@@ -1,6 +1,6 @@
 [project]
 name = "iris"
-version = "0.3.0"
+dynamic = ["version"]
 description = "A local voice agent that operates this Windows PC through UI Automation."
 readme = "README.md"
 authors = [{name = "skl"}]
@@ -29,6 +29,9 @@ dev = ["pytest", "pytest-cov", "ruff", "mypy"]
 
 [tool.setuptools]
 packages = ["iris"]
+
+[tool.setuptools.dynamic]
+version = {attr = "iris.__version__"}
 
 [tool.ruff]
 line-length = 120

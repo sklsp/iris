@@ -7,6 +7,7 @@
 - Vision fallback: `look_at_screen` answers questions about the screen or one window, and `click_on_screen`
   clicks something found by sight (confirm, never for send/buy/pay/password/delete). Both use the local model, so
   it needs one that reads images, such as `qwen3.8-27b`.
+- `IRIS_WAKEWORD=iris`: wake Iris by her name, checked by Whisper tiny with a hotword, no trained model.
 
 ## 0.4.0 (2026-11-01): the first public release
 

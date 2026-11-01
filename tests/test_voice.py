@@ -290,3 +290,71 @@ def test_session_barge_in_skips_the_wake_word_for_the_next_request():
     assert s.next_request() == "close the window"
     feeder.join()
     assert s._wake_seen is False  # consumed, so the next request waits for a real wake word
+
+
+def _tone(seconds, amp=0.2):
+    n = int(seconds * RATE / FRAME)
+    return [np.full(FRAME, amp, dtype=np.float32) for _ in range(n)]
+
+
+def _quiet(seconds):
+    return _tone(seconds, 0.0)
+
+
+def test_name_wake_transcribes_a_short_utterance_with_its_lead_in_and_matches_the_name():
+    from iris.voice import NameWake
+
+    heard = []
+    w = NameWake(transcribe=lambda a: heard.append(len(a)) or "Hey Iris.")
+    frames = _quiet(1) + _tone(0.8) + _quiet(0.6)
+    hits = [w.detect(f) for f in frames]
+    assert sum(hits) == 1 and len(heard) == 1
+    assert heard[0] >= len(_tone(0.8)) * FRAME + 2 * FRAME  # the speech plus lead-in frames before it
+    w.transcribe = lambda a: "I bought a new phone"
+    assert not any(w.detect(f) for f in _tone(0.8) + _quiet(0.6))
+
+
+def test_name_wake_skips_long_speech_and_stays_quiet_on_silence():
+    from iris.voice import NameWake
+
+    calls = []
+    w = NameWake(transcribe=lambda a: calls.append(1) or "Iris", max_seconds=1.0)
+    assert not any(w.detect(f) for f in _quiet(2))
+    assert not any(w.detect(f) for f in _tone(2.5) + _quiet(0.6))  # a long sentence is not a wake word
+    assert calls == []
+    assert any(w.detect(f) for f in _tone(0.3) + _quiet(0.6))  # lead-in + speech + silence fit in 1 s
+
+
+def test_make_wake_picks_the_name_or_an_openwakeword_model(monkeypatch):
+    from iris.voice import NameWake, make_wake
+
+    monkeypatch.setenv("IRIS_WAKEWORD", "iris")
+    assert isinstance(make_wake(), NameWake)
+    assert isinstance(make_wake("Hey_Iris"), NameWake)
+    assert isinstance(make_wake("hey_jarvis"), WakeWord)
+    monkeypatch.delenv("IRIS_WAKEWORD")
+    assert make_wake().name == "hey_jarvis"
+
+
+def test_name_wake_loads_tiny_whisper_once_with_iris_as_hotword(monkeypatch):
+    import sys
+    import types
+
+    from iris.voice import NameWake
+
+    made, seen = [], []
+
+    class FakeModel:
+        def __init__(self, size, **kw):
+            made.append(size)
+
+        def transcribe(self, audio, **kw):
+            seen.append(kw)
+            return [types.SimpleNamespace(text=" Iris ")], None
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=FakeModel))
+    monkeypatch.delenv("IRIS_WAKE_WHISPER", raising=False)
+    w = NameWake()
+    assert w.transcribe(np.zeros(10, dtype=np.float32)) == "Iris"
+    w.transcribe(np.zeros(10, dtype=np.float32))
+    assert made == ["tiny"] and seen[0] == {"hotwords": "Iris"}

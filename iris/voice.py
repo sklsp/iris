@@ -19,8 +19,8 @@ WHISPER_DEVICE = os.environ.get("IRIS_WHISPER_DEVICE", "cpu")  # "cuda" to use a
 RATE = 16000
 FRAME = 1280  # 80 ms at 16 kHz, the frame size openWakeWord wants
 
-# Built-in models until a custom "hey iris" model exists; IRIS_WAKEWORD picks another built-in name
-# or points straight at an .onnx file. Read at construction time so tests can override it.
+# IRIS_WAKEWORD picks a built-in openWakeWord name, an .onnx file, or "iris" for NameWake (no model needed).
+# Read at construction time so tests can override it.
 WAKE_THRESHOLD = float(os.environ.get("IRIS_WAKE_THRESHOLD", 0.5))
 SILENCE_SECONDS = 1.2  # stop recording after this much continuous silence
 VAD_THRESHOLD = float(os.environ.get("IRIS_VAD_THRESHOLD", 0.01))  # RMS below this counts as silence
@@ -101,6 +101,69 @@ class WakeWord:
         return max(scores.values(), default=0.0) >= self.threshold
 
 
+class NameWake:
+    """Wake on the spoken name "Iris" without a trained model: an energy VAD cuts short utterances (at most
+    `max_seconds`) out of the mic stream, and a small Whisper model (IRIS_WAKE_WHISPER, default tiny, with "Iris" as
+    a hotword: about 0.6 s on a CPU) checks whether they say the name. Same detect(frame) interface as WakeWord.
+
+    ponytail: every short utterance in the room is transcribed; a trained openWakeWord model is cheaper on CPU."""
+
+    NAME = re.compile(r"\b(iris|irıs|iriss)\b", re.I)
+
+    def __init__(self, transcribe=None, threshold: float | None = None, max_seconds: float = 3.0,
+                 silence_seconds: float = 0.4):
+        self.transcribe = transcribe or self._tiny
+        self._whisper: Any = None
+        self.threshold = VAD_THRESHOLD if threshold is None else float(threshold)
+        self.max_frames = int(max_seconds * RATE / FRAME)
+        self.silence_seconds = silence_seconds
+        self._chunks: list[np.ndarray] = []
+        self._det: SilenceDetector | None = None
+        self._before: list[np.ndarray] = []
+        self._long = False
+
+    def detect(self, frame: np.ndarray) -> bool:
+        import numpy as np
+
+        if self._long:  # the rest of a long sentence: wait for its silence, then listen again
+            assert self._det is not None
+            self._long = not self._det.feed(frame)
+            return False
+        if not self._chunks:
+            rms = float(np.sqrt(np.mean(frame.astype("float64") ** 2))) if len(frame) else 0.0
+            if rms <= self.threshold:
+                self._before = [*self._before[-2:], frame]  # 240 ms of lead-in, so the first sound is not cut
+                return False  # still quiet: nothing to listen to
+            self._det = SilenceDetector(silence_seconds=self.silence_seconds, threshold=self.threshold)
+            self._chunks, self._before = self._before, []
+        assert self._det is not None
+        self._chunks.append(frame)
+        ended = self._det.feed(frame)
+        if not ended and len(self._chunks) < self.max_frames:
+            return False
+        audio, self._chunks = np.concatenate(self._chunks), []
+        if not ended:
+            self._long = True  # a long sentence, not a wake word
+            return False
+        return bool(self.NAME.search(self.transcribe(audio)))
+
+    def _tiny(self, audio: np.ndarray) -> str:
+        from faster_whisper import WhisperModel
+
+        if self._whisper is None:
+            compute = "float16" if WHISPER_DEVICE == "cuda" else "int8"
+            self._whisper = WhisperModel(os.environ.get("IRIS_WAKE_WHISPER", "tiny"), device=WHISPER_DEVICE,
+                                         compute_type=compute)
+        segments, _ = self._whisper.transcribe(audio, hotwords="Iris")
+        return " ".join(s.text.strip() for s in segments).strip()
+
+
+def make_wake(name: str | None = None) -> WakeWord | NameWake:
+    """"iris" or "hey_iris" wakes on the name through Whisper; anything else is an openWakeWord model."""
+    name = name or os.environ.get("IRIS_WAKEWORD", "hey_jarvis")
+    return NameWake() if name.lower() in ("iris", "hey_iris") else WakeWord(name)
+
+
 class Voice:
     """Push-to-talk mode: press Enter to stop recording."""
 
@@ -145,7 +208,7 @@ class VoiceSession:
                  vad_threshold: float | None = None, silence_seconds: float = SILENCE_SECONDS,
                  max_record_seconds: float = 30, speaker: Speaker | None = None):
         self.whisper_name = whisper_model or WHISPER_MODEL
-        self.wake = WakeWord(wake_word)
+        self.wake = make_wake(wake_word)
         self.vad_threshold = vad_threshold
         self.silence_seconds = silence_seconds
         self.max_record_seconds = max_record_seconds

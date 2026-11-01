@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from iris import config
 from iris.desktop import (
     _start_menu_folders,
     clipboard_read,
@@ -262,7 +263,7 @@ def followups(today: str = "") -> str:
     import csv
     from datetime import date
 
-    folder = Path(os.environ.get("IRIS_LEADSCAN_DIR", "W:/leadscan"))
+    folder = Path(os.environ.get("IRIS_LEADSCAN_DIR") or config.get("leadscan_dir", str(Path.home() / "leadscan")))
     file = folder / "out" / "pipeline.csv"
     if not file.exists():
         return "No leadscan CRM found."
@@ -586,7 +587,7 @@ def queue_move(id: int, direction: str) -> str:
 
 
 def cline_start(agent: str, repo: str = "") -> str:
-    """Start a new Cline session for this agent with the next queued prompt, in repo (default W:/Iris).
+    """Start a new Cline session for this agent with the next queued prompt, in repo (default: cline_cwd).
 
     Asks the user first."""
     from iris.autopilot import cline_start as _start
@@ -598,7 +599,7 @@ def concept_sites() -> str:
     """The user's concept websites from conceptkit: every site with its port and stops, plus check --all findings.
 
     Read only: list and check never write."""
-    root = Path(os.environ.get("IRIS_CONCEPTKIT_DIR") or "W:/conceptkit")
+    root = Path(os.environ.get("IRIS_CONCEPTKIT_DIR") or config.get("conceptkit_dir", str(Path.home() / "conceptkit")))
     python = root / ".venv" / "Scripts" / "python.exe"
     if not python.exists():
         return f"conceptkit not found at {root}"
@@ -948,7 +949,7 @@ TOOLS = {t.name: t for t in [
          " by its id. Asks the user first.",
          {"id": {"type": "integer"}, "direction": S}, ["id", "direction"], CONFIRM, queue_move),
     Tool("cline_start",
-         "Start a new Cline session for this agent with the next queued prompt, in repo (default W:/Iris)."
+         "Start a new Cline session for this agent with the next queued prompt, in repo (default: cline_cwd)."
          " Asks the user first.",
          {"agent": S, "repo": S}, ["agent"], CONFIRM, cline_start),
     Tool("concept_sites",

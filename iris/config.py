@@ -3,11 +3,11 @@
 Every key is optional; a missing or broken file means the defaults. Re-read on every call, so an edit
 applies to the next request without a restart.
 
-    name = "Jay"                 # how Iris refers to you in its instructions
-    city = "Rotterdam"           # the place weather() reports on when no place is given
+    name = "Sam"                 # how Iris refers to you in its instructions
+    city = "Utrecht"             # the place weather() reports on when no place is given
     plugins = ["lmstudio"]       # opt-in tool groups, see iris.registry.PLUGINS
     builder = ["claude", "-p", "{prompt}"]   # the coding agent that builds new skills; Cline when unset
-    folders = ["W:/"]           # extra folders file tools may search and trash_file may touch
+    folders = ["D:/Projects"]   # extra folders file tools may search and trash_file may touch
 """
 
 from __future__ import annotations

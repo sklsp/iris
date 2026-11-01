@@ -1,6 +1,6 @@
 """The prompt queue for the agent manager.
 
-Prompts for an agent wait in a JSON file; Iris lists them and hands the next one out only after Jay says yes.
+Prompts for an agent wait in a JSON file; Iris lists them and hands the next one out only after the user says yes.
 Iris never pastes by itself: pasting stays type_text, which always asks.
 """
 

@@ -44,6 +44,12 @@ def _click_tier(args: dict) -> str:
     return NEVER if _NEVER_WORDS.search(str(args.get("control", ""))) else CONFIRM
 
 
+def _click_on_screen_tier(args: dict) -> str:
+    """Like click: NEVER when the described target names a send/buy/pay/password/delete control. ponytail: the words
+    the model chose, not the pixels it clicks; the spoken confirm shows them, so the user is the real check."""
+    return NEVER if _NEVER_WORDS.search(str(args.get("target", ""))) else CONFIRM
+
+
 def _type_tier(args: dict) -> str:
     return NEVER if _NEVER_WORDS.search(str(args.get("into", ""))) else CONFIRM
 

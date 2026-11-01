@@ -23,12 +23,14 @@ from pathlib import Path
 from iris import config
 from iris.desktop import (
     _start_menu_folders,
+    click_on_screen,
     clipboard_read,
     clipboard_write,
     clock,
     close_window,
     email_draft,
     lock_screen,
+    look_at_screen,
     media_key,
     screenshot,
     start_menu_match,
@@ -43,6 +45,7 @@ from iris.policy import (
     CONFIRM,
     NEVER,
     SAFE,
+    _click_on_screen_tier,
     _click_tier,
     _copy_tier,
     _docx_tier,
@@ -1057,6 +1060,16 @@ TOOLS = {t.name: t for t in [
          "Save a PNG of the whole screen for the user; use it when they ask for a picture of their screen or what"
          " is on it. Without a path it goes to ~/Pictures/Iris with a timestamp.",
          {"path": S}, [], SAFE, screenshot, _screenshot_tier),
+    Tool("look_at_screen",
+         "Look at the screen, or at one window (brought to the front), and answer a question about what is visible."
+         " Use it when read_window shows nothing useful (games, images, video, remote desktops, canvas apps) or the"
+         " user asks what is on their screen. Read only; takes about 15 seconds.",
+         {"question": S, "window": S}, ["question"], SAFE, look_at_screen),
+    Tool("click_on_screen",
+         "Find something on the screen, or in one window (brought to the front), by what it looks like or says, and"
+         " left-click it. Only when click can not find the control by name (games, canvas apps, remote desktops)."
+         " Takes about 15 seconds.",
+         {"target": S, "window": S}, ["target"], CONFIRM, click_on_screen, _click_on_screen_tier),
     Tool("close_window",
          "Close the first window whose title contains the given text (WM_CLOSE, so the app can still ask to save);"
          " use it when the user asks to close an app or window.",

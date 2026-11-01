@@ -152,6 +152,8 @@ def _describe(name: str, args: dict) -> str:
         return f"Make {args.get('path')} as a PowerPoint presentation?"
     if name == "make_spreadsheet":
         return f"Make {args.get('path')} as a spreadsheet?"
+    if name == "click_on_screen":
+        return f"Click {args.get('target')} on {args.get('window') or 'the screen'}?"
     if name == "close_window":
         return f"Close the window {args.get('title')}? Unsaved work may ask to be saved."
     if name == "note_remove":

@@ -223,6 +223,14 @@
     "tier": "safe",
     "escalates": true
   },
+  "look_at_screen": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "click_on_screen": {
+    "tier": "confirm",
+    "escalates": true
+  },
   "close_window": {
     "tier": "confirm",
     "escalates": false

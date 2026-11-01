@@ -32,8 +32,6 @@ You talk, Iris does it, on your own PC: no cloud, no cost per command.
 ## Next
 
 - A custom "hey iris" wake word (today it is openWakeWord's `hey_jarvis`).
-- A vision fallback for apps that expose no accessibility tree.
-- Sharing skills: export an approved skill with its tests, import one and approve it after review.
 - More languages in the eval than Dutch and English.
 
 ## Not in scope, on purpose

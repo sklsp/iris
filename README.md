@@ -182,6 +182,8 @@ Configuration) are only offered when their plugin is enabled.
 | media_key | safe | presses a media key: play_pause, next, previous, volume_up, volume_down or mute (virtual keys via keybd_event down and up); times repeats it, 1 to 10 |  |
 | lock_screen | safe | locks the user's Windows session via LockWorkStation |  |
 | screenshot | safe | saves a PNG of the whole screen for you; without a path it goes to ~/Pictures/Iris with a timestamp |  |
+| look_at_screen | safe | answers a question about what is on the screen, or in one window, by looking at a screenshot with the model (needs a model that reads images) |  |
+| click_on_screen | confirm | finds something on the screen by sight and clicks it, for apps whose controls have no names; asks first | never when the target says send, buy, pay, password or delete |
 | close_window | confirm | closes the first window whose title contains the text (WM_CLOSE, so the app can still ask to save); asks first |  |
 | clock | safe | the local date and time, weekday and ISO week |  |
 | weather | safe | current weather for a place or the config `city`, plus up to seven days of forecast via Open-Meteo |  |

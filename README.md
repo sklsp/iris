@@ -34,7 +34,7 @@ Iris: Sending messages is something I never do myself. I can open a draft; you p
 - **Hands that read the screen.** Windows UI Automation gives named buttons and fields instead of guessed pixels.
 - **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
   email drafts, notes, reminders and timers.
-- **Measured.** An eval of 198 tasks runs against the real model and the result is published below, including the
+- **Measured.** An eval of 204 tasks runs against the real model and the result is published below, including the
   safety traps.
 - **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (SAPI or
   Kokoro) all run on your machine.
@@ -308,7 +308,7 @@ Run of 2026-11-02 01:46 on `qwen3.8-27b`: 580/594 passed (97.6%), median 4.2 s, 
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether the user says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 198 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 204 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.
@@ -425,7 +425,8 @@ shows with its own badge.
   apps) can be opened, focused and given keys, but not read.
 - The score depends on the model. The published eval is for `qwen3.8-27b` on a 24 GB GPU; smaller models pick tools
   less reliably, and the eval tells you how much less on your own setup.
-- Tested in Dutch and English. Iris answers in the language you speak.
+- Tested mostly in Dutch and English, with a few German, French and Spanish tasks. Iris answers in the language
+  you speak.
 - On purpose, never: logging in, paying, sending messages to people and permanent deletes. Iris opens the draft or
   the page and you take the last step.
 

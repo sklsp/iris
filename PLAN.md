@@ -33,7 +33,7 @@ You talk, Iris does it, on your own PC: no cloud, no cost per command.
 
 - A trained openWakeWord "hey iris" model, so waking on the name needs no Whisper pass (`IRIS_WAKEWORD=iris`
   works today through Whisper).
-- More languages in the eval than Dutch and English.
+- More tasks per language: German, French and Spanish have two each.
 
 ## Not in scope, on purpose
 

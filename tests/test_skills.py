@@ -231,3 +231,73 @@ def test_a_crashing_check_blocks_that_skill_and_the_watcher_goes_on():
     skills.watch(said.append, interval=0, stop=stop, check_fn=boom).join(5)
     assert said == ["I could not check the new skill crashy_one: disk on fire"]
     assert skills.meta("crashy_one")["status"] == "blocked"
+
+
+def _approved(name="say_hello", tier="safe"):
+    _built(name, tier)
+    skills.check(name)
+    skills.approve(name)
+
+
+def test_export_then_import_gives_an_unapproved_checked_skill_at_confirm(tmp_path, monkeypatch):
+    _approved()
+    zipped = skills.export_skill("say_hello", tmp_path / "hello.zip")
+    monkeypatch.setenv("IRIS_SKILLS", str(tmp_path / "other"))
+    r = skills.import_skill(zipped, taken=set(tools.TOOLS))
+    assert r["status"] == "ready" and r["tier"] == "confirm" and r["source"] == "hello.zip"
+    assert not skills._approved_ok("say_hello")
+    assert (tmp_path / "other" / "say_hello" / "skill.py").read_text(encoding="utf-8") == SKILL_PY
+    with pytest.raises(ValueError, match="already exists"):
+        skills.import_skill(zipped)
+
+
+def test_export_refuses_unapproved_and_import_refuses_odd_zips(tmp_path):
+    _built()
+    with pytest.raises(ValueError, match="not approved"):
+        skills.export_skill("say_hello", tmp_path / "x.zip")
+    import zipfile
+
+    bad = tmp_path / "bad.zip"
+    with zipfile.ZipFile(bad, "w") as z:
+        for f in ("skill.json", *skills.SHARED):
+            z.writestr(f, "{}")
+        z.writestr("../evil.py", "x")
+    with pytest.raises(ValueError, match="not a shared skill"):
+        skills.import_skill(bad)
+    bad.unlink()
+    with zipfile.ZipFile(bad, "w") as z:
+        z.writestr("skill.json", json.dumps({"name": "Bad-Name"}))
+        for f in skills.SHARED:
+            z.writestr(f, "x")
+    with pytest.raises(ValueError, match="invalid skill name"):
+        skills.import_skill(bad)
+    with pytest.raises(ValueError, match="tier must be"):
+        skills.import_skill(bad, tier="never")
+
+
+def test_import_of_code_that_fails_its_guard_is_blocked(tmp_path, monkeypatch):
+    _approved()
+    zipped = skills.export_skill("say_hello", tmp_path / "hello.zip")
+    import zipfile
+
+    evil = tmp_path / "evil.zip"
+    with zipfile.ZipFile(zipped) as src, zipfile.ZipFile(evil, "w") as z:
+        for n in src.namelist():
+            z.writestr(n, "import iris\n" if n == "skill.py" else src.read(n))
+    monkeypatch.setenv("IRIS_SKILLS", str(tmp_path / "other"))
+    r = skills.import_skill(evil)
+    assert r["status"] == "blocked" and any("imports Iris" in p for p in r["problems"])
+
+
+def test_skill_cli_lists_exports_and_imports(tmp_path, monkeypatch, capsys):
+    from iris.__main__ import skill_main
+
+    _approved()
+    out = tmp_path / "s.zip"
+    assert skill_main(["export", "say_hello", "--out", str(out)]) == 0 and out.exists()
+    assert skill_main(["list"]) == 0 and "say_hello" in capsys.readouterr().out
+    monkeypatch.setenv("IRIS_SKILLS", str(tmp_path / "other"))
+    assert skill_main(["import", str(out), "--tier", "safe"]) == 0
+    assert "imported say_hello: ready" in capsys.readouterr().out
+    assert skills.meta("say_hello")["tier"] == "safe"
+    assert skill_main(["import", str(tmp_path / "missing.zip")]) == 1

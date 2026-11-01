@@ -3,13 +3,16 @@ python -m iris --voice         wake word mode: say "hey jarvis" (IRIS_WAKEWORD),
 python -m iris --push-to-talk  old voice mode: press Enter to stop recording
 python -m iris dashboard       read-only status page at http://127.0.0.1:8765 (add --port N if taken)
 python -m iris autopilot       wait for a run in --repo to finish, then ask before starting the next queued prompt
-python -m iris doctor          check the setup (LM Studio, model, config, plugins, voice) and say what to fix"""
+python -m iris doctor          check the setup (LM Studio, model, config, plugins, voice) and say what to fix
+python -m iris skill list      the skills Iris built; `skill export NAME` zips an approved one to share,
+                               `skill import FILE [--tier safe]` adds a shared one for review (confirm by default)"""
 
 from __future__ import annotations
 
 import argparse
 import sys
 import threading
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -17,6 +20,35 @@ from iris import __version__, skills, tools
 from iris.agent import Agent, Journal
 from iris.llm import LMStudio
 from iris.voice import is_yes, speak
+
+
+def skill_main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="iris skill")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("list")
+    ex = sub.add_parser("export")
+    ex.add_argument("name")
+    ex.add_argument("--out", type=Path)
+    im = sub.add_parser("import")
+    im.add_argument("file", type=Path)
+    im.add_argument("--tier", choices=["safe", "confirm"], default="confirm")
+    a = ap.parse_args(argv)
+    try:
+        if a.cmd == "list":
+            print(skills.listing())
+        elif a.cmd == "export":
+            print(f"wrote {skills.export_skill(a.name, a.out)}")
+        else:
+            from iris.tools import TOOLS
+
+            r = skills.import_skill(a.file, a.tier, set(TOOLS))
+            print(f"imported {r['name']}: {r['status']}" + (f" ({'; '.join(r['problems'])})" if r["problems"] else ""))
+            if r["status"] == "ready":
+                print("Read its code on the dashboard's Skills tab, then approve it there or ask Iris to approve it.")
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def main() -> None:
@@ -48,6 +80,8 @@ def main() -> None:
         from iris.doctor import main as doctor_main
 
         raise SystemExit(doctor_main())
+    if len(sys.argv) > 1 and sys.argv[1] == "skill":
+        raise SystemExit(skill_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "autopilot":
         from iris.autopilot import autopilot_main
 

@@ -9,6 +9,9 @@ The life of a skill, each step in its own folder under skills_dir() (IRIS_SKILLS
     blocked   check() failed; problems says why, and a rebuild can try again
     approved  the user approved it: approved.json holds the hash of exactly the code they approved
 
+An approved skill can be shared: export_skill() zips its plan, code and tests, and import_skill() unpacks such a zip
+as a new skill that is checked but never approved, so the person importing it reviews it like one of their own.
+
 Only approved skills whose files still match the approved hash are offered to the model, and they never run
 inside Iris: every call starts `python -I` on skill.py with the arguments as JSON on stdin, so a skill can not
 reach Iris's tiers or tools in memory. The tier comes from the plan the user confirmed, never from the builder.
@@ -26,7 +29,8 @@ import sys
 import threading
 import time
 import tomllib
-from collections.abc import Callable
+import zipfile
+from collections.abc import Callable, Collection
 from datetime import datetime
 from pathlib import Path
 
@@ -272,6 +276,51 @@ def remove(name: str) -> str:
         _write(skills_dir() / "approved.json", json.dumps(approvals, indent=1) + "\n")
     shutil.move(str(folder), str(_trash_dir() / f"{time.strftime('%Y%m%d-%H%M%S')}_skill_{name}"))
     return f"removed {name}; it is in Iris's trash"
+
+
+SHARED = ("plan.md", "skill.toml", "skill.py", "test_skill.py")   # what a shared skill holds, besides skill.json
+MAX_SHARE = 1_000_000   # bytes a shared skill may unpack to
+
+
+def export_skill(name: str, dest: Path | None = None) -> Path:
+    """Zip an approved skill's code, tests and plan so someone else can import and review it."""
+    if not _approved_ok(name):
+        raise ValueError(f"{name} is not approved; only an approved, unchanged skill can be shared")
+    data = meta(name)
+    dest = dest or Path.cwd() / f"{name}.iris-skill.zip"
+    with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("skill.json", json.dumps({"name": name, "tier": data["tier"], "request": data["request"]},
+                                            ensure_ascii=False, indent=1) + "\n")
+        for f in SHARED:
+            z.write(_folder(name) / f, f)
+    return dest
+
+
+def import_skill(path: Path, tier: str = CONFIRM, taken: Collection[str] = (),
+                 check_fn: Callable[[str], dict] | None = None) -> dict:
+    """Unpack a shared skill as a new, unapproved skill and check it. It runs at `tier` (confirm unless the user
+    says otherwise), never at the tier the zip claims: the user approves it after reading the code, like any other."""
+    if tier not in (SAFE, CONFIRM):
+        raise ValueError("tier must be 'safe' or 'confirm'")
+    with zipfile.ZipFile(path) as z:
+        names = set(z.namelist())
+        if names != {"skill.json", *SHARED}:
+            raise ValueError(f"not a shared skill: expected skill.json and {', '.join(SHARED)}")
+        if sum(i.file_size for i in z.infolist()) > MAX_SHARE:
+            raise ValueError("the shared skill is too big")
+        files = {n: z.read(n) for n in names}   # bytes, so the code is exactly what was shared
+    info = json.loads(files.pop("skill.json"))
+    name = str(info.get("name", ""))
+    folder = _folder(name)
+    if name in taken or folder.exists():
+        raise ValueError(f"{name} already exists")
+    folder.mkdir(parents=True)
+    for f, data in files.items():
+        (folder / f).write_bytes(data)
+    _save_meta(name, {"name": name, "tier": tier, "request": str(info.get("request", ""))[:500],
+                      "status": "building", "source": path.name,
+                      "created": datetime.now().isoformat(timespec="seconds")})
+    return (check_fn or check)(name)
 
 
 def run_skill(name: str, args: dict, run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> str:

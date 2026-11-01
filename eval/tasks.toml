@@ -1822,3 +1822,32 @@ expect = ["clock"]
 max_calls = 2
 answer_has = ["14"]
 fixtures = { clock = "Sunday 1 November 2026, 14:05, week 44" }
+
+[[task]]
+id = "note_de"
+category = "files"
+lang = "de"
+request = "Notiere bitte, dass der Klempner am Donnerstag um zehn kommt."
+expect = ["note_add"]
+max_calls = 2
+fixtures = { note_add = "added a note" }
+
+[[task]]
+id = "clock_fr"
+category = "read"
+lang = "fr"
+request = "Quelle heure est-il ?"
+expect = ["clock"]
+max_calls = 2
+answer_has = ["14"]
+fixtures = { clock = "Sunday 1 November 2026, 14:05, week 44" }
+
+[[task]]
+id = "weather_es"
+category = "read"
+lang = "es"
+request = "¿Qué tiempo hará mañana en Madrid?"
+expect = ["weather"]
+max_calls = 2
+answer_has = ["12"]
+fixtures = { weather = "Madrid now: 9 C (feels 7 C), clear, wind 10 km/h\nTomorrow: 5 to 12 C, sunny, 0% chance of rain" }

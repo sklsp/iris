@@ -934,7 +934,7 @@ def test_watch_a_no_never_starts(tmp_path, monkeypatch):
 
     journal = FakeJournal()
     out = watch("acme", "cline", fake_confirm, sleep=lambda s: None, start=fake_start, journal=journal)
-    assert out == "Jay said no"
+    assert out == "the user said no"
     assert asked == ["acme is done (PROGRESS-iris6.md done: 15 items). Start the next cline prompt?"]
     assert started == []
     assert journal.entries == [
@@ -944,7 +944,7 @@ def test_watch_a_no_never_starts(tmp_path, monkeypatch):
             "repo": "acme",
             "agent": "cline",
             "answer": False,
-            "result": "Jay said no",
+            "result": "the user said no",
         }
     ]
 

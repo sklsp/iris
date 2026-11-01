@@ -201,7 +201,7 @@ class VoiceSession:
     def next_request(self) -> str:
         """Block until the user says the wake word and then an utterance; returns the transcript."""
         self.wait_for_speech()  # never race the wake watcher for frames
-        if self._wake_seen:  # barge-in: Jay said the wake word while Iris was talking
+        if self._wake_seen:  # barge-in: the user said the wake word while Iris was talking
             self._wake_seen = False
             return self.next_command()
         print("Say the wake word...")

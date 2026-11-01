@@ -1456,3 +1456,17 @@ def test_the_skills_page_shows_the_code_and_approves_only_with_the_token(server,
 
 def test_the_skills_page_is_empty_without_skills(server):
     assert json.loads(get(server + "/api/skills")[2]) == {"ok": True, "skills": []}
+
+
+def test_tools_payload_marks_plugin_tools_off_and_lists_approved_skills(tmp_path, monkeypatch):
+    from iris import skills
+
+    cfg = tmp_path / "c.toml"
+    cfg.write_text('plugins = ["comfyui"]', encoding="utf-8")
+    monkeypatch.setenv("IRIS_CONFIG", str(cfg))
+    _ready_skill()
+    skills.approve("say_hello")
+    by_name = {t["name"]: t for t in d.tools_payload()["tools"]}
+    assert by_name["comfy_status"]["active"] is True and by_name["followups"]["active"] is False
+    assert by_name["calculate"]["active"] is True and by_name["calculate"]["kind"] == "core"
+    assert (by_name["say_hello"]["kind"], by_name["say_hello"]["tier"]) == ("skill", "confirm")

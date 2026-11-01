@@ -211,11 +211,14 @@ def test_readme_documents_the_wake_word_and_how_to_run():
 
 
 
-def test_trash_refuses_paths_outside_home_and_w_and_system_dirs():
+def test_trash_refuses_paths_outside_home_config_folders_and_system_dirs(tmp_path, monkeypatch):
     from pathlib import Path
 
     from iris.tools import CONFIRM, NEVER, TOOLS
 
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('folders = ["W:/"]', encoding="utf-8")  # W:/ is a root only because the config says so
+    monkeypatch.setenv("IRIS_CONFIG", str(cfg))
     t = TOOLS["trash_file"]
     for bad in ("C:/Windows/System32/drivers", "C:/Program Files/LM Studio", "C:/ProgramData",
                 str(Path.home()), "W:/", "D:/anything.txt", str(Path.home() / ".iris" / "trash" / "x")):

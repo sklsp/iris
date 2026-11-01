@@ -13,7 +13,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from iris import skills, tools
+from iris import __version__, skills, tools
 from iris.agent import Agent, Journal
 from iris.llm import LMStudio
 from iris.voice import is_yes, speak
@@ -53,6 +53,7 @@ def main() -> None:
 
         raise SystemExit(autopilot_main(sys.argv[2:]))
     ap = argparse.ArgumentParser(prog="iris", description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    ap.add_argument("--version", action="version", version=f"iris {__version__}")
     ap.add_argument("--voice", action="store_true")
     ap.add_argument("--push-to-talk", action="store_true")
     ap.add_argument("--journal", default=str(Path.home() / ".iris" / "journal.jsonl"))
@@ -90,6 +91,9 @@ def main() -> None:
             return is_yes(session.next_command())
 
     tools.set_announcer(say)  # timers speak through the same say as everything else
+    from iris import reminders
+
+    reminders.start_reminders(say)  # pending reminders wait on daemon threads and speak through the same say
     skills.watch(say)  # says when a skill the coding agent built is checked and ready, or blocked
 
     agent = Agent(LMStudio(), confirm, Journal(Path(a.journal)))

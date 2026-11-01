@@ -53,8 +53,8 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
 
 def main() -> int:
     results = checks()
+    optional = ("voice", "config", "skill builder")  # Iris runs without these; everything else must pass
     for ok, line in results:
-        print(f"{'ok ' if ok else 'FIX'} {line}")
-    # voice and the config file are optional; everything else must pass
-    required = [ok for (ok, line) in results if not line.startswith(("voice", "config", "skill builder"))]
-    return 0 if all(required) else 1
+        mark = "ok " if ok else ("-- " if line.startswith(optional) else "FIX")
+        print(f"{mark} {line}")
+    return 0 if all(ok for ok, line in results if not line.startswith(optional)) else 1

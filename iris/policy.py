@@ -14,6 +14,8 @@ import os
 import re
 from pathlib import Path
 
+from iris import config, files
+
 SAFE, CONFIRM, NEVER = "safe", "confirm", "never"
 
 # Control names that mean an irreversible or outward-facing action, in English and Dutch. Matched as word
@@ -61,6 +63,21 @@ def _press_keys_tier(args: dict) -> str:
     return NEVER if _MAIL_CHAT.search(str(args.get("window", ""))) else CONFIRM
 
 
+# File names that look like secrets; reading them is never automated.
+_SECRET_WORDS = re.compile(r"(password|wachtwoord|secret|token|credential|apikey|api_key|private"
+                           r"|(^|[^a-z])keys?([^a-z]|$))", re.I)  # key as a word: google_key.txt, not keyboard
+_SECRET_SUFFIXES = (".key", ".pem", ".pfx", ".kdbx")
+
+
+def _read_tier(args: dict) -> str:
+    """Reading a file whose name looks like a secret is never automated; everything else is safe."""
+    name = Path(str(args.get("path", ""))).name.lower()
+    if (_SECRET_WORDS.search(name) or name.endswith(_SECRET_SUFFIXES) or name == ".env"
+            or name.startswith(("id_rsa", "id_ed25519"))):
+        return NEVER
+    return SAFE
+
+
 def _trash_dir() -> Path:
     d = Path(os.environ.get("IRIS_TRASH_DIR") or (Path.home() / ".iris" / "trash"))
     d.mkdir(parents=True, exist_ok=True)
@@ -68,10 +85,10 @@ def _trash_dir() -> Path:
 
 
 def _trash_roots() -> list[Path]:
-    """Trash roots from IRIS_TRASH_ROOTS (';' separated); the home folder is always included."""
+    """Trash roots from IRIS_TRASH_ROOTS (';' separated); config.folders() otherwise."""
     raw = os.environ.get("IRIS_TRASH_ROOTS")
     if not raw:
-        return [Path.home(), Path("W:/")]
+        return config.folders()
     roots = [Path(s.strip()) for s in raw.split(";") if s.strip()]
     if Path.home() not in roots:
         roots.insert(0, Path.home())
@@ -98,3 +115,58 @@ def _trash_tier(args: dict) -> str:
     if any(_under(p, s) for s in _SYSTEM_DIRS) or _under(p, _trash_dir()):
         return NEVER
     return CONFIRM
+
+
+def _writable(path: str) -> bool:
+    """The resolved path is under a config folder, not in a system dir and not in the trash."""
+    p = Path(str(path)).expanduser().resolve()
+    if any(_under(p, s) for s in _SYSTEM_DIRS):
+        return False
+    if _under(p, _trash_dir()):
+        return False
+    return any(_under(p, r.resolve()) for r in config.folders())
+
+
+def _write_tier(args: dict) -> str:
+    """Writing is never outside the writable folders; inside them it always asks first."""
+    return NEVER if not _writable(str(files.resolve_target(str(args.get("path", ""))))) else CONFIRM
+
+
+def _make_folder_tier(args: dict) -> str:
+    return NEVER if not _writable(str(args.get("path", ""))) else SAFE
+
+
+def _move_tier(args: dict) -> str:
+    """Moving never touches the source or the destination outside the writable folders."""
+    if not _writable(str(args.get("destination", ""))):
+        return NEVER
+    if not _writable(str(args.get("source", ""))):
+        return NEVER
+    return CONFIRM
+
+
+def _copy_tier(args: dict) -> str:
+    return NEVER if not _writable(str(args.get("destination", ""))) else CONFIRM
+
+
+def _new_file_tier_for(suffix: str):
+    """The tier of a tool that creates one file with this suffix: NEVER outside the writable folders, CONFIRM when
+    the file exists (it is replaced; the old one goes to the trash first), else SAFE."""
+    def tier(args: dict) -> str:
+        p = files.resolve_target(str(args.get("path", "")), suffix)
+        if not _writable(str(p)):
+            return NEVER
+        return CONFIRM if p.exists() else SAFE
+    return tier
+
+
+_docx_tier = _new_file_tier_for(".docx")
+_pptx_tier = _new_file_tier_for(".pptx")
+_xlsx_tier = _new_file_tier_for(".xlsx")
+
+
+def _screenshot_tier(args: dict) -> str:
+    """No path means a new file in ~/Pictures/Iris: SAFE. A given path follows the new-file rules."""
+    return _new_file_tier_for(".png")(args) if args.get("path") else SAFE
+
+

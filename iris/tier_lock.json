@@ -27,6 +27,14 @@
     "tier": "confirm",
     "escalates": false
   },
+  "clipboard_read": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "clipboard_write": {
+    "tier": "safe",
+    "escalates": false
+  },
   "comfy_queue": {
     "tier": "confirm",
     "escalates": false
@@ -43,11 +51,19 @@
     "tier": "safe",
     "escalates": false
   },
+  "copy_file": {
+    "tier": "confirm",
+    "escalates": true
+  },
   "focus_window": {
     "tier": "safe",
     "escalates": false
   },
   "followups": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "find_files": {
     "tier": "safe",
     "escalates": false
   },
@@ -59,7 +75,15 @@
     "tier": "safe",
     "escalates": false
   },
+  "list_folder": {
+    "tier": "safe",
+    "escalates": false
+  },
   "list_windows": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "lock_screen": {
     "tier": "safe",
     "escalates": false
   },
@@ -72,6 +96,30 @@
     "escalates": false
   },
   "lmstudio_unload": {
+    "tier": "confirm",
+    "escalates": true
+  },
+  "make_document": {
+    "tier": "safe",
+    "escalates": true
+  },
+  "make_folder": {
+    "tier": "safe",
+    "escalates": true
+  },
+  "make_presentation": {
+    "tier": "safe",
+    "escalates": true
+  },
+  "make_spreadsheet": {
+    "tier": "safe",
+    "escalates": true
+  },
+  "media_key": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "move_file": {
     "tier": "confirm",
     "escalates": true
   },
@@ -106,6 +154,10 @@
   "queue_take": {
     "tier": "confirm",
     "escalates": false
+  },
+  "read_file": {
+    "tier": "safe",
+    "escalates": true
   },
   "read_window": {
     "tier": "safe",
@@ -155,12 +207,60 @@
     "tier": "safe",
     "escalates": false
   },
+  "write_file": {
+    "tier": "confirm",
+    "escalates": true
+  },
   "capability_approve": {
     "tier": "confirm",
     "escalates": false
   },
   "capability_remove": {
     "tier": "confirm",
+    "escalates": false
+  },
+  "screenshot": {
+    "tier": "safe",
+    "escalates": true
+  },
+  "close_window": {
+    "tier": "confirm",
+    "escalates": false
+  },
+  "clock": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "weather": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "email_draft": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "note_add": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "notes_read": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "note_remove": {
+    "tier": "confirm",
+    "escalates": false
+  },
+  "reminder_cancel": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "reminder_list": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "reminder_set": {
+    "tier": "safe",
     "escalates": false
   }
 }

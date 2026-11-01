@@ -34,7 +34,7 @@ Iris: Sending messages is something I never do myself. I can open a draft; you p
 - **Hands that read the screen.** Windows UI Automation gives named buttons and fields instead of guessed pixels.
 - **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
   email drafts, notes, reminders and timers.
-- **Measured.** An eval of 114 tasks runs against the real model and the result is published below, including the
+- **Measured.** An eval of 194 tasks runs against the real model and the result is published below, including the
   safety traps.
 - **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (SAPI or
   Kokoro) all run on your machine.
@@ -91,226 +91,6 @@ plugins = ["lmstudio", "comfyui"]     # opt-in tool groups, see below
 Cline sessions), `leadscan` and `conceptkit` (the author's own business tools). Their tools keep their tiers and
 are in the eval either way.
 
-## Risk tiers
-
-| Tool | Tier | Escalates when |
-|---|---|---|
-| system_status | safe |  |
-| gpu_check | safe |  |
-| comfy_status | safe |  |
-| comfy_workflows | safe |  |
-| comfy_queue | confirm |  |
-| lmstudio_models | safe |  |
-| lmstudio_load | confirm |  |
-| lmstudio_unload | confirm | the model is the one Iris runs on, or all |
-| followups | safe |  |
-| journal_today | safe |  |
-| calculate | safe |  |
-| list_windows | safe |  |
-| read_window | safe |  |
-| open_app | safe |  |
-| click | confirm | the control is named like Send, Buy, Pay or Delete (never) |
-| type_text | confirm | it types into a field named after sending, paying, passwords or deleting (never) |
-| press_keys | confirm | {ENTER} in a mail/chat window such as Outlook or WhatsApp (never) |
-| focus_window | safe |  |
-| scroll | safe |  |
-| open_url | safe |  |
-| web_search | safe | searches DuckDuckGo, lists titles, links and snippets |
-| web_read | safe | reads a page as plain text, local addresses refused |
-| trash_file | confirm | the path is home or W:/ itself, outside them, or the Recycle Bin (never) |
-| restore_trash | safe |  |
-| agents_status | safe |  |
-| queue_list | safe |  |
-| queue_add | confirm |  |
-| queue_take | confirm |  |
-| queue_remove | confirm |  |
-| queue_move | confirm |  |
-| cline_start | confirm |  |
-| concept_sites | safe |  |
-| timer_set | safe | minutes or a clock time such as 15:00 (`at`); says `message` out loud in Jay's language when it is done |
-| timer_list | safe |  |
-| timer_cancel | safe |  |
-| request_capability | confirm |  |
-| capability_list | safe |  |
-| capability_build | confirm |  |
-| capability_check | confirm |  |
-| capability_approve | confirm |  |
-| capability_remove | confirm |  |
-
-## Eval
-
-<!-- eval:start -->
-Run of 2026-10-31 03:38 on `qwen3.8-27b`: 327/333 passed (98.2%), median 3.8 s, 0.35 confirmations per task, safety: 0 forbidden, 3 refused attempts, 0 unknown tools, language: 2 wrong, answers: 0/51 wrong, 107/111 pass every time.
-
-| Category | Passed | Rate |
-|---|---|---|
-| agents | 51/51 | 100.0% |
-| files | 12/12 | 100.0% |
-| hands | 47/48 | 97.9% |
-| read | 42/45 | 93.3% |
-| safety | 114/114 | 100.0% |
-| skills | 61/63 | 96.8% |
-
-<!-- eval:end -->
-
-## Run
-
-```bash
-.venv\Scripts\python -m iris                      # type requests
-.venv\Scripts\python -m iris --voice              # wake word mode, say "hey jarvis", it stops on silence
-.venv\Scripts\python -m iris --push-to-talk       # old mode: press Enter to stop recording
-```
-
-`--voice` is the normal way to use Iris. It waits for the wake word, records until 1.2 s of silence,
-transcribes, answers, and waits again. The microphone stays open the whole time, so saying the wake
-word while Iris is still talking cuts the answer short and your next words are taken as the next
-command, without saying the wake word twice.
-
-## Wake word
-
-The default is the built-in openWakeWord model **hey jarvis**, because a custom "hey iris" model does
-not exist yet.
-
-```bash
-set IRIS_WAKEWORD=hey_jarvis    # any built-in openWakeWord name, or a path to your own .onnx
-```
-
-`IRIS_WAKE_THRESHOLD` (default 0.5) decides how loud the wake word has to be. `IRIS_VAD_THRESHOLD`
-(default 0.01) is the RMS below which audio counts as silence, and the 1.2 s of silence that ends a
-recording is the `silence_seconds` default in `iris/voice.py`.
-
-## Tools and risk tiers
-
-| Tool | Tier | What it does |
-|---|---|---|
-| system_status | safe | CPU, RAM, and per-GPU load, VRAM and temperature |
-| gpu_check | safe | free VRAM and temperature per GPU against a threshold, before a heavy job |
-| comfy_status | safe | is ComfyUI running, its version and its queue |
-| comfy_workflows | safe | names of the saved ComfyUI workflows in the workflows folder, one per line |
-| comfy_queue | confirm | queue a saved ComfyUI workflow by name; asks first because it uses the GPU for a while |
-| lmstudio_models | safe | which LM Studio models are loaded; never loads or unloads |
-| lmstudio_load | confirm | load a model in LM Studio by its id, asks first |
-| lmstudio_unload | confirm | unload a model from LM Studio by its id, or all of them; never unloads the model Iris runs on |
-| followups | safe | leads from the leadscan CRM due for a follow-up today |
-| journal_today | safe | today's requests and tool calls by outcome, from the journal |
-| calculate | safe | exact arithmetic, so Iris never says a sum from memory |
-| list_windows | safe | titles of the open windows |
-| read_window | safe | the named controls in a window, with the contents of text fields |
-| open_app | safe | start an app, an `ms-settings:` page or a file |
-| open_url | safe | open an `http` or `https` URL; `file:`, `javascript:` and `data:` are refused |
-| web_search | safe | searches DuckDuckGo, lists titles, links and snippets |
-| web_read | safe | reads a page as plain text, local addresses refused |
-| focus_window | safe | bring a window to the front and give it focus |
-| scroll | safe | scroll up or down in a window |
-| restore_trash | safe | put the most recently trashed item back |
-| agents_status | safe | branch, last commit and age, uncommitted files, BLOCKED.md and STUCK per agent repo |
-| queue_list | safe | prompts waiting in Jay's agent queue, oldest first, optionally for one agent |
-| concept_sites | safe | Jay's concept websites from conceptkit: sites, ports and check findings |
-| timer_set | safe | set a countdown timer for minutes or until a clock time such as 15:00 (`at`); Iris says `message` out loud in Jay's language when it is done |
-| timer_list | safe | the running timers and how long each has left |
-| timer_cancel | safe | stop a timer by its number, or all of them with 0 |
-| capability_list | safe | the skills Iris is building or has built, with their status |
-| press_keys | confirm | press shortcuts in a window, `^s` or `{TAB}` |
-| click | confirm | click a control by its name |
-| type_text | confirm | type into a window or a named field, optionally replacing what is there |
-| trash_file | confirm | move a file or folder to Iris's trash, always undoable |
-| queue_add | confirm | put a prompt in Jay's agent queue for one agent, asks first |
-| queue_take | confirm | take the oldest waiting prompt out of the queue so it can be pasted with type_text, asks first |
-| queue_remove | confirm | remove one waiting prompt from the agent queue by its id (the number queue_list shows), asks first |
-| queue_move | confirm | move one waiting prompt one place up or down in the agent queue by its id, asks first |
-| cline_start | confirm | start a new Cline session through the Cline CLI with the next queued prompt for this agent; if a repo is given its newest PROGRESS run must be done, asks first |
-| request_capability | confirm | plan a skill Iris cannot do yet and hand it to the coding agent; asks first |
-| capability_build | confirm | build a planned or blocked skill again |
-| capability_check | confirm | check a built skill: its files and its own tests, in a separate process |
-| capability_approve | confirm | approve a ready skill; only approved, unchanged code is ever offered to the model |
-| capability_remove | confirm | remove a skill; it goes to Iris's trash |
-
-The tiers are enforced in code, not in the prompt:
-
-- A `click` or a field whose name means sending, buying, paying, deleting or a password (English and
-  Dutch) is refused even if you say yes.
-- `press_keys` with `{ENTER}` in Outlook, Gmail, WhatsApp, Discord, Teams or Slack escalates to
-  `never`, because Enter there sends the message. The same shortcut elsewhere stays `confirm`.
-- `trash_file` never deletes permanently. Iris's trash holds the file plus a `.json` sidecar with the
-  original path, and `restore_trash` puts it back. `IRIS_TRASH_DIR` moves the trash (default
-  `~/.iris/trash`).
-
-`trash_file` moves files to Iris's own trash dir instead of the Windows Recycle Bin. send2trash cannot
-tell you the original path back out of the Recycle Bin, so `restore_trash` (which needs that path) would
-not be reliable. One directory under `~/.iris`, plus a sidecar per item, makes undo exact.
-
-Screen contents reach the model wrapped as untrusted data. Every request, tool call, confirmation and
-result is appended to `~/.iris/journal.jsonl`.
-
-## Speech out
-
-Windows SAPI (pyttsx3) is the default and always available. For Kokoro, install the extra and put the
-two model files in `~/.iris` (or `IRIS_KOKORO_DIR`):
-
-```bash
-uv pip install --python .venv -e ".[tts]"
-# kokoro-v1.0.fp16.onnx and voices-v1.0.bin, from the kokoro-onnx release, into ~/.iris
-set IRIS_TTS=kokoro
-set IRIS_KOKORO_VOICE=af_heart
-```
-
-Iris never downloads model files by itself. If `IRIS_TTS=kokoro` but the files are missing, or Kokoro
-fails for any other reason, it falls back to SAPI and carries on talking. Kokoro streams chunk by
-chunk, so the wake word stops it between chunks; SAPI cannot be cut off mid-sentence.
-
-## The agent manager
-
-`agents_status` is read only: it runs `git rev-parse`, `git log` and `git status`, and nothing else.
-The repos live in [iris/agents.toml](iris/agents.toml):
-
-```toml
-repos = ["W:/Ledger", "W:/feedbot", "W:/acme-render", "W:/Iris", "W:/leadscan"]
-worktrees = ["C:/Users/Jayde/.cline/worktrees"]
-stuck_minutes = 60
-```
-
-Every git repo under a worktree root is included, so a new worktree shows up without editing the file.
-A repo is flagged STUCK when it has uncommitted changes and nothing committed for over
-`stuck_minutes`. Spoken, it sounds like:
-
-> Acme Shop: last commit 12 minutes ago. Beacon: stuck for 2 hours with 1 uncommitted.
-
-## The prompt queue
-
-Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first, as do removing one by its id (`queue_remove`; say "verwijder prompt 2 uit de wachtrij") and moving one up or down (`queue_move`; say "schuif prompt 1 omhoog"). To hand one to Cline, say so and Iris runs `cline_start`: it starts a new Cline session through the Cline CLI with the oldest queued prompt for that agent only after Jay says yes; if the start fails (say, the CLI is missing or the hub does not pick up the session) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
-
-## Autopilot
-
-When a run is done, Iris can start the next one from the queue. The normal way is the dashboard's **Autopilot** tab;
-`python -m iris autopilot` stays as the terminal way for when you are not at the page. Both use the same rule for a
-finished run: the newest PROGRESS-*.md in the repo has every item ticked or BLOCKED, the tree is clean and the last
-commit has been quiet for three minutes (`autopilot.run_done`).
-
-The Autopilot tab lists each watched repo's run with its done or running state and how many items are ticked. Next to
-each run is an agent field (remembered per repo) and a **Start next prompt** button; it only lights up when that run is
-done and the agent has something queued, and it asks once before starting. The tab also shows the queue so you can add
-a prompt, delete one or move it up and down. When a run finishes while the page is open, a banner appears ("…is done.
-Start the next prompt?") and, if you clicked **Notify me** and allowed it, your browser notifies you too.
-
-The terminal way waits in place instead of polling:
-
-```bash
-.venv\Scripts\python -m iris autopilot --repo W:/Iris --agent qwen   # checks every 60 s, --every changes it
-```
-
-It starts at most one task and exits after that first answer. Starting is `cline_start`: it runs the Cline CLI
-(`IRIS_CLINE_CLI`, default `W:/Cline/cline-cli.exe`) in the repo (or `IRIS_CLINE_CWD`, default W:/Iris) with `-z` and
-the prompt as one argv item, so a queued prompt may span lines. The provider and model come from `IRIS_CLINE_PROVIDER`
-(default lmstudio) and `IRIS_CLINE_MODEL` (default qwen3.8-27b). A start is confirmed from Cline's history rather than
-assumed from the CLI call itself; if the first dispatch's checks find no new session, the same command runs once more
-before Iris gives up, and both rounds match against the original moment so a late-appearing session still counts. The
-retry only happens when Cline's history was readable and showed no new session after about 15 seconds; a session that
-registers later than that can still be running alongside the retry, so Iris reads the history once more and says how many
-sessions started (N) and that Jay should stop the extra one in Cline. If it does not start after all that,
-the queue stays untouched.
-Every outcome (nothing queued, Jay said no, started) is logged as an autopilot event that the dashboard's Activity tab
-shows with its own badge.
-
 ## Self-extension
 
 When you ask for something no tool can do, Iris does not guess. She plans a new skill and, after one yes
@@ -335,6 +115,129 @@ flowchart LR
 - **Tier from you:** the tier (safe or confirm, never more) is the one in the plan you said yes to, not one the
   builder picks.
 
+## Risk tiers
+
+Every tool has a risk tier, enforced in code before it runs: **safe** runs at once, **confirm** asks you out loud
+first, **never** is refused. The last column says when an action escalates to a higher tier. Plugin tools (see
+Configuration) are only offered when their plugin is enabled.
+
+| Tool | Tier | What it does | Escalates when |
+|---|---|---|---|
+| system_status | safe | CPU, RAM, and per-GPU load, VRAM and temperature |  |
+| gpu_check | safe | free VRAM and temperature per GPU against a threshold, before a heavy job |  |
+| comfy_status | safe | is ComfyUI running, its version and its queue |  |
+| comfy_workflows | safe | names of the saved ComfyUI workflows in the workflows folder, one per line |  |
+| comfy_queue | confirm | queue a saved ComfyUI workflow by name; asks first because it uses the GPU for a while |  |
+| lmstudio_models | safe | which LM Studio models are loaded; never loads or unloads |  |
+| lmstudio_load | confirm | load a model in LM Studio by its id, asks first |  |
+| lmstudio_unload | confirm | unload a model from LM Studio by its id, or all of them; never unloads the model Iris runs on | the model is the one Iris runs on, or all |
+| followups | safe | leads from the leadscan CRM due for a follow-up today |  |
+| journal_today | safe | today's requests and tool calls by outcome, from the journal |  |
+| calculate | safe | exact arithmetic, so Iris never says a sum from memory |  |
+| list_windows | safe | titles of the open windows |  |
+| read_window | safe | the named controls in a window, with the contents of text fields |  |
+| open_app | safe | start an app, an `ms-settings:` page or a file |  |
+| click | confirm | click a control by its name | the control is named like Send, Buy, Pay or Delete (never) |
+| type_text | confirm | type into a window or a named field, optionally replacing what is there | it types into a field named after sending, paying, passwords or deleting (never) |
+| press_keys | confirm | press shortcuts in a window, `^s` or `{TAB}` | {ENTER} in a mail/chat window such as Outlook or WhatsApp (never) |
+| focus_window | safe | bring a window to the front and give it focus |  |
+| scroll | safe | scroll up or down in a window |  |
+| open_url | safe | open an `http` or `https` URL; `file:`, `javascript:` and `data:` are refused |  |
+| web_search | safe | searches DuckDuckGo, lists titles, links and snippets | searches DuckDuckGo, lists titles, links and snippets |
+| web_read | safe | reads a page as plain text, local addresses refused | reads a page as plain text, local addresses refused |
+| trash_file | confirm | move a file or folder to Iris's trash, always undoable | the path is home or a configured folder itself, outside them, or the Recycle Bin (never) |
+| restore_trash | safe | put the most recently trashed item back |  |
+| agents_status | safe | branch, last commit and age, uncommitted files, BLOCKED.md and STUCK per agent repo |  |
+| queue_list | safe | prompts waiting in the agent queue, oldest first, optionally for one agent |  |
+| queue_add | confirm | put a prompt in the agent queue for one agent, asks first |  |
+| queue_take | confirm | take the oldest waiting prompt out of the queue so it can be pasted with type_text, asks first |  |
+| queue_remove | confirm | remove one waiting prompt from the agent queue by its id (the number queue_list shows), asks first |  |
+| queue_move | confirm | move one waiting prompt one place up or down in the agent queue by its id, asks first |  |
+| cline_start | confirm | start a new Cline session through the Cline CLI with the next queued prompt for this agent; if a repo is given its newest PROGRESS run must be done, asks first |  |
+| concept_sites | safe | concept websites from conceptkit: sites, ports and check findings |  |
+| timer_set | safe | set a countdown timer for minutes or until a clock time such as 15:00 (`at`); Iris says `message` out loud in the user's language when it is done | minutes or a clock time such as 15:00 (`at`); says `message` out loud in the user's language when it is done |
+| timer_list | safe | the running timers and how long each has left |  |
+| timer_cancel | safe | stop a timer by its number, or all of them with 0 |  |
+| request_capability | confirm | plan a skill Iris cannot do yet and hand it to the coding agent; asks first |  |
+| capability_list | safe | the skills Iris is building or has built, with their status |  |
+| capability_build | confirm | build a planned or blocked skill again |  |
+| capability_check | confirm | check a built skill: its files and its own tests, in a separate process |  |
+| capability_approve | confirm | approve a ready skill; only approved, unchanged code is ever offered to the model |  |
+| capability_remove | confirm | remove a skill; it goes to Iris's trash |  |
+| find_files | safe | paths of files whose name contains `query`, under home and the configured folders |  |
+| list_folder | safe | the entries of a folder, with a trailing / on folders |  |
+| read_file | safe | a file as text: plain text, PDF or .docx/.pptx; long output truncated |  |
+| write_file | confirm | writes UTF-8 text to a file; a bare name goes to ~/Documents/Iris; with overwrite=true the old file first goes to Iris's trash | outside home or a configured folder, in a system directory, or in Iris's trash (never) |
+| make_folder | safe | creates a folder with any missing parents; never overwrites an existing path | outside home or a configured folder, in a system directory, or in Iris's trash (never) |
+| move_file | confirm | moves a file or folder, creating missing destination folders; into an existing folder it goes inside it; never overwrites | source or destination outside home or a configured folder, in a system dir, or in the trash (never) |
+| copy_file | confirm | copies a file or folder (with all its contents); never overwrites | destination outside home or a configured folder, in a system dir, or in the trash (never) |
+| make_document | safe | makes a Word .docx for the user from a title and simple markdown; a bare name goes to ~/Documents/Iris; an existing file is replaced, old one trashed first | outside home or a configured folder (never); an existing file is replaced (confirm) |
+| make_presentation | safe | makes a PowerPoint .pptx for the user from a title and slide entries (title slide with the date, then one content slide per entry); a bare name goes to ~/Documents/Iris; at most 40 slides and 12 bullets each; an existing file is replaced, old one trashed first | outside home or a configured folder (never); an existing file is replaced (confirm) |
+| make_spreadsheet | safe | makes a spreadsheet .xlsx for the user from named worksheets of rows; the first row of each sheet is a bold header on light gray; a bare name goes to ~/Documents/Iris; at most 50 rows per sheet; an existing file is replaced, old one trashed first | outside home or a configured folder (never); an existing file is replaced (confirm) |
+| clipboard_read | safe | the text on the user's clipboard via Get-Clipboard -Raw (timeout 10s), at most 20000 characters; 'The clipboard is empty.' when there is none |  |
+| clipboard_write | safe | puts text on the user's clipboard by piping it to Set-Clipboard through stdin, never in the command line |  |
+| media_key | safe | presses a media key: play_pause, next, previous, volume_up, volume_down or mute (virtual keys via keybd_event down and up); times repeats it, 1 to 10 |  |
+| lock_screen | safe | locks the user's Windows session via LockWorkStation |  |
+| screenshot | safe | saves a PNG of the whole screen for you; without a path it goes to ~/Pictures/Iris with a timestamp |  |
+| close_window | confirm | closes the first window whose title contains the text (WM_CLOSE, so the app can still ask to save); asks first |  |
+| clock | safe | the local date and time, weekday and ISO week |  |
+| weather | safe | current weather for a place or the config `city`, plus up to seven days of forecast via Open-Meteo |  |
+| email_draft | safe | opens a new mail as a draft in your default mail app with to, subject and body filled in; it never sends |  |
+| note_add | safe | adds one line to your notes when you say "note this" or "remember this" |  |
+| notes_read | safe | your recent notes, newest first, or the ones containing a query |  |
+| note_remove | confirm | removes the single note matching a query; errors when none or several match; asks first |  |
+| reminder_set | safe | sets a reminder that survives a restart; Iris says the text out loud at HH:MM (today or tomorrow) or YYYY-MM-DD HH:MM |  |
+| reminder_list | safe | your pending reminders with their times and ids |  |
+| reminder_cancel | safe | cancels one of your pending reminders by its id from reminder_list |  |
+
+## Files and documents
+
+The file tools work in your home folder and the folders you list under `folders` in config.toml; outside them, or in a system directory, they refuse. A name that looks like it holds secrets is never read by `read_file`. Nothing is deleted: an overwrite puts the old file in Iris's trash first, so every change can be undone with `restore_trash`. The office tools need the `office` extra and write to `~/Documents/Iris` when you give a bare name.
+
+## Voice
+
+### Run
+
+```bash
+.venv\Scripts\python -m iris                      # type requests
+.venv\Scripts\python -m iris --voice              # wake word mode, say "hey jarvis", it stops on silence
+.venv\Scripts\python -m iris --push-to-talk       # old mode: press Enter to stop recording
+```
+
+`--voice` is the normal way to use Iris. It waits for the wake word, records until 1.2 s of silence,
+transcribes, answers, and waits again. The microphone stays open the whole time, so saying the wake
+word while Iris is still talking cuts the answer short and your next words are taken as the next
+command, without saying the wake word twice.
+
+### Wake word
+
+The default is the built-in openWakeWord model **hey jarvis**, because a custom "hey iris" model does
+not exist yet.
+
+```bash
+set IRIS_WAKEWORD=hey_jarvis    # any built-in openWakeWord name, or a path to your own .onnx
+```
+
+`IRIS_WAKE_THRESHOLD` (default 0.5) decides how loud the wake word has to be. `IRIS_VAD_THRESHOLD`
+(default 0.01) is the RMS below which audio counts as silence, and the 1.2 s of silence that ends a
+recording is the `silence_seconds` default in `iris/voice.py`.
+
+### Speech out
+
+Windows SAPI (pyttsx3) is the default and always available. For Kokoro, install the extra and put the
+two model files in `~/.iris` (or `IRIS_KOKORO_DIR`):
+
+```bash
+uv pip install --python .venv -e ".[tts]"
+# kokoro-v1.0.fp16.onnx and voices-v1.0.bin, from the kokoro-onnx release, into ~/.iris
+set IRIS_TTS=kokoro
+set IRIS_KOKORO_VOICE=af_heart
+```
+
+Iris never downloads model files by itself. If `IRIS_TTS=kokoro` but the files are missing, or Kokoro
+fails for any other reason, it falls back to SAPI and carries on talking. Kokoro streams chunk by
+chunk, so the wake word stops it between chunks; SAPI cannot be cut off mid-sentence.
+
 ## Dashboard
 
 A mostly read-only status page for Iris and the machine it runs on:
@@ -347,12 +250,12 @@ set IRIS_DASHBOARD_PORT=9000                        # same, via environment vari
 
 The server binds to loopback only. Every data endpoint answers GET; the writes are the two model actions,
 `POST /api/models/load` and `POST /api/models/unload`, the queue edits, `POST /api/queue/add`, `/delete` and `/move`,
-and `POST /api/cline/start`. All of them require a loopback Origin or Referer plus the per-start `IRIS_TOKEN` header, so
+`POST /api/cline/start`, and approving or removing a skill (`POST /api/skills/approve` and `/remove`). All of them require a loopback Origin or Referer plus the per-start `IRIS_TOKEN` header, so
 a page opened from anywhere else cannot trigger them; every other method gets a 405. A start additionally needs a click
 on its button and a confirm dialog, so it never happens on its own. The journal file is opened read-only, there are no
 CORS headers, and the page inserts every string with `textContent`, so journal text cannot run as HTML.
 
-The page polls every 3 seconds and has seven tabs:
+The page polls every 3 seconds and has eight tabs:
 
 - Overview: System (CPU and RAM with sparklines over the last five minutes, plus load, VRAM and temperature per GPU) and
   Models (every LM Studio model with its type badge and a load or unload button, or a note when it is not reachable).
@@ -364,12 +267,14 @@ The page polls every 3 seconds and has seven tabs:
 - Activity: the last 50 journal entries newest first with tier and outcome chips, plus today's request, confirmation,
   refusal and error counts. Autopilot outcomes appear here with their own badge.
 - Repos: branch, last commit and its age, uncommitted files, BLOCKED.md and STUCK flags per agent repo, stuck repos first.
-- Tools: every tool with its risk tier.
+- Tools: every tool with its risk tier; plugin tools that are off are dimmed, and approved skills are listed too.
 - Eval: the newest full run's report (stamp, model and summary), its language, answer and safety counts, its wrong
   answers, plus how many runs exist.
 - Autopilot: each watched repo's run (done or running) with a **Start next prompt** button that asks once before it
   starts, and the queue so you can add, delete and move prompts; when a run finishes it raises a done banner and, if
   allowed, a browser notification. See [Autopilot](#autopilot).
+- Skills: every skill Iris built or is building, with its request, tier, status and problems, and its plan, code, tests
+  and test output to read before you press **Approve** (or **Remove**). See [Self-extension](#self-extension).
 
 Agents, LM Studio, Claude and runs data are cached for 30 seconds so the page does not hammer git or LM Studio; the
 sessions database is small enough to read fresh on every poll. A missing or unreadable source shows an empty list in its
@@ -377,10 +282,26 @@ tab, not an error page.
 
 ## Eval
 
+<!-- eval:start -->
+Run of 2026-11-01 23:02 on `qwen3.8-27b`: 565/582 passed (97.1%), median 4.1 s, 0.29 confirmations per task, safety: 0 forbidden, 4 refused attempts, 0 unknown tools, language: 0 wrong, answers: 1/111 wrong, 183/194 pass every time.
+
+| Category | Passed | Rate |
+|---|---|---|
+| agents | 54/57 | 94.7% |
+| files | 99/102 | 97.1% |
+| hands | 101/102 | 99.0% |
+| read | 114/117 | 97.4% |
+| safety | 138/141 | 97.9% |
+| skills | 59/63 | 93.7% |
+
+<!-- eval:end -->
+
+### How the eval works
+
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
-spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
+spoken request plus what should happen: which tools must be called, which must never succeed, whether the user says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 114 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 194 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.
@@ -399,6 +320,61 @@ Each run writes `<stamp>.json` and `<stamp>.md` with the success rate, the media
 confirmations per task. The dashboard's Eval tab shows the latest run. LM Studio has to be running with the model
 Iris uses. A filtered run (`--only`, `--category` or `--failed-from`) is marked partial in its report and
 is never published here nor shown as the latest run on the dashboard; both pick the newest full run.
+
+## Plugins in detail
+
+### The agent manager
+
+`agents_status` is read only: it runs `git rev-parse`, `git log` and `git status`, and nothing else.
+The repos live in [iris/agents.toml](iris/agents.toml):
+
+```toml
+repos = ["C:/code/my-app", "D:/work/api"]
+worktrees = ["C:/Users/you/.cline/worktrees"]
+stuck_minutes = 60
+```
+
+Every git repo under a worktree root is included, so a new worktree shows up without editing the file.
+A repo is flagged STUCK when it has uncommitted changes and nothing committed for over
+`stuck_minutes`. Spoken, it sounds like:
+
+> Acme Shop: last commit 12 minutes ago. Beacon: stuck for 2 hours with 1 uncommitted.
+
+### The prompt queue
+
+Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first, as do removing one by its id (`queue_remove`; say "verwijder prompt 2 uit de wachtrij") and moving one up or down (`queue_move`; say "schuif prompt 1 omhoog"). To hand one to Cline, say so and Iris runs `cline_start`: it starts a new Cline session through the Cline CLI with the oldest queued prompt for that agent only after the user says yes; if the start fails (say, the CLI is missing or the hub does not pick up the session) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
+
+### Autopilot
+
+When a run is done, Iris can start the next one from the queue. The normal way is the dashboard's **Autopilot** tab;
+`python -m iris autopilot` stays as the terminal way for when you are not at the page. Both use the same rule for a
+finished run: the newest PROGRESS-*.md in the repo has every item ticked or BLOCKED, the tree is clean and the last
+commit has been quiet for three minutes (`autopilot.run_done`).
+
+The Autopilot tab lists each watched repo's run with its done or running state and how many items are ticked. Next to
+each run is an agent field (remembered per repo) and a **Start next prompt** button; it only lights up when that run is
+done and the agent has something queued, and it asks once before starting. The tab also shows the queue so you can add
+a prompt, delete one or move it up and down. When a run finishes while the page is open, a banner appears ("…is done.
+Start the next prompt?") and, if you clicked **Notify me** and allowed it, your browser notifies you too.
+
+The terminal way waits in place instead of polling:
+
+```bash
+.venv\Scripts\python -m iris autopilot --repo C:/code/my-app --agent qwen   # checks every 60 s, --every changes it
+```
+
+It starts at most one task and exits after that first answer. Starting is `cline_start`: it runs the Cline CLI
+(`IRIS_CLINE_CLI`, config `cline_cli`, else `cline`) in the repo (or `IRIS_CLINE_CWD`, config `cline_cwd`, else home) with `-z` and
+the prompt as one argv item, so a queued prompt may span lines. The provider and model come from `IRIS_CLINE_PROVIDER`
+(default lmstudio) and `IRIS_CLINE_MODEL` (default qwen3.8-27b). A start is confirmed from Cline's history rather than
+assumed from the CLI call itself; if the first dispatch's checks find no new session, the same command runs once more
+before Iris gives up, and both rounds match against the original moment so a late-appearing session still counts. The
+retry only happens when Cline's history was readable and showed no new session after about 15 seconds; a session that
+registers later than that can still be running alongside the retry, so Iris reads the history once more and says how many
+sessions started (N) and that the user should stop the extra one in Cline. If it does not start after all that,
+the queue stays untouched.
+Every outcome (nothing queued, the user said no, started) is logged as an autopilot event that the dashboard's Activity tab
+shows with its own badge.
 
 ## Environment variables
 
@@ -423,14 +399,14 @@ is never published here nor shown as the latest run on the dashboard; both pick 
 | `IRIS_CLINE_PROVIDER` | `lmstudio` | the provider passed with -P to the Cline CLI |
 | `IRIS_CLINE_MODEL` | `qwen3.8-27b` | the model passed with -m to the Cline CLI |
 | `IRIS_CLINE_CWD` | config `cline_cwd`, else home | the working directory a Cline session starts in when no repo is given |
-| `IRIS_CONCEPTKIT_DIR` | `W:/conceptkit` | where concept_sites runs conceptkit |
+| `IRIS_CONCEPTKIT_DIR` | config `conceptkit_dir`, else `~/conceptkit` | where concept_sites runs conceptkit |
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
 | `IRIS_LMS_BIN` | lms on PATH | where the model control finds the LM Studio CLI |
 | `IRIS_SESSIONS_DB` | `~/.iris/sessions.db` | where the Sessions tab reads its rows from |
 | `IRIS_CLAUDE_DIR` | `~/.claude/projects` | where the Claude tab looks for active projects |
 | `IRIS_COMFY_URL` | `http://127.0.0.1:8188` | where comfy_status looks |
 | `IRIS_COMFY_WORKFLOWS` | `~/.iris/workflows` | the folder comfy_workflows lists .json files from |
-| `IRIS_LEADSCAN_DIR` | `W:/leadscan` | where followups reads out/pipeline.csv from |
+| `IRIS_LEADSCAN_DIR` | config `leadscan_dir`, else `~/leadscan` | where followups reads out/pipeline.csv from |
 | `IRIS_EVAL_DIR` | `eval/results` | what the dashboard's Eval tab reads |
 | `IRIS_CONFIG` | `~/.iris/config.toml` | the settings file |
 | `IRIS_SKILLS` | `~/.iris/skills` | where self-built skills live |
@@ -448,3 +424,4 @@ is never published here nor shown as the latest run on the dashboard; both pick 
 ## License
 
 MIT, see [LICENSE](LICENSE). Contributions welcome: [CONTRIBUTING.md](CONTRIBUTING.md).
+

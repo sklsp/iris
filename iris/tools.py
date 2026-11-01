@@ -20,6 +20,22 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from iris import config
+from iris.desktop import (
+    _start_menu_folders,
+    clipboard_read,
+    clipboard_write,
+    clock,
+    close_window,
+    email_draft,
+    lock_screen,
+    media_key,
+    screenshot,
+    start_menu_match,
+)
+from iris.files import copy_file, find_files, list_folder, make_folder, move_file, read_file, write_file
+from iris.notes import note_add, note_remove, notes_read
+from iris.office import make_document, make_presentation, make_spreadsheet
 from iris.policy import (
     _MAIL_CHAT,
     _NEVER_WORDS,
@@ -28,16 +44,27 @@ from iris.policy import (
     NEVER,
     SAFE,
     _click_tier,
+    _copy_tier,
+    _docx_tier,
+    _make_folder_tier,
+    _move_tier,
     _open_url_tier,
+    _pptx_tier,
     _press_keys_tier,
+    _read_tier,
+    _screenshot_tier,
     _trash_dir,
     _trash_roots,
     _trash_tier,
     _type_tier,
     _under,
     _unload_tier,
+    _write_tier,
+    _xlsx_tier,
 )
+from iris.reminders import reminder_cancel, reminder_list, reminder_set
 from iris.timers import Timers
+from iris.weather import weather
 
 # Re-exported from iris.policy so existing imports of these names from iris.tools keep working; tools.py
 # itself only uses some of them, and __all__ marks the rest as deliberate re-exports.
@@ -237,7 +264,7 @@ def followups(today: str = "") -> str:
     import csv
     from datetime import date
 
-    folder = Path(os.environ.get("IRIS_LEADSCAN_DIR", "W:/leadscan"))
+    folder = Path(os.environ.get("IRIS_LEADSCAN_DIR") or config.get("leadscan_dir", str(Path.home() / "leadscan")))
     file = folder / "out" / "pipeline.csv"
     if not file.exists():
         return "No leadscan CRM found."
@@ -383,6 +410,10 @@ def type_text(window: str, text: str, into: str = "", replace: bool = False) -> 
 
 
 def open_app(name: str) -> str:
+    match = start_menu_match(name, _start_menu_folders())
+    if match is not None:
+        os.startfile(str(match))  # the Start menu shortcut for this name
+        return f"started {match.stem}"
     os.startfile(name)  # ShellExecute: app names on PATH/App Paths, ms-settings: URIs, files
     return f"started {name!r}"
 
@@ -557,7 +588,7 @@ def queue_move(id: int, direction: str) -> str:
 
 
 def cline_start(agent: str, repo: str = "") -> str:
-    """Start a new Cline session for this agent with the next queued prompt, in repo (default W:/Iris).
+    """Start a new Cline session for this agent with the next queued prompt, in repo (default: cline_cwd).
 
     Asks the user first."""
     from iris.autopilot import cline_start as _start
@@ -569,7 +600,7 @@ def concept_sites() -> str:
     """The user's concept websites from conceptkit: every site with its port and stops, plus check --all findings.
 
     Read only: list and check never write."""
-    root = Path(os.environ.get("IRIS_CONCEPTKIT_DIR") or "W:/conceptkit")
+    root = Path(os.environ.get("IRIS_CONCEPTKIT_DIR") or config.get("conceptkit_dir", str(Path.home() / "conceptkit")))
     python = root / ".venv" / "Scripts" / "python.exe"
     if not python.exists():
         return f"conceptkit not found at {root}"
@@ -865,7 +896,8 @@ TOOLS = {t.name: t for t in [
     Tool("list_windows", "Titles of all open windows.", {}, [], SAFE, list_windows),
     Tool("read_window", "The named controls (buttons, fields, text) in a window. Title match is a substring.",
          {"title": S}, ["title"], SAFE, read_window),
-    Tool("open_app", "Start an app by name (notepad, explorer, chrome), an ms-settings: URI, or a file path.",
+    Tool("open_app", "Start an app by name (notepad, explorer, chrome), an ms-settings: URI, or a file path. "
+         "Works with the name as it appears in the Start menu, such as Spotify or Word.",
          {"name": S}, ["name"], SAFE, open_app),
     Tool("click", "Click the control with this name in the window whose title contains `window`.",
          {"window": S, "control": S}, ["window", "control"], CONFIRM, click, _click_tier),
@@ -918,7 +950,7 @@ TOOLS = {t.name: t for t in [
          " by its id. Asks the user first.",
          {"id": {"type": "integer"}, "direction": S}, ["id", "direction"], CONFIRM, queue_move),
     Tool("cline_start",
-         "Start a new Cline session for this agent with the next queued prompt, in repo (default W:/Iris)."
+         "Start a new Cline session for this agent with the next queued prompt, in repo (default: cline_cwd)."
          " Asks the user first.",
          {"agent": S, "repo": S}, ["agent"], CONFIRM, cline_start),
     Tool("concept_sites",
@@ -950,11 +982,121 @@ TOOLS = {t.name: t for t in [
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_build),
     Tool("capability_check",
          "Check a skill that is being built: its files and its own tests. Use it when the user asks whether a skill"
-         " is done. It runs code the coding agent wrote, so Iris asks first.",
+         " is done or ready: capability_list says 'building' until a check, so call this instead of trusting that."
+         " It runs code the coding agent wrote, so Iris asks first.",
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_check),
     Tool("capability_approve",
          "Approve a ready skill so Iris can use it. Only when the user asks to approve it. Asks first.",
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_approve),
     Tool("capability_remove", "Remove a skill Iris built (it goes to Iris's trash). Asks first.",
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_remove),
+    Tool("find_files",
+         "Files and folders whose name contains `name`, in home plus configured folders; newest first.",
+         {"name": S, "folder": S}, ["name"], SAFE, find_files),
+    Tool("list_folder",
+         "The entries of a folder: folders first with a trailing /, then files with their size in KB.",
+         {"path": S}, ["path"], SAFE, list_folder),
+    Tool("read_file",
+         "A file as text: plain text, .docx/.pptx from their XML or .pdf (needs pypdf); max 20000 chars.",
+         {"path": S}, ["path"], SAFE, read_file, _read_tier),
+    Tool("write_file",
+         "Write UTF-8 text to a file for the user; a bare name goes to ~/Documents/Iris. With overwrite=true an"
+         " existing file is replaced and the old one first goes to Iris's trash, so it can be restored.",
+         {"path": S, "text": S, "overwrite": {"type": "boolean"}}, ["path", "text"], CONFIRM, write_file, _write_tier),
+    Tool("make_folder",
+         "Create a folder with any missing parents. An existing path is an error; it never overwrites.",
+         {"path": S}, ["path"], SAFE, make_folder, _make_folder_tier),
+    Tool("move_file",
+         "Move a file or folder for the user. An existing destination is an error unless it's a folder,"
+         " in which case the item goes into that folder.",
+         {"source": S, "destination": S}, ["source", "destination"], CONFIRM, move_file, _move_tier),
+    Tool("copy_file",
+         "Copy a file or folder (folders with all their contents) for the user. An existing destination is an"
+         " error unless it's a folder, in which case the copy goes into that folder.",
+         {"source": S, "destination": S}, ["source", "destination"], CONFIRM, copy_file, _copy_tier),
+    Tool("make_document",
+         "Make a Word .docx for the user from a title and simple markdown content; use it when the user wants a"
+         " document, report or letter as a file. A bare name goes to ~/Documents/Iris.",
+         {"path": S, "title": S, "content": S}, ["path", "title", "content"], SAFE, make_document, _docx_tier),
+    Tool("make_presentation",
+         "Make a PowerPoint .pptx for the user from a title and slide entries; use it when the user wants slides"
+         " or a deck about a topic. Write the actual content yourself: real titles and bullets, 4 to 8 slides"
+         " unless the user asks otherwise; for a research topic use web_search and web_read first.",
+         {"path": S, "title": S,
+          "slides": {"type": "array", "items": {"type": "object",
+                                                "properties": {"title": S,
+                                                              "bullets": {"type": "array", "items": S},
+                                                              "notes": S}}}},
+         ["path", "title", "slides"], SAFE, make_presentation, _pptx_tier),
+    Tool("make_spreadsheet",
+         "Make a spreadsheet .xlsx for the user from named worksheets of rows; use it when the user wants a table,"
+         " list or data file. Write the actual content yourself: real headers and data rows about the topic; for a"
+         " research topic use web_search and web_read first.",
+         {"path": S,
+          "sheets": {"type": "array", "items": {"type": "object",
+                                                "properties": {"name": S,
+                                                              "rows": {"type": "array"}}}}},
+         ["path", "sheets"], SAFE, make_spreadsheet, _xlsx_tier),
+    Tool("clipboard_read",
+         "The text on the user's clipboard; use it when the user says 'what did I copy' or wants to reuse copied"
+         " text. Read only.",
+         {}, [], SAFE, clipboard_read),
+    Tool("clipboard_write",
+         "Put text on the user's clipboard so they can paste it somewhere else.",
+         {"text": S}, ["text"], SAFE, clipboard_write),
+    Tool("media_key",
+         "Press a media key: play_pause, next, previous, volume_up, volume_down or mute. times repeats it (1 to 10);"
+         " for 'louder' use 5.",
+         {"key": {"type": "string",
+                  "enum": ["play_pause", "next", "previous", "volume_up", "volume_down", "mute"]},
+          "times": {"type": "integer"}}, ["key"], SAFE, media_key),
+    Tool("lock_screen",
+         "Lock the user's Windows session; use it when the user asks to lock or secure their screen.",
+         {}, [], SAFE, lock_screen),
+    Tool("screenshot",
+         "Save a PNG of the whole screen for the user; use it when they ask for a picture of their screen or what"
+         " is on it. Without a path it goes to ~/Pictures/Iris with a timestamp.",
+         {"path": S}, [], SAFE, screenshot, _screenshot_tier),
+    Tool("close_window",
+         "Close the first window whose title contains the given text (WM_CLOSE, so the app can still ask to save);"
+         " use it when the user asks to close an app or window.",
+         {"title": S}, ["title"], CONFIRM, close_window),
+    Tool("clock",
+         "The local date and time, weekday and ISO week; use it when the user asks what time or day it is.",
+         {}, [], SAFE, clock),
+    Tool("weather",
+         "The current weather for a place (or the city from config.toml) plus up to seven days of forecast; "
+         "use it when the user asks about the weather or how warm or wet it will be.",
+         {"place": S, "days": {"type": "integer"}}, [], SAFE, weather),
+    Tool("email_draft",
+         "Open a new email as a draft in the user's default mail app; it never sends, the user reviews and presses "
+         "send themselves. This is how Iris 'sends' an email. `to` may be just a name; do not look up the address, "
+         "the user fills it in.",
+         {"to": S, "subject": S, "body": S}, [], SAFE, email_draft),
+    Tool("note_add",
+         "Add one line to the user's notes; use it when the user says 'note this', 'remember this' or wants a quick "
+         "reminder saved.",
+         {"text": S}, ["text"], SAFE, note_add),
+    Tool("notes_read",
+         "The user's recent notes, newest first, or the ones containing a query; use it when they ask what was noted "
+         "down or to find one of their notes.",
+         {"query": S, "last": {"type": "integer"}}, [], SAFE, notes_read),
+    Tool("note_remove",
+         "Remove one of the user's notes: the single note containing the query; use it when they ask to delete a "
+         "note. It errors if none or several match.",
+         {"query": S}, ["query"], CONFIRM, note_remove),
+    Tool("reminder_set",
+         "Set a reminder that survives a restart; Iris says `text` out loud at `when`, which is 'HH:MM' (today, or"
+         " tomorrow when already past) or 'YYYY-MM-DD HH:MM'. Use it when the user asks to be reminded of something"
+         " at a time.",
+         {"when": S, "text": S}, ["when", "text"], SAFE, reminder_set),
+    Tool("reminder_list",
+         "The user's pending reminders with their times and ids; use it when they ask what reminders are set or"
+         " when a reminder is due.",
+         {}, [], SAFE, reminder_list),
+    Tool("reminder_cancel",
+         "Cancel one of the user's pending reminders by its id (from reminder_list); use it when they ask to drop"
+         " a reminder.",
+         {"id": {"type": "integer"}}, ["id"], SAFE, reminder_cancel),
+
 ]}

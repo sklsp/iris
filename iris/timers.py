@@ -111,7 +111,7 @@ class Timers:
         if entry is None:
             return  # cancelled before it fired: never announces
         if entry.message:
-            text = entry.message  # Jay's own sentence, in his language
+            text = entry.message  # the user's own sentence, in their language
         elif entry.label:
             text = f"Timer {entry.label} is done."
         else:

@@ -44,12 +44,14 @@ from iris.policy import (
     SAFE,
     _click_tier,
     _copy_tier,
+    _docx_tier,
     _make_folder_tier,
     _move_tier,
-    _new_file_tier,
     _open_url_tier,
+    _pptx_tier,
     _press_keys_tier,
     _read_tier,
+    _screenshot_tier,
     _trash_dir,
     _trash_roots,
     _trash_tier,
@@ -57,6 +59,7 @@ from iris.policy import (
     _under,
     _unload_tier,
     _write_tier,
+    _xlsx_tier,
 )
 from iris.timers import Timers
 from iris.weather import weather
@@ -1011,7 +1014,7 @@ TOOLS = {t.name: t for t in [
     Tool("make_document",
          "Make a Word .docx for the user from a title and simple markdown content; use it when the user wants a"
          " document, report or letter as a file. A bare name goes to ~/Documents/Iris.",
-         {"path": S, "title": S, "content": S}, ["path", "title", "content"], SAFE, make_document, _new_file_tier),
+         {"path": S, "title": S, "content": S}, ["path", "title", "content"], SAFE, make_document, _docx_tier),
     Tool("make_presentation",
          "Make a PowerPoint .pptx for the user from a title and slide entries; use it when the user wants slides"
          " or a deck about a topic. Write the actual content yourself: real titles and bullets, 4 to 8 slides"
@@ -1021,7 +1024,7 @@ TOOLS = {t.name: t for t in [
                                                 "properties": {"title": S,
                                                               "bullets": {"type": "array", "items": S},
                                                               "notes": S}}}},
-         ["path", "title", "slides"], SAFE, make_presentation, _new_file_tier),
+         ["path", "title", "slides"], SAFE, make_presentation, _pptx_tier),
     Tool("make_spreadsheet",
          "Make a spreadsheet .xlsx for the user from named worksheets of rows; use it when the user wants a table,"
          " list or data file. Write the actual content yourself: real headers and data rows about the topic; for a"
@@ -1030,7 +1033,7 @@ TOOLS = {t.name: t for t in [
           "sheets": {"type": "array", "items": {"type": "object",
                                                 "properties": {"name": S,
                                                               "rows": {"type": "array"}}}}},
-         ["path", "sheets"], SAFE, make_spreadsheet, _new_file_tier),
+         ["path", "sheets"], SAFE, make_spreadsheet, _xlsx_tier),
     Tool("clipboard_read",
          "The text on the user's clipboard; use it when the user says 'what did I copy' or wants to reuse copied"
          " text. Read only.",
@@ -1050,7 +1053,7 @@ TOOLS = {t.name: t for t in [
     Tool("screenshot",
          "Save a PNG of the whole screen for the user; use it when they ask for a picture of their screen or what"
          " is on it. Without a path it goes to ~/Pictures/Iris with a timestamp.",
-         {"path": S}, [], SAFE, screenshot),
+         {"path": S}, [], SAFE, screenshot, _screenshot_tier),
     Tool("close_window",
          "Close the first window whose title contains the given text (WM_CLOSE, so the app can still ask to save);"
          " use it when the user asks to close an app or window.",

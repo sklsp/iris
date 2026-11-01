@@ -221,7 +221,7 @@
   },
   "screenshot": {
     "tier": "safe",
-    "escalates": false
+    "escalates": true
   },
   "close_window": {
     "tier": "confirm",

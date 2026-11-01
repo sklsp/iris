@@ -146,7 +146,7 @@ def test_desktop_tools_are_safe(tmp_path):
 
 # --- screenshot --------------------------------------------------------------------
 
-def test_screenshot_passes_the_path_as_an_argument(tmp_path, monkeypatch):
+def test_screenshot_passes_the_path_through_the_environment_never_the_script(tmp_path, monkeypatch):
     calls = []
 
     def fake_run(cmd, **kw):
@@ -154,15 +154,25 @@ def test_screenshot_passes_the_path_as_an_argument(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(desktop.subprocess, "run", fake_run)
-    target = tmp_path / "shot.png"
+    target = tmp_path / "shot'; Remove-Item x; '.png"  # a path that would run as PowerShell if pasted in
     assert desktop.screenshot(str(target)) == f"saved {target}"
     cmd, kw = calls[0]
-    assert cmd[:3] == ["powershell", "-NoProfile", "-Command"]
-    script = cmd[3]
-    assert cmd[-1] == str(target)  # the path is an argument to the script, not pasted into its text
-    assert "CopyFromScreen" in script and "VirtualScreen" in script
-    assert target.name not in script
-    assert kw["timeout"] == 30
+    assert cmd == ["powershell", "-NoProfile", "-Command", desktop._SCREENSHOT_PS]
+    assert kw["env"]["IRIS_SHOT_PATH"] == str(target)
+    assert "$env:IRIS_SHOT_PATH" in cmd[3] and "CopyFromScreen" in cmd[3] and "Remove-Item" not in cmd[3]
+
+
+def test_screenshot_tier_follows_the_new_file_rules(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / "Pictures").mkdir(parents=True)
+    (home / "Pictures" / "old.png").write_text("x", encoding="utf-8")
+    monkeypatch.setenv("USERPROFILE", str(home))
+    t = tools.TOOLS["screenshot"]
+    assert t.tier_of({}) == tools.SAFE
+    assert t.tier_of({"path": str(home / "Pictures" / "new.png")}) == tools.SAFE
+    assert t.tier_of({"path": str(home / "Pictures" / "old")}) == tools.CONFIRM  # old means old.png
+    assert t.tier_of({"path": "C:/Windows/shot.png"}) == tools.NEVER
+    assert t.tier_of({"path": str(tmp_path / "elsewhere.png")}) == tools.NEVER
 
 
 def test_screenshot_default_goes_to_pictures_iris_with_a_timestamp(tmp_path, monkeypatch):

@@ -148,11 +148,14 @@ def _slide_no(n: str) -> int:
 # --- writing, moving and copying -------------------------------------------------
 
 
-def resolve_target(path: str) -> Path:
-    """A bare file name goes to ~/Documents/Iris; anything else is used as given. Pure, no side effects."""
+def resolve_target(path: str, suffix: str = "") -> Path:
+    """A bare file name goes to ~/Documents/Iris, and `suffix` is added when the name has none; anything else is
+    used as given. The tools and their tiers both call this, so they always look at the same file. Pure."""
     p = Path(path).expanduser()
     if len(p.parts) == 1:
-        return Path.home() / "Documents" / "Iris" / p.name
+        p = Path.home() / "Documents" / "Iris" / p.name
+    if suffix and not p.suffix:
+        p = p.with_suffix(suffix)
     return p
 
 

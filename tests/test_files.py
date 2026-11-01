@@ -419,3 +419,21 @@ def test_describe_names_the_new_file_actions():
     assert agent._describe("move_file", {"source": "a", "destination": "b"}) == "Move a to b?"
     assert agent._describe("copy_file", {"source": "a", "destination": "b"}) == "Copy a to b?"
 
+
+
+# --- review fixes: secret names with "key", the write tier of a bare name -----------------------
+
+def test_key_as_a_word_in_a_file_name_is_a_secret():
+    t = tools.TOOLS["read_file"]
+    for name in ("google_key.txt", "api-key.txt", "KEY.txt", "ssh keys.md", "C:/x/telefoon_wachtwoord.txt"):
+        assert t.tier_of({"path": name}) == tools.NEVER, name
+    for name in ("keyboard.txt", "monkey.txt", "turkey-recipe.md", "notes.txt"):
+        assert t.tier_of({"path": name}) == tools.SAFE, name
+
+
+def test_write_tier_of_a_bare_name_looks_in_the_iris_documents_folder(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.chdir("C:/Windows")  # the cwd must not matter
+    assert tools.TOOLS["write_file"].tier_of({"path": "notes.txt"}) == tools.CONFIRM

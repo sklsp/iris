@@ -7,6 +7,8 @@ from ctypes import windll
 from pathlib import Path
 from urllib.parse import quote
 
+from iris import files
+
 _MEDIA_KEYS = {
     "play_pause": 0xB3,
     "next": 0xB0,
@@ -71,7 +73,7 @@ _SCREENSHOT_PS = (
     "$bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height;"
     "$g = [System.Drawing.Graphics]::FromImage($bmp);"
     "$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $bmp.Size);"
-    "$bmp.Save($args[0], [System.Drawing.Imaging.ImageFormat]::Png);"
+    "$bmp.Save($env:IRIS_SHOT_PATH, [System.Drawing.Imaging.ImageFormat]::Png);"
     "$g.Dispose(); $bmp.Dispose()"
 )
 
@@ -83,11 +85,12 @@ def screenshot(path: str = "") -> str:
     if not path:
         p = Path.home() / "Pictures" / "Iris" / f"screenshot-{_wall_now():%Y%m%d-%H%M%S}.png"
     else:
-        p = Path(path).expanduser()
+        p = files.resolve_target(path, ".png")
     os.makedirs(p.parent, exist_ok=True)
+    # the path goes in through the environment, never into the script text, so it can not run as PowerShell
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", _SCREENSHOT_PS, str(p)],
-                           capture_output=True, text=True, timeout=30)
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", _SCREENSHOT_PS],
+                           env={**os.environ, "IRIS_SHOT_PATH": str(p)}, capture_output=True, text=True, timeout=30)
     except (subprocess.TimeoutExpired, OSError):
         return "error: could not save a screenshot"
     if r.returncode != 0:

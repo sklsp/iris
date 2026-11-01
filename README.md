@@ -31,7 +31,9 @@ Iris: Sending messages is something I never do myself. I can open a draft; you p
   and permanent deletes stay with you.
 - **Self-extending, safely.** When you ask for something no tool can do, Iris plans a skill, a coding agent (Cline or
   your own) builds it with tests, and you approve it. Approved code is hashed, frozen and run out of process.
-- **Hands that read the screen.** Windows UI Automation gives named buttons and fields instead of guessed pixels.
+- **Hands that read the screen.** Windows UI Automation gives named buttons and fields instead of guessed pixels;
+  for apps that expose nothing (games, canvas apps, remote desktops) Iris looks at a screenshot with the same
+  local model and can click what it sees, after asking.
 - **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
   email drafts, notes, reminders and timers.
 - **Measured.** An eval of 204 tasks runs against the real model and the result is published below, including the
@@ -422,7 +424,8 @@ shows with its own badge.
 ## Limits
 
 - Windows only: the hands are Windows UI Automation. Apps that expose no accessibility tree (some games and canvas
-  apps) can be opened, focused and given keys, but not read.
+  apps) are read and clicked by sight, which is slower (about 15 seconds a look) and needs a model that reads
+  images.
 - The score depends on the model. The published eval is for `qwen3.8-27b` on a 24 GB GPU; smaller models pick tools
   less reliably, and the eval tells you how much less on your own setup.
 - Tested mostly in Dutch and English, with a few German, French and Spanish tasks. Iris answers in the language

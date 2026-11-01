@@ -75,6 +75,7 @@ PLAN.md's headline: a fixed set of scripted tasks with a success rate is what se
 
 ## What it does not do yet
 
-From PLAN.md's "Next": run the eval on the real model and publish the number, and a custom "hey iris" wake word (today it is openWakeWord's `hey_jarvis`).
-The v2 skills now change things, but only with a confirm: `comfy_queue` submits a saved workflow to ComfyUI, and `lmstudio_load`/`lmstudio_unload` load or unload a model in LM Studio; `comfy_status`, `comfy_workflows` and `lmstudio_models` stay read-only.
-And on purpose, forever: logging in, payments, messages to other people, and anything irreversible stay with the user (PLAN.md, "Not in scope").
+See PLAN.md's "Next": a custom "hey iris" wake word (today it is openWakeWord's `hey_jarvis`), a vision fallback for
+apps without an accessibility tree, and sharing skills between users.
+And on purpose, forever: logging in, payments, messages to other people, and anything irreversible stay with the user
+(PLAN.md, "Not in scope").

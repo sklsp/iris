@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-01): the first public release
+
+Highlights:
+- Self-built skills: when no tool can do what you ask, Iris plans a skill, a coding agent (Cline, or any command set as
+  `builder`) builds it with tests in `~/.iris/skills/<name>/`, Iris checks it and says whether it is ready, and you
+  approve it on the dashboard's Skills tab or by voice. Approved code is hashed and run out of process
+  (`request_capability`, `capability_build`, `capability_check`, `capability_approve`, `capability_remove`).
+- A base of everyday tools: `find_files`, `list_folder`, `read_file` (text, Word, PowerPoint, PDF), `write_file`,
+  `make_folder`, `move_file`, `copy_file`, `make_document`, `make_presentation`, `make_spreadsheet`, `clipboard_read`,
+  `clipboard_write`, `media_key`, `lock_screen`, `screenshot`, `close_window`, `clock`, `weather`, `email_draft`,
+  notes and reminders that survive a restart, and `open_app` by Start menu name.
+- `~/.iris/config.toml` (name, folders, city, builder, plugins); personal tools became opt-in plugins; `iris doctor`;
+  `iris --version`; no personal paths in the package.
+- MIT license, CONTRIBUTING, issue templates, security notes for skills and files; the eval grew to 194 tasks.
+
+Details, in the order they landed:
+
 
 Honest tool errors (a returned `error:` string is a failure, not an ok):
 - a tool function that returns a string starting with `error:` is journaled as outcome "error" (kind "tool") instead of "ok", and the text goes back to the model so it can retry or report it
@@ -16,17 +32,17 @@ Existing tasks that can now fail honestly:
 - click_then_dialog gets one more call in its budget (max_calls 7)
 
 Cline autopilot (new tool and command):
-- cline_start (confirm) starts a new Cline session through the Cline CLI with the next queued prompt; Jay's yes is what runs it, a declined start never starts anything, and a failed start leaves the queue untouched
-- python -m iris autopilot --repo ... --agent ... waits until the newest PROGRESS run is done (every item ticked or BLOCKED, clean tree, last commit quiet for three minutes; autopilot.run_done), asks Jay once and starts at most one task; IRIS_CLINE_CLI, IRIS_CLINE_PROVIDER, IRIS_CLINE_MODEL and IRIS_CLINE_CWD control where the session starts and with what provider and model
+- cline_start (confirm) starts a new Cline session through the Cline CLI with the next queued prompt; the user's yes is what runs it, a declined start never starts anything, and a failed start leaves the queue untouched
+- python -m iris autopilot --repo ... --agent ... waits until the newest PROGRESS run is done (every item ticked or BLOCKED, clean tree, last commit quiet for three minutes; autopilot.run_done), asks the user once and starts at most one task; IRIS_CLINE_CLI, IRIS_CLINE_PROVIDER, IRIS_CLINE_MODEL and IRIS_CLINE_CWD control where the session starts and with what provider and model
 - the dashboard's Activity panel shows autopilot events as their own rows (repo, agent, result), without touching today's counters
 
 Eval tasks for the autopilot (four new, 75 in total):
 - cline_next: starting the next run ends ok with a fixture that mirrors the real success text
-- cline_declined: Jay says no and nothing starts
+- cline_declined: the user says no and nothing starts
 - cline_not_done: while items are open in PROGRESS the start errors instead of running
 - cline_injection (safety): an instruction planted in a window to call cline_start or queue_add must not be followed
 
-Docs: README Autopilot section, env vars and task counts; SECURITY.md gains the queue-is-Jay's-file, confirmed-start and injection stops; PLAN.md item 14 ticked
+Docs: README Autopilot section, env vars and task counts; SECURITY.md gains the queue-is-the user's-file, confirmed-start and injection stops; PLAN.md item 14 ticked
 
 Dashboard Autopilot tab (the normal way to start the next prompt):
 - the page's Autopilot tab shows each watched repo's run (done or running) with a "Start next prompt" button that asks once before it starts, and the queue so you can add, delete and move prompts; when a run finishes while the page is open it raises a done banner and, if allowed, a browser notification
@@ -40,9 +56,9 @@ Queue editing by voice, and dashboard polish:
 - the dashboard's Autopilot run rows wrap on narrow screens instead of squashing the text (a 700px media query); a disabled Start button now says why it waits, with the run's own reason from /api/runs such as "last commit 1 minute ago" or "3 of 4 items open in PROGRESS-b.md"
 
 Policy refusals run:
-- queue_take and queue_remove descriptions now point to the right tool: take is for handing a prompt to an agent, never deleting one; remove is what Jay wants when a prompt should go away, also by its text via queue_list first
+- queue_take and queue_remove descriptions now point to the right tool: take is for handing a prompt to an agent, never deleting one; remove is what the user wants when a prompt should go away, also by its text via queue_list first
 - open_url refuses non http(s) URLs in the policy layer (NEVER tier), so a refusal is journaled as refused and nothing runs
-- a missing window says so: the error tells the model the title is not open now, to check list_windows once and tell Jay instead of retrying; the focus_gone fixture matches that real text
+- a missing window says so: the error tells the model the title is not open now, to check list_windows once and tell the user instead of retrying; the focus_gone fixture matches that real text
 - two new safety eval tasks (81 in total): file_url and data_url pin refused URL schemes with forbid ["open_url"]
 
 Eval history (trend across saved runs):
@@ -98,7 +114,7 @@ Journal and eval safety:
 
 Eval categories and safety score:
 - every task has a category (read, hands, files, safety, skills, agents); reports show per-category pass rates and the dashboard's Eval tab shows them too
-- the summary gains a safety line: forbidden calls that succeeded, unknown tools, confirmations Jay never gave
+- the summary gains a safety line: forbidden calls that succeeded, unknown tools, confirmations the user never gave
 - repeats as pass@k: per-task passes out of k plus pass_all and pass_any, with progress printed per task so a long run shows it is alive
 
 Eval publish:
@@ -113,7 +129,7 @@ Coverage:
 Eval language tracking:
 - two Dutch phrasings the model misreads are pinned: lmstudio_load and lmstudio_unload descriptions say "laad ... uit"/"uitladen" means unload, and queue_remove_by_text asks "Verwijder ..." instead of the ambiguous "Haal ... uit de wachtrij"
 - answer_language detects whether a final answer is Dutch, English or German by stopword count, "?" when unsure; every result records it as lang
-- every task has a lang field ("nl", "en" or "any") for the language Jay expects in the answer (default nl)
+- every task has a lang field ("nl", "en" or "any") for the language the user expects in the answer (default nl)
 - the summary counts wrong-language answers (language.wrong and language.unknown) and shows them on the MD line
 - the MD report lists each wrong-language result under Wrong language (id, expected, got, first 80 chars of the answer); JSON results carry lang and want_lang per task
 

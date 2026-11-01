@@ -7,6 +7,7 @@
 - Vision fallback: `look_at_screen` answers questions about the screen or one window, and `click_on_screen`
   clicks something found by sight (confirm, never for send/buy/pay/password/delete). Both use the local model, so
   it needs one that reads images, such as `qwen3.8-27b`.
+- `iris startup on|off|status`: voice mode at login, in a minimized console you can see and close.
 - `iris init` writes a starter `~/.iris/config.toml` after asking your name and city; it never overwrites one.
 - The eval checks answers in German, French and Spanish too (6 tasks); 204 tasks in all.
 - `IRIS_WAKEWORD=iris`: wake Iris by her name, checked by Whisper tiny with a hotword, no trained model.

@@ -218,6 +218,12 @@ transcribes, answers, and waits again. The microphone stays open the whole time,
 word while Iris is still talking cuts the answer short and your next words are taken as the next
 command, without saying the wake word twice.
 
+### Start at login
+
+`iris startup on` starts voice mode when you log in, in a minimized console window you can see and close;
+`iris startup off` stops that. Let LM Studio start its local server at login too (its settings have an option for
+it), or Iris has no model to talk to.
+
 ### Wake word
 
 The default is the built-in openWakeWord model **hey jarvis**: it is tiny and runs on any CPU. Iris downloads it on

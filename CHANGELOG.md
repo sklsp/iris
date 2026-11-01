@@ -9,7 +9,7 @@
   it needs one that reads images, such as `qwen3.8-27b`.
 - `iris startup on|off|status`: voice mode at login, in a minimized console you can see and close.
 - `iris init` writes a starter `~/.iris/config.toml` after asking your name and city; it never overwrites one.
-- The eval checks answers in German, French and Spanish too (6 tasks); 204 tasks in all.
+- The eval checks answers in German, French and Spanish too (9 tasks); 207 tasks in all.
 - `IRIS_WAKEWORD=iris`: wake Iris by her name, checked by Whisper tiny with a hotword, no trained model.
 
 ## 0.4.0 (2026-11-01): the first public release

@@ -1440,6 +1440,7 @@ def test_the_skills_page_shows_the_code_and_approves_only_with_the_token(server,
     status, _, body = get(server + "/api/skills")
     (row,) = json.loads(body)["skills"]
     assert (status, row["name"], row["tier"], row["status"]) == (200, "say_hello", "confirm", "ready")
+    assert row["source"] == ""  # built here; an imported skill names its zip so the page warns about it
     assert row["files"]["skill.py"] == "def run(who):\n    return 'hi ' + who\n" and "plan.md" in row["files"]
     origin = server.replace("localhost", "127.0.0.1")
     assert post(server + "/api/skills/approve", {"name": "say_hello"})[0] == 403

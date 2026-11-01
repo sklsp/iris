@@ -12,6 +12,6 @@
 - [x] T10. Email drafts (1331 passed in 37.56s)
 - [x] T11. Notes (1366 passed in 30.85s)
 - [x] T12. Reminders that survive a restart (1401 passed in 35.49s)
-- [x] T13. Eval tasks for the new tools (1401 passed in 29.90s)
+- [x] T13. Eval tasks for the new tools (1401 passed in 35.34s)
 - [ ] T14. Docs
 - [ ] T15. Final check

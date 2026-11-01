@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Sharing skills: `iris skill export <name>` zips an approved skill with its plan and tests, `iris skill import <file>`
+  adds a shared one as an unapproved skill at the confirm tier and checks it; `iris skill list`.
+
 ## 0.4.0 (2026-11-01): the first public release
 
 Highlights:

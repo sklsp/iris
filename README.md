@@ -114,6 +114,9 @@ flowchart LR
   can not change Iris's tiers or tools in memory, and a hang ends after 120 seconds.
 - **Tier from you:** the tier (safe or confirm, never more) is the one in the plan you said yes to, not one the
   builder picks.
+- **Shared, then reviewed again:** `iris skill export <name>` zips an approved skill with its plan and tests;
+  `iris skill import <file>` adds someone else's as a new skill at the confirm tier (`--tier safe` if you choose),
+  checked but never approved, so you read the code first like any skill Iris built herself.
 
 ## Risk tiers
 

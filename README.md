@@ -250,12 +250,12 @@ set IRIS_DASHBOARD_PORT=9000                        # same, via environment vari
 
 The server binds to loopback only. Every data endpoint answers GET; the writes are the two model actions,
 `POST /api/models/load` and `POST /api/models/unload`, the queue edits, `POST /api/queue/add`, `/delete` and `/move`,
-and `POST /api/cline/start`. All of them require a loopback Origin or Referer plus the per-start `IRIS_TOKEN` header, so
+`POST /api/cline/start`, and approving or removing a skill (`POST /api/skills/approve` and `/remove`). All of them require a loopback Origin or Referer plus the per-start `IRIS_TOKEN` header, so
 a page opened from anywhere else cannot trigger them; every other method gets a 405. A start additionally needs a click
 on its button and a confirm dialog, so it never happens on its own. The journal file is opened read-only, there are no
 CORS headers, and the page inserts every string with `textContent`, so journal text cannot run as HTML.
 
-The page polls every 3 seconds and has seven tabs:
+The page polls every 3 seconds and has eight tabs:
 
 - Overview: System (CPU and RAM with sparklines over the last five minutes, plus load, VRAM and temperature per GPU) and
   Models (every LM Studio model with its type badge and a load or unload button, or a note when it is not reachable).
@@ -267,12 +267,14 @@ The page polls every 3 seconds and has seven tabs:
 - Activity: the last 50 journal entries newest first with tier and outcome chips, plus today's request, confirmation,
   refusal and error counts. Autopilot outcomes appear here with their own badge.
 - Repos: branch, last commit and its age, uncommitted files, BLOCKED.md and STUCK flags per agent repo, stuck repos first.
-- Tools: every tool with its risk tier.
+- Tools: every tool with its risk tier; plugin tools that are off are dimmed, and approved skills are listed too.
 - Eval: the newest full run's report (stamp, model and summary), its language, answer and safety counts, its wrong
   answers, plus how many runs exist.
 - Autopilot: each watched repo's run (done or running) with a **Start next prompt** button that asks once before it
   starts, and the queue so you can add, delete and move prompts; when a run finishes it raises a done banner and, if
   allowed, a browser notification. See [Autopilot](#autopilot).
+- Skills: every skill Iris built or is building, with its request, tier, status and problems, and its plan, code, tests
+  and test output to read before you press **Approve** (or **Remove**). See [Self-extension](#self-extension).
 
 Agents, LM Studio, Claude and runs data are cached for 30 seconds so the page does not hammer git or LM Studio; the
 sessions database is small enough to read fresh on every poll. A missing or unreadable source shows an empty list in its

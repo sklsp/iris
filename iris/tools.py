@@ -1069,7 +1069,8 @@ TOOLS = {t.name: t for t in [
          {"place": S, "days": {"type": "integer"}}, [], SAFE, weather),
     Tool("email_draft",
          "Open a new email as a draft in the user's default mail app; it never sends, the user reviews and presses "
-         "send themselves. This is how Iris 'sends' an email.",
+         "send themselves. This is how Iris 'sends' an email. `to` may be just a name; do not look up the address, "
+         "the user fills it in.",
          {"to": S, "subject": S, "body": S}, [], SAFE, email_draft),
     Tool("note_add",
          "Add one line to the user's notes; use it when the user says 'note this', 'remember this' or wants a quick "

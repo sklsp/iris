@@ -9,6 +9,9 @@ from pathlib import Path
 from iris import config
 
 MAX_CHARS = 20_000
+# appended to a missing-path error so the model looks once instead of retrying the same path
+_MISSING = ("; it does not exist. Look for it once with find_files, then tell the user what you found "
+            "instead of retrying.")
 _SKIP_DIRS = {"AppData", "node_modules", ".git", ".venv", "__pycache__"}
 _TEXT_SUFFIXES = {".txt", ".md", ".csv", ".json", ".py", ".log", ".html", ".xml", ".toml", ".ini", ".yaml"}
 
@@ -73,7 +76,7 @@ def list_folder(path: str) -> str:
     """The entries of a folder: folders first with a trailing /, then files with their size in KB."""
     p = Path(path).expanduser()
     if not p.is_dir():
-        return f"error: no such folder: {p}"
+        return f"error: no such folder: {p}" + _MISSING
     dirs = sorted(e.name + "/" for e in p.iterdir() if e.is_dir())
     files_ = [f"{e.name} {e.stat().st_size // 1024} KB"
               for e in sorted(p.iterdir(), key=lambda e: e.name) if not e.is_dir()]
@@ -87,7 +90,7 @@ def read_file(path: str) -> str:
     """A file as text: plain text, .docx/.pptx from their XML or .pdf via pypdf; at most 20000 characters."""
     p = Path(path).expanduser()
     if not p.is_file():
-        return f"error: no such file: {p}"
+        return f"error: no such file: {p}" + _MISSING
     suffix = p.suffix.lower()
     try:
         if suffix == ".pdf":

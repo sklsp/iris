@@ -70,6 +70,7 @@ flowchart LR
 3. Check the setup, then talk to it:
 
    ```bash
+   .venv\Scripts\iris init          # optional: your name and city in ~/.iris/config.toml
    .venv\Scripts\iris doctor        # says what is missing and how to fix it
    .venv\Scripts\iris               # type requests
    .venv\Scripts\iris --voice       # say "hey jarvis", then your request
@@ -78,7 +79,8 @@ flowchart LR
 
 ## Configuration
 
-Everything is optional. `~/.iris/config.toml` (or the file `IRIS_CONFIG` names) is read again on every request:
+Everything is optional. `~/.iris/config.toml` (or the file `IRIS_CONFIG` names; `iris init` writes a starter one) is
+read again on every request:
 
 ```toml
 name = "Sam"                          # how Iris refers to you

@@ -3,6 +3,7 @@ python -m iris --voice         wake word mode: say "hey jarvis" (IRIS_WAKEWORD),
 python -m iris --push-to-talk  old voice mode: press Enter to stop recording
 python -m iris dashboard       read-only status page at http://127.0.0.1:8765 (add --port N if taken)
 python -m iris autopilot       wait for a run in --repo to finish, then ask before starting the next queued prompt
+python -m iris init            write a starter ~/.iris/config.toml (asks your name and city)
 python -m iris doctor          check the setup (LM Studio, model, config, plugins, voice) and say what to fix
 python -m iris skill list      the skills Iris built; `skill export NAME` zips an approved one to share,
                                `skill import FILE [--tier safe]` adds a shared one for review (confirm by default)"""
@@ -76,6 +77,10 @@ def main() -> None:
                 port = int(args[i + 1])
         serve(port=port)
         return
+    if len(sys.argv) > 1 and sys.argv[1] == "init":
+        from iris.config import init_main
+
+        raise SystemExit(init_main())
     if len(sys.argv) > 1 and sys.argv[1] == "doctor":
         from iris.doctor import main as doctor_main
 

@@ -19,11 +19,15 @@ _MEDIA_KEYS = {
 }
 
 
+# PowerShell reads stdin and writes stdout in the console code page, which breaks é and ë; UTF-8 both ways.
+_UTF8 = "[Console]::InputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); "
+
+
 def clipboard_read() -> str:
     """The text on the user's clipboard (at most 20000 characters), or 'The clipboard is empty.' when there is none."""
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"],
-                           capture_output=True, text=True, timeout=10)
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", _UTF8 + "Get-Clipboard -Raw"],
+                           capture_output=True, text=True, encoding="utf-8", timeout=10)
     except subprocess.TimeoutExpired:
         return "error: reading the clipboard timed out"
     except OSError:
@@ -35,10 +39,13 @@ def clipboard_read() -> str:
 
 
 def clipboard_write(text: str) -> str:
-    """Put text on the user's clipboard, piped to Set-Clipboard so it never appears in the command line."""
+    """Put text on the user's clipboard; it goes in through the environment, never into the command line."""
+    if len(text) > 32000:  # an environment variable holds at most 32767 characters
+        return "error: at most 32000 characters fit on the clipboard this way"
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", "$input | Set-Clipboard"],
-                           input=text, capture_output=True, text=True, timeout=10)
+        # through the environment, which Windows passes as Unicode: stdin goes through the console code page
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value $env:IRIS_CLIP"],
+                           env={**os.environ, "IRIS_CLIP": text}, capture_output=True, text=True, timeout=10)
     except subprocess.TimeoutExpired:
         return "error: writing to the clipboard timed out"
     except OSError:

@@ -46,8 +46,8 @@ def test_clipboard_read_returns_the_text(tmp_path, monkeypatch):
     monkeypatch.setattr(desktop.subprocess, "run", fake_run)
     assert desktop.clipboard_read() == "hello world"
     cmd, kw = calls[0]
-    assert cmd == ["powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"]
-    assert kw["timeout"] == 10
+    assert cmd == ["powershell", "-NoProfile", "-Command", desktop._UTF8 + "Get-Clipboard -Raw"]
+    assert (kw["timeout"], kw["encoding"]) == (10, "utf-8")  # é and ë survive the console code page
 
 
 def test_clipboard_read_empty_says_the_clipboard_is_empty(monkeypatch):
@@ -72,7 +72,7 @@ def test_clipboard_read_timeout_is_an_error(monkeypatch):
 
 # --- clipboard_write -----------------------------------------------------------------
 
-def test_clipboard_write_pipes_text_through_stdin(monkeypatch):
+def test_clipboard_write_passes_the_text_through_the_environment(monkeypatch):
     calls = []
 
     def fake_run(cmd, **kw):
@@ -80,11 +80,12 @@ def test_clipboard_write_pipes_text_through_stdin(monkeypatch):
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(desktop.subprocess, "run", fake_run)
-    assert desktop.clipboard_write("secret text") == "put 11 characters on the clipboard"
+    assert desktop.clipboard_write("geheim café") == "put 11 characters on the clipboard"
     cmd, kw = calls[0]
-    assert cmd == ["powershell", "-NoProfile", "-Command", "$input | Set-Clipboard"]
-    assert kw["input"] == "secret text"
-    assert "secret text" not in " ".join(cmd)
+    assert cmd == ["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value $env:IRIS_CLIP"]
+    assert kw["env"]["IRIS_CLIP"] == "geheim café"  # Unicode, unlike stdin through the console code page
+    assert "geheim" not in " ".join(cmd)
+    assert desktop.clipboard_write("x" * 32001) == "error: at most 32000 characters fit on the clipboard this way"
 
 
 def test_clipboard_write_failure_is_an_error(monkeypatch):

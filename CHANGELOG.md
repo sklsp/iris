@@ -57,6 +57,34 @@ Reliable Cline start (a start is confirmed from history; the retry only happens 
 - if the first dispatch's polls find nothing, the same command runs once more before giving up (the retry matches against the original moment, so a late-appearing session still counts); a session that registers later than about 15 seconds could still be started twice; the give-up error then reads "Cline did not start a session after two tries: ..."
 - the dashboard's Start button now says "starting... (can take a few minutes)", since a start can take about four minutes in the worst case (two CLI calls with their 120 s timeout plus polls)
 
+Base tools for files, office documents and everyday desktop tasks (this run; all tier-checked and journaled like the rest):
+- find_files (safe): paths of files whose name contains a query, under home and the configured folders
+- list_folder (safe): the entries of a folder, with a trailing / on folders
+- read_file (safe): plain text, PDF or .docx/.pptx as text; long output truncated; a name that looks like it holds secrets is never read
+- write_file (confirm): writes UTF-8 text inside home and the configured folders; a bare name goes to ~/Documents/Iris; an overwrite puts the old file in Iris's trash first
+- make_folder (safe): creates a folder with any missing parents, inside those roots only
+- move_file (confirm): moves a file or folder between those roots, creating missing destination folders and never overwriting
+- copy_file (confirm): copies a file or folder with all its contents between those roots, never overwriting
+- make_document (safe): a Word .docx from a title and simple markdown; a bare name goes to ~/Documents/Iris; an existing file is replaced, old one trashed first
+- make_presentation (safe): a PowerPoint .pptx with a title slide and one content slide per entry; same rules as make_document
+- make_spreadsheet (safe): an .xlsx of named worksheets whose first row becomes a bold header on light gray; same rules as make_document
+- clipboard_read (safe): the text on your clipboard via Get-Clipboard, at most 20000 characters
+- clipboard_write (safe): puts text on your clipboard through stdin, never in the command line
+- media_key (safe): presses play/pause, next, previous, volume up/down or mute, repeated 1 to 10 times
+- lock_screen (safe): locks the Windows session via LockWorkStation
+- screenshot (safe): saves a PNG of the whole screen; without a path it goes to ~/Pictures/Iris with a timestamp
+- close_window (confirm): closes the first window whose title contains the text; WM_CLOSE, so the app can still ask to save
+- clock (safe): the local date and time, weekday and ISO week
+- weather (safe): current weather for your config city or a named place plus up to seven days of forecast via Open-Meteo
+- email_draft (safe): opens a mail as a draft in your default mail app with to, subject and body filled in; it never sends
+- note_add (safe): adds one line to your notes (~/.iris/notes.md) when you say "note this" or "remember this"
+- notes_read (safe): your recent notes, newest first, or the ones containing a query
+- note_remove (confirm): removes the single note matching a query; errors when none or several match
+- reminder_set (safe): sets a reminder that survives a restart (~/.iris/reminders.json); Iris says the text out loud at HH:MM or YYYY-MM-DD HH:MM, and one missed while off is announced on start
+- reminder_list (safe): your pending reminders with their times and ids
+- reminder_cancel (safe): cancels one of your pending reminders by its id from reminder_list
+- open_app now also works with the name as it appears in the Start menu, such as Spotify or Word
+
 ## 0.3.0
 
 Skills that act (new tools, all tier-checked and journaled like the rest):

@@ -34,7 +34,7 @@ Iris: Sending messages is something I never do myself. I can open a draft; you p
 - **Hands that read the screen.** Windows UI Automation gives named buttons and fields instead of guessed pixels.
 - **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
   email drafts, notes, reminders and timers.
-- **Measured.** An eval of 166 tasks runs against the real model and the result is published below, including the
+- **Measured.** An eval of 191 tasks runs against the real model and the result is published below, including the
   safety traps.
 - **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (SAPI or
   Kokoro) all run on your machine.
@@ -263,6 +263,17 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | clipboard_write | safe | puts text on the user's clipboard by piping it to Set-Clipboard through stdin, never in the command line |
 | media_key | safe | presses a media key: play_pause, next, previous, volume_up, volume_down or mute (virtual keys via keybd_event down and up); times repeats it, 1 to 10 |
 | lock_screen | safe | locks the user's Windows session via LockWorkStation |
+| screenshot | safe | saves a PNG of the whole screen for you; without a path it goes to ~/Pictures/Iris with a timestamp |
+| close_window | confirm | closes the first window whose title contains the text (WM_CLOSE, so the app can still ask to save); asks first |
+| clock | safe | the local date and time, weekday and ISO week |
+| weather | safe | current weather for a place or the config `city`, plus up to seven days of forecast via Open-Meteo |
+| email_draft | safe | opens a new mail as a draft in your default mail app with to, subject and body filled in; it never sends |
+| note_add | safe | adds one line to your notes when you say "note this" or "remember this" |
+| notes_read | safe | your recent notes, newest first, or the ones containing a query |
+| note_remove | confirm | removes the single note matching a query; errors when none or several match; asks first |
+| reminder_set | safe | sets a reminder that survives a restart; Iris says the text out loud at HH:MM (today or tomorrow) or YYYY-MM-DD HH:MM |
+| reminder_list | safe | your pending reminders with their times and ids |
+| reminder_cancel | safe | cancels one of your pending reminders by its id from reminder_list |
 
 The tiers are enforced in code, not in the prompt:
 
@@ -284,6 +295,10 @@ not be reliable. One directory under `~/.iris`, plus a sidecar per item, makes u
 
 Screen contents reach the model wrapped as untrusted data. Every request, tool call, confirmation and
 result is appended to `~/.iris/journal.jsonl`.
+
+## Files and documents
+
+The file tools work in your home folder and the folders you list under `folders` in config.toml; outside them, or in a system directory, they refuse. A name that looks like it holds secrets is never read by `read_file`. Nothing is deleted: an overwrite puts the old file in Iris's trash first, so every change can be undone with `restore_trash`. The office tools need the `office` extra and write to `~/Documents/Iris` when you give a bare name.
 
 ## Speech out
 
@@ -423,7 +438,7 @@ tab, not an error page.
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 166 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 191 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.

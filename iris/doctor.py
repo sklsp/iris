@@ -34,6 +34,11 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
         ids = [m["id"] for m in p["models"]]
         out.append((model in ids, f"model {model} " + ("available in LM Studio" if model in ids
                                                        else "not found in LM Studio: download it or set IRIS_MODEL")))
+        kind = next((m.get("type") for m in p["models"] if m["id"] == model), None)
+        if model in ids and p.get("states_known"):
+            out.append((kind == "vlm", "vision: " + (f"{model} reads images (look_at_screen, click_on_screen)"
+                        if kind == "vlm" else f"{model} can not read images, so look_at_screen and "
+                                              "click_on_screen will fail; pick a vision model")))
     builder = cfg.get("builder") or []
     if builder:
         found = shutil.which(builder[0]) is not None or Path(builder[0]).exists()
@@ -53,7 +58,7 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
 
 def main() -> int:
     results = checks()
-    optional = ("voice", "config", "skill builder")  # Iris runs without these; everything else must pass
+    optional = ("voice", "config", "skill builder", "vision")  # Iris runs without these; everything else must pass
     for ok, line in results:
         mark = "ok " if ok else ("-- " if line.startswith(optional) else "FIX")
         print(f"{mark} {line}")

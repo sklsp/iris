@@ -982,7 +982,8 @@ TOOLS = {t.name: t for t in [
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_build),
     Tool("capability_check",
          "Check a skill that is being built: its files and its own tests. Use it when the user asks whether a skill"
-         " is done. It runs code the coding agent wrote, so Iris asks first.",
+         " is done or ready: capability_list says 'building' until a check, so call this instead of trusting that."
+         " It runs code the coding agent wrote, so Iris asks first.",
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_check),
     Tool("capability_approve",
          "Approve a ready skill so Iris can use it. Only when the user asks to approve it. Asks first.",

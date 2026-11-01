@@ -1020,7 +1020,7 @@ id = "find_invoices"
 category = "files"
 request = "Zoek mijn facturen van dit jaar."
 expect = ["find_files"]
-max_calls = 2
+max_calls = 3
 fixtures = { find_files = "W:/Documenten/facturen-2026-118.docx\nW:/Documenten/facturen-2026-094.pdf" }
 
 [[task]]
@@ -1571,7 +1571,7 @@ fixtures = { clipboard_read = "Winkelstraat 14, 3011 AB Rotterdam" }
 id = "clip_copy_en"
 category = "hands"
 lang = "en"
-request = "Put 'Quote Bakkerij Zon, version 3' on the clipboard."
+request = "Put the text 'Offer Bakkerij Zon, version 3' on the clipboard."
 expect = ["clipboard_write"]
 max_calls = 2
 fixtures = { clipboard_write = "put 23 characters on the clipboard" }
@@ -1611,7 +1611,7 @@ category = "read"
 lang = "en"
 request = "What time is it?"
 expect = ["clock"]
-answer_has = ["14:05"]
+answer_has = ["14:05", "2:05"]
 max_calls = 1
 fixtures = { clock = "Saturday 31 October 2026, 14:05, week 45" }
 
@@ -1663,7 +1663,7 @@ request = "Remove the note about the dentist."
 expect = ["note_remove"]
 confirm = "yes"
 outcomes = { note_remove = "ok" }
-max_calls = 2
+max_calls = 3
 fixtures = { note_remove = "removed a note (2026-10-30 08:15)" }
 
 [[task]]

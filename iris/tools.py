@@ -58,6 +58,7 @@ from iris.policy import (
     _unload_tier,
     _write_tier,
 )
+from iris.reminders import reminder_cancel, reminder_list, reminder_set
 from iris.timers import Timers
 from iris.weather import weather
 
@@ -1078,5 +1079,18 @@ TOOLS = {t.name: t for t in [
          "Remove one of the user's notes: the single note containing the query; use it when they ask to delete a "
          "note. It errors if none or several match.",
          {"query": S}, ["query"], CONFIRM, note_remove),
+    Tool("reminder_set",
+         "Set a reminder that survives a restart; Iris says `text` out loud at `when`, which is 'HH:MM' (today, or"
+         " tomorrow when already past) or 'YYYY-MM-DD HH:MM'. Use it when the user asks to be reminded of something"
+         " at a time.",
+         {"when": S, "text": S}, ["when", "text"], SAFE, reminder_set),
+    Tool("reminder_list",
+         "The user's pending reminders with their times and ids; use it when they ask what reminders are set or"
+         " when a reminder is due.",
+         {}, [], SAFE, reminder_list),
+    Tool("reminder_cancel",
+         "Cancel one of the user's pending reminders by its id (from reminder_list); use it when they ask to drop"
+         " a reminder.",
+         {"id": {"type": "integer"}}, ["id"], SAFE, reminder_cancel),
 
 ]}

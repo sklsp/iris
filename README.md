@@ -158,6 +158,9 @@ are in the eval either way.
 | note_add | safe |  |
 | notes_read | safe |  |
 | note_remove | confirm |  |
+| reminder_set | safe |  |
+| reminder_list | safe |  |
+| reminder_cancel | safe |  |
 
 ## Eval
 

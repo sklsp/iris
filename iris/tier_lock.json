@@ -250,5 +250,17 @@
   "note_remove": {
     "tier": "confirm",
     "escalates": false
+  },
+  "reminder_cancel": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "reminder_list": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "reminder_set": {
+    "tier": "safe",
+    "escalates": false
   }
 }

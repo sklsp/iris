@@ -90,6 +90,9 @@ def main() -> None:
             return is_yes(session.next_command())
 
     tools.set_announcer(say)  # timers speak through the same say as everything else
+    from iris import reminders
+
+    reminders.start_reminders(say)  # pending reminders wait on daemon threads and speak through the same say
     skills.watch(say)  # says when a skill the coding agent built is checked and ready, or blocked
 
     agent = Agent(LMStudio(), confirm, Journal(Path(a.journal)))

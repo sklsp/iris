@@ -31,8 +31,9 @@ You talk, Iris does it, on your own PC: no cloud, no cost per command.
 
 ## Next
 
-- A trained openWakeWord "hey iris" model, so waking on the name needs no Whisper pass (`IRIS_WAKEWORD=iris`
-  works today through Whisper).
+- A trained "hey iris" model with permissive training data, so waking on the name needs no Whisper pass.
+  `IRIS_WAKEWORD=iris` works today through Whisper. Training on openWakeWord's usual datasets would make the
+  model non-commercial (CC BY-NC-SA 4.0), which does not fit an MIT project.
 - More tasks per language: German, French and Spanish have two each.
 
 ## Not in scope, on purpose

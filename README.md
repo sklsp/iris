@@ -220,7 +220,9 @@ command, without saying the wake word twice.
 
 ### Wake word
 
-The default is the built-in openWakeWord model **hey jarvis**: it is tiny and runs on any CPU. To wake Iris by
+The default is the built-in openWakeWord model **hey jarvis**: it is tiny and runs on any CPU. Iris downloads it on
+first use and does not ship it; openWakeWord's pre-trained models are licensed CC BY-NC-SA 4.0 (non-commercial)
+because of their training data, so check that before using it commercially. To wake Iris by
 her own name instead, set `IRIS_WAKEWORD=iris`: short utterances are then checked by Whisper `tiny` with "Iris" as a
 hotword (about 0.6 s on a CPU, `IRIS_WAKE_WHISPER` picks another size), so "Iris" or "hey Iris" works without a
 trained model, at the cost of transcribing every short sound in the room.

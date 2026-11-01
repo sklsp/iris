@@ -139,11 +139,18 @@ def _describe(name: str, args: dict) -> str:
         return f"Press {args.get('keys')} in {args.get('window')}?"
     if name == "cline_start":
         repo = args.get("repo") or ""
-        return f"Start a new Cline session for {args.get('agent')} in {repo or 'W:/Iris'} with the next queued prompt?"
+        return (f"Start a new Cline session for {args.get('agent')} in {repo or 'the default folder'} "
+                f"with the next queued prompt?")
     if name == "request_capability":
-        return f"I can't do that yet. Save a plan to build a new skill '{args.get('tool_name')}'?"
+        return (f"I can't do that yet. Shall I build a new skill '{args.get('tool_name')}' for it? A coding agent "
+                f"writes it, and I only use it after you approve it.")
     if name == "capability_build":
-        return f"Build the new skill '{args.get('tool_name')}' now? Cline works on it in a separate copy of Iris."
+        return f"Build the skill '{args.get('tool_name')}' again with the coding agent?"
     if name == "capability_check":
         return f"Check the new skill '{args.get('tool_name')}'? This runs its tests."
+    if name == "capability_approve":
+        return (f"Approve the skill '{args.get('tool_name')}'? From then on I can run its code on this PC. "
+                f"Review it on the dashboard first.")
+    if name == "capability_remove":
+        return f"Remove the skill '{args.get('tool_name')}'?"
     return f"Run {name} with {args}?"

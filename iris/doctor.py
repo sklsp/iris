@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import shutil
 import sys
+from pathlib import Path
 
 from iris import config
 from iris.registry import PLUGINS
@@ -32,6 +34,18 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
         ids = [m["id"] for m in p["models"]]
         out.append((model in ids, f"model {model} " + ("available in LM Studio" if model in ids
                                                        else "not found in LM Studio: download it or set IRIS_MODEL")))
+    builder = cfg.get("builder") or []
+    if builder:
+        found = shutil.which(builder[0]) is not None or Path(builder[0]).exists()
+        out.append((found, f"skill builder {builder[0]} "
+                    + ("found" if found else "not found: fix builder in config.toml")))
+    else:
+        from iris.autopilot import cline_cli
+
+        cli = cline_cli()
+        found = shutil.which(cli) is not None or Path(cli).exists()
+        out.append((found, f"skill builder Cline ({cli}) " + ("found" if found
+                    else "not found: install the Cline CLI or set builder in config.toml (optional)")))
     voice = all(importlib.util.find_spec(m) is not None for m in ("faster_whisper", "sounddevice", "openwakeword"))
     out.append((voice, "voice extras installed" if voice else "voice extras missing: pip install -e .[voice]"))
     return out
@@ -42,5 +56,5 @@ def main() -> int:
     for ok, line in results:
         print(f"{'ok ' if ok else 'FIX'} {line}")
     # voice and the config file are optional; everything else must pass
-    required = [ok for (ok, line) in results if not line.startswith(("voice", "config"))]
+    required = [ok for (ok, line) in results if not line.startswith(("voice", "config", "skill builder"))]
     return 0 if all(required) else 1

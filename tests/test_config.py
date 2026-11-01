@@ -19,7 +19,7 @@ def test_config_sets_name_and_plugins(tmp_path, monkeypatch):
     path = tmp_path / "config.toml"
     path.write_text('name = " Jay "\nplugins = ["comfyui", 7]\n', encoding="utf-8")
     monkeypatch.setenv("IRIS_CONFIG", str(path))
-    assert config.load() == {"name": "Jay", "plugins": ["comfyui"]}
+    assert config.load() == {"name": "Jay", "plugins": ["comfyui"], "builder": []}
     assert "Jay's Windows PC" in system_prompt()
     assert "Today is Friday 31 October 2026." in system_prompt(today="Friday 31 October 2026")
 
@@ -66,3 +66,16 @@ def test_doctor_reports_what_to_fix(tmp_path, monkeypatch):
     assert lines["model"] is True and lines["plugins"] is False
     down = [line for ok, line in doctor.checks({"reachable": False}) if not ok]
     assert any("LM Studio not reachable" in line for line in down)
+
+
+def test_doctor_checks_the_skill_builder(tmp_path, monkeypatch):
+    from iris import doctor
+
+    monkeypatch.delenv("IRIS_CLINE_CLI", raising=False)
+    (tmp_path / "config.toml").write_text('builder = ["no-such-agent-xyz", "{prompt}"]', encoding="utf-8")
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    lines = [line for ok, line in doctor.checks({"reachable": False}) if line.startswith("skill builder")]
+    assert lines == ["skill builder no-such-agent-xyz not found: fix builder in config.toml"]
+    (tmp_path / "config.toml").write_text(f'cline_cli = "{(tmp_path / "config.toml").as_posix()}"', encoding="utf-8")
+    ok_lines = [ok for ok, line in doctor.checks({"reachable": False}) if line.startswith("skill builder Cline")]
+    assert ok_lines == [True]

@@ -154,5 +154,13 @@
   "web_search": {
     "tier": "safe",
     "escalates": false
+  },
+  "capability_approve": {
+    "tier": "confirm",
+    "escalates": false
+  },
+  "capability_remove": {
+    "tier": "confirm",
+    "escalates": false
   }
 }

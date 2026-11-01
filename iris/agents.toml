@@ -1,14 +1,12 @@
-# Which repos the agent manager watches. Every path here is read only: Iris runs git plumbing and
-# never writes, checks out or commits in another agent's repo.
+# Which repos the agent manager watches. Copy this file to ~/.iris/agents.toml and edit it there.
+# Every path here is read only: Iris runs git plumbing and never writes, checks out or commits in another
+# agent's repo.
 #
-# repos     explicit repo roots
+# repos     explicit repo roots, for example ["C:/code/my-app", "D:/work/api"]
 # worktrees roots that contain Cline worktrees: each <hash>/<project> that is a git repo is added,
-#           so a new worktree shows up in the status without editing this file
-#
-# A missing file means the defaults below are used.
+#           so a new worktree shows up in the status without editing this file (default ~/.cline/worktrees)
 
-repos = ["W:/Ledger", "W:/feedbot", "W:/acme-render", "W:/Iris", "W:/leadscan"]
-worktrees = ["C:/Users/Jayde/.cline/worktrees"]
+repos = []
 
 # Minutes without a commit, together with uncommitted changes, that count as STUCK.
 stuck_minutes = 60

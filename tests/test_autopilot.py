@@ -163,10 +163,13 @@ def _clear_cli_env(monkeypatch) -> None:
 
 def test_cline_accessors_default_and_read_the_env_when_called(monkeypatch):
     _clear_cli_env(monkeypatch)
-    assert cline_cli() == "W:/Cline/cline-cli.exe"
+    assert cline_cli() == "cline"
     assert cline_provider() == "lmstudio"
     assert cline_model() == "qwen3.8-27b"
-    assert cline_cwd() == "W:/Iris"
+    assert cline_cwd() == str(Path.home())
+    cfg = Path(os.environ["IRIS_CONFIG"])
+    cfg.write_text('cline_cli = "W:/Cline/cline-cli.exe"\ncline_cwd = "W:/Iris"\n', encoding="utf-8")
+    assert (cline_cli(), cline_cwd()) == ("W:/Cline/cline-cli.exe", "W:/Iris")
     monkeypatch.setenv("IRIS_CLINE_CLI", "D:/tools/cline.exe")
     monkeypatch.setenv("IRIS_CLINE_PROVIDER", "openrouter")
     monkeypatch.setenv("IRIS_CLINE_MODEL", "gpt-5.2")
@@ -180,7 +183,7 @@ def test_cline_accessors_default_and_read_the_env_when_called(monkeypatch):
 def test_cline_command_is_the_exact_argv(monkeypatch):
     _clear_cli_env(monkeypatch)
     assert cline_command("fix the bug", "W:/Iris") == [
-        "W:/Cline/cline-cli.exe",
+        "cline",
         "-z",
         "-c",
         "W:/Iris",
@@ -283,7 +286,7 @@ def test_cline_sessions_passes_the_exact_argv_and_kwargs(monkeypatch):
 
     cline_sessions(run=fake_run)
     argv, kwargs = calls[0]
-    assert argv == ["W:/Cline/cline-cli.exe", "history", "--json", "--limit", "10"]
+    assert argv == ["cline", "history", "--json", "--limit", "10"]
     assert kwargs == {
         "capture_output": True,
         "text": True,
@@ -384,7 +387,7 @@ def test_start_in_hub_missing_cli_raises_lookup_error(monkeypatch):
 
     with pytest.raises(LookupError) as exc:
         start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW)
-    assert str(exc.value) == "Cline CLI not found at W:/Cline/cline-cli.exe"
+    assert str(exc.value) == "Cline CLI not found at cline"
 
 
 def test_start_in_hub_error_carries_the_last_stderr_line(monkeypatch):
@@ -425,7 +428,7 @@ def test_start_in_hub_defaults_to_cline_sessions_and_the_clock(monkeypatch):
         if argv[1] == "history":  # cline_sessions' call
             return SimpleNamespace(stdout=history)
         assert argv == [
-            "W:/Cline/cline-cli.exe", "-z", "-c", "W:/Iris", "-P", "lmstudio", "-m", "qwen3.8-27b", "fix the bug"
+            "cline", "-z", "-c", "W:/Iris", "-P", "lmstudio", "-m", "qwen3.8-27b", "fix the bug"
         ]
         return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
 
@@ -620,7 +623,7 @@ def test_start_in_hub_missing_cli_raises_lookup_error_without_a_retry(monkeypatc
         start_in_hub(
             "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=lambda s: None
         )
-    assert str(exc.value) == "Cline CLI not found at W:/Cline/cline-cli.exe"
+    assert str(exc.value) == "Cline CLI not found at cline"
     assert calls == 1
 
 
@@ -784,6 +787,7 @@ def test_cline_start_starts_the_oldest_prompt_in_the_hub_and_shrinks_the_queue(t
     _clear_cli_env(monkeypatch)
     path = _queue_file(tmp_path)
     monkeypatch.setenv("IRIS_QUEUE", str(path))
+    monkeypatch.setenv("IRIS_CLINE_CWD", "W:/Iris")
     started: list[tuple[str, str]] = []
 
     def fake_start(text: str, cwd: str) -> str:
@@ -803,10 +807,10 @@ def test_cline_start_leaves_the_queue_when_the_cli_is_missing(tmp_path, monkeypa
     monkeypatch.setenv("IRIS_QUEUE", str(path))
 
     def broken(text: str, cwd: str) -> str:
-        raise LookupError("Cline CLI not found at W:/Cline/cline-cli.exe")
+        raise LookupError("Cline CLI not found at cline")
 
     monkeypatch.setattr(autopilot, "start_in_hub", broken)
-    assert cline_start("cline") == "error: Cline CLI not found at W:/Cline/cline-cli.exe"
+    assert cline_start("cline") == "error: Cline CLI not found at cline"
     assert _waiting(path) == ["first prompt", "second prompt"]  # unchanged
 
 

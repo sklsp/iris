@@ -23,6 +23,7 @@ Repository = "https://github.com/sklsp/Iris"
 
 [project.optional-dependencies]
 voice = ["faster-whisper>=1.0", "sounddevice>=0.4", "numpy", "pyttsx3>=2.90", "openwakeword>=0.6"]
+office = ["python-docx>=1.1", "python-pptx>=1.0", "openpyxl>=3.1"]  # Word, PowerPoint and Excel files
 tts = ["kokoro-onnx>=0.6"]  # optional Kokoro TTS (IRIS_TTS=kokoro); SAPI is the default and needs nothing
 dev = ["pytest", "pytest-cov", "ruff", "mypy"]
 

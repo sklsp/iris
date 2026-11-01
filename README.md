@@ -1,38 +1,95 @@
 # Iris
 
 [![CI](https://github.com/sklsp/Iris/actions/workflows/ci.yml/badge.svg)](https://github.com/sklsp/Iris/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Python 3.11+ . Windows . 696 tests . 96% coverage
+**A local voice agent for Windows that does things on your PC, asks before it changes anything, and builds the
+skills it is missing.**
 
-## What it is
+Python 3.11+ . Windows 10/11 . runs on a local model in LM Studio . no cloud, no cost per command
 
-A local voice agent that operates this Windows PC. You say what you want; Iris reads the screen through
-Windows UI Automation, picks tools with a local LLM (Qwen in LM Studio), asks before it changes anything,
-and answers out loud. Iris keeps about 40,000 characters of conversation and forgets the oldest requests first.
-No cloud, no cost per command. See [PLAN.md](PLAN.md) for where it is going.
+```
+You:  Hey Jarvis, maak een presentatie van vijf slides over de geschiedenis van Rotterdam.
+Iris: (searches the web, reads two pages, writes the slides)
+      Klaar: Rotterdam.pptx staat in Documenten\Iris.
 
-## What it shows
+You:  Zet de Philips Hue lampen in de woonkamer op 50 procent.
+Iris: Dat kan ik nog niet. Zal ik er een nieuwe skill voor bouwen? Je keurt hem goed voor ik hem gebruik.
+You:  Ja.
+Iris: (a coding agent writes the skill and its tests; Iris runs the tests)
+      The new skill hue_lights is built and its tests pass. Review it on the dashboard, or ask me to approve it.
 
-- Local LLM tool calling: Qwen 3.8 27B in LM Studio picks the tools and fills their arguments
-- Model control: Iris loads LM Studio models and queues ComfyUI jobs, always after a spoken confirm, and never unloads the model it runs on
-- Windows UI Automation instead of screenshots: Iris reads named controls, not pixels
-- Risk tiers enforced in code with tests: safe / confirm / never, escalating with the arguments
-- Wake word and streaming TTS: openWakeWord and faster-whisper in, SAPI or Kokoro out
-- An eval harness: 111 dry-run tasks that measure how well the model picks tools
-- The design decisions, with reasons: [DESIGN.md](DESIGN.md), UI Automation over pixels, tiers in code, untrusted screen text, barge-in
+You:  Stuur Mark op WhatsApp dat ik later ben.
+Iris: Sending messages is something I never do myself. I can open a draft; you press send.
+```
+
+## Why Iris
+
+- **Safety in code, not in the prompt.** Every tool has a risk tier: *safe* runs, *confirm* asks you out loud first,
+  *never* is refused. Tiers escalate with the arguments (a button named "Pay", Enter in a mail window, a file that
+  looks like a password list), are pinned in `iris/tier_lock.json` and tested. Sending, buying, paying, passwords
+  and permanent deletes stay with you.
+- **Self-extending, safely.** When you ask for something no tool can do, Iris plans a skill, a coding agent (Cline or
+  your own) builds it with tests, and you approve it. Approved code is hashed, frozen and run out of process.
+- **Hands that read the screen.** Windows UI Automation gives named buttons and fields instead of guessed pixels.
+- **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
+  email drafts, notes, reminders and timers.
+- **Measured.** An eval of 114 tasks runs against the real model and the result is published below, including the
+  safety traps.
+- **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (SAPI or
+  Kokoro) all run on your machine.
 
 ```mermaid
 flowchart LR
   Mic[Microphone] --> Wake[Wake word] --> STT[faster-whisper]
   STT --> Agent
-  Agent <--> LLM[Qwen in LM Studio]
+  Agent <--> LLM[Local model in LM Studio]
   Agent --> Tiers{Risk tier}
   Tiers -->|safe| Tools
-  Tiers -->|confirm| Ask[Ask Jay] --> Tools
+  Tiers -->|confirm| Ask[Ask you] --> Tools
   Tiers -->|never| Refuse[Refuse]
   Tools --> UIA[Windows UI Automation]
+  Tools --> Skills[Approved skills, out of process]
   Agent --> TTS[Speech] --> Speaker
 ```
+
+## Quickstart
+
+1. Install [LM Studio](https://lmstudio.ai), download a model that supports tool calling (Iris is tuned on
+   `qwen3.8-27b`; smaller Qwen models work with a lower score), load it and start the local server.
+2. Install Iris:
+
+   ```bash
+   git clone https://github.com/sklsp/Iris && cd Iris
+   python -m venv .venv
+   .venv\Scripts\python -m pip install -e ".[voice,office]"
+   ```
+
+3. Check the setup, then talk to it:
+
+   ```bash
+   .venv\Scripts\iris doctor        # says what is missing and how to fix it
+   .venv\Scripts\iris               # type requests
+   .venv\Scripts\iris --voice       # say "hey jarvis", then your request
+   .venv\Scripts\iris dashboard     # status, activity, eval and skill review at http://127.0.0.1:8765
+   ```
+
+## Configuration
+
+Everything is optional. `~/.iris/config.toml` (or the file `IRIS_CONFIG` names) is read again on every request:
+
+```toml
+name = "Sam"                          # how Iris refers to you
+folders = ["D:/Projects"]             # where file tools may write, besides your home folder
+city = "Utrecht"                      # the default place for the weather
+builder = ["claude", "-p", "{prompt}"]  # the coding agent that builds new skills; Cline when unset
+plugins = ["lmstudio", "comfyui"]     # opt-in tool groups, see below
+```
+
+**Plugins** are tool groups for particular setups, off until you list them: `lmstudio` (load and unload models),
+`comfyui` (status and queueing saved workflows), `agents` (watch coding-agent repos, a prompt queue and starting
+Cline sessions), `leadscan` and `conceptkit` (the author's own business tools). Their tools keep their tiers and
+are in the eval either way.
 
 ## Risk tiers
 
@@ -77,6 +134,8 @@ flowchart LR
 | capability_list | safe |  |
 | capability_build | confirm |  |
 | capability_check | confirm |  |
+| capability_approve | confirm |  |
+| capability_remove | confirm |  |
 
 ## Eval
 
@@ -150,7 +209,7 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | timer_set | safe | set a countdown timer for minutes or until a clock time such as 15:00 (`at`); Iris says `message` out loud in Jay's language when it is done |
 | timer_list | safe | the running timers and how long each has left |
 | timer_cancel | safe | stop a timer by its number, or all of them with 0 |
-| capability_list | safe | the saved plans for skills Iris does not have yet, one per line |
+| capability_list | safe | the skills Iris is building or has built, with their status |
 | press_keys | confirm | press shortcuts in a window, `^s` or `{TAB}` |
 | click | confirm | click a control by its name |
 | type_text | confirm | type into a window or a named field, optionally replacing what is there |
@@ -160,9 +219,11 @@ recording is the `silence_seconds` default in `iris/voice.py`.
 | queue_remove | confirm | remove one waiting prompt from the agent queue by its id (the number queue_list shows), asks first |
 | queue_move | confirm | move one waiting prompt one place up or down in the agent queue by its id, asks first |
 | cline_start | confirm | start a new Cline session through the Cline CLI with the next queued prompt for this agent; if a repo is given its newest PROGRESS run must be done, asks first |
-| request_capability | confirm | save a plan for a skill Iris cannot do yet; asks first and builds nothing |
-| capability_build | confirm | build a saved plan for a new skill now: Cline works on it in its own copy of Iris, not used until Jay reviews and merges the branch; asks first |
-| capability_check | confirm | check a built skill with the guard and the gates; it runs code Cline wrote, so Jay says yes first |
+| request_capability | confirm | plan a skill Iris cannot do yet and hand it to the coding agent; asks first |
+| capability_build | confirm | build a planned or blocked skill again |
+| capability_check | confirm | check a built skill: its files and its own tests, in a separate process |
+| capability_approve | confirm | approve a ready skill; only approved, unchanged code is ever offered to the model |
+| capability_remove | confirm | remove a skill; it goes to Iris's trash |
 
 The tiers are enforced in code, not in the prompt:
 
@@ -252,14 +313,27 @@ shows with its own badge.
 
 ## Self-extension
 
-When Jay asks for something Iris cannot do yet, she says so instead of guessing. If he agrees to her suggestion
-(`request_capability`, confirm), she saves the plan for the new skill in `~/.iris/capabilities`: a `.md` with his
-request and the plan plus a `.json` sidecar; `capability_list` (safe) lists what is saved. Saving a plan builds
-nothing: the steps are plan, then build (`capability_build`, confirm), where Cline works on it in its own copy of
-Iris, in a separate git worktree on its own branch, then check (`capability_check`, confirm), which runs the guard
-plus the gates (ruff, mypy and pytest) against that branch. Jay reviews and merges; Iris never merges or uses a
-skill before that, and a self-built branch may never weaken an existing rule or touch the protected files
-([DESIGN.md](DESIGN.md)).
+When you ask for something no tool can do, Iris does not guess. She plans a new skill and, after one yes
+(`request_capability`, confirm), hands the plan to a coding agent: Cline by default, or any command in
+config.toml (`builder = ["claude", "-p", "{prompt}"]`). The agent works only in `~/.iris/skills/<name>/` and writes
+three files: `skill.toml` (description and parameters), `skill.py` (`run(**kwargs) -> str`) and `test_skill.py`.
+
+```mermaid
+flowchart LR
+  Ask[A request no tool can do] --> Plan[Plan, one yes] --> Build[Coding agent builds skill.py + tests]
+  Build --> Check[Guard + its own tests, separate process] -->|ready| Review[You review and approve]
+  Check -->|blocked| Build
+  Review --> Use[Offered to the model from the next request]
+```
+
+- **Checked:** when the agent is done, Iris checks the files, refuses code that reaches into Iris itself, and runs the
+  skill's own tests in a separate process. Then she says out loud whether it is ready or blocked.
+- **Approved, then frozen:** a skill is only offered to the model after you approve it (`capability_approve` or the
+  dashboard). The approval stores a hash of exactly that code and its tier; a changed file is never loaded again.
+- **Out of process:** an approved skill never runs inside Iris. Each call starts `python -I` on its `skill.py`, so it
+  can not change Iris's tiers or tools in memory, and a hang ends after 120 seconds.
+- **Tier from you:** the tier (safe or confirm, never more) is the one in the plan you said yes to, not one the
+  builder picks.
 
 ## Dashboard
 
@@ -306,7 +380,7 @@ tab, not an error page.
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether Jay says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 111 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 114 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.
@@ -341,14 +415,14 @@ is never published here nor shown as the latest run on the dashboard; both pick 
 | `IRIS_KOKORO_DIR` | `~/.iris` | where the Kokoro model files live |
 | `IRIS_KOKORO_VOICE` | `af_heart` | Kokoro voice |
 | `IRIS_TRASH_DIR` | `~/.iris/trash` | Iris's undoable trash |
-| `IRIS_TRASH_ROOTS` | home and W:/ | roots trash_file may move files from, ';' separated; the home folder is always included |
-| `IRIS_AGENTS_TOML` | `iris/agents.toml` | which repos the agent manager watches |
-| `IRIS_REPOS` | the four built-in repo paths | repo paths for the agent manager, ';' separated; used when agents.toml has no repos |
+| `IRIS_TRASH_ROOTS` | home and config `folders` | roots trash_file may move files from, ';' separated; the home folder is always included |
+| `IRIS_AGENTS_TOML` | `~/.iris/agents.toml`, else `iris/agents.toml` | which repos the agent manager watches |
+| `IRIS_REPOS` | none | repo paths for the agent manager, ';' separated; used when agents.toml has no repos |
 | `IRIS_QUEUE` | `~/.iris/queue.json` | the agent manager's prompt queue |
-| `IRIS_CLINE_CLI` | `W:/Cline/cline-cli.exe` | where cline_start finds the Cline CLI that starts sessions in the background hub |
+| `IRIS_CLINE_CLI` | config `cline_cli`, else `cline` | where cline_start finds the Cline CLI that starts sessions in the background hub |
 | `IRIS_CLINE_PROVIDER` | `lmstudio` | the provider passed with -P to the Cline CLI |
 | `IRIS_CLINE_MODEL` | `qwen3.8-27b` | the model passed with -m to the Cline CLI |
-| `IRIS_CLINE_CWD` | `W:/Iris` | the working directory a Cline session starts in when no repo is given |
+| `IRIS_CLINE_CWD` | config `cline_cwd`, else home | the working directory a Cline session starts in when no repo is given |
 | `IRIS_CONCEPTKIT_DIR` | `W:/conceptkit` | where concept_sites runs conceptkit |
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
 | `IRIS_LMS_BIN` | lms on PATH | where the model control finds the LM Studio CLI |
@@ -358,13 +432,19 @@ is never published here nor shown as the latest run on the dashboard; both pick 
 | `IRIS_COMFY_WORKFLOWS` | `~/.iris/workflows` | the folder comfy_workflows lists .json files from |
 | `IRIS_LEADSCAN_DIR` | `W:/leadscan` | where followups reads out/pipeline.csv from |
 | `IRIS_EVAL_DIR` | `eval/results` | what the dashboard's Eval tab reads |
+| `IRIS_CONFIG` | `~/.iris/config.toml` | the settings file |
+| `IRIS_SKILLS` | `~/.iris/skills` | where self-built skills live |
 
-## Status
+## Limits
 
-Core loop works end to end against Qwen 3.8 27B. On this PC, a Dutch status question took 9 s, reading
-Notepad took 5 s, and an edit request stopped at the confirmation. 149 tests cover the loop with a scripted
-model, the wake word and VAD on synthetic audio, the SAPI and Kokoro speakers with fakes, the window and URL
-tools with fake windows, the agent manager against temporary git repos, and the dashboard's sessions and
-Claude endpoints against temporary databases and controlled file times. Nothing in the suite touches the real
-desktop, the microphone, the LLM or your repos. When LM Studio is down or a model call fails, Iris says so,
-journals an `llm_error` and keeps listening.
+- Windows only: the hands are Windows UI Automation. Apps that expose no accessibility tree (some games and canvas
+  apps) can be opened, focused and given keys, but not read.
+- The score depends on the model. The published eval is for `qwen3.8-27b` on a 24 GB GPU; smaller models pick tools
+  less reliably, and the eval tells you how much less on your own setup.
+- Tested in Dutch and English. Iris answers in the language you speak.
+- On purpose, never: logging in, paying, sending messages to people and permanent deletes. Iris opens the draft or
+  the page and you take the last step.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Contributions welcome: [CONTRIBUTING.md](CONTRIBUTING.md).

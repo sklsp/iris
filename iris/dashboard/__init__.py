@@ -175,7 +175,8 @@ WRITE_ROUTES = (
     "/api/models/load", "/api/models/unload", "/api/iris/model",
     "/api/queue/add", "/api/queue/delete", "/api/queue/move",
     "/api/cline/start",
-)   # the only POST routes: model control, the prompt queue and starting a Cline session
+    "/api/skills/approve", "/api/skills/remove",
+)   # the only POST routes: model control, the prompt queue, starting a Cline session and reviewing skills
 
 _model_action_lock = threading.Lock()   # one load or unload at a time, full stop
 _cline_start_lock = threading.Lock()    # one Cline start at a time, full stop
@@ -577,6 +578,43 @@ def eval_history_payload(results_dir=None) -> dict:
 # --- prompt queue ---------------------------------------------------------------
 
 
+SKILL_FILES = ("plan.md", "skill.toml", "skill.py", "test_skill.py", "check.txt")
+
+
+def skills_payload() -> dict:
+    """Every skill Iris built or is building, with its files, so the user can review the code before approving."""
+    from iris import skills
+
+    rows = []
+    d = skills.skills_dir()
+    for m in sorted(d.glob("*/meta.json")) if d.is_dir() else []:
+        try:
+            data = json.loads(m.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        files = {}
+        for f in SKILL_FILES:
+            path = m.parent / f
+            if path.exists():
+                files[f] = path.read_text(encoding="utf-8", errors="replace")[:20000]
+        status = "approved" if skills._approved_ok(m.parent.name) else data.get("status", "?")
+        rows.append({"name": m.parent.name, "tier": data.get("tier"), "status": status,
+                     "request": data.get("request", ""), "problems": data.get("problems", []), "files": files})
+    return {"ok": True, "skills": rows}
+
+
+def skill_action(action: str, body: dict) -> dict:
+    """Approve or remove one skill from the review page; the same rules as the voice tools."""
+    from iris import skills
+
+    name = str(body.get("name", ""))
+    try:
+        skills.approve(name) if action == "approve" else skills.remove(name)
+    except ValueError as exc:
+        raise ModelActionError(400, str(exc)) from exc
+    return skills_payload()
+
+
 def queue_payload() -> dict:
     """The prompts waiting in the agent queue, oldest first (read only)."""
     from iris import prompt_queue
@@ -740,6 +778,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(_cached("eval_history", eval_history_payload))
         elif path == "/api/queue":
             self._json(queue_payload())
+        elif path == "/api/skills":
+            self._json(skills_payload())
         else:
             self._json({"error": "not found"}, code=404)
 
@@ -767,6 +807,8 @@ class Handler(BaseHTTPRequestHandler):
                 payload = queue_action(action, body)
             elif path == "/api/cline/start":
                 payload = cline_start_action(body)
+            elif path in ("/api/skills/approve", "/api/skills/remove"):
+                payload = skill_action(path.rsplit("/", 1)[1], body)
             else:
                 action = "load" if path.endswith("/load") else "unload"
                 payload = model_action(action, body)

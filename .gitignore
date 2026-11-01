@@ -5,3 +5,4 @@ __pycache__/
 *.jsonl
 .shots/
 eval/results/
+.coverage

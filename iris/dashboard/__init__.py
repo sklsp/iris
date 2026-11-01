@@ -356,10 +356,17 @@ def journal_payload() -> dict:
 
 
 def tools_payload() -> dict:
+    """Every bundled tool plus the approved skills; "active" says whether the model is offered it right now (a
+    plugin tool is inactive until its plugin is enabled in config.toml)."""
+    from iris.registry import active_tools
     from iris.tools import TOOLS
 
-    return {"tools": [{"name": t.name, "description": t.description, "tier": t.tier}
-                      for t in TOOLS.values()]}
+    active = active_tools()
+    rows = [{"name": t.name, "description": t.description, "tier": t.tier, "active": t.name in active,
+             "kind": "core"} for t in TOOLS.values()]
+    rows += [{"name": t.name, "description": t.description, "tier": t.tier, "active": True, "kind": "skill"}
+             for name, t in active.items() if name not in TOOLS]
+    return {"tools": rows}
 
 
 # --- sessions.db -----------------------------------------------------------------

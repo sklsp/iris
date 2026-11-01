@@ -228,6 +228,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .done-banner.show{display:flex}
 .btn-notify{appearance:none;background:#1a1d22;border:1px solid #23262c;color:#8a9099;font-family:inherit;font-size:11px;padding:2px 7px;border-radius:4px;cursor:pointer;line-height:1.5;margin-left:8px}
 .btn-notify:hover{color:#e6e6e6;border-color:#3a3f47}
+.t-off{opacity:.45}
 .sk{border-top:1px solid #23262c;padding:10px 0}
 .sk:first-child{border-top:none}
 .sk-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -733,9 +734,10 @@ function renderTools(d){
     return;
   }
   for (const t of d.tools){
-    const row = el("div", "trow");
+    const row = el("div", "trow" + (t.active === false ? " t-off" : ""));
     row.appendChild(el("span", "badge " + (TIER_CLASS[t.tier] || ""), t.tier));
-    row.appendChild(el("span", "tool-name num", t.name));
+    row.appendChild(el("span", "tool-name num", t.name + (t.kind === "skill" ? " (skill)" : "")
+                                                 + (t.active === false ? " (plugin off)" : "")));
     row.appendChild(el("span", "tool-desc", t.description || ""));
     body.appendChild(row);
   }

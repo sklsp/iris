@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Voice mode connects to the browser in the background when it starts (and again after the browser restarts), so Brave's "allow remote debugging" question comes once per run, right away, with Iris saying so, instead of halfway through a request. A request waits at most 5 s for that connection instead of a minute.
 - `open_url` opens the page in a new tab over the DevTools connection and returns its numbered controls, and its description points at a site's own search URL: "search lo-fi on YouTube" went from 5 model steps and 18.9 s to 2 steps and 8.8 s, a Netflix search from 6 steps to 2.
 - Overlay: a round cancel button on the panel while Iris listens, thinks or speaks. A click stops the speech at once,
   stops the agent before its next model or tool call (a tool call it did not run gets "cancelled by the user" as its

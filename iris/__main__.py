@@ -178,6 +178,12 @@ def main() -> None:
                 break
             if request:
                 say(agent.handle(request))
+    except KeyboardInterrupt:
+        # stopped with Ctrl+C while busy: show where every thread was, so a hang can be found afterwards
+        import faulthandler
+
+        faulthandler.dump_traceback(all_threads=True)
+        raise
     finally:
         if session is not None:
             session.__exit__(None, None, None)

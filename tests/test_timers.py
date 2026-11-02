@@ -132,6 +132,9 @@ def test_add_refuses_zero_and_negative_seconds():
         timers.add(0)
     with pytest.raises(ValueError, match="greater than zero"):
         timers.add(-5, "pasta")
+    for odd in (float("nan"), float("inf")):  # json.loads accepts NaN and Infinity
+        with pytest.raises(ValueError, match="greater than zero"):
+            timers.add(odd)
 
 
 def test_add_refuses_more_than_24_hours_but_allows_exactly_24():

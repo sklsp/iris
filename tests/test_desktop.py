@@ -536,6 +536,8 @@ def test_vision_tools_tiers_and_confirm_text():
     assert agent._describe("click_on_screen", {"target": "the Play button", "window": "Steam"}) == \
         "Click the Play button on Steam?"
     assert agent._describe("click_on_screen", {"target": "OK"}) == "Click OK on the screen?"
+    info = {"target": "the Info tab in LM Studio", "window": "LM Studio"}
+    assert agent._describe("click_on_screen", info) == "Click the Info tab in LM Studio?"
 
 
 def test_click_on_screen_never_for_a_send_or_pay_target():

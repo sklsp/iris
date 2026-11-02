@@ -460,3 +460,21 @@ def test_move_and_copy_into_a_new_folder_never_rename_the_file(tmp_path):
     folder.mkdir()
     move_file(str(folder), str(tmp_path / "fotos-2026"))  # a folder without extension is still a rename
     assert (tmp_path / "fotos-2026").is_dir() and not (tmp_path / "fotos-2026" / "fotos").exists()
+
+
+def test_no_file_tool_may_change_iris_own_code_or_state(tmp_path, monkeypatch):
+    import iris
+
+    home = _home(tmp_path, monkeypatch)
+    package = Path(iris.__file__).resolve().parent  # only named, never written: tiers do not need the file
+    _cfg(tmp_path, monkeypatch, f'folders = ["{package.parent.as_posix()}"]')  # even when the code's folder is listed
+    monkeypatch.setenv("IRIS_SKILLS", str(home / ".iris" / "skills"))
+    own = [home / ".iris" / "config.toml", home / ".iris" / "skills" / "approved.json",
+           home / ".iris" / "skills" / "hue" / "skill.py", package / "tier_lock.json", package / "policy.py",
+           tmp_path / "config.toml"]
+    for p in own:
+        assert tools.TOOLS["write_file"].tier_of({"path": str(p), "overwrite": True}) == tools.NEVER, p
+        assert tools.TOOLS["trash_file"].tier_of({"path": str(p)}) == tools.NEVER, p
+        assert tools.TOOLS["copy_file"].tier_of({"source": "a", "destination": str(p)}) == tools.NEVER, p
+        assert tools.TOOLS["move_file"].tier_of({"source": str(p), "destination": str(home / "x")}) == tools.NEVER
+    assert tools.TOOLS["write_file"].tier_of({"path": str(home / "Documents" / "a.txt")}) == tools.CONFIRM

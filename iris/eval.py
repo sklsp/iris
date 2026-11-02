@@ -216,9 +216,9 @@ _FR_WORDS = frozenset({"tu", "il", "elle", "est", "les", "une", "des", "dans", "
                        "avec", "sur", "vous", "nous", "c'est", "j'ai", "ai", "sont", "aujourd'hui", "demain",
                        "rappel", "aussi", "très", "fait", "votre", "ton", "à", "heures", "noté"})
 _ES_WORDS = frozenset({"yo", "tú", "está", "las", "una", "del", "para", "con", "por", "pero",
-                       "muy", "hoy", "mañana", "su", "hay", "son", "están", "también", "aquí", "nota",
+                       "muy", "hoy", "mañana", "su", "hay", "son", "están", "también", "aquí",
                        "recordatorio", "grados", "listo", "llames"})
-# Every word belongs to one language only: "je", "du", "es" and "pas" are left out because two languages use them.
+# No word is in two sets: "je" counts as Dutch, "du" and "es" as German, and "pas" and "nota" (also Dutch) nowhere.
 _WORDS = {"nl": _NL_WORDS, "en": _EN_WORDS, "de": _DE_WORDS, "fr": _FR_WORDS, "es": _ES_WORDS}
 LANGS = tuple(_WORDS)
 

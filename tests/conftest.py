@@ -19,3 +19,6 @@ def _journal_in_tmp(tmp_path, monkeypatch):
     import iris.browser
 
     monkeypatch.setattr(iris.browser, "_conn", None)
+    import threading
+
+    monkeypatch.setattr(iris.browser, "_watching", threading.Event())  # a voice-mode test may have started watch()

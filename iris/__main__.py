@@ -163,6 +163,10 @@ def main() -> None:
 
     reminders.start_reminders(say)  # pending reminders wait on daemon threads and speak through the same say
     skills.watch(say)  # says when a skill the coding agent built is checked and ready, or blocked
+    if session is not None:
+        from iris import browser
+
+        browser.watch(say)  # the browser's Allow question comes now, once, not in the middle of a request
 
     agent = Agent(LMStudio(), confirm, Journal(Path(a.journal)))
     cancelled = getattr(session, "cancelled", None)  # set by the overlay's cancel button, see VoiceSession.cancel

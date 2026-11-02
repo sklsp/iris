@@ -1,6 +1,7 @@
 """Web pages through the DevTools Protocol, against a fake browser: no real browser, socket or network."""
 
 import json
+import time
 import urllib.error
 
 import pytest
@@ -101,7 +102,7 @@ def test_a_slow_answer_keeps_the_socket_so_the_browser_does_not_ask_allow_again(
             raise TimeoutError("timed out")
 
     c = object.__new__(browser.Connection)
-    c.ws, c._id, c._slow = SlowSocket(), 0, (TimeoutError,)
+    c.ws, c._id, c._slow, c._lock = SlowSocket(), 0, (TimeoutError,), browser.threading.Lock()
     monkeypatch.setattr(browser, "_conn", c)
     monkeypatch.setattr(browser, "_ws_url", lambda: pytest.fail("reconnected"))
     with pytest.raises(browser.BrowserError, match="did not answer Runtime.evaluate within 2 s"):
@@ -244,3 +245,45 @@ def test_open_url_without_browser_access_opens_the_default_browser(monkeypatch):
     assert opened == ["https://example.com/"]
     with pytest.raises(ValueError, match="only http and https"):
         tools.open_url("file:///C:/x")
+
+
+def test_in_voice_mode_a_request_waits_briefly_for_the_watcher_instead_of_a_minute(monkeypatch):
+    monkeypatch.setattr(browser, "_watching", browser.threading.Event())
+    browser._watching.set()
+    monkeypatch.setattr(browser, "WATCH_WAIT", 0.2)
+    monkeypatch.setattr(browser, "_ws_url", lambda: pytest.fail("a request must not connect itself"))
+    with pytest.raises(browser.BrowserError, match="click Allow"):
+        browser.browser_read()
+
+
+def test_the_watcher_connects_says_the_question_is_waiting_and_reconnects_after_a_restart(monkeypatch):
+    import threading
+
+    made, said, stop = [], [], threading.Event()
+
+    class Slow:  # a handshake that waits for the user's click
+        def __init__(self, url, handshake=60):
+            time.sleep(0.15)
+            self.alive = True
+            made.append(self)
+
+        def send(self, method, params=None, session=None, wait=15):
+            if not self.alive:
+                raise OSError("socket closed")  # the browser was closed
+            return {}
+
+    monkeypatch.setattr(browser, "_watching", threading.Event())
+    monkeypatch.setattr(browser, "_ws_url", lambda: "ws://127.0.0.1:1/devtools/browser/x")
+    monkeypatch.setattr(browser, "Connection", Slow)
+    browser.watch(said.append, every=0.02, ask_after=0.05, stop=stop)
+    deadline = time.perf_counter() + 5
+    while not made and time.perf_counter() < deadline:
+        time.sleep(0.01)
+    while browser._conn is None and time.perf_counter() < deadline:
+        time.sleep(0.01)
+    assert browser._conn is made[0] and said == [browser.ASKS]
+    made[0].alive = False  # Brave restarts: the watcher notices and connects again
+    while len(made) < 2 and time.perf_counter() < deadline:
+        time.sleep(0.01)
+    stop.set()
+    assert len(made) == 2

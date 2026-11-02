@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -67,49 +68,100 @@ def _ws_url() -> str:
 class Connection:
     """One DevTools websocket to the whole browser; commands for a tab carry its session id."""
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, handshake: float = 60):
         try:
             import websocket  # websocket-client, the browser extra
         except ImportError:
             raise BrowserError("install the browser extra first: pip install -e .[browser]") from None
 
-        # the first connect waits for the user to click Allow in the browser, so the handshake gets a minute
-        self.ws: Any = websocket.create_connection(url, timeout=60, suppress_origin=True)
+        # the handshake waits while the browser asks the user to Allow it
+        self.ws: Any = websocket.create_connection(url, timeout=handshake, suppress_origin=True)
         self.ws.settimeout(15)
         self._id = 0
         self._slow = (TimeoutError, websocket.WebSocketTimeoutException)
+        self._lock = threading.Lock()  # the watcher's check and a request can send at the same moment
 
     def send(self, method: str, params: dict | None = None, session: str | None = None, wait: float = 15) -> dict:
-        self._id += 1
-        msg: dict[str, Any] = {"id": self._id, "method": method, "params": params or {}}
-        if session:
-            msg["sessionId"] = session
-        self.ws.send(json.dumps(msg))
-        self.ws.settimeout(wait)
-        while True:
-            try:
-                reply = json.loads(self.ws.recv())
-            except self._slow:
-                # a busy or frozen tab, not a dead socket: reconnecting would make the browser ask Allow again,
-                # and the late reply is skipped by its id
-                raise BrowserError(f"the browser did not answer {method} within {wait:g} s") from None
-            if reply.get("id") == self._id:  # events and other replies are skipped
-                if "error" in reply:
-                    raise BrowserError(f"{method} failed: {reply['error'].get('message', reply['error'])}")
-                return reply.get("result", {})
+        with self._lock:
+            self._id += 1
+            msg: dict[str, Any] = {"id": self._id, "method": method, "params": params or {}}
+            if session:
+                msg["sessionId"] = session
+            self.ws.send(json.dumps(msg))
+            self.ws.settimeout(wait)
+            while True:
+                try:
+                    reply = json.loads(self.ws.recv())
+                except self._slow:
+                    # a busy or frozen tab, not a dead socket: reconnecting would make the browser ask Allow again,
+                    # and the late reply is skipped by its id
+                    raise BrowserError(f"the browser did not answer {method} within {wait:g} s") from None
+                if reply.get("id") == self._id:  # events and other replies are skipped
+                    if "error" in reply:
+                        raise BrowserError(f"{method} failed: {reply['error'].get('message', reply['error'])}")
+                    return reply.get("result", {})
 
 
 _conn: Connection | None = None
 _sessions: dict[str, str] = {}  # targetId -> sessionId, so a tab is attached once
 _last: dict[int, dict] = {}  # number -> item of the last list Iris read, for tiers and confirm questions
+_watching = threading.Event()  # voice mode: watch() connects, so a request never waits on the browser's question
+WATCH_WAIT = 5.0  # seconds a request waits for watch() to have the connection
+ASKS = "Brave asks whether Iris may control it. Click Allow in Brave."
 
 
 def _connect() -> Connection:
     global _conn
     if _conn is None:
+        if _watching.is_set():
+            deadline = time.perf_counter() + WATCH_WAIT
+            while _conn is None and time.perf_counter() < deadline:
+                time.sleep(0.1)
+            if _conn is None:
+                raise BrowserError("the browser is not connected yet: open Brave, and click Allow when it asks "
+                                   "whether Iris may control it")
+            return _conn
         _conn = Connection(_ws_url())
         _sessions.clear()
     return _conn
+
+
+def watch(announce=None, every: float = 5, ask_after: float = 3, stop: threading.Event | None = None):
+    """Voice mode: connect in the background as soon as the browser is open and allows remote control, so its Allow
+    question comes when Iris or the browser starts instead of halfway through a request, and connect again after the
+    browser restarts. One click per Iris run while the browser stays open. `announce` says the question is waiting."""
+    _watching.set()
+
+    def loop() -> None:
+        global _conn
+        pause = every
+        while not (stop and stop.is_set()):
+            try:
+                if _conn is None:
+                    url = _ws_url()  # a BrowserError while the browser is closed or does not allow it yet
+                    asking = threading.Timer(ask_after, lambda: announce and announce(ASKS))
+                    asking.daemon = True
+                    asking.start()  # a handshake that takes this long is waiting for the user's click
+                    try:
+                        conn = Connection(url, handshake=600)
+                    finally:
+                        asking.cancel()
+                    _sessions.clear()
+                    _conn = conn
+                else:
+                    _conn.send("Browser.getVersion", wait=5)  # still there? a closed browser breaks the socket
+                pause = every
+            except BrowserError:
+                pass  # closed, not allowed, or busy: look again soon
+            except Exception:  # noqa: BLE001 - a broken socket, or the question was refused or left open
+                if _conn is None:
+                    pause = min(max(pause * 2, 30), 600)  # do not ask again every few seconds after a Cancel
+                _conn = None
+            time.sleep(pause)
+
+    thread = threading.Thread(target=loop, daemon=True, name="browser-watch")
+    thread.start()
+    return thread
 
 
 def _call(method: str, params: dict | None = None, session: str | None = None, wait: float = 15) -> dict:

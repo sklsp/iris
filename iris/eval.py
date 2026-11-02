@@ -204,19 +204,20 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
 # spelled the same in two languages (is, open, in) goes in neither set.
 _NL_WORDS = frozenset({"ik", "je", "het", "een", "niet", "dat", "op", "naar", "wil", "kan", "maar",
                        "nog", "even", "zelf", "staat", "heb", "geen", "wat", "deze", "ook", "al",
-                       "dan", "er", "met", "voor", "bij"})
+                       "dan", "er", "met", "voor", "bij", "nu", "uur", "wordt"})
 _EN_WORDS = frozenset({"i", "you", "the", "it's", "not", "can't", "this", "that", "to", "want",
                        "but", "still", "just", "have", "there", "what", "window", "am", "are",
                        "were", "been", "will", "would", "could"})
 _DE_WORDS = frozenset({"ich", "du", "das", "nicht", "ist", "kann", "aber", "noch", "selbst",
                        "habe", "kein", "musst", "leider", "bitte", "wirklich", "es", "mir",
-                       "dich", "bin", "bist", "sind", "war", "waren", "wird", "werden", "muss"})
+                       "dich", "bin", "bist", "sind", "war", "waren", "wird", "werden", "muss", "der", "uhr",
+                       "um", "und", "notiert"})
 _FR_WORDS = frozenset({"tu", "il", "elle", "est", "les", "une", "des", "dans", "pour",
                        "avec", "sur", "vous", "nous", "c'est", "j'ai", "ai", "sont", "aujourd'hui", "demain",
-                       "rappel", "aussi", "très", "fait", "votre", "ton"})
+                       "rappel", "aussi", "très", "fait", "votre", "ton", "à", "heures", "noté"})
 _ES_WORDS = frozenset({"yo", "tú", "está", "las", "una", "del", "para", "con", "por", "pero",
                        "muy", "hoy", "mañana", "su", "hay", "son", "están", "también", "aquí", "nota",
-                       "recordatorio", "grados"})
+                       "recordatorio", "grados", "listo", "llames"})
 # Every word belongs to one language only: "je", "du", "es" and "pas" are left out because two languages use them.
 _WORDS = {"nl": _NL_WORDS, "en": _EN_WORDS, "de": _DE_WORDS, "fr": _FR_WORDS, "es": _ES_WORDS}
 LANGS = tuple(_WORDS)
@@ -224,7 +225,7 @@ LANGS = tuple(_WORDS)
 
 def answer_language(text: str) -> str:
     """Which of Dutch, English, German, French or Spanish this text is in (a key of LANGS); '?' when unsure."""
-    words = re.findall(r"[a-zà-ÿñ']+", text.lower())
+    words = re.findall(r"[a-zà-ÿñ']+", text.lower().replace("\u2019", "'"))  # curly apostrophes too
     hits = {lang: sum(1 for w in words if w in vocab) for lang, vocab in _WORDS.items()}
     best = max(hits.values())
     winners = [lang for lang, n in hits.items() if n == best]

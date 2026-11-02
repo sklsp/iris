@@ -1820,7 +1820,7 @@ lang = "es"
 request = "¿Qué hora es?"
 expect = ["clock"]
 max_calls = 2
-answer_has = ["14"]
+answer_has = ["14", "dos y cinco"]
 fixtures = { clock = "Sunday 1 November 2026, 14:05, week 44" }
 
 [[task]]

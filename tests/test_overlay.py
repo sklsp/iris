@@ -323,7 +323,8 @@ def test_voice_session_starts_and_stops_the_overlay(monkeypatch):
 
 
 def _session(text, **kw):
-    s = VoiceSession(speaker=_Speaker(), max_record_seconds=0, **kw)
+    # -1, not 0: Windows' clock ticks every ~16 ms, so after one frame no time may have passed and 0 > 0 waits forever
+    s = VoiceSession(speaker=_Speaker(), max_record_seconds=-1, **kw)
     s.overlay = Recorder()
     s._transcribe = lambda audio: text  # type: ignore[method-assign]
     s._drain = lambda: None  # type: ignore[method-assign]  # keep the frames a test puts in

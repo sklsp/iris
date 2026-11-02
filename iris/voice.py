@@ -550,9 +550,12 @@ class VoxProcess:
         python = python or VOXCPM_PYTHON
         if not python.exists():
             raise FileNotFoundError(f"no VoxCPM Python at {python}; see Speech in the README to install it")
+        from iris import config
+
         VOXCPM_DIR.mkdir(parents=True, exist_ok=True)
-        env = {**os.environ, "CUDA_DEVICE_ORDER": "PCI_BUS_ID", "TQDM_DISABLE": "1",
-               "CUDA_VISIBLE_DEVICES": os.environ.get("IRIS_VOXCPM_GPU", "0")}
+        # voxcpm_gpu = 1 in config.toml: a faster card that also holds the LLM (it fits with a 32k context on 24 GB)
+        gpu = os.environ.get("IRIS_VOXCPM_GPU") or str(config.raw().get("voxcpm_gpu", 0))
+        env = {**os.environ, "CUDA_DEVICE_ORDER": "PCI_BUS_ID", "TQDM_DISABLE": "1", "CUDA_VISIBLE_DEVICES": gpu}
         worker = worker or Path(__file__).with_name("voxcpm_worker.py")
         with (VOXCPM_DIR / "worker.log").open("ab") as log:  # the child keeps its own handle
             self.proc = subprocess.Popen([str(python), str(worker), str(voice or VOXCPM_DIR / "voice.wav")],

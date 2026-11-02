@@ -59,6 +59,21 @@ def test_a_worker_that_stops_raises_instead_of_hanging(vox):
         list(vox.stream("die", timeout=10))
 
 
+def test_the_gpu_comes_from_config_unless_the_environment_says_otherwise(tmp_path, monkeypatch):
+    from iris import config
+
+    seen = []
+    monkeypatch.setattr(voice, "VOXCPM_DIR", tmp_path)
+    monkeypatch.setattr(voice.subprocess, "Popen", lambda *a, env, **kw: seen.append(env["CUDA_VISIBLE_DEVICES"]) or
+                        types.SimpleNamespace(stdout=types.SimpleNamespace(read=lambda n: b"")))
+    monkeypatch.setattr(config, "raw", lambda: {"voxcpm_gpu": 1})
+    monkeypatch.delenv("IRIS_VOXCPM_GPU", raising=False)
+    voice.VoxProcess(python=voice.Path(sys.executable))
+    monkeypatch.setenv("IRIS_VOXCPM_GPU", "0")
+    voice.VoxProcess(python=voice.Path(sys.executable))
+    assert seen == ["1", "0"]
+
+
 def test_without_its_python_voxcpm_says_how_to_install_it(tmp_path):
     with pytest.raises(FileNotFoundError, match="README"):
         voice.VoxProcess(python=tmp_path / "missing.exe")

@@ -296,9 +296,10 @@ uv pip install --python %USERPROFILE%\.iris\voxcpm\venv --reinstall torch torcha
 
 Then set `tts = "voxcpm"`. The model (about 5 GB) is downloaded from Hugging Face on the first start, which takes a
 few minutes; later starts take about half a minute. Iris keeps one voice in `~/.iris/voxcpm/voice.wav`: made on the
-first start, or put any clean 5 to 10 second recording there to speak in that voice. `IRIS_VOXCPM_GPU` picks the GPU
-(default 0, in PCI bus order). On a GPU slower than real time (an RTX 3060 makes speech at 0.56 times real time) Iris
-starts talking once enough is made that the rest arrives in time, from the speed measured on each answer times
+first start, or put any clean 5 to 10 second recording there to speak in that voice. `voxcpm_gpu` in config.toml (or
+`IRIS_VOXCPM_GPU`) picks the GPU (default 0, in PCI bus order). A 24 GB card holds both the LLM, loaded with a
+32k context, and VoxCPM2, which runs at about 1.45 times real time on an RTX 3090 and starts within a second. On a
+GPU slower than real time (an RTX 3060 makes speech at 0.56 times real time) Iris starts talking once enough is made that the rest arrives in time, from the speed measured on each answer times
 `IRIS_VOXCPM_MARGIN` (default 1.15), so it plays without gaps; if it still runs dry it pauses once instead of
 stuttering. That costs a wait: on the 3060 about half the answer's length (2.5 s for a short answer, 17 s for a long
 one). A GPU that runs it in real time starts at once. The worker's log is `~/.iris/voxcpm/worker.log`; if VoxCPM
@@ -492,7 +493,7 @@ shows with its own badge.
 | `IRIS_VAD_THRESHOLD` | `0.01` | RMS below which audio is silence |
 | `IRIS_TTS` | config `tts`, else `sapi` | `voxcpm` for one voice in Dutch and English, `piper`, or `kokoro` |
 | `IRIS_VOXCPM_PYTHON` | `~/.iris/voxcpm/venv/Scripts/python.exe` | the Python that has VoxCPM2 |
-| `IRIS_VOXCPM_GPU` / `IRIS_VOXCPM_MARGIN` | `0` / `1.15` | GPU for VoxCPM2; safety margin on the wait before it plays |
+| `IRIS_VOXCPM_GPU` / `IRIS_VOXCPM_MARGIN` | config `voxcpm_gpu`, else `0` / `1.15` | GPU for VoxCPM2; safety margin on the wait before it plays |
 | `IRIS_VOXCPM_STEPS` | `10` | VoxCPM2 diffusion steps (fewer is a little faster, a little rougher) |
 | `IRIS_PIPER_DIR` | `~/.iris/piper` | where the Piper voices live |
 | `IRIS_PIPER_NL` / `IRIS_PIPER_EN` | `nl_NL-ronnie-medium` / `en_US-joe-medium` | the Piper voice per language |

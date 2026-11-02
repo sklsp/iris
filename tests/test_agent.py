@@ -410,3 +410,79 @@ def test_the_default_still_asks_and_refuses_as_before(tmp_path, monkeypatch):
     a.handle("Bestel de pizza")
     assert [kw["control"] for _, kw in ran] == ["Zoeken"] and len(asked) == 1
     assert "refused by design" in system_prompt("Jay")
+
+
+# --- cancel (the overlay's button) ---------------------------------------------------------------------------------
+
+
+def _tool_ids_are_answered(messages):
+    """Every tool call the model made has a tool result: the history stays one the model can read."""
+    asked = [c["id"] for m in messages if m.get("role") == "assistant" for c in m.get("tool_calls") or []]
+    answered = [m["tool_call_id"] for m in messages if m.get("role") == "tool"]
+    return asked == answered
+
+
+def test_a_cancel_stops_the_agent_before_its_next_step(tmp_path):
+    ran = []
+    llm = ScriptedLLM(call("status"), answer("never asked"))
+    a = agent(tmp_path, llm, ran)
+    a.tools["status"] = Tool("status", "", {}, [], SAFE, lambda: a.cancel.set() or "fine")  # clicked meanwhile
+    assert a.handle("check my pc") == ""
+    assert len(llm.seen) == 1  # no second call to the model
+    assert [e["event"] for e in journal(tmp_path)][-1] == "cancelled"
+    assert _tool_ids_are_answered(a.messages)
+    assert a.messages[-1] == {"role": "assistant", "content": "(cancelled by the user)"}
+
+
+def test_tool_calls_after_a_cancel_are_not_run_but_answered(tmp_path):
+    ran = []
+    reply = Reply("", [ToolCall("a", "status", {}), ToolCall("b", "click", {"window": "x", "control": "y"})],
+                  {"role": "assistant", "content": "", "tool_calls": [
+                      {"id": i, "type": "function", "function": {"name": n, "arguments": "{}"}}
+                      for i, n in (("a", "status"), ("b", "click"))]})
+    asked = []
+    a = agent(tmp_path, ScriptedLLM(reply), ran, confirm=lambda q: asked.append(q) or True)
+    a.tools["status"] = Tool("status", "", {}, [], SAFE, lambda: a.cancel.set() or "fine")
+    assert a.handle("do two things") == ""
+    assert ran == [] and asked == []  # the click never ran and was never asked about
+    results = {m["tool_call_id"]: m["content"] for m in a.messages if m.get("role") == "tool"}
+    assert "fine" in results["a"] and "cancelled by the user" in results["b"]
+    assert _tool_ids_are_answered(a.messages)
+
+
+def test_a_reply_that_comes_in_after_a_cancel_is_dropped(tmp_path):
+    class SlowLLM:
+        def chat(self, messages, tools):
+            a.cancel.set()  # the click lands while the model is still thinking
+            return call("status")
+
+    a = agent(tmp_path, SlowLLM(), [])
+    assert a.handle("check my pc") == ""
+    assert not any(m.get("tool_calls") for m in a.messages)  # its tool call is not in the history
+    assert [m["role"] for m in a.messages] == ["system", "user", "assistant"]
+
+
+def test_the_next_request_starts_uncancelled(tmp_path):
+    llm = ScriptedLLM(answer("Tien over vier."))
+    a = agent(tmp_path, llm, [])
+    a.cancel.set()  # a cancel of the last request
+    assert a.handle("hoe laat is het") == "Tien over vier."
+    assert not a.cancel.is_set()
+
+
+def test_a_cancel_on_the_last_step_does_not_ask_for_a_summary(tmp_path):
+    steps = []
+
+    def status():
+        steps.append(1)
+        if len(steps) == MAX_STEPS:
+            a.cancel.set()
+        return "fine"
+
+    llm = ScriptedLLM(*[call("status") for _ in range(MAX_STEPS)])
+    a = agent(tmp_path, llm, [])
+    a.tools["status"] = Tool("status", "", {}, [], SAFE, status)
+    assert a.handle("loop") == ""
+    events = [e["event"] for e in journal(tmp_path)]
+    assert "cancelled" in events and "gave_up" not in events
+    assert len(llm.seen) == MAX_STEPS  # no extra call for an out-of-steps answer

@@ -213,8 +213,10 @@ The file tools work in your home folder and the folders you list under `folders`
 .venv\Scripts\python -m iris --push-to-talk       # old mode: press Enter to stop recording
 ```
 
-`--voice` is the normal way to use Iris. It waits for the wake word, records until 1.2 s of silence,
-transcribes, answers, and waits again. The microphone stays open the whole time, so saying the wake
+`--voice` is the normal way to use Iris. It waits for the wake word, plays a short beep, records until 1.2 s of
+silence, transcribes and answers. For 8 seconds after an answer you can ask the next question without the wake word
+(`IRIS_FOLLOW_UP` sets the window, 0 turns it off); when nobody speaks in that window, Iris waits for the wake word
+again, so talk that is not meant for her is ignored. The microphone stays open the whole time, so saying the wake
 word while Iris is still talking cuts the answer short and your next words are taken as the next
 command, without saying the wake word twice.
 
@@ -433,6 +435,8 @@ shows with its own badge.
 | `IRIS_WAKEWORD` | `hey_jarvis` | wake word model name, .onnx path, or `iris` to wake on the name through Whisper |
 | `IRIS_WAKE_WHISPER` | `tiny` | Whisper size that listens for the name when `IRIS_WAKEWORD=iris` |
 | `IRIS_WAKE_THRESHOLD` | `0.5` | wake word score to trigger |
+| `IRIS_FOLLOW_UP` | `8` | seconds after an answer in which a question needs no wake word; 0 turns it off |
+| `IRIS_CHIME` | `1` | `0` mutes the beep after the wake word |
 | `IRIS_VAD_THRESHOLD` | `0.01` | RMS below which audio is silence |
 | `IRIS_TTS` | config `tts`, else `sapi` | `piper` for natural Dutch and English voices, or `kokoro` |
 | `IRIS_PIPER_DIR` | `~/.iris/piper` | where the Piper voices live |

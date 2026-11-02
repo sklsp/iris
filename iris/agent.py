@@ -232,6 +232,13 @@ def _describe(name: str, args: dict, lang: str = "en") -> str:
         return say(f"Click {target} on {window}?", f"Klikken op {target} in {window}?",
                    f"Auf {target} in {window} klicken?", f"Cliquer sur {target} dans {window} ?",
                    f"¿Hago clic en {target} en {window}?")
+    if name == "open_app":
+        n = args.get("name")
+        return say(f"Run the program {n}? It can change anything on this PC.",
+                   f"Het programma {n} starten? Het kan alles op deze pc veranderen.",
+                   f"Das Programm {n} starten? Es kann alles auf diesem PC ändern.",
+                   f"Lancer le programme {n} ? Il peut tout modifier sur ce PC.",
+                   f"¿Ejecuto el programa {n}? Puede cambiar cualquier cosa en este PC.")
     if name == "close_window":
         t = args.get("title")
         return say(f"Close the window {t}? Unsaved work may ask to be saved.",

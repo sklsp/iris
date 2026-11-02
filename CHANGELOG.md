@@ -10,6 +10,8 @@
   `iris doctor` says whether the model does; the dashboard warns on a skill someone else wrote.
 - A skill builder can not approve its own skill: an approval written during the build is dropped and the skill
   blocked.
+- `open_app` asks before it runs a program or script file (.exe, .bat, .ps1, .msi, .lnk...) or opens an unusual URI;
+  apps by name, documents and folders still open at once. Before, a path to a downloaded .exe ran without a question.
 - File tools can never write, move, copy or trash Iris's own code, `~/.iris`, the skill approvals or config.toml,
   not even with a yes: before, a clone under the home folder or `~/.iris/config.toml` was only confirm.
 - Reminders, notes and the dashboard's model choice are saved atomically: a crash mid-write no longer empties them.

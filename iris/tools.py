@@ -51,6 +51,7 @@ from iris.policy import (
     _docx_tier,
     _make_folder_tier,
     _move_tier,
+    _open_app_tier,
     _open_url_tier,
     _pptx_tier,
     _press_keys_tier,
@@ -903,7 +904,7 @@ TOOLS = {t.name: t for t in [
          {"title": S}, ["title"], SAFE, read_window),
     Tool("open_app", "Start an app by name (notepad, explorer, chrome), an ms-settings: URI, or a file path. "
          "Works with the name as it appears in the Start menu, such as Spotify or Word.",
-         {"name": S}, ["name"], SAFE, open_app),
+         {"name": S}, ["name"], SAFE, open_app, _open_app_tier),
     Tool("click", "Click the control with this name in the window whose title contains `window`.",
          {"window": S, "control": S}, ["window", "control"], CONFIRM, click, _click_tier),
     Tool("type_text", "Type text into a window, optionally into the named field `into`. "

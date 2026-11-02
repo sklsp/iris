@@ -125,7 +125,7 @@
   },
   "open_app": {
     "tier": "safe",
-    "escalates": false
+    "escalates": true
   },
   "open_url": {
     "tier": "safe",

@@ -59,6 +59,23 @@ def _type_tier(args: dict) -> str:
     return NEVER if _NEVER_WORDS.search(str(args.get("into", ""))) else CONFIRM
 
 
+# Files that run code when opened: a program or script given to open_app is a confirm, never silent.
+_RUNS_CODE = (".exe", ".bat", ".cmd", ".com", ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh",
+              ".msi", ".msp", ".scr", ".hta", ".lnk", ".pif", ".reg", ".cpl", ".jar", ".py", ".pyw")
+
+
+def _open_app_tier(args: dict) -> str:
+    """An app by name, a document, a folder or ms-settings: opens at once; a program or script file, or any other
+    URI scheme, asks first, so an instruction on a page can never run a downloaded file."""
+    name = str(args.get("name", "")).strip().strip('"').lower()
+    if name.endswith(_RUNS_CODE):
+        return CONFIRM
+    scheme = re.match(r"^([a-z][a-z0-9+.-]+):", name)
+    if scheme and len(scheme.group(1)) > 1 and scheme.group(1) != "ms-settings":  # one letter is a drive, C:
+        return CONFIRM
+    return SAFE
+
+
 def _open_url_tier(args: dict) -> str:
     from urllib.parse import urlparse
 

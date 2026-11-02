@@ -173,7 +173,10 @@ def _describe(name: str, args: dict) -> str:
     if name == "make_spreadsheet":
         return f"Make {args.get('path')} as a spreadsheet?"
     if name == "click_on_screen":
-        return f"Click {args.get('target')} on {args.get('window') or 'the screen'}?"
+        target, window = str(args.get("target")), str(args.get("window") or "")
+        if not window or window.lower() in target.lower():
+            return f"Click {target} on the screen?" if not window else f"Click {target}?"
+        return f"Click {target} on {window}?"
     if name == "close_window":
         return f"Close the window {args.get('title')}? Unsaved work may ask to be saved."
     if name == "note_remove":

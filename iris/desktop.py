@@ -1,13 +1,17 @@
 """Desktop actions for the user: clipboard, media keys, locking the screen, screenshots, closing windows and clock,
-plus opening email drafts."""
+plus opening email drafts and looking at the screen."""
 
 import os
+import re
 import subprocess
+import tempfile
+import urllib.error
+from collections.abc import Callable
 from ctypes import windll
 from pathlib import Path
 from urllib.parse import quote
 
-from iris import files
+from iris import files, llm
 
 _MEDIA_KEYS = {
     "play_pause": 0xB3,
@@ -103,6 +107,96 @@ def screenshot(path: str = "") -> str:
     if r.returncode != 0:
         return "error: could not save a screenshot"
     return f"saved {p}"
+
+
+# The same capture at physical pixels, of the rectangle in IRIS_SHOT_RECT ("left,top,width,height"), scaled down to at
+# most 1600 pixels on the longest side so a look stays a few thousand tokens.
+_LOOK_PS = (
+    "Add-Type -AssemblyName System.Drawing;"
+    "Add-Type -Name Dpi -Namespace Iris -MemberDefinition "
+    "'[DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware();';"
+    "[Iris.Dpi]::SetProcessDPIAware() | Out-Null;"
+    "$r = $env:IRIS_SHOT_RECT.Split(',');"
+    "$b = New-Object System.Drawing.Rectangle ([int]$r[0]), ([int]$r[1]), ([int]$r[2]), ([int]$r[3]);"
+    "$full = New-Object System.Drawing.Bitmap $b.Width, $b.Height;"
+    "$g = [System.Drawing.Graphics]::FromImage($full);"
+    "$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $full.Size);"
+    "$s = [Math]::Min(1.0, 1600 / [Math]::Max($b.Width, $b.Height));"
+    "$out = New-Object System.Drawing.Bitmap ([int]($b.Width * $s)), ([int]($b.Height * $s));"
+    "$g2 = [System.Drawing.Graphics]::FromImage($out); $g2.InterpolationMode = 'HighQualityBicubic';"
+    "$g2.DrawImage($full, 0, 0, $out.Width, $out.Height);"
+    "$out.Save($env:IRIS_SHOT_PATH, [System.Drawing.Imaging.ImageFormat]::Png);"
+    "$g.Dispose(); $g2.Dispose(); $full.Dispose(); $out.Dispose()"
+)
+
+
+def _area(window: str) -> tuple[int, int, int, int]:
+    """(left, top, width, height) in physical pixels: one window brought to the front, else every screen."""
+    windll.user32.SetProcessDPIAware()  # physical pixels, the same ones PowerShell captures and the mouse moves in
+    if not window:
+        m = windll.user32.GetSystemMetrics
+        return m(76), m(77), m(78), m(79)  # the virtual screen: every monitor
+    from iris.tools import _window  # local: tools imports this module at top level
+
+    w = _window(window)
+    w.set_focus()
+    r = w.rectangle()
+    if r.width() <= 0 or r.height() <= 0:
+        raise LookupError(f"{w.window_text()!r} is minimized; there is nothing to see")
+    return r.left, r.top, r.width(), r.height()
+
+
+def _capture(area: tuple[int, int, int, int]) -> bytes:
+    with tempfile.TemporaryDirectory() as tmp:
+        shot = Path(tmp) / "look.png"
+        env = {**os.environ, "IRIS_SHOT_PATH": str(shot), "IRIS_SHOT_RECT": ",".join(map(str, area))}
+        try:
+            p = subprocess.run(["powershell", "-NoProfile", "-Command", _LOOK_PS], env=env,
+                               capture_output=True, text=True, timeout=30)
+            return shot.read_bytes() if p.returncode == 0 else b""
+        except (subprocess.TimeoutExpired, OSError):
+            return b""
+
+
+def _ask(png: bytes, ask: Callable[[bytes, str], str], text: str) -> str:
+    if not png:
+        return "error: could not capture the screen"
+    try:
+        return ask(png, text)
+    except urllib.error.HTTPError as exc:
+        return f"error: the model could not look at the image ({exc.code}); it may not read images"
+    except (urllib.error.URLError, OSError, ValueError, KeyError):
+        return "error: could not reach the model to look at the screen"
+
+
+def look_at_screen(question: str, window: str = "") -> str:
+    """Answer a question about what is on the screen, or in one window brought to the front, with the model's eyes:
+    the fallback for apps whose controls read_window can not see."""
+    try:
+        area = _area(window)
+    except LookupError as exc:
+        return f"error: {exc}"
+    return _ask(_capture(area), llm.see, question) or "error: the model saw nothing it could describe"
+
+
+def click_on_screen(target: str, window: str = "") -> str:
+    """Find `target` (in words) on the screen or in one window with the model's eyes, and left-click its center:
+    the fallback for buttons click can not find by name."""
+    try:
+        area = _area(window)
+    except LookupError as exc:
+        return f"error: {exc}"
+    found = _ask(_capture(area), llm.locate, target)
+    m = re.fullmatch(r"(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)", found)
+    if not m:
+        return found if found.startswith("error:") else f"error: could not find {target!r} on the screen"
+    left, top, width, height = area
+    x = left + round(float(m[1]) / 1000 * width)
+    y = top + round(float(m[2]) / 1000 * height)
+    windll.user32.SetCursorPos(x, y)
+    windll.user32.mouse_event(2, 0, 0, 0, 0)   # left down
+    windll.user32.mouse_event(4, 0, 0, 0, 0)   # left up
+    return f"clicked {target!r} at ({x}, {y}); look again if you need to check what happened"
 
 
 def close_window(title: str) -> str:

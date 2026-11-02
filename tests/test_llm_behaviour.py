@@ -145,3 +145,23 @@ def test_chat_raises_when_the_model_ran_out_of_tokens_before_answering(monkeypat
 def test_chat_keeps_a_cut_off_reply_that_still_has_text(monkeypatch):
     _fake_urlopen(monkeypatch, {"choices": [{"finish_reason": "length", "message": {"content": "Half an ans"}}]})
     assert LMStudio(base_url="http://h:1/v1", model="m").chat([], []).text == "Half an ans"
+
+
+def test_see_and_locate_send_the_image_and_parse_the_point(monkeypatch):
+    import base64
+
+    from iris import llm
+
+    seen = _fake_urlopen(monkeypatch, {"choices": [{"message": {"content": ' {"x": 626, "y": 156.5} '}}]})
+    assert llm.locate(b"PNG", "the Eject button") == "626,156.5"
+    body = json.loads(seen["request"].data)
+    parts = body["messages"][0]["content"]
+    assert "the Eject button" in parts[0]["text"]
+    assert parts[1]["image_url"]["url"] == "data:image/png;base64," + base64.b64encode(b"PNG").decode()
+    _fake_urlopen(monkeypatch, {"choices": [{"message": {"content": '{"x": null, "y": null}'}}]})
+    assert llm.locate(b"PNG", "a unicorn") == ""
+    _fake_urlopen(monkeypatch, {"choices": [{"message": {"content": '{"x": 1500, "y": 10}'}}]})
+    assert llm.locate(b"PNG", "off the edge") == ""
+    seen = _fake_urlopen(monkeypatch, {"choices": [{"message": {"content": " Notepad is open. "}}]})
+    assert llm.see(b"PNG", "what is open?") == "Notepad is open."
+    assert json.loads(seen["request"].data)["messages"][0]["content"][0]["text"].endswith("Question: what is open?")

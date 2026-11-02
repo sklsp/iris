@@ -34,7 +34,7 @@ Iris: Sending messages is something I never do myself. I can open a draft; you p
 - **Hands that read the screen.** Windows UI Automation gives named buttons and fields instead of guessed pixels.
 - **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
   email drafts, notes, reminders and timers.
-- **Measured.** An eval of 194 tasks runs against the real model and the result is published below, including the
+- **Measured.** An eval of 198 tasks runs against the real model and the result is published below, including the
   safety traps.
 - **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (SAPI or
   Kokoro) all run on your machine.
@@ -182,6 +182,8 @@ Configuration) are only offered when their plugin is enabled.
 | media_key | safe | presses a media key: play_pause, next, previous, volume_up, volume_down or mute (virtual keys via keybd_event down and up); times repeats it, 1 to 10 |  |
 | lock_screen | safe | locks the user's Windows session via LockWorkStation |  |
 | screenshot | safe | saves a PNG of the whole screen for you; without a path it goes to ~/Pictures/Iris with a timestamp |  |
+| look_at_screen | safe | answers a question about what is on the screen, or in one window, by looking at a screenshot with the model (needs a model that reads images) |  |
+| click_on_screen | confirm | finds something on the screen by sight and clicks it, for apps whose controls have no names; asks first | never when the target says send, buy, pay, password or delete |
 | close_window | confirm | closes the first window whose title contains the text (WM_CLOSE, so the app can still ask to save); asks first |  |
 | clock | safe | the local date and time, weekday and ISO week |  |
 | weather | safe | current weather for a place or the config `city`, plus up to seven days of forecast via Open-Meteo |  |
@@ -214,11 +216,13 @@ command, without saying the wake word twice.
 
 ### Wake word
 
-The default is the built-in openWakeWord model **hey jarvis**, because a custom "hey iris" model does
-not exist yet.
+The default is the built-in openWakeWord model **hey jarvis**: it is tiny and runs on any CPU. To wake Iris by
+her own name instead, set `IRIS_WAKEWORD=iris`: short utterances are then checked by Whisper `tiny` with "Iris" as a
+hotword (about 0.6 s on a CPU, `IRIS_WAKE_WHISPER` picks another size), so "Iris" or "hey Iris" works without a
+trained model, at the cost of transcribing every short sound in the room.
 
 ```bash
-set IRIS_WAKEWORD=hey_jarvis    # any built-in openWakeWord name, or a path to your own .onnx
+set IRIS_WAKEWORD=hey_jarvis    # any built-in openWakeWord name, a path to your own .onnx, or iris
 ```
 
 `IRIS_WAKE_THRESHOLD` (default 0.5) decides how loud the wake word has to be. `IRIS_VAD_THRESHOLD`
@@ -286,16 +290,16 @@ tab, not an error page.
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-11-01 23:02 on `qwen3.8-27b`: 565/582 passed (97.1%), median 4.1 s, 0.29 confirmations per task, safety: 0 forbidden, 4 refused attempts, 0 unknown tools, language: 0 wrong, answers: 1/111 wrong, 183/194 pass every time.
+Run of 2026-11-02 01:46 on `qwen3.8-27b`: 580/594 passed (97.6%), median 4.2 s, 0.29 confirmations per task, safety: 0 forbidden, 11 refused attempts, 0 unknown tools, language: 3 wrong, answers: 0/117 wrong, 188/198 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 54/57 | 94.7% |
-| files | 99/102 | 97.1% |
-| hands | 101/102 | 99.0% |
-| read | 114/117 | 97.4% |
-| safety | 138/141 | 97.9% |
-| skills | 59/63 | 93.7% |
+| agents | 57/57 | 100.0% |
+| files | 98/102 | 96.1% |
+| hands | 104/105 | 99.0% |
+| read | 118/123 | 95.9% |
+| safety | 143/144 | 99.3% |
+| skills | 60/63 | 95.2% |
 
 <!-- eval:end -->
 
@@ -304,7 +308,7 @@ Run of 2026-11-01 23:02 on `qwen3.8-27b`: 565/582 passed (97.1%), median 4.1 s, 
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether the user says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 194 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 198 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.
@@ -387,7 +391,8 @@ shows with its own badge.
 | `IRIS_MODEL` | `qwen3.8-27b` | model name to request |
 | `IRIS_WHISPER` | `small` | faster-whisper model |
 | `IRIS_WHISPER_DEVICE` | `cpu` | `cuda` to transcribe on the GPU |
-| `IRIS_WAKEWORD` | `hey_jarvis` | wake word model name or .onnx path |
+| `IRIS_WAKEWORD` | `hey_jarvis` | wake word model name, .onnx path, or `iris` to wake on the name through Whisper |
+| `IRIS_WAKE_WHISPER` | `tiny` | Whisper size that listens for the name when `IRIS_WAKEWORD=iris` |
 | `IRIS_WAKE_THRESHOLD` | `0.5` | wake word score to trigger |
 | `IRIS_VAD_THRESHOLD` | `0.01` | RMS below which audio is silence |
 | `IRIS_TTS` | `sapi` | `kokoro` for the neural voice |

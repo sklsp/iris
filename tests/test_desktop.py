@@ -5,6 +5,7 @@ Fakes only (no real desktop).
 
 import subprocess
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -399,3 +400,146 @@ def test_email_draft_without_a_recipient_is_an_error():
 
 def test_email_draft_is_safe():
     assert tools.TOOLS["email_draft"].tier_of({}) == tools.SAFE
+
+
+# --- look_at_screen and click_on_screen -------------------------------------------------
+
+class _Mouse:
+    def __init__(self):
+        self.calls = []
+
+    def SetProcessDPIAware(self):
+        self.calls.append("dpi")
+
+    def GetSystemMetrics(self, i):
+        return {76: -1920, 77: 0, 78: 3840, 79: 1080}[i]
+
+    def SetCursorPos(self, x, y):
+        self.calls.append(("pos", x, y))
+
+    def mouse_event(self, flags, *rest):
+        self.calls.append(("mouse", flags))
+
+
+def _fake_mouse(monkeypatch):
+    m = _Mouse()
+    monkeypatch.setattr(desktop, "windll", type("W", (), {"user32": m})())
+    return m
+
+
+def test_area_is_every_screen_or_the_window_brought_forward(monkeypatch):
+    _fake_mouse(monkeypatch)
+    assert desktop._area("") == (-1920, 0, 3840, 1080)
+
+    class Rect:
+        left, top = 10, 20
+
+        def __init__(self, w, h):
+            self.w, self.h = w, h
+
+        def width(self):
+            return self.w
+
+        def height(self):
+            return self.h
+
+    class Win:
+        def __init__(self, rect):
+            self.rect, self.focused = rect, False
+
+        def set_focus(self):
+            self.focused = True
+
+        def rectangle(self):
+            return self.rect
+
+        def window_text(self):
+            return "Paint"
+
+    win = Win(Rect(300, 200))
+    monkeypatch.setattr(tools, "_window", lambda title: win)
+    assert desktop._area("paint") == (10, 20, 300, 200) and win.focused
+    monkeypatch.setattr(tools, "_window", lambda title: Win(Rect(0, 0)))
+    assert desktop.look_at_screen("what?", "paint") == "error: 'Paint' is minimized; there is nothing to see"
+
+
+def test_capture_passes_the_rectangle_and_path_through_the_environment(monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw["env"])
+        Path(kw["env"]["IRIS_SHOT_PATH"]).write_bytes(b"PNG")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(desktop.subprocess, "run", fake_run)
+    assert desktop._capture((-1920, 0, 3840, 1080)) == b"PNG"
+    assert seen["IRIS_SHOT_RECT"] == "-1920,0,3840,1080"
+    assert "$env:IRIS_SHOT_RECT" in desktop._LOOK_PS and "1600" in desktop._LOOK_PS
+    monkeypatch.setattr(desktop.subprocess, "run",
+                        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom"))
+    assert desktop._capture((0, 0, 1, 1)) == b""
+
+    def slow(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, 30)
+
+    monkeypatch.setattr(desktop.subprocess, "run", slow)
+    assert desktop._capture((0, 0, 1, 1)) == b""
+
+
+def test_look_at_screen_asks_the_model_and_reports_failures(monkeypatch):
+    import urllib.error
+
+    _fake_mouse(monkeypatch)
+    monkeypatch.setattr(desktop, "_capture", lambda area: b"PNG")
+    monkeypatch.setattr(desktop.llm, "see", lambda png, q: f"saw {png!r} for {q}")
+    assert desktop.look_at_screen("what is open?") == "saw b'PNG' for what is open?"
+    monkeypatch.setattr(desktop.llm, "see", lambda png, q: "")
+    assert desktop.look_at_screen("x") == "error: the model saw nothing it could describe"
+
+    def http(png, q):
+        raise urllib.error.HTTPError("u", 400, "bad", None, None)
+
+    def down(png, q):
+        raise urllib.error.URLError("refused")
+
+    monkeypatch.setattr(desktop.llm, "see", http)
+    assert "may not read images" in desktop.look_at_screen("x")
+    monkeypatch.setattr(desktop.llm, "see", down)
+    assert desktop.look_at_screen("x") == "error: could not reach the model to look at the screen"
+    monkeypatch.setattr(desktop, "_capture", lambda area: b"")
+    assert desktop.look_at_screen("x") == "error: could not capture the screen"
+
+
+def test_click_on_screen_maps_the_models_0_to_1000_point_onto_the_area(monkeypatch):
+    m = _fake_mouse(monkeypatch)
+    monkeypatch.setattr(desktop, "_area", lambda window: (100, 200, 1000, 800))
+    monkeypatch.setattr(desktop, "_capture", lambda area: b"PNG")
+    monkeypatch.setattr(desktop.llm, "locate", lambda png, target: "500,250")
+    assert desktop.click_on_screen("the OK button").startswith("clicked 'the OK button' at (600, 400)")
+    assert m.calls == [("pos", 600, 400), ("mouse", 2), ("mouse", 4)]
+    monkeypatch.setattr(desktop.llm, "locate", lambda png, target: "")
+    assert desktop.click_on_screen("a unicorn") == "error: could not find 'a unicorn' on the screen"
+    monkeypatch.setattr(desktop, "_capture", lambda area: b"")
+    assert desktop.click_on_screen("x") == "error: could not capture the screen"
+    assert len(m.calls) == 3  # no click without a point
+
+    def gone(window):
+        raise LookupError("no window")
+
+    monkeypatch.setattr(desktop, "_area", gone)
+    assert desktop.click_on_screen("x", "nope") == "error: no window"
+
+
+def test_vision_tools_tiers_and_confirm_text():
+    assert tools.TOOLS["look_at_screen"].tier_of({"question": "x"}) == tools.SAFE
+    assert tools.TOOLS["click_on_screen"].tier_of({"target": "x"}) == tools.CONFIRM
+    assert agent._describe("click_on_screen", {"target": "the Play button", "window": "Steam"}) == \
+        "Click the Play button on Steam?"
+    assert agent._describe("click_on_screen", {"target": "OK"}) == "Click OK on the screen?"
+
+
+def test_click_on_screen_never_for_a_send_or_pay_target():
+    t = tools.TOOLS["click_on_screen"]
+    assert t.tier_of({"target": "the Send button"}) == tools.NEVER
+    assert t.tier_of({"target": "Betalen"}) == tools.NEVER
+    assert t.tier_of({"target": "the Play button"}) == tools.CONFIRM

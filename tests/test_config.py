@@ -133,3 +133,18 @@ def test_doctor_marks_optional_misses_and_exits_on_required_ones(capsys, monkeyp
     monkeypatch.setattr(doctor, "checks", lambda: [(False, "LM Studio not reachable")])
     assert doctor.main() == 1
     assert capsys.readouterr().out.strip() == "FIX LM Studio not reachable"
+
+
+def test_doctor_says_whether_the_model_reads_images(tmp_path, monkeypatch):
+    from iris import doctor
+
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setenv("IRIS_MODEL", "qwen-x")
+
+    def vision(kind, known=True):
+        payload = {"reachable": True, "states_known": known, "models": [{"id": "qwen-x", "type": kind}]}
+        return [(ok, line) for ok, line in doctor.checks(payload) if line.startswith("vision")]
+
+    assert vision("vlm") == [(True, "vision: qwen-x reads images (look_at_screen, click_on_screen)")]
+    assert vision("llm")[0][0] is False and "pick a vision model" in vision("llm")[0][1]
+    assert vision(None, known=False) == []  # an old LM Studio without types: say nothing rather than guess

@@ -8,7 +8,7 @@ Windows exposes an accessibility tree: every window has named controls (buttons,
 Iris reads that tree with pywinauto instead of taking screenshots and guessing coordinates.
 Clicking a control by its exact name is faster, cheaper and far more reliable than matching pixels.
 `read_window` returns the control names and the contents of text fields, capped at 120 controls so the model gets a bounded view.
-There is no screenshot or OCR code in `iris/` at all; PLAN.md keeps vision as a fallback only for apps that expose nothing.
+Vision is only the fallback for apps that expose nothing (games, canvas apps, remote desktops): `look_at_screen` and `click_on_screen` send one screenshot, scaled to at most 1600 pixels, to the same local model and ask it a question or for a point on a 0 to 1000 grid. Clicking by sight always asks first.
 
 ## Why tiers live in code
 

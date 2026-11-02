@@ -124,12 +124,17 @@ class Result:
     answer_checked: bool = False  # the task had answer_has or answer_not checks
 
 
+# The day the fixtures are written for (clock, reminders, weather all say 1 November 2026): the eval must not
+# depend on the day it runs.
+EVAL_TODAY = "Sunday 01 November 2026"
+
+
 def run_task(llm, task: Task, journal_dir=None) -> Result:
     """Run one eval task through the real agent loop with dry-run tools and grade it from the journal."""
     if journal_dir is None:
         journal_dir = tempfile.mkdtemp()
     path = Path(journal_dir) / f"{task.id}.jsonl"
-    agent = Agent(llm, lambda q: task.confirm == "yes", Journal(path), dry_tools(task.fixtures))
+    agent = Agent(llm, lambda q: task.confirm == "yes", Journal(path), dry_tools(task.fixtures), today=EVAL_TODAY)
     start = time.perf_counter()
     answer_text = agent.handle(task.request)
     for turn in task.turns:

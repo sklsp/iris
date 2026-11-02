@@ -65,16 +65,17 @@ def _sorry(key: str, request: str) -> str:
 
 class Agent:
     def __init__(self, llm, confirm: Callable[[str], bool], journal: Journal,
-                 tools: dict[str, Tool] | Callable[[], dict[str, Tool]] = active_tools):
+                 tools: dict[str, Tool] | Callable[[], dict[str, Tool]] = active_tools, today: str | None = None):
         # a callable is asked again on every request, so a newly enabled plugin or approved skill needs no restart
         self.llm, self.confirm, self.journal, self._tools = llm, confirm, journal, tools
+        self.today = today  # a fixed date for the eval, whose fixtures are written for one day; None is the real date
         self.tools = tools() if callable(tools) else tools
-        self.messages: list[dict] = [{"role": "system", "content": system_prompt()}]
+        self.messages: list[dict] = [{"role": "system", "content": system_prompt(today=self.today)}]
 
     def handle(self, request: str) -> str:
         if callable(self._tools):
             self.tools = self._tools()
-        self.messages[0] = {"role": "system", "content": system_prompt()}
+        self.messages[0] = {"role": "system", "content": system_prompt(today=self.today)}
         self.messages.append({"role": "user", "content": request})
         self._trim()
         self.journal.log(event="request", text=request)

@@ -1386,3 +1386,18 @@ def test_failed_from_unreadable_file_returns_two(tmp_path, monkeypatch, capsys):
                   "--failed-from", str(missing)])
     assert rc == 2 and f"cannot read {missing}" in capsys.readouterr().out
 
+
+
+def test_the_eval_pins_the_date_its_fixtures_are_written_for(tmp_path):
+    seen = []
+
+    class LLM:
+        def chat(self, messages, tools):
+            seen.append(messages[0]["content"])
+            from iris.llm import Reply
+
+            return Reply("Klaar.", [], {"role": "assistant", "content": "Klaar."})
+
+    task = ev.Task(id="t", request="Hoe laat is het?")
+    ev.run_task(LLM(), task, tmp_path)
+    assert ev.EVAL_TODAY in seen[0] and ev.EVAL_TODAY.startswith("Sunday 01 November")

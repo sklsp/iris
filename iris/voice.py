@@ -116,8 +116,15 @@ class WakeWord:
 
         if frame.dtype != np.int16:  # openWakeWord wants 16-bit PCM; float samples in [-1, 1] score as silence
             frame = (np.clip(frame, -1.0, 1.0) * 32767).astype(np.int16)
-        scores = self._model().predict(frame) or {}
-        return max(scores.values(), default=0.0) >= self.threshold
+        model = self._model()
+        scores = model.predict(frame) or {}
+        if max(scores.values(), default=0.0) < self.threshold:
+            return False
+        # one "hey jarvis" scores high for several frames; without a reset it fires again after the request
+        reset = getattr(model, "reset", None)
+        if callable(reset):
+            reset()
+        return True
 
 
 def _cuda_dlls() -> None:

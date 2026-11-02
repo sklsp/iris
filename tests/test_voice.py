@@ -72,6 +72,22 @@ def test_wake_word_detect_uses_threshold():
     assert strict.detect(np.zeros(FRAME)) is False
 
 
+def test_wake_word_resets_after_a_hit_so_one_phrase_fires_once():
+    class Sticky(FakeModel):
+        resets = 0
+
+        def predict(self, x):
+            return {"hey_jarvis": 0.0 if self.resets else 0.99}  # stays high until reset, like the real buffer
+
+        def reset(self):
+            self.resets += 1
+
+    w = WakeWord()
+    w._m = Sticky(0.0)
+    hits = [w.detect(np.zeros(FRAME)) for _ in range(5)]
+    assert hits == [True, False, False, False, False] and w._m.resets == 1
+
+
 def test_wake_word_feeds_openwakeword_16_bit_pcm():
     seen = []
 

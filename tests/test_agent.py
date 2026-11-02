@@ -268,10 +268,10 @@ def test_fallback_answers_follow_a_dutch_request(tmp_path):
 def test_confirm_questions_follow_a_dutch_request(tmp_path):
     from iris.agent import _describe
 
-    assert _describe("trash_file", {"path": "a.txt"}, nl=True) == "a.txt naar de prullenbak verplaatsen?"
+    assert _describe("trash_file", {"path": "a.txt"}, lang="nl") == "a.txt naar de prullenbak verplaatsen?"
     assert _describe("trash_file", {"path": "a.txt"}) == "Move a.txt to the trash?"
-    assert _describe("close_window", {"title": "Kladblok"}, nl=True).startswith("Het venster Kladblok sluiten?")
-    assert "Dat kan ik nog niet" in _describe("request_capability", {"tool_name": "hue"}, nl=True)
+    assert _describe("close_window", {"title": "Kladblok"}, lang="nl").startswith("Het venster Kladblok sluiten?")
+    assert "Dat kan ik nog niet" in _describe("request_capability", {"tool_name": "hue"}, lang="nl")
     asked = []
     calls = iter([[ToolCall("1", "trash_file", {"path": "~/a.txt"})], []])
 
@@ -283,3 +283,16 @@ def test_confirm_questions_follow_a_dutch_request(tmp_path):
     a = Agent(LLM(), lambda q: asked.append(q) or False, Journal(tmp_path / "j.jsonl"))
     a.handle("Gooi het bestand a.txt maar weg, ik wil het niet meer")
     assert asked == ["~/a.txt naar de prullenbak verplaatsen?"]
+
+
+def test_confirm_questions_and_fallbacks_in_german_french_and_spanish(tmp_path):
+    from iris.agent import _sorry
+
+    assert _describe("trash_file", {"path": "a.txt"}, lang="de") == "a.txt in den Papierkorb verschieben?"
+    assert _describe("trash_file", {"path": "a.txt"}, lang="fr") == "Mettre a.txt à la corbeille ?"
+    assert _describe("trash_file", {"path": "a.txt"}, lang="es") == "¿Muevo a.txt a la papelera?"
+    assert _describe("cline_start", {"agent": "qwen"}, lang="de").startswith("Start a new Cline session")  # English
+    assert _sorry("down", "Kannst du mir bitte das Wetter sagen? Ich bin unterwegs.").startswith("Ich erreiche")
+    assert _sorry("steps", "Je voudrais que tu ranges mes fichiers dans le dossier.").startswith("Je me suis")
+    assert _sorry("slow", "¿Puedes ordenar mis archivos para mañana por la tarde?").startswith("Me ha costado")
+    assert _sorry("slow", "xyz") == "That took me too long to think through. Try asking it in a shorter way."

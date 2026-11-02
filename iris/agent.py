@@ -49,24 +49,36 @@ class Journal:
 
 
 # What Iris says when the model can not answer, in English or Dutch (the languages the eval tests most).
+# What Iris says when the model can not answer, per language: en, nl, de, fr, es.
 _SORRY = {
     "slow": ("That took me too long to think through. Try asking it in a shorter way.",
-             "Daar moest ik te lang over nadenken. Vraag het iets korter."),
+             "Daar moest ik te lang over nadenken. Vraag het iets korter.",
+             "Darüber musste ich zu lange nachdenken. Frag bitte etwas kürzer.",
+             "J'ai mis trop de temps à réfléchir. Pose la question plus brièvement.",
+             "Me ha costado demasiado pensarlo. Pregúntalo de forma más corta."),
     "down": ("I can't reach the model in LM Studio right now. Try again in a moment.",
-             "Ik kan het model in LM Studio nu niet bereiken. Probeer het zo nog eens."),
-    "steps": ("I stopped: this took too many steps.", "Ik ben gestopt: dit kostte te veel stappen."),
+             "Ik kan het model in LM Studio nu niet bereiken. Probeer het zo nog eens.",
+             "Ich erreiche das Modell in LM Studio gerade nicht. Versuch es gleich noch einmal.",
+             "Je n'arrive pas à joindre le modèle dans LM Studio. Réessaie dans un instant.",
+             "No puedo conectar con el modelo en LM Studio. Inténtalo de nuevo en un momento."),
+    "steps": ("I stopped: this took too many steps.", "Ik ben gestopt: dit kostte te veel stappen.",
+              "Ich habe aufgehört: das hat zu viele Schritte gebraucht.",
+              "Je me suis arrêtée : cela demandait trop d'étapes.",
+              "Me he detenido: esto necesitaba demasiados pasos."),
 }
+LANGS = ("en", "nl", "de", "fr", "es")
 
 
-def _is_dutch(text: str) -> bool:
+def _lang(text: str) -> str:
+    """The language of a request, one of LANGS; English when unsure."""
     from iris.eval import answer_language  # local: iris.eval imports this module
 
-    return answer_language(text) == "nl"
+    found = answer_language(text)
+    return found if found in LANGS else "en"
 
 
 def _sorry(key: str, request: str) -> str:
-    english, dutch = _SORRY[key]
-    return dutch if _is_dutch(request) else english
+    return _SORRY[key][LANGS.index(_lang(request))]
 
 
 class Agent:
@@ -74,7 +86,7 @@ class Agent:
                  tools: dict[str, Tool] | Callable[[], dict[str, Tool]] = active_tools, today: str | None = None):
         # a callable is asked again on every request, so a newly enabled plugin or approved skill needs no restart
         self.llm, self.confirm, self.journal, self._tools = llm, confirm, journal, tools
-        self._dutch = False
+        self._lang = "en"
         self.today = today  # a fixed date for the eval, whose fixtures are written for one day; None is the real date
         self.tools = tools() if callable(tools) else tools
         self.messages: list[dict] = [{"role": "system", "content": system_prompt(today=self.today)}]
@@ -84,7 +96,7 @@ class Agent:
             self.tools = self._tools()
         self.messages[0] = {"role": "system", "content": system_prompt(today=self.today)}
         self.messages.append({"role": "user", "content": request})
-        self._dutch = _is_dutch(request)  # confirm questions follow the language of the latest request
+        self._lang = _lang(request)  # confirm questions follow the language of the latest request
         self._trim()
         self.journal.log(event="request", text=request)
         schemas = [t.schema() for t in self.tools.values()]
@@ -135,7 +147,7 @@ class Agent:
         if tier == NEVER:
             self.journal.log(**entry, outcome="refused")
             return "refused: this action is never automated. The user must do it themselves."
-        if tier == CONFIRM and not self.confirm(_describe(call.name, call.args, self._dutch)):
+        if tier == CONFIRM and not self.confirm(_describe(call.name, call.args, self._lang)):
             self.journal.log(**entry, outcome="declined")
             return "declined: the user said no. Do not retry this action."
         try:
@@ -155,58 +167,91 @@ class Agent:
             return f"error: {exc}"
 
 
-def _describe(name: str, args: dict, nl: bool = False) -> str:
-    """The question Iris asks out loud before a confirm tool runs; Dutch when the request was Dutch."""
-    def say(english: str, dutch: str) -> str:
-        return dutch if nl else english
+def _describe(name: str, args: dict, lang: str = "en") -> str:
+    """The question Iris asks out loud before a confirm tool runs, in the language of the request (en, nl, de, fr or
+    es). A tool with only an English question is asked in English."""
+    def say(en: str, nl: str = "", de: str = "", fr: str = "", es: str = "") -> str:
+        return {"nl": nl, "de": de, "fr": fr, "es": es}.get(lang) or en
 
     if name == "click":
         c, w = args.get("control"), args.get("window")
-        return say(f"Click '{c}' in {w}?", f"Klik op '{c}' in {w}?")
+        return say(f"Click '{c}' in {w}?", f"Klik op '{c}' in {w}?", f"Auf '{c}' in {w} klicken?",
+                   f"Cliquer sur '{c}' dans {w} ?", f"¿Hago clic en '{c}' en {w}?")
     if name == "type_text":
         where, text = args.get("into") or args.get("window"), str(args.get("text"))[:60]
-        return say(f"Type '{text}' into {where}?", f"'{text}' typen in {where}?")
+        return say(f"Type '{text}' into {where}?", f"'{text}' typen in {where}?", f"'{text}' in {where} tippen?",
+                   f"Taper '{text}' dans {where} ?", f"¿Escribo '{text}' en {where}?")
     if name == "trash_file":
-        return say(f"Move {args.get('path')} to the trash?", f"{args.get('path')} naar de prullenbak verplaatsen?")
+        path = args.get("path")
+        return say(f"Move {path} to the trash?", f"{path} naar de prullenbak verplaatsen?",
+                   f"{path} in den Papierkorb verschieben?", f"Mettre {path} à la corbeille ?",
+                   f"¿Muevo {path} a la papelera?")
     if name == "write_file":
-        q = say(f"Write {args.get('path')}?", f"{args.get('path')} schrijven?")
+        path = args.get("path")
+        q = say(f"Write {path}?", f"{path} schrijven?", f"{path} schreiben?", f"Écrire {path} ?",
+                f"¿Escribo {path}?")
         if args.get("overwrite"):
             q += say(" It replaces the old file; the old one goes to the trash.",
-                     " Het vervangt het oude bestand; het oude gaat naar de prullenbak.")
+                     " Het vervangt het oude bestand; het oude gaat naar de prullenbak.",
+                     " Die alte Datei wird ersetzt und landet im Papierkorb.",
+                     " L'ancien fichier est remplacé et va à la corbeille.",
+                     " Sustituye el archivo antiguo, que va a la papelera.")
         return q
     if name == "move_file":
         src, dst = args.get("source"), args.get("destination")
-        return say(f"Move {src} to {dst}?", f"{src} verplaatsen naar {dst}?")
+        return say(f"Move {src} to {dst}?", f"{src} verplaatsen naar {dst}?", f"{src} nach {dst} verschieben?",
+                   f"Déplacer {src} vers {dst} ?", f"¿Muevo {src} a {dst}?")
     if name == "copy_file":
         src, dst = args.get("source"), args.get("destination")
-        return say(f"Copy {src} to {dst}?", f"{src} kopiëren naar {dst}?")
+        return say(f"Copy {src} to {dst}?", f"{src} kopiëren naar {dst}?", f"{src} nach {dst} kopieren?",
+                   f"Copier {src} vers {dst} ?", f"¿Copio {src} a {dst}?")
     if name == "make_document":
-        return say(f"Make {args.get('path')} as a Word document?", f"{args.get('path')} maken als Word-document?")
+        path = args.get("path")
+        return say(f"Make {path} as a Word document?", f"{path} maken als Word-document?",
+                   f"{path} als Word-Dokument erstellen?", f"Créer {path} en document Word ?",
+                   f"¿Creo {path} como documento de Word?")
     if name == "make_presentation":
-        return say(f"Make {args.get('path')} as a PowerPoint presentation?",
-                   f"{args.get('path')} maken als PowerPoint-presentatie?")
+        path = args.get("path")
+        return say(f"Make {path} as a PowerPoint presentation?", f"{path} maken als PowerPoint-presentatie?",
+                   f"{path} als PowerPoint-Präsentation erstellen?", f"Créer {path} en présentation PowerPoint ?",
+                   f"¿Creo {path} como presentación de PowerPoint?")
     if name == "make_spreadsheet":
-        return say(f"Make {args.get('path')} as a spreadsheet?", f"{args.get('path')} maken als spreadsheet?")
+        path = args.get("path")
+        return say(f"Make {path} as a spreadsheet?", f"{path} maken als spreadsheet?",
+                   f"{path} als Tabelle erstellen?", f"Créer {path} en tableur ?",
+                   f"¿Creo {path} como hoja de cálculo?")
     if name == "click_on_screen":
         target, window = str(args.get("target")), str(args.get("window") or "")
         if not window:
-            return say(f"Click {target} on the screen?", f"Klikken op {target} op het scherm?")
+            return say(f"Click {target} on the screen?", f"Klikken op {target} op het scherm?",
+                       f"Auf {target} auf dem Bildschirm klicken?", f"Cliquer sur {target} à l'écran ?",
+                       f"¿Hago clic en {target} en la pantalla?")
         if window.lower() in target.lower():
-            return say(f"Click {target}?", f"Klikken op {target}?")
-        return say(f"Click {target} on {window}?", f"Klikken op {target} in {window}?")
+            return say(f"Click {target}?", f"Klikken op {target}?", f"Auf {target} klicken?",
+                       f"Cliquer sur {target} ?", f"¿Hago clic en {target}?")
+        return say(f"Click {target} on {window}?", f"Klikken op {target} in {window}?",
+                   f"Auf {target} in {window} klicken?", f"Cliquer sur {target} dans {window} ?",
+                   f"¿Hago clic en {target} en {window}?")
     if name == "close_window":
         t = args.get("title")
         return say(f"Close the window {t}? Unsaved work may ask to be saved.",
-                   f"Het venster {t} sluiten? Niet opgeslagen werk kan nog vragen om op te slaan.")
+                   f"Het venster {t} sluiten? Niet opgeslagen werk kan nog vragen om op te slaan.",
+                   f"Das Fenster {t} schließen? Ungespeicherte Arbeit fragt vielleicht noch nach dem Speichern.",
+                   f"Fermer la fenêtre {t} ? Un travail non enregistré peut encore demander à être enregistré.",
+                   f"¿Cierro la ventana {t}? Si hay cambios sin guardar, puede que pida guardarlos.")
     if name == "note_remove":
         matches = find_notes(str(args.get("query", "")))
         if len(matches) == 1:
-            return say(f"Remove the note '{matches[0][:60]}'?", f"De notitie '{matches[0][:60]}' weghalen?")
+            n = matches[0][:60]
+            return say(f"Remove the note '{n}'?", f"De notitie '{n}' weghalen?", f"Die Notiz '{n}' löschen?",
+                       f"Retirer la note '{n}' ?", f"¿Quito la nota '{n}'?")
         query = args.get("query")
-        return say(f"Remove the note matching {query}?", f"De notitie over {query} weghalen?")
+        return say(f"Remove the note matching {query}?", f"De notitie over {query} weghalen?",
+                   f"Die Notiz zu {query} löschen?", f"Retirer la note sur {query} ?", f"¿Quito la nota sobre {query}?")
     if name == "press_keys":
         k, w = args.get("keys"), args.get("window")
-        return say(f"Press {k} in {w}?", f"{k} indrukken in {w}?")
+        return say(f"Press {k} in {w}?", f"{k} indrukken in {w}?", f"{k} in {w} drücken?",
+                   f"Appuyer sur {k} dans {w} ?", f"¿Pulso {k} en {w}?")
     if name == "cline_start":
         agent, repo = args.get("agent"), args.get("repo") or ""
         return say(f"Start a new Cline session for {agent} in {repo or 'the default folder'} "
@@ -218,7 +263,13 @@ def _describe(name: str, args: dict, nl: bool = False) -> str:
         return say(f"I can't do that yet. Shall I build a new skill '{skill}' for it? A coding agent writes it, and I "
                    f"only use it after you approve it.",
                    f"Dat kan ik nog niet. Zal ik er een nieuwe skill '{skill}' voor bouwen? Een coding agent schrijft "
-                   f"hem, en ik gebruik hem pas nadat jij hem hebt goedgekeurd.")
+                   f"hem, en ik gebruik hem pas nadat jij hem hebt goedgekeurd.",
+                   f"Das kann ich noch nicht. Soll ich dafür einen neuen Skill '{skill}' bauen? Ein Coding-Agent "
+                   f"schreibt ihn, und ich nutze ihn erst, wenn du ihn freigegeben hast.",
+                   f"Je ne sais pas encore le faire. Je crée une nouvelle compétence '{skill}' ? Un agent de code "
+                   f"l'écrit, et je ne l'utilise qu'après ton accord.",
+                   f"Todavía no sé hacerlo. ¿Creo una nueva habilidad '{skill}'? Un agente de código la escribe y solo "
+                   f"la uso cuando tú la apruebes.")
     if name == "capability_build":
         return say(f"Build the skill '{skill}' again with the coding agent?",
                    f"De skill '{skill}' opnieuw laten bouwen door de coding agent?")
@@ -229,7 +280,13 @@ def _describe(name: str, args: dict, nl: bool = False) -> str:
         return say(f"Approve the skill '{skill}'? From then on I can run its code on this PC. Review it on the "
                    f"dashboard first.",
                    f"De skill '{skill}' goedkeuren? Vanaf dan mag ik zijn code op deze pc draaien. Bekijk hem eerst "
-                   f"op het dashboard.")
+                   f"op het dashboard.",
+                   f"Den Skill '{skill}' freigeben? Ab dann darf ich seinen Code auf diesem PC ausführen. Sieh ihn "
+                   f"dir vorher im Dashboard an.",
+                   f"Approuver la compétence '{skill}' ? Ensuite je pourrai exécuter son code sur ce PC. Regarde-la "
+                   f"d'abord dans le tableau de bord.",
+                   f"¿Apruebo la habilidad '{skill}'? A partir de entonces podré ejecutar su código en este PC. "
+                   f"Revísala antes en el panel.")
     if name == "capability_remove":
         return say(f"Remove the skill '{skill}'?", f"De skill '{skill}' verwijderen?")
     return say(f"Run {name} with {args}?", f"{name} uitvoeren met {args}?")

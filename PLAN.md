@@ -35,8 +35,8 @@ You talk, Iris does it, on your own PC: no cloud, no cost per command.
   `IRIS_WAKEWORD=iris` works today through Whisper. Training on openWakeWord's usual datasets would make the
   model non-commercial (CC BY-NC-SA 4.0), which does not fit an MIT project.
 - More tasks per language: German, French and Spanish have three each.
-- Confirm questions and Iris's own fallback answers in German, French and Spanish (today English, or Dutch for a
-  Dutch request). Answers, yes/no and the safety word lists already cover all five.
+- The last few confirm questions (rebuilding, checking or removing a skill, starting a Cline session) in German,
+  French and Spanish; they fall back to English today.
 
 ## Not in scope, on purpose
 

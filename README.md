@@ -125,7 +125,8 @@ flowchart LR
 ## Risk tiers
 
 Every tool has a risk tier, enforced in code before it runs: **safe** runs at once, **confirm** asks you out loud
-first, **never** is refused. The last column says when an action escalates to a higher tier. Plugin tools (see
+first, **never** is refused. Clicking and typing in a window ask once per request: a yes covers the other clicks in
+that window until the task is done, so "find a horror film on Netflix" is one question, not one per click. The last column says when an action escalates to a higher tier. Plugin tools (see
 Configuration) are only offered when their plugin is enabled.
 
 | Tool | Tier | What it does | Escalates when |

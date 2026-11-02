@@ -298,3 +298,46 @@ def test_confirm_questions_and_fallbacks_in_german_french_and_spanish(tmp_path):
     assert _sorry("steps", "Je voudrais que tu ranges mes fichiers dans le dossier.").startswith("Je me suis")
     assert _sorry("slow", "¿Puedes ordenar mis archivos para mañana por la tarde?").startswith("Me ha costado")
     assert _sorry("slow", "xyz") == "That took me too long to think through. Try asking it in a shorter way."
+
+
+def _clicks(*controls, window="Netflix - Brave"):
+    calls = [ToolCall(str(i), "click", {"window": window, "control": c}) for i, c in enumerate(controls)]
+    return Reply("", calls, {"role": "assistant", "content": ""})
+
+
+def test_one_yes_covers_the_other_clicks_in_that_window_for_this_request(tmp_path):
+    ran, asked = [], []
+    llm = ScriptedLLM(_clicks("Jay", "Zoeken", "Horror"), Reply("Klaar.", [], {"role": "assistant", "content": ""}),
+                      _clicks("Afspelen"), Reply("Speelt.", [], {"role": "assistant", "content": ""}))
+    a = agent(tmp_path, llm, ran, confirm=lambda q: asked.append(q) or True)
+    a.handle("Zoek een horrorfilm op Netflix")
+    assert [kw["control"] for _, kw in ran] == ["Jay", "Zoeken", "Horror"]
+    assert len(asked) == 1 and "geldt voor alle klikken en typen in Netflix - Brave" in asked[0]
+    granted = [e for e in journal(tmp_path) if e.get("granted")]
+    assert len(granted) == 2
+    a.handle("Speel de eerste af")  # a new request asks once again
+    assert len(asked) == 2
+
+
+def test_a_no_grants_nothing_and_never_words_stay_refused(tmp_path):
+    ran, asked = [], []
+    done = Reply("Klaar.", [], {"role": "assistant", "content": ""})
+    llm = ScriptedLLM(_clicks("Jay", "Zoeken"), done, _clicks("Zoeken", "Abonnement betalen"), done)
+    a = agent(tmp_path, llm, ran, confirm=lambda q: asked.append(q) or False)
+    a.handle("Zoek een film op Netflix")
+    assert ran == [] and len(asked) == 2  # declined: every click still asks
+    a.confirm = lambda q: asked.append(q) or True
+    a.handle("Zoek een film op Netflix")
+    assert [kw["control"] for _, kw in ran] == ["Zoeken"]  # the pay button is NEVER, grant or not
+    assert journal(tmp_path)[-2]["outcome"] == "refused"
+
+
+def test_grant_keys():
+    from iris.agent import _grant_key
+
+    assert _grant_key("click", {"window": " Netflix "}) == "netflix"
+    assert _grant_key("click_on_screen", {"target": "x"}) == "the screen"
+    assert _grant_key("press_keys", {"window": "Verkenner", "keys": "{DEL}"}) is None  # deleting always asks
+    assert _grant_key("press_keys", {"window": "Brave", "keys": "%{F4}"}) is None  # closing always asks
+    assert _grant_key("press_keys", {"window": "Brave", "keys": "{ENTER}"}) == "brave"
+    assert _grant_key("trash_file", {"path": "x"}) is None

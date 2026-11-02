@@ -7,6 +7,7 @@
 - Vision fallback: `look_at_screen` answers questions about the screen or one window, and `click_on_screen`
   clicks something found by sight (confirm, never for send/buy/pay/password/delete). Both use the local model, so
   it needs one that reads images, such as `qwen3.8-27b`.
+  `iris doctor` says whether the model does; the dashboard warns on a skill someone else wrote.
 - Iris's own fallback answers (model unreachable, thought too long, too many steps) are in Dutch for a Dutch request.
 - The language rule names German and French too; the eval runs on a fixed date (1 November 2026), the day its
   fixtures are written for, so a result no longer depends on the day it runs.

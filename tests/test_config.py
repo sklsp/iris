@@ -160,3 +160,18 @@ def test_init_writes_a_starter_config_once(tmp_path, monkeypatch, capsys):
     config.config_path().unlink()
     assert config.init_main(lambda q: "") == 0
     assert config.load()["name"] == "the user" and config.get("city") == ""
+
+
+def test_doctor_reads_the_speech_engine_from_config_and_names_missing_voices(tmp_path, monkeypatch):
+    import importlib.util
+
+    from iris import doctor
+    from iris import voice as v
+
+    monkeypatch.delenv("IRIS_TTS", raising=False)
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    (tmp_path / "config.toml").write_text('tts = "piper"', encoding="utf-8")
+    monkeypatch.setattr(v, "PIPER_DIR", tmp_path)
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a: object())  # every package "installed"
+    lines = [(ok, line) for ok, line in doctor.checks({"reachable": False}) if line.startswith("speech")]
+    assert lines and lines[0][0] is False and "download_voices nl_NL-ronnie-medium en_US-joe-medium" in lines[0][1]

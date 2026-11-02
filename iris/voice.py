@@ -6,16 +6,21 @@ from __future__ import annotations
 import os
 import queue
 import re
+import subprocess
+import sys
+import tempfile
 import threading
 import time
+import wave
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import numpy as np
 
-WHISPER_MODEL = os.environ.get("IRIS_WHISPER", "small")
-WHISPER_DEVICE = os.environ.get("IRIS_WHISPER_DEVICE", "cpu")  # "cuda" to use a GPU
+# None means automatic: large-v3-turbo on the GPU when CUDA works (pip install iris[gpu]), small on the CPU otherwise.
+WHISPER_MODEL = os.environ.get("IRIS_WHISPER")
+WHISPER_DEVICE = os.environ.get("IRIS_WHISPER_DEVICE")  # "cpu" or "cuda" to force one
 RATE = 16000
 FRAME = 1280  # 80 ms at 16 kHz, the frame size openWakeWord wants
 
@@ -36,6 +41,13 @@ _KOKORO_FILES = {
     "kokoro-v1.0.fp16.onnx": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.fp16.onnx",
     "voices-v1.0.bin": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin",
 }
+
+# Piper (IRIS_TTS=piper): natural local voices, one per language. Piper is GPL, so Iris never imports it: it runs
+# Piper's own command line in a separate process. Get a voice with
+#   python -m piper.download_voices nl_NL-ronnie-medium --data-dir %USERPROFILE%/.iris/piper
+PIPER_DIR = Path(os.environ.get("IRIS_PIPER_DIR") or (Path.home() / ".iris" / "piper"))
+PIPER_VOICES = {"nl": os.environ.get("IRIS_PIPER_NL", "nl_NL-ronnie-medium"),
+                "en": os.environ.get("IRIS_PIPER_EN", "en_US-joe-medium")}
 
 _YES = re.compile(r"\b(yes|yeah|yep|sure|do it|go ahead|ja|jazeker|doe maar|ga je gang|prima|oké|oke|okay|"
                   r"genau|klar|mach das|oui|d'accord|vas-y|allez-y|sí|si|claro|vale|adelante|hazlo)\b", re.I)
@@ -108,6 +120,52 @@ class WakeWord:
         return max(scores.values(), default=0.0) >= self.threshold
 
 
+def _cuda_dlls() -> None:
+    """The nvidia-* wheels of the gpu extra ship cuBLAS and cuDNN as DLLs that Windows does not find on its own."""
+    import sysconfig
+
+    root = Path(sysconfig.get_paths()["purelib"]) / "nvidia"
+    for sub in ("cublas", "cudnn", "cuda_nvrtc"):
+        d = root / sub / "bin"
+        if d.is_dir() and str(d) not in os.environ.get("PATH", ""):
+            os.add_dll_directory(str(d))
+            os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+
+
+def _cuda_available() -> bool:
+    """True when faster-whisper can run on a GPU: a CUDA device plus loadable cuBLAS 12 and cuDNN 9."""
+    import ctypes
+
+    os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")  # GPU numbers as nvidia-smi shows them
+    try:
+        import ctranslate2
+
+        if ctranslate2.get_cuda_device_count() == 0:
+            return False
+        _cuda_dlls()
+        for dll in ("cublas64_12.dll", "cudnn64_9.dll"):
+            ctypes.WinDLL(dll)  # type: ignore[attr-defined]
+        return True
+    except (ImportError, OSError, AttributeError, RuntimeError):
+        return False
+
+
+def _whisper_model(name: str | None, device: str | None, gpu_default: str = "large-v3-turbo",
+                   cpu_default: str = "small") -> Any:
+    """A faster-whisper model: on the GPU (float16, IRIS_WHISPER_GPU picks which) when CUDA works, else int8 on the
+    CPU. An explicit name or device wins."""
+    from faster_whisper import WhisperModel
+
+    device = device or ("cuda" if _cuda_available() else "cpu")
+    if device == "cuda":
+        _cuda_dlls()
+    model = name or (gpu_default if device == "cuda" else cpu_default)
+    compute = "float16" if device == "cuda" else "int8"
+    gpu = os.environ.get("IRIS_WHISPER_GPU")
+    extra = {"device_index": int(gpu)} if device == "cuda" and gpu else {}
+    return WhisperModel(model, device=device, compute_type=compute, **extra)
+
+
 class NameWake:
     """Wake on the spoken name "Iris" without a trained model: an energy VAD cuts short utterances (at most
     `max_seconds`) out of the mic stream, and a small Whisper model (IRIS_WAKE_WHISPER, default tiny, with "Iris" as
@@ -155,12 +213,10 @@ class NameWake:
         return bool(self.NAME.search(self.transcribe(audio)))
 
     def _tiny(self, audio: np.ndarray) -> str:
-        from faster_whisper import WhisperModel
 
         if self._whisper is None:
-            compute = "float16" if WHISPER_DEVICE == "cuda" else "int8"
-            self._whisper = WhisperModel(os.environ.get("IRIS_WAKE_WHISPER", "tiny"), device=WHISPER_DEVICE,
-                                         compute_type=compute)
+            size = os.environ.get("IRIS_WAKE_WHISPER", "tiny")
+            self._whisper = _whisper_model(size, WHISPER_DEVICE, gpu_default=size, cpu_default=size)
         segments, _ = self._whisper.transcribe(audio, hotwords="Iris")
         return " ".join(s.text.strip() for s in segments).strip()
 
@@ -175,10 +231,8 @@ class Voice:
     """Push-to-talk mode: press Enter to stop recording."""
 
     def __init__(self):
-        from faster_whisper import WhisperModel
 
-        compute = "float16" if WHISPER_DEVICE == "cuda" else "int8"
-        self.model = WhisperModel(WHISPER_MODEL, device=WHISPER_DEVICE, compute_type=compute)
+        self.model = _whisper_model(WHISPER_MODEL, WHISPER_DEVICE)
 
     def listen(self, prompt: str = "Listening... press Enter when done.") -> str:
         import numpy as np
@@ -299,6 +353,9 @@ class VoiceSession:
                 break
         text = self._transcribe(np.concatenate(chunks))
         print(f"You: {text or '(nothing heard)'}")  # so the user sees what Iris understood
+        heard = getattr(self.speaker, "heard", None)
+        if callable(heard):
+            heard(text)
         return text
 
     def speak(self, text: str) -> bool:
@@ -341,28 +398,74 @@ class VoiceSession:
                 stop.set()
 
     def _transcribe(self, audio: np.ndarray) -> str:
-        from faster_whisper import WhisperModel
 
         if self._whisper is None:
-            compute = "float16" if WHISPER_DEVICE == "cuda" else "int8"
-            self._whisper = WhisperModel(self.whisper_name, device=WHISPER_DEVICE, compute_type=compute)
+            self._whisper = _whisper_model(self.whisper_name, WHISPER_DEVICE)
         segments, _ = self._whisper.transcribe(audio, vad_filter=True)
         return " ".join(s.text.strip() for s in segments).strip()
 
 
+class PiperProcess:
+    """One running `python -m piper` for one voice. It loads the model once and writes a WAV file per line of text
+    into its own temp folder; wav() waits until that file is complete."""
+
+    def __init__(self, model: Path):
+        self.dir = Path(tempfile.mkdtemp(prefix="iris-piper-"))
+        self.proc = subprocess.Popen([sys.executable, "-m", "piper", "-m", str(model), "-d", str(self.dir)],
+                                     stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     text=True, encoding="utf-8")
+
+    def wav(self, text: str, timeout: float = 60) -> Path:
+        before = set(self.dir.glob("*.wav"))
+        assert self.proc.stdin is not None
+        self.proc.stdin.write(" ".join(text.split()) + "\n")  # one line is one WAV; Piper splits the sentences
+        self.proc.stdin.flush()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.proc.poll() is not None:
+                raise RuntimeError("piper stopped")
+            for path in set(self.dir.glob("*.wav")) - before:
+                if _wav_complete(path):
+                    return path
+            time.sleep(0.05)
+        raise TimeoutError("piper took too long")
+
+
+def _wav_complete(path: Path) -> bool:
+    """Python's wave module writes the frame count into the header only when the file is closed."""
+    try:
+        with wave.open(str(path), "rb") as w:
+            return w.getnframes() > 0
+    except (OSError, EOFError, wave.Error):
+        return False
+
+
 class Speaker:
-    """The mouth. Windows SAPI by default; Kokoro (kokoro-onnx) when IRIS_TTS=kokoro.
+    """The mouth. Windows SAPI by default; Piper when IRIS_TTS=piper (or tts = "piper" in config.toml), Kokoro when
+    IRIS_TTS=kokoro.
 
     speak() blocks until done and returns True if the text was fully spoken, False if a wake word
     cut it short. SAPI cannot be interrupted mid-utterance, so barge-in only lands between chunks
     in Kokoro mode (which streams)."""
 
     def __init__(self, engine: str | None = None):
-        self.engine = engine or os.environ.get("IRIS_TTS", "sapi")
+        from iris import config
+
+        self.engine = engine or os.environ.get("IRIS_TTS") or config.get("tts", "sapi")
         self._kokoro: Any = None  # kokoro_onnx.Kokoro; loaded lazily (no type stubs)
+        self._piper: dict[str, PiperProcess] = {}
+        self._lang = "en"  # the language of the last answer, for a short one whose language is unclear
+        if self.engine == "piper":  # start the voices now: loading a model takes seconds, the first answer should not
+            for lang in PIPER_VOICES:
+                try:
+                    self._piper_voice(lang)
+                except FileNotFoundError:
+                    pass  # speak() says what is missing when that language is needed
 
     def speak(self, text: str, stop_event: threading.Event | None = None) -> bool:
         print(f"Iris: {text}")
+        if self.engine == "piper":
+            return self._speak_piper(text, stop_event)
         if self.engine == "kokoro":
             return self._speak_kokoro(text, stop_event)
         try:
@@ -374,6 +477,37 @@ class Speaker:
         except Exception:  # noqa: BLE001 - speech is a nicety; the printed line is the answer
             pass
         return True
+
+    def heard(self, text: str) -> None:
+        """What the user just said: a short answer whose language is unclear ("Klaar.") is spoken in theirs."""
+        from iris.eval import answer_language
+
+        lang = answer_language(text)
+        if lang in PIPER_VOICES:
+            self._lang = lang
+
+    def _piper_voice(self, lang: str) -> PiperProcess:
+        if lang not in self._piper:
+            model = PIPER_DIR / f"{PIPER_VOICES[lang]}.onnx"
+            if not model.exists():
+                raise FileNotFoundError(f"missing {model.name}; get it with: python -m piper.download_voices "
+                                        f"{PIPER_VOICES[lang]} --data-dir {PIPER_DIR}")
+            self._piper[lang] = PiperProcess(model)
+        return self._piper[lang]
+
+    def _speak_piper(self, text: str, stop_event: threading.Event | None) -> bool:
+        from iris.eval import answer_language
+
+        lang = answer_language(text)
+        if lang in PIPER_VOICES:
+            self._lang = lang
+        try:
+            path = self._piper_voice(self._lang).wav(text)
+            return _play_wav(path, stop_event)
+        except Exception as exc:  # noqa: BLE001 - fall back to SAPI so Iris keeps talking
+            print(f"Piper failed ({exc}); using Windows SAPI instead.")
+            self.engine = "sapi"
+            return self.speak(text, stop_event)
 
     def _kokoro_model(self):
         if self._kokoro is None:
@@ -407,6 +541,26 @@ class Speaker:
             print(f"Kokoro failed ({exc}); using Windows SAPI instead.")
             self.engine = "sapi"
             return self.speak(text, stop_event)
+
+
+def _play_wav(path: Path, stop_event: threading.Event | None) -> bool:
+    """Play a 16-bit mono WAV in 0.2 s blocks, so a wake word can stop it between blocks; the file is removed after."""
+    import numpy as np
+    import sounddevice as sd
+
+    try:
+        with wave.open(str(path), "rb") as w:
+            rate = w.getframerate()
+            audio = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype("float32") / 32768
+    finally:
+        path.unlink(missing_ok=True)
+    block = rate // 5
+    with sd.OutputStream(samplerate=rate, channels=1, dtype="float32") as out:
+        for i in range(0, len(audio), block):
+            if stop_event is not None and stop_event.is_set():
+                return False
+            out.write(audio[i:i + block])
+    return True
 
 
 _speaker: Speaker | None = None

@@ -9,3 +9,6 @@ def _journal_in_tmp(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "iris-config.toml"))
     monkeypatch.setenv("IRIS_SKILLS", str(tmp_path / "iris-skills"))
     monkeypatch.setenv("IRIS_START_MENU", str(tmp_path / "start-menu"))
+    import iris.voice  # tests never depend on this PC's GPU: Whisper is built for the CPU unless a test says otherwise
+
+    monkeypatch.setattr(iris.voice, "_cuda_available", lambda: False)

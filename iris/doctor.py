@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -53,12 +54,30 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
                     else "not found: install the Cline CLI or set builder in config.toml (optional)")))
     voice = all(importlib.util.find_spec(m) is not None for m in ("faster_whisper", "sounddevice", "openwakeword"))
     out.append((voice, "voice extras installed" if voice else "voice extras missing: pip install -e .[voice]"))
+    if voice:
+        from iris import voice as v
+
+        gpu = v._cuda_available()
+        out.append((gpu, "hearing: Whisper large-v3-turbo on the GPU" if gpu
+                    else "hearing: Whisper small on the CPU; pip install -e .[gpu] for a better, faster model on an "
+                         "NVIDIA GPU"))
+        engine = os.environ.get("IRIS_TTS") or config.get("tts", "sapi")
+        if engine == "piper":
+            missing = [n for n in v.PIPER_VOICES.values() if not (v.PIPER_DIR / f"{n}.onnx").exists()]
+            piper = importlib.util.find_spec("piper") is not None
+            out.append((piper and not missing, "speech: Piper " + (", ".join(v.PIPER_VOICES.values()) if piper and
+                        not missing else ("not installed: pip install -e .[piper]" if not piper else
+                                          f"voices missing: python -m piper.download_voices {' '.join(missing)} "
+                                          f"--data-dir {v.PIPER_DIR}"))))
+        else:
+            out.append((False, f'speech: {engine}; tts = "piper" in config.toml for natural Dutch and English voices'))
     return out
 
 
 def main() -> int:
     results = checks()
-    optional = ("voice", "config", "skill builder", "vision")  # Iris runs without these; everything else must pass
+    # Iris runs without these; everything else must pass
+    optional = ("voice", "config", "skill builder", "vision", "hearing", "speech")
     for ok, line in results:
         mark = "ok " if ok else ("-- " if line.startswith(optional) else "FIX")
         print(f"{mark} {line}")

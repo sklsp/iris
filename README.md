@@ -241,10 +241,36 @@ set IRIS_WAKEWORD=hey_jarvis    # any built-in openWakeWord name, a path to your
 (default 0.01) is the RMS below which audio counts as silence, and the 1.2 s of silence that ends a
 recording is the `silence_seconds` default in `iris/voice.py`.
 
+### Hearing
+
+Iris transcribes with faster-whisper. On an NVIDIA GPU it uses `large-v3-turbo` (well under a second per request and
+much better with names and mixed Dutch and English); without one it uses `small` on the CPU. The GPU needs NVIDIA's
+cuBLAS and cuDNN, which the `gpu` extra installs:
+
+```bash
+.venv\Scripts\python -m pip install -e ".[gpu]"
+set IRIS_WHISPER_GPU=0              # which GPU, numbered as nvidia-smi shows them
+```
+
+`IRIS_WHISPER` and `IRIS_WHISPER_DEVICE` (`cpu` or `cuda`) override the automatic choice. Every request is printed as
+`You: ...`, so you can see what Iris understood.
+
 ### Speech out
 
-Windows SAPI (pyttsx3) is the default and always available. For Kokoro, install the extra and put the
-two model files in `~/.iris` (or `IRIS_KOKORO_DIR`):
+Windows SAPI (pyttsx3) is the default and always available, but its voices are English, so Dutch answers sound
+garbled. Piper gives natural local voices in both languages: Iris picks the voice by the language of the answer, and
+uses the language you spoke when an answer is too short to tell.
+
+```bash
+.venv\Scripts\python -m pip install -e ".[piper]"
+.venv\Scripts\python -m piper.download_voices nl_NL-ronnie-medium en_US-joe-medium --data-dir %USERPROFILE%\.iris\piper
+```
+
+Then set `tts = "piper"` in `~/.iris/config.toml` (or `IRIS_TTS=piper`). `IRIS_PIPER_NL` and `IRIS_PIPER_EN` pick other
+voices. Piper is GPL-3.0, so Iris never imports it: it runs Piper's own command line as a separate program and plays
+the WAV it writes. Both default voices were trained on CC0 data; check a voice's model card before you pick another.
+
+For Kokoro (English only), install the extra and put the two model files in `~/.iris` (or `IRIS_KOKORO_DIR`):
 
 ```bash
 uv pip install --python .venv -e ".[tts]"
@@ -253,9 +279,9 @@ set IRIS_TTS=kokoro
 set IRIS_KOKORO_VOICE=af_heart
 ```
 
-Iris never downloads model files by itself. If `IRIS_TTS=kokoro` but the files are missing, or Kokoro
-fails for any other reason, it falls back to SAPI and carries on talking. Kokoro streams chunk by
-chunk, so the wake word stops it between chunks; SAPI cannot be cut off mid-sentence.
+Iris never downloads model files by itself. If Piper or Kokoro is missing its files, or fails for any other reason,
+Iris falls back to SAPI and carries on talking. Piper and Kokoro play in short blocks, so the wake word stops them
+mid-answer; SAPI cannot be cut off mid-sentence.
 
 ## Dashboard
 
@@ -401,13 +427,16 @@ shows with its own badge.
 |---|---|---|
 | `IRIS_LLM_URL` | `http://127.0.0.1:1234/v1` | LM Studio endpoint |
 | `IRIS_MODEL` | `qwen3.8-27b` | model name to request |
-| `IRIS_WHISPER` | `small` | faster-whisper model |
-| `IRIS_WHISPER_DEVICE` | `cpu` | `cuda` to transcribe on the GPU |
+| `IRIS_WHISPER` | `large-v3-turbo` on a GPU, `small` on the CPU | faster-whisper model |
+| `IRIS_WHISPER_DEVICE` | automatic | `cpu` or `cuda` to force one |
+| `IRIS_WHISPER_GPU` | `0` | which GPU Whisper uses, numbered as nvidia-smi shows them |
 | `IRIS_WAKEWORD` | `hey_jarvis` | wake word model name, .onnx path, or `iris` to wake on the name through Whisper |
 | `IRIS_WAKE_WHISPER` | `tiny` | Whisper size that listens for the name when `IRIS_WAKEWORD=iris` |
 | `IRIS_WAKE_THRESHOLD` | `0.5` | wake word score to trigger |
 | `IRIS_VAD_THRESHOLD` | `0.01` | RMS below which audio is silence |
-| `IRIS_TTS` | `sapi` | `kokoro` for the neural voice |
+| `IRIS_TTS` | config `tts`, else `sapi` | `piper` for natural Dutch and English voices, or `kokoro` |
+| `IRIS_PIPER_DIR` | `~/.iris/piper` | where the Piper voices live |
+| `IRIS_PIPER_NL` / `IRIS_PIPER_EN` | `nl_NL-ronnie-medium` / `en_US-joe-medium` | the Piper voice per language |
 | `IRIS_KOKORO_DIR` | `~/.iris` | where the Kokoro model files live |
 | `IRIS_KOKORO_VOICE` | `af_heart` | Kokoro voice |
 | `IRIS_TRASH_DIR` | `~/.iris/trash` | Iris's undoable trash |

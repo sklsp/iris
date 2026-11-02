@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Fix: the "hey jarvis" wake word never fired. openWakeWord wants 16-bit samples and got floats, which it scores as
+  silence.
+- Voice mode prints what Iris heard (`You: ...`).
+- Hearing: Whisper `large-v3-turbo` on an NVIDIA GPU when one is usable (`pip install -e .[gpu]`), about 0.7 s a
+  request instead of over 4 s with `small` on the CPU, and much better at names and mixed Dutch and English.
+- Speech: Piper voices (`tts = "piper"`), Dutch `nl_NL-ronnie-medium` and English `en_US-joe-medium`, picked by the
+  language of the answer. SAPI's English voices made Dutch answers unintelligible.
+- `iris doctor` reports which hearing and speech Iris uses and how to improve them.
+
 ## 0.4.0 (2026-11-02): the first public release
 
 Added after the release candidate of 2026-11-01:

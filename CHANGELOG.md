@@ -9,6 +9,9 @@
 - A request may take 30 model steps (was 12), enough to research on one site and check a few titles on another. When
   the steps run out Iris says what it found and what is left, instead of only that it stopped. Older page views in a
   request keep their text but drop their numbered items, so a long web task fits the model's context.
+- Speech: VoxCPM2 (`tts = "voxcpm"`, Apache-2.0) speaks Dutch and English in one voice, also mixed in one sentence,
+  where Piper read English titles with a Dutch voice. It runs in its own Python and streams, so Iris starts talking
+  before the whole answer is made; Piper takes over if it fails.
 - `iris eval` runs in the default confirm mode whatever the user's `config.toml` says (`IRIS_CONFIRM` still wins).
 - Fix: the "hey jarvis" wake word never fired. openWakeWord wants 16-bit samples and got floats, which it scores as
   silence.

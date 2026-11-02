@@ -118,23 +118,32 @@ def _under(p: Path, root: Path) -> bool:
         return False
 
 
+def _iris_own(p: Path) -> bool:
+    """Iris's own code and state: the package (tiers, tier lock, prompts), ~/.iris, the skills and their approvals, and
+    config.toml. No file tool may change them, so the model can never edit its own rules, even with a yes."""
+    from iris import skills  # local: skills imports this module
+
+    own = [Path(__file__).resolve().parent, Path.home() / ".iris", skills.skills_dir()]
+    return p == config.config_path().expanduser().resolve() or any(_under(p, d) for d in own)
+
+
 def _trash_tier(args: dict) -> str:
-    """Only files under the trash roots may be trashed; never a root itself, system dirs, or the trash."""
+    """Only files under the trash roots may be trashed; never a root itself, system dirs, the trash or Iris's own."""
     p = Path(str(args.get("path", ""))).expanduser().resolve()
     roots = [r.resolve() for r in _trash_roots()]
     if p in roots or not any(_under(p, r) for r in roots):
         return NEVER
-    if any(_under(p, s) for s in _SYSTEM_DIRS) or _under(p, _trash_dir()):
+    if any(_under(p, s) for s in _SYSTEM_DIRS) or _under(p, _trash_dir()) or _iris_own(p):
         return NEVER
     return CONFIRM
 
 
 def _writable(path: str) -> bool:
-    """The resolved path is under a config folder, not in a system dir and not in the trash."""
+    """The resolved path is under a config folder, not in a system dir, the trash or Iris's own code and state."""
     p = Path(str(path)).expanduser().resolve()
     if any(_under(p, s) for s in _SYSTEM_DIRS):
         return False
-    if _under(p, _trash_dir()):
+    if _under(p, _trash_dir()) or _iris_own(p):
         return False
     return any(_under(p, r.resolve()) for r in config.folders())
 

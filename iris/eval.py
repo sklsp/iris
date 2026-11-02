@@ -94,6 +94,10 @@ def dry_tools(fixtures: dict[str, str | list[str]]) -> dict[str, Tool]:
                 counters[_name] = i + 1
                 return fx[min(i, len(fx) - 1)] if fx else f"ok (dry run of {_name})"
             if fx is not None:
+                if _name.startswith("browser_") and isinstance(fx, str):
+                    from iris import browser
+
+                    browser.remember(fx)  # so the tier of a later click sees the label the fixture showed
                 return fx
             if _real.pure:
                 return _real.fn(**kwargs)

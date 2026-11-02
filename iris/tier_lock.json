@@ -131,6 +131,22 @@
     "tier": "safe",
     "escalates": true
   },
+  "browser_read": {
+    "tier": "safe",
+    "escalates": false
+  },
+  "browser_click": {
+    "tier": "confirm",
+    "escalates": true
+  },
+  "browser_type": {
+    "tier": "confirm",
+    "escalates": true
+  },
+  "browser_scroll": {
+    "tier": "safe",
+    "escalates": false
+  },
   "press_keys": {
     "tier": "confirm",
     "escalates": true

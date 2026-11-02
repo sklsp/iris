@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from iris import config
+from iris.browser import browser_click, browser_read, browser_scroll, browser_type
 from iris.desktop import (
     _start_menu_folders,
     click_on_screen,
@@ -45,6 +46,8 @@ from iris.policy import (
     CONFIRM,
     NEVER,
     SAFE,
+    _browser_click_tier,
+    _browser_type_tier,
     _click_on_screen_tier,
     _click_tier,
     _copy_tier,
@@ -921,6 +924,22 @@ TOOLS = {t.name: t for t in [
           "amount": {"type": "integer"}}, ["window", "direction"], SAFE, scroll),
     Tool("open_url", "Open an http or https URL in the default browser. file:, javascript: and data: are refused.",
          {"url": S}, ["url"], SAFE, open_url, _open_url_tier),
+    Tool("browser_read",
+         "Read the web page open in the user's browser (Brave, Chrome or Edge) as numbered buttons, links and fields"
+         " plus visible text. Use it for any web page before clicking or typing there: far faster and more exact"
+         " than read_window or look_at_screen. tab: part of a tab's title or address when it is not the current one.",
+         {"tab": S}, [], SAFE, browser_read),
+    Tool("browser_click",
+         "Click item [index] from the last browser_read; returns the page as it is after the click, numbered again.",
+         {"index": {"type": "integer"}, "tab": S}, ["index"], CONFIRM, browser_click, _browser_click_tier),
+    Tool("browser_type",
+         "Type text into field [index] from the last browser_read, replacing what is in it; enter=true presses"
+         " Enter after (to search). Returns the page as it is then, numbered again.",
+         {"index": {"type": "integer"}, "text": S, "enter": {"type": "boolean"}, "tab": S}, ["index", "text"],
+         CONFIRM, browser_type, _browser_type_tier),
+    Tool("browser_scroll",
+         "Scroll the web page down or up by most of a screen; returns what is visible then, numbered again.",
+         {"direction": {"type": "string", "enum": ["down", "up"]}, "tab": S}, [], SAFE, browser_scroll),
     Tool("web_search",
          "Search the web (DuckDuckGo) and list titles, links and snippets. "
          "Then use web_read on the best link to read it.",

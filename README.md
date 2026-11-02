@@ -36,7 +36,7 @@ Iris: Sending messages is something I never do myself. I can open a draft; you p
   local model and can click what it sees, after asking.
 - **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
   email drafts, notes, reminders and timers.
-- **Measured.** An eval of 211 tasks runs against the real model and the result is published below, including the
+- **Measured.** An eval of 215 tasks runs against the real model and the result is published below, including the
   safety traps.
 - **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (SAPI or
   Kokoro) all run on your machine.
@@ -159,6 +159,10 @@ Configuration) are only offered when their plugin is enabled.
 | focus_window | safe | bring a window to the front and give it focus |  |
 | scroll | safe | scroll up or down in a window |  |
 | open_url | safe | open an `http` or `https` URL; `file:`, `javascript:` and `data:` are refused |  |
+| browser_read | safe | reads the web page in your browser (Brave, Chrome, Edge) as numbered buttons, links and fields |  |
+| browser_click | confirm | clicks a numbered item on the web page; one yes covers that site for the request | the item's own label says pay, send, delete or password (never) |
+| browser_type | confirm | types into a numbered field on the web page, optionally pressing Enter | a password or login field, or Enter on a mail or chat site (never) |
+| browser_scroll | safe | scrolls the web page up or down |  |
 | web_search | safe | searches DuckDuckGo, lists titles, links and snippets | searches DuckDuckGo, lists titles, links and snippets |
 | web_read | safe | reads a page as plain text, local addresses refused | reads a page as plain text, local addresses refused |
 | trash_file | confirm | move a file or folder to Iris's trash, always undoable | the path is home or a configured folder itself, outside them, or the Recycle Bin (never) |
@@ -294,6 +298,24 @@ Iris never downloads model files by itself. If Piper or Kokoro is missing its fi
 Iris falls back to SAPI and carries on talking. Piper and Kokoro play in short blocks, so the wake word stops them
 mid-answer; SAPI cannot be cut off mid-sentence.
 
+### Web pages
+
+For web pages in Brave, Chrome or Edge, Iris reads the page itself through the DevTools Protocol: `browser_read` lists
+the buttons, links and fields on screen as numbered lines, and `browser_click` and `browser_type` act on a number and
+return the page as it is afterwards. A read takes a few hundredths of a second, against several seconds for a
+screenshot and a vision model, and the click lands on exactly the element that was read. The tier comes from the label
+the page itself shows, so a "Bestellen en betalen" button is refused however the model describes it.
+
+```bash
+.venv\Scripts\python -m pip install -e ".[browser]"
+```
+
+Then allow it once in the browser: type `brave://inspect/#remote-debugging` (or `chrome://`, `edge://`) in the
+address bar, tick "Allow remote debugging for this browser instance", and click Allow when the browser asks Iris's
+first connection. Only the browser on this PC is reached (127.0.0.1). This gives Iris full control of that browser,
+like a person at the keyboard: the tiers above are what keep paying, sending and passwords with you.
+`IRIS_BROWSER_PROFILE` points at another browser's user-data folder.
+
 ## Dashboard
 
 A mostly read-only status page for Iris and the machine it runs on:
@@ -357,7 +379,7 @@ Run of 2026-11-02 09:09 on `qwen3.8-27b`: 611/621 passed (98.4%), median 3.9 s, 
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether the user says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 211 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 215 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.
@@ -473,6 +495,7 @@ shows with its own badge.
 | `IRIS_LEADSCAN_DIR` | config `leadscan_dir`, else `~/leadscan` | where followups reads out/pipeline.csv from |
 | `IRIS_EVAL_DIR` | `eval/results` | what the dashboard's Eval tab reads |
 | `IRIS_CONFIG` | `~/.iris/config.toml` | the settings file |
+| `IRIS_BROWSER_PROFILE` | Brave, then Chrome, then Edge | the browser user-data folder whose DevToolsActivePort Iris connects to |
 | `IRIS_SKILLS` | `~/.iris/skills` | where self-built skills live |
 | `IRIS_JOURNAL` | `~/.iris/journal.jsonl` | the journal the dashboard and autopilot read (`--journal` for Iris itself) |
 | `IRIS_NOTES` | `~/.iris/notes.md` | where note_add and notes_read keep notes |

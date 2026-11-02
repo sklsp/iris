@@ -208,7 +208,8 @@ class Agent:
 # or chat window, a password file) becomes a question, and every other confirm runs at once, except the ones that run
 # code, start an agent in yolo mode or take the GPU. Writing outside the allowed folders, system folders, Iris's own
 # files, non-web URLs, typing into a password or login field and unloading the model Iris runs on stay NEVER.
-_ASK_WHEN_IMPORTANT = ("click", "type_text", "click_on_screen", "press_keys", "read_file")
+_ASK_WHEN_IMPORTANT = ("click", "type_text", "click_on_screen", "press_keys", "read_file", "browser_click",
+                       "browser_type")
 _STILL_ASK = ("open_app", "request_capability", "capability_build", "capability_approve", "capability_remove",
               "cline_start", "lmstudio_load", "lmstudio_unload", "comfy_queue")
 _CREDENTIALS = re.compile(r"(password|wachtwoord|passw[oö]rt|kennw[oö]rt|contrase|mots? ?de ?passe|log ?in|sign ?in|"
@@ -218,12 +219,22 @@ _CREDENTIALS = re.compile(r"(password|wachtwoord|passw[oö]rt|kennw[oö]rt|contr
 def _important_tier(name: str, args: dict, tier: str) -> tuple[str, bool]:
     """(tier, sensitive) under confirm = "important"."""
     if tier == NEVER:
-        if name in _ASK_WHEN_IMPORTANT and not (name == "type_text" and _CREDENTIALS.search(str(args.get("into", "")))):
+        credential = (name == "type_text" and _CREDENTIALS.search(str(args.get("into", "")))) or \
+            (name == "browser_type" and _browser_credential(args))
+        if name in _ASK_WHEN_IMPORTANT and not credential:
             return CONFIRM, True
         return NEVER, False
     if tier == CONFIRM and name not in _STILL_ASK:
         return SAFE, False
     return tier, False
+
+
+def _browser_credential(args: dict) -> bool:
+    """A password field, or one labelled as a password or login field: never typed into, in any mode."""
+    from iris import browser
+
+    it = browser.item(args.get("index", 0))
+    return it.get("type") == "password" or bool(_CREDENTIALS.search(it.get("name", "")))
 
 
 def _sensitive_note(lang: str) -> str:
@@ -240,7 +251,7 @@ def _sensitive_note(lang: str) -> str:
 # One yes to a click, typing or keys in a window covers the rest of that kind of work in the same window for the rest
 # of the request, so a task like "find a horror film on Netflix" asks once instead of per click. NEVER stays NEVER
 # (pay, send, delete, password, Enter in mail and chat), and keys that delete or close a window ask every time.
-_GRANTED_TOOLS = ("click", "type_text", "press_keys", "click_on_screen")
+_GRANTED_TOOLS = ("click", "type_text", "press_keys", "click_on_screen", "browser_click", "browser_type")
 _ALWAYS_ASK_KEYS = re.compile(r"\{(DEL|DELETE)\}|%\{F4\}", re.I)
 
 
@@ -250,11 +261,19 @@ def _grant_key(name: str, args: dict) -> str | None:
         return None
     if name == "press_keys" and _ALWAYS_ASK_KEYS.search(str(args.get("keys", ""))):
         return None
+    if name.startswith("browser_"):  # in a browser, a yes covers the site
+        from iris import browser
+
+        return "site:" + browser.host(args.get("index", 0))
     return str(args.get("window") or "").strip().lower() or "the screen"
 
 
 def _grant_note(args: dict, lang: str) -> str:
     w = args.get("window")
+    if "index" in args:  # a browser call: the yes covers the site
+        from iris import browser
+
+        w = browser.host(args.get("index", 0))
     notes = {
         "en": f" A yes covers every click and keystroke in {w or 'the screen'} for this request.",
         "nl": f" Een ja geldt voor alle klikken en typen in {w or 'het scherm'} tijdens deze opdracht.",
@@ -275,6 +294,19 @@ def _describe(name: str, args: dict, lang: str = "en") -> str:
         c, w = args.get("control"), args.get("window")
         return say(f"Click '{c}' in {w}?", f"Klik op '{c}' in {w}?", f"Auf '{c}' in {w} klicken?",
                    f"Cliquer sur '{c}' dans {w} ?", f"¿Hago clic en '{c}' en {w}?")
+    if name in ("browser_click", "browser_type"):
+        from iris import browser
+
+        it, site = browser.item(args.get("index", 0)), browser.host(args.get("index", 0))
+        label = it.get("name") or f"item {args.get('index')}"
+        if name == "browser_click":
+            return say(f"Click '{label}' on {site}?", f"Klik op '{label}' op {site}?",
+                       f"Auf '{label}' auf {site} klicken?", f"Cliquer sur '{label}' sur {site} ?",
+                       f"¿Hago clic en '{label}' en {site}?")
+        text = str(args.get("text"))[:60]
+        return say(f"Type '{text}' into '{label}' on {site}?", f"'{text}' typen in '{label}' op {site}?",
+                   f"'{text}' in '{label}' auf {site} tippen?", f"Taper '{text}' dans '{label}' sur {site} ?",
+                   f"¿Escribo '{text}' en '{label}' en {site}?")
     if name == "type_text":
         where, text = args.get("into") or args.get("window"), str(args.get("text"))[:60]
         return say(f"Type '{text}' into {where}?", f"'{text}' typen in {where}?", f"'{text}' in {where} tippen?",

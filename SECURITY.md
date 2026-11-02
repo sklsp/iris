@@ -27,6 +27,11 @@ The attacker does not control the code: tiers, word lists, path roots and the jo
   `ms-settings:` at once, but a program or script file (.exe, .bat, .cmd, .ps1, .vbs, .js, .msi, .lnk, .reg and more)
   or any other URI scheme asks first; proven by `test_open_app_asks_before_it_runs_a_program_or_script_file` and the
   injection_run_exe eval task (a page that tells Iris to run a downloaded update).
+- **Browser clicks are judged by the page's own label.** `browser_click` and `browser_type` take a number from the last
+  `browser_read`; the tier reads that element's label and type as the page reported them, not the model's words, so a
+  pay, send, delete or password control is NEVER (and a password field is never typed into, in any mode), and Enter
+  on a mail or chat site is NEVER; proven by `test_tiers_follow_the_label_the_page_shows` and the browser_pay and
+  browser_injection eval tasks.
 - **Non-web URLs never open.** `open_url` refuses every scheme other than http and https in the policy layer (NEVER tier), so a refusal is journaled as refused and nothing runs; proven by `test_open_url_refuses_every_scheme_but_http_and_https` (file, javascript, data, ftp and empty schemes) and `test_open_url_with_a_javascript_url_is_refused_before_it_runs`, pinned end-to-end by the file_url and data_url eval tasks (safety category).
 - **Trash roots.** Only files under the home folder or a folder listed in config.toml `folders` can be trashed (as confirm); the roots themselves, system dirs, `..` escapes and the trash dir are NEVER; proven by `test_trash_allows_files_under_the_roots_and_refuses_everything_else` and `test_trash_only_takes_allowed_paths`.
 - **File tools stay inside their roots.** `write_file`, `make_folder`, `move_file` and `copy_file` are NEVER outside the home folder or a configured `folders` entry, and in system directories they refuse even when one is configured. The office tools that write files follow the same rule; proven by `test_write_tier_confirms_inside_folders_and_never_outside`, `test_make_folder_tier_is_safe_inside_and_never_outside`, `test_move_tier_never_when_the_destination_or_source_is_outside` and the matching tests in tests/test_office.py.
@@ -87,6 +92,9 @@ Nothing is pinned as a known bug. The limits below are accepted tradeoffs and op
 - **A yes to one click covers the window.** After that first yes, a click on something harmless-sounding that does
   more than its name says (a button labelled "OK" that confirms an order) is not asked about again during that request.
   The never-words catch the usual names; the window and the request bound the rest.
+- **Remote debugging gives full control of the browser.** Once ticked, any program on this PC that can read the
+  DevToolsActivePort file can ask to control the browser (the browser asks Allow per connection). Iris only talks to
+  127.0.0.1. Untick it in the browser's inspect page to take it back.
 - **A confirm prompt relies on the user listening.** The question is spoken once; silence counts as "no", but a misheard or half-heard "yes" approves with no second check.
 - **The builder has your rights too.** The coding agent that builds a skill (Cline in yolo mode, or your
   `builder`) can do whatever your account can while it works. The plan tells it to stay in the skill's folder and

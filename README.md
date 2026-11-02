@@ -88,6 +88,7 @@ folders = ["D:/Projects"]             # where file tools may write, besides your
 city = "Utrecht"                      # the default place for the weather
 builder = ["claude", "-p", "{prompt}"]  # the coding agent that builds new skills; Cline when unset
 plugins = ["lmstudio", "comfyui"]     # opt-in tool groups, see below
+confirm = "important"                 # ask only before paying, sending and private files (default: "all")
 ```
 
 **Plugins** are tool groups for particular setups, off until you list them: `lmstudio` (load and unload models),
@@ -126,7 +127,14 @@ flowchart LR
 
 Every tool has a risk tier, enforced in code before it runs: **safe** runs at once, **confirm** asks you out loud
 first, **never** is refused. Clicking and typing in a window ask once per request: a yes covers the other clicks in
-that window until the task is done, so "find a horror film on Netflix" is one question, not one per click. The last column says when an action escalates to a higher tier. Plugin tools (see
+that window until the task is done, so "find a horror film on Netflix" is one question, not one per click.
+
+With `confirm = "important"` in config.toml Iris asks less and does more: everyday actions (clicking, typing, making,
+moving and trashing files) run without a question, while paying, buying, sending messages or email, deleting in an
+app and opening private files are asked about one at a time and done after your yes, instead of refused. Running a
+program, building or approving a skill, starting a Cline session and loading models still ask. Typing passwords,
+permanent deletes, system folders, Iris's own files and non-web links stay refused. This trades safety for speed:
+your spoken yes becomes the only check before a payment, so it is off by default. The last column says when an action escalates to a higher tier. Plugin tools (see
 Configuration) are only offered when their plugin is enabled.
 
 | Tool | Tier | What it does | Escalates when |
@@ -436,6 +444,8 @@ shows with its own badge.
 | `IRIS_WAKEWORD` | `hey_jarvis` | wake word model name, .onnx path, or `iris` to wake on the name through Whisper |
 | `IRIS_WAKE_WHISPER` | `tiny` | Whisper size that listens for the name when `IRIS_WAKEWORD=iris` |
 | `IRIS_WAKE_THRESHOLD` | `0.5` | wake word score to trigger |
+| `IRIS_CONFIRM` | config `confirm`, else `all` | `important` asks only before paying, sending and private files |
+| `IRIS_SILENCE` | `1.8` | seconds of silence that end a request |
 | `IRIS_FOLLOW_UP` | `8` | seconds after an answer in which a question needs no wake word; 0 turns it off |
 | `IRIS_CHIME` | `1` | `0` mutes the beep after the wake word |
 | `IRIS_VAD_THRESHOLD` | `0.01` | RMS below which audio is silence |

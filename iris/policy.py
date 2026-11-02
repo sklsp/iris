@@ -23,7 +23,7 @@ SAFE, CONFIRM, NEVER = "safe", "confirm", "never"
 # per-app allowlists if that gets in the way.
 _NEVER_WORDS = re.compile(
     r"\b(send|submit|post|publish|buy|order|pay|checkout|purchase|delete|remove|password|sign ?in|log ?in|"
-    r"verzend|verstu|plaats|koop|kopen|bestel|betaal|betalen|afreken|verwijder|wachtwoord|inlog|aanmeld|"
+    r"verzend|verstu|plaats|koop|kopen|bestel|betaal|betalen|betaling|afreken|verwijder|wachtwoord|inlog|aanmeld|"
     # German, French and Spanish: stems long enough not to catch English words (no "pag", "envi" or "compr")
     r"versend|absend|abschick|kauf|bestell|bezahl|zahlung|lösch|entfern|passwort|kennwort|anmeld|einlog|"
     r"envoy|achet|commande|paiement|supprim|effac|mot de passe|connexion|publier|"

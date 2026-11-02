@@ -71,6 +71,14 @@ The attacker does not control the code: tiers, word lists, path roots and the jo
 
 ## Known limits
 
+- **`confirm = "important"` is a trade.** It is off by default. When the user turns it on, everyday confirm actions run
+  without a question, and paying, sending, deleting in an app and reading private files become a spoken yes instead
+  of a refusal, asked one at a time and never covered by a window's yes. An instruction planted on a page could then
+  get Iris to ask "pay now?", and a misheard "ja" would pay. Typing passwords, permanent deletes, system and Iris's
+  own folders, non-web links, running programs, skills, Cline starts and model loads keep their protection; proven by
+  `test_important_mode_asks_only_for_sensitive_clicks_and_each_one_separately` and
+  `test_important_mode_keeps_the_hard_limits`.
+
 Nothing is pinned as a known bug. The limits below are accepted tradeoffs and open gaps:
 
 - **Over-refusal is accepted.** The never words match word *starts* without a trailing boundary, so harmless names like "Poster" or "Payment" are refused too (documented in `tools.py`; asserted on purpose in `test_click_escalates_to_never_when_the_control_says_send_pay_or_password`/`test_type_escalates_to_never_on_password_order_or_payment_fields`). Safe direction, but Iris sometimes says no to things that were fine.

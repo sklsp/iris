@@ -306,7 +306,7 @@ def test_session_barge_in_skips_the_wake_word_for_the_next_request():
     # Jay already said the wake word, so the next request records straight away, no wake word needed.
     # The frames come from their own thread: next_command() drains the queue first, and only what
     # arrives after that drain is treated as the utterance.
-    utterance = np.concatenate([np.full(int(RATE * 0.5), 0.3), np.zeros(int(RATE * 1.5))])
+    utterance = np.concatenate([np.full(int(RATE * 0.5), 0.3), np.zeros(int(RATE * 2.5))])  # past SILENCE_SECONDS
 
     def feed():
         deadline = time.time() + 2.0
@@ -529,7 +529,7 @@ def test_a_question_soon_after_an_answer_needs_no_wake_word(monkeypatch):
     monkeypatch.setattr(s, "_transcribe", lambda audio: "en morgen?")
     monkeypatch.setattr(s, "_drain", lambda: None)  # keep the frames this test queues up front
     s.speak("Het is tien over twaalf.")
-    for level in [0.0] * 3 + [0.2] * 6 + [0.0] * 20:  # silence, a question, then silence again
+    for level in [0.0] * 3 + [0.2] * 6 + [0.0] * 30:  # silence, a question, then silence again
         s._frames.put(np.full(FRAME, level, dtype="float32"))
     woken = []
     monkeypatch.setattr(s.wake, "detect", lambda frame: woken.append(1) or True)
@@ -547,7 +547,7 @@ def test_the_follow_up_window_expires_back_to_the_wake_word(monkeypatch):
 
     def wake(frame):  # reached only after the window passed in silence
         calls.append(1)
-        for level in [0.2] * 6 + [0.0] * 20:
+        for level in [0.2] * 6 + [0.0] * 30:
             s._frames.put(np.full(FRAME, level, dtype="float32"))
         return True
 

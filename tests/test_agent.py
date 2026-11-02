@@ -260,3 +260,23 @@ def test_fallback_answers_follow_a_dutch_request(tmp_path):
     a = agent(tmp_path, RaisingLLM(ValueError("the model ran out of tokens while thinking")), ran)
     slow = "Daar moest ik te lang over nadenken. Vraag het iets korter."
     assert a.handle("Gooi het weg, dat wil ik niet meer") == slow
+
+
+def test_confirm_questions_follow_a_dutch_request(tmp_path):
+    from iris.agent import _describe
+
+    assert _describe("trash_file", {"path": "a.txt"}, nl=True) == "a.txt naar de prullenbak verplaatsen?"
+    assert _describe("trash_file", {"path": "a.txt"}) == "Move a.txt to the trash?"
+    assert _describe("close_window", {"title": "Kladblok"}, nl=True).startswith("Het venster Kladblok sluiten?")
+    assert "Dat kan ik nog niet" in _describe("request_capability", {"tool_name": "hue"}, nl=True)
+    asked = []
+    calls = iter([[ToolCall("1", "trash_file", {"path": "~/a.txt"})], []])
+
+    class LLM:
+        def chat(self, messages, tools):
+            c = next(calls)
+            return Reply("" if c else "Goed.", c, {"role": "assistant", "content": ""})
+
+    a = Agent(LLM(), lambda q: asked.append(q) or False, Journal(tmp_path / "j.jsonl"))
+    a.handle("Gooi het bestand a.txt maar weg, ik wil het niet meer")
+    assert asked == ["~/a.txt naar de prullenbak verplaatsen?"]

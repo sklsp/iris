@@ -58,11 +58,15 @@ _SORRY = {
 }
 
 
-def _sorry(key: str, request: str) -> str:
+def _is_dutch(text: str) -> bool:
     from iris.eval import answer_language  # local: iris.eval imports this module
 
+    return answer_language(text) == "nl"
+
+
+def _sorry(key: str, request: str) -> str:
     english, dutch = _SORRY[key]
-    return dutch if answer_language(request) == "nl" else english
+    return dutch if _is_dutch(request) else english
 
 
 class Agent:
@@ -70,6 +74,7 @@ class Agent:
                  tools: dict[str, Tool] | Callable[[], dict[str, Tool]] = active_tools, today: str | None = None):
         # a callable is asked again on every request, so a newly enabled plugin or approved skill needs no restart
         self.llm, self.confirm, self.journal, self._tools = llm, confirm, journal, tools
+        self._dutch = False
         self.today = today  # a fixed date for the eval, whose fixtures are written for one day; None is the real date
         self.tools = tools() if callable(tools) else tools
         self.messages: list[dict] = [{"role": "system", "content": system_prompt(today=self.today)}]
@@ -79,6 +84,7 @@ class Agent:
             self.tools = self._tools()
         self.messages[0] = {"role": "system", "content": system_prompt(today=self.today)}
         self.messages.append({"role": "user", "content": request})
+        self._dutch = _is_dutch(request)  # confirm questions follow the language of the latest request
         self._trim()
         self.journal.log(event="request", text=request)
         schemas = [t.schema() for t in self.tools.values()]
@@ -129,7 +135,7 @@ class Agent:
         if tier == NEVER:
             self.journal.log(**entry, outcome="refused")
             return "refused: this action is never automated. The user must do it themselves."
-        if tier == CONFIRM and not self.confirm(_describe(call.name, call.args)):
+        if tier == CONFIRM and not self.confirm(_describe(call.name, call.args, self._dutch)):
             self.journal.log(**entry, outcome="declined")
             return "declined: the user said no. Do not retry this action."
         try:
@@ -149,57 +155,81 @@ class Agent:
             return f"error: {exc}"
 
 
-def _describe(name: str, args: dict) -> str:
+def _describe(name: str, args: dict, nl: bool = False) -> str:
+    """The question Iris asks out loud before a confirm tool runs; Dutch when the request was Dutch."""
+    def say(english: str, dutch: str) -> str:
+        return dutch if nl else english
+
     if name == "click":
-        return f"Click '{args.get('control')}' in {args.get('window')}?"
+        c, w = args.get("control"), args.get("window")
+        return say(f"Click '{c}' in {w}?", f"Klik op '{c}' in {w}?")
     if name == "type_text":
-        where = args.get("into") or args.get("window")
-        return f"Type '{str(args.get('text'))[:60]}' into {where}?"
+        where, text = args.get("into") or args.get("window"), str(args.get("text"))[:60]
+        return say(f"Type '{text}' into {where}?", f"'{text}' typen in {where}?")
     if name == "trash_file":
-        return f"Move {args.get('path')} to the trash?"
+        return say(f"Move {args.get('path')} to the trash?", f"{args.get('path')} naar de prullenbak verplaatsen?")
     if name == "write_file":
-        q = f"Write {args.get('path')}?"
+        q = say(f"Write {args.get('path')}?", f"{args.get('path')} schrijven?")
         if args.get("overwrite"):
-            q += " It replaces the old file; the old one goes to the trash."
+            q += say(" It replaces the old file; the old one goes to the trash.",
+                     " Het vervangt het oude bestand; het oude gaat naar de prullenbak.")
         return q
     if name == "move_file":
-        return f"Move {args.get('source')} to {args.get('destination')}?"
+        src, dst = args.get("source"), args.get("destination")
+        return say(f"Move {src} to {dst}?", f"{src} verplaatsen naar {dst}?")
     if name == "copy_file":
-        return f"Copy {args.get('source')} to {args.get('destination')}?"
+        src, dst = args.get("source"), args.get("destination")
+        return say(f"Copy {src} to {dst}?", f"{src} kopiëren naar {dst}?")
     if name == "make_document":
-        return f"Make {args.get('path')} as a Word document?"
+        return say(f"Make {args.get('path')} as a Word document?", f"{args.get('path')} maken als Word-document?")
     if name == "make_presentation":
-        return f"Make {args.get('path')} as a PowerPoint presentation?"
+        return say(f"Make {args.get('path')} as a PowerPoint presentation?",
+                   f"{args.get('path')} maken als PowerPoint-presentatie?")
     if name == "make_spreadsheet":
-        return f"Make {args.get('path')} as a spreadsheet?"
+        return say(f"Make {args.get('path')} as a spreadsheet?", f"{args.get('path')} maken als spreadsheet?")
     if name == "click_on_screen":
         target, window = str(args.get("target")), str(args.get("window") or "")
-        if not window or window.lower() in target.lower():
-            return f"Click {target} on the screen?" if not window else f"Click {target}?"
-        return f"Click {target} on {window}?"
+        if not window:
+            return say(f"Click {target} on the screen?", f"Klikken op {target} op het scherm?")
+        if window.lower() in target.lower():
+            return say(f"Click {target}?", f"Klikken op {target}?")
+        return say(f"Click {target} on {window}?", f"Klikken op {target} in {window}?")
     if name == "close_window":
-        return f"Close the window {args.get('title')}? Unsaved work may ask to be saved."
+        t = args.get("title")
+        return say(f"Close the window {t}? Unsaved work may ask to be saved.",
+                   f"Het venster {t} sluiten? Niet opgeslagen werk kan nog vragen om op te slaan.")
     if name == "note_remove":
         matches = find_notes(str(args.get("query", "")))
         if len(matches) == 1:
-            return f"Remove the note '{matches[0][:60]}'?"
-        return f"Remove the note matching {args.get('query')}?"
+            return say(f"Remove the note '{matches[0][:60]}'?", f"De notitie '{matches[0][:60]}' weghalen?")
+        query = args.get("query")
+        return say(f"Remove the note matching {query}?", f"De notitie over {query} weghalen?")
     if name == "press_keys":
-        return f"Press {args.get('keys')} in {args.get('window')}?"
+        k, w = args.get("keys"), args.get("window")
+        return say(f"Press {k} in {w}?", f"{k} indrukken in {w}?")
     if name == "cline_start":
-        repo = args.get("repo") or ""
-        return (f"Start a new Cline session for {args.get('agent')} in {repo or 'the default folder'} "
-                f"with the next queued prompt?")
+        agent, repo = args.get("agent"), args.get("repo") or ""
+        return say(f"Start a new Cline session for {agent} in {repo or 'the default folder'} "
+                   f"with the next queued prompt?",
+                   f"Een nieuwe Cline-sessie starten voor {agent} in {repo or 'de standaardmap'} met de volgende "
+                   f"prompt uit de wachtrij?")
+    skill = args.get("tool_name")
     if name == "request_capability":
-        return (f"I can't do that yet. Shall I build a new skill '{args.get('tool_name')}' for it? A coding agent "
-                f"writes it, and I only use it after you approve it.")
+        return say(f"I can't do that yet. Shall I build a new skill '{skill}' for it? A coding agent writes it, and I "
+                   f"only use it after you approve it.",
+                   f"Dat kan ik nog niet. Zal ik er een nieuwe skill '{skill}' voor bouwen? Een coding agent schrijft "
+                   f"hem, en ik gebruik hem pas nadat jij hem hebt goedgekeurd.")
     if name == "capability_build":
-        return f"Build the skill '{args.get('tool_name')}' again with the coding agent?"
+        return say(f"Build the skill '{skill}' again with the coding agent?",
+                   f"De skill '{skill}' opnieuw laten bouwen door de coding agent?")
     if name == "capability_check":
-        return f"Check the new skill '{args.get('tool_name')}'? This runs its tests."
+        return say(f"Check the new skill '{skill}'? This runs its tests.",
+                   f"De nieuwe skill '{skill}' controleren? Dan draaien zijn tests.")
     if name == "capability_approve":
-        return (f"Approve the skill '{args.get('tool_name')}'? From then on I can run its code on this PC. "
-                f"Review it on the dashboard first.")
+        return say(f"Approve the skill '{skill}'? From then on I can run its code on this PC. Review it on the "
+                   f"dashboard first.",
+                   f"De skill '{skill}' goedkeuren? Vanaf dan mag ik zijn code op deze pc draaien. Bekijk hem eerst "
+                   f"op het dashboard.")
     if name == "capability_remove":
-        return f"Remove the skill '{args.get('tool_name')}'?"
-    return f"Run {name} with {args}?"
+        return say(f"Remove the skill '{skill}'?", f"De skill '{skill}' verwijderen?")
+    return say(f"Run {name} with {args}?", f"{name} uitvoeren met {args}?")

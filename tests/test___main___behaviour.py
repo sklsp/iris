@@ -316,3 +316,19 @@ def test_main_installs_timers_that_speak_through_say(tmp_path, monkeypatch, caps
     out = capsys.readouterr().out.splitlines()
     assert out == ["Iris: Timer pasta is done."]
 
+
+
+def test_startup_on_status_off(tmp_path, monkeypatch, capsys):
+    import sys
+
+    from iris.__main__ import startup_main
+
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path / "Startup"))
+    assert startup_main(["status"]) == 0 and capsys.readouterr().out.strip() == "off"
+    assert startup_main(["on"]) == 0
+    text = (tmp_path / "Startup" / "Iris.cmd").read_text(encoding="utf-8")
+    assert f'start "Iris" /min "{sys.executable}" -m iris --voice' in text
+    assert startup_main([]) == 0 and capsys.readouterr().out.splitlines()[-1].startswith("on (")
+    assert startup_main(["off"]) == 0 and not (tmp_path / "Startup" / "Iris.cmd").exists()
+    assert startup_main(["off"]) == 0  # already off is fine
+    assert startup_main(["sideways"]) == 2

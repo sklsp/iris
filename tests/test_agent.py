@@ -250,3 +250,13 @@ def test_a_model_that_ran_out_of_tokens_gets_its_own_answer(tmp_path):
 
     answer = Agent(LLM(), lambda q: True, Journal(tmp_path / "j.jsonl"), {}).handle("Maak een PowerPoint")
     assert answer == "That took me too long to think through. Try asking it in a shorter way."
+
+
+def test_fallback_answers_follow_a_dutch_request(tmp_path):
+    ran = []
+    a = agent(tmp_path, RaisingLLM(urllib.error.URLError("connection refused")), ran)
+    assert a.handle("Kan je even kijken wat er op mijn scherm staat?") == \
+        "Ik kan het model in LM Studio nu niet bereiken. Probeer het zo nog eens."
+    a = agent(tmp_path, RaisingLLM(ValueError("the model ran out of tokens while thinking")), ran)
+    slow = "Daar moest ik te lang over nadenken. Vraag het iets korter."
+    assert a.handle("Gooi het weg, dat wil ik niet meer") == slow

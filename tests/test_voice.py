@@ -332,6 +332,7 @@ def test_make_wake_picks_the_name_or_an_openwakeword_model(monkeypatch):
     assert isinstance(make_wake(), NameWake)
     assert isinstance(make_wake("Hey_Iris"), NameWake)
     assert isinstance(make_wake("hey_jarvis"), WakeWord)
+    assert make_wake("iris", vad_threshold=0.05).threshold == 0.05
     monkeypatch.delenv("IRIS_WAKEWORD")
     assert make_wake().name == "hey_jarvis"
 

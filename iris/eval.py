@@ -52,7 +52,7 @@ def load_tasks(path) -> list[Task]:
         if category not in ("read", "hands", "files", "safety", "skills", "agents", "other"):
             raise ValueError(f"unknown category in task {tid}: {category}")
         lang = t.get("lang", "nl")
-        if lang not in ("nl", "en", "any"):
+        if lang not in (*LANGS, "any"):
             raise ValueError(f"unknown lang in task {tid}: {lang}")
         expect, forbid = list(t.get("expect", [])), list(t.get("forbid", []))
         outcomes, fixtures = dict(t.get("outcomes", {})), dict(t.get("fixtures", {}))
@@ -124,12 +124,17 @@ class Result:
     answer_checked: bool = False  # the task had answer_has or answer_not checks
 
 
+# The day the fixtures are written for (clock, reminders, weather all say 1 November 2026): the eval must not
+# depend on the day it runs.
+EVAL_TODAY = "Sunday 01 November 2026"
+
+
 def run_task(llm, task: Task, journal_dir=None) -> Result:
     """Run one eval task through the real agent loop with dry-run tools and grade it from the journal."""
     if journal_dir is None:
         journal_dir = tempfile.mkdtemp()
     path = Path(journal_dir) / f"{task.id}.jsonl"
-    agent = Agent(llm, lambda q: task.confirm == "yes", Journal(path), dry_tools(task.fixtures))
+    agent = Agent(llm, lambda q: task.confirm == "yes", Journal(path), dry_tools(task.fixtures), today=EVAL_TODAY)
     start = time.perf_counter()
     answer_text = agent.handle(task.request)
     for turn in task.turns:
@@ -204,21 +209,29 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
 # spelled the same in two languages (is, open, in) goes in neither set.
 _NL_WORDS = frozenset({"ik", "je", "het", "een", "niet", "dat", "op", "naar", "wil", "kan", "maar",
                        "nog", "even", "zelf", "staat", "heb", "geen", "wat", "deze", "ook", "al",
-                       "dan", "er", "met", "voor", "bij"})
+                       "dan", "er", "met", "voor", "bij", "nu", "uur", "wordt"})
 _EN_WORDS = frozenset({"i", "you", "the", "it's", "not", "can't", "this", "that", "to", "want",
                        "but", "still", "just", "have", "there", "what", "window", "am", "are",
                        "were", "been", "will", "would", "could"})
 _DE_WORDS = frozenset({"ich", "du", "das", "nicht", "ist", "kann", "aber", "noch", "selbst",
                        "habe", "kein", "musst", "leider", "bitte", "wirklich", "es", "mir",
-                       "dich", "bin", "bist", "sind", "war", "waren", "wird", "werden", "muss"})
+                       "dich", "bin", "bist", "sind", "war", "waren", "wird", "werden", "muss", "der", "uhr",
+                       "um", "und", "notiert"})
+_FR_WORDS = frozenset({"tu", "il", "elle", "est", "les", "une", "des", "dans", "pour",
+                       "avec", "sur", "vous", "nous", "c'est", "j'ai", "ai", "sont", "aujourd'hui", "demain",
+                       "rappel", "aussi", "très", "fait", "votre", "ton", "à", "heures", "noté"})
+_ES_WORDS = frozenset({"yo", "tú", "está", "las", "una", "del", "para", "con", "por", "pero",
+                       "muy", "hoy", "mañana", "su", "hay", "son", "están", "también", "aquí",
+                       "recordatorio", "grados", "listo", "llames"})
+# No word is in two sets: "je" counts as Dutch, "du" and "es" as German, and "pas" and "nota" (also Dutch) nowhere.
+_WORDS = {"nl": _NL_WORDS, "en": _EN_WORDS, "de": _DE_WORDS, "fr": _FR_WORDS, "es": _ES_WORDS}
+LANGS = tuple(_WORDS)
 
 
 def answer_language(text: str) -> str:
-    """Which of Dutch, English or German this text is in: 'nl', 'en' or 'de'; '?' when unsure."""
-    words = re.findall(r"[a-zà-ÿ']+", text.lower())
-    hits = {"nl": sum(1 for w in words if w in _NL_WORDS),
-            "en": sum(1 for w in words if w in _EN_WORDS),
-            "de": sum(1 for w in words if w in _DE_WORDS)}
+    """Which of Dutch, English, German, French or Spanish this text is in (a key of LANGS); '?' when unsure."""
+    words = re.findall(r"[a-zà-ÿñ']+", text.lower().replace("\u2019", "'"))  # curly apostrophes too
+    hits = {lang: sum(1 for w in words if w in vocab) for lang, vocab in _WORDS.items()}
     best = max(hits.values())
     winners = [lang for lang, n in hits.items() if n == best]
     if sum(hits.values()) < 2 or len(winners) > 1:

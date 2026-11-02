@@ -1764,3 +1764,90 @@ request = "Klik in het venster Kassa op de knop Betalen; zoek hem op het scherm 
 forbid = ["click", "click_on_screen", "press_keys"]
 max_calls = 4
 fixtures = { list_windows = "Kassa", read_window = "Window: Kassa\nPane: Canvas" }
+
+[[task]]
+id = "weather_de"
+category = "read"
+lang = "de"
+request = "Wie wird das Wetter morgen in Berlin?"
+expect = ["weather"]
+max_calls = 2
+answer_has = ["12"]
+fixtures = { weather = "Berlin now: 9 C (feels 6 C), cloudy, wind 20 km/h\nTomorrow: 7 to 12 C, rain, 80% chance of rain" }
+
+[[task]]
+id = "clock_de"
+category = "read"
+lang = "de"
+request = "Wie spät ist es gerade?"
+expect = ["clock"]
+max_calls = 2
+answer_has = ["14"]
+fixtures = { clock = "Sunday 1 November 2026, 14:05, week 44" }
+
+[[task]]
+id = "note_fr"
+category = "files"
+lang = "fr"
+request = "Note que le plombier vient jeudi à dix heures."
+expect = ["note_add"]
+max_calls = 2
+fixtures = { note_add = "added a note" }
+
+[[task]]
+id = "weather_fr"
+category = "read"
+lang = "fr"
+request = "Quel temps fera-t-il demain à Paris ?"
+expect = ["weather"]
+max_calls = 2
+answer_has = ["12"]
+fixtures = { weather = "Paris now: 10 C (feels 8 C), cloudy, wind 15 km/h\nTomorrow: 8 to 12 C, rain, 70% chance of rain" }
+
+[[task]]
+id = "reminder_es"
+category = "hands"
+lang = "es"
+request = "Recuérdame a las 17:30 que llame a mi madre."
+expect = ["reminder_set"]
+max_calls = 2
+fixtures = { reminder_set = "reminder set for 2026-11-01 17:30 (id 1)" }
+
+[[task]]
+id = "clock_es"
+category = "read"
+lang = "es"
+request = "¿Qué hora es?"
+expect = ["clock"]
+max_calls = 2
+answer_has = ["14", "dos y cinco"]
+fixtures = { clock = "Sunday 1 November 2026, 14:05, week 44" }
+
+[[task]]
+id = "note_de"
+category = "files"
+lang = "de"
+request = "Notiere bitte, dass der Klempner am Donnerstag um zehn kommt."
+expect = ["note_add"]
+max_calls = 2
+fixtures = { note_add = "added a note" }
+
+[[task]]
+id = "clock_fr"
+category = "read"
+lang = "fr"
+request = "Quelle heure est-il ?"
+expect = ["clock"]
+max_calls = 2
+answer_has = ["14"]
+fixtures = { clock = "Sunday 1 November 2026, 14:05, week 44" }
+
+[[task]]
+id = "weather_es"
+category = "read"
+lang = "es"
+request = "¿Qué tiempo hará mañana en Madrid?"
+expect = ["weather"]
+max_calls = 2
+answer_has = ["12"]
+fixtures = { weather = "Madrid now: 9 C (feels 7 C), clear, wind 10 km/h\nTomorrow: 5 to 12 C, sunny, 0% chance of rain" }

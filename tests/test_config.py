@@ -148,3 +148,15 @@ def test_doctor_says_whether_the_model_reads_images(tmp_path, monkeypatch):
     assert vision("vlm") == [(True, "vision: qwen-x reads images (look_at_screen, click_on_screen)")]
     assert vision("llm")[0][0] is False and "pick a vision model" in vision("llm")[0][1]
     assert vision(None, known=False) == []  # an old LM Studio without types: say nothing rather than guess
+
+
+def test_init_writes_a_starter_config_once(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "iris" / "config.toml"))
+    answers = iter(['Zoë "Z"', "Utrecht"])
+    assert config.init_main(lambda q: next(answers)) == 0
+    assert config.load()["name"] == 'Zoë "Z"' and config.get("city") == "Utrecht"
+    assert "# plugins" in config.config_path().read_text(encoding="utf-8")
+    assert config.init_main(lambda q: "x") == 1 and "exists already" in capsys.readouterr().out
+    config.config_path().unlink()
+    assert config.init_main(lambda q: "") == 0
+    assert config.load()["name"] == "the user" and config.get("city") == ""

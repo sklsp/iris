@@ -1282,6 +1282,7 @@ function renderSkills(d){
     head.appendChild(btns);
     card.appendChild(head);
     card.appendChild(el("div", "sk-req", "Asked: " + s.request));
+    if (s.source) card.appendChild(el("div", "sk-prob", "Imported from " + s.source + ": someone else wrote this code. Read it all before approving."));
     for (const p of s.problems || []) card.appendChild(el("div", "sk-prob", p));
     for (const f of Object.keys(s.files)){
       const det = el("details");

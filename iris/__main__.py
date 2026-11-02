@@ -3,13 +3,16 @@ python -m iris --voice         wake word mode: say "hey jarvis" (IRIS_WAKEWORD),
 python -m iris --push-to-talk  old voice mode: press Enter to stop recording
 python -m iris dashboard       read-only status page at http://127.0.0.1:8765 (add --port N if taken)
 python -m iris autopilot       wait for a run in --repo to finish, then ask before starting the next queued prompt
+python -m iris init            write a starter ~/.iris/config.toml (asks your name and city)
 python -m iris doctor          check the setup (LM Studio, model, config, plugins, voice) and say what to fix
+python -m iris startup on      start voice mode at login in a minimized console (off, status)
 python -m iris skill list      the skills Iris built; `skill export NAME` zips an approved one to share,
                                `skill import FILE [--tier safe]` adds a shared one for review (confirm by default)"""
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import threading
 import zipfile
@@ -20,6 +23,31 @@ from iris import __version__, skills, tools
 from iris.agent import Agent, Journal
 from iris.llm import LMStudio
 from iris.voice import is_yes, speak
+
+
+def startup_dir() -> Path:
+    """The user's Startup folder (IRIS_STARTUP_DIR overrides it for tests)."""
+    return Path(os.environ.get("IRIS_STARTUP_DIR")
+                or Path(os.environ.get("APPDATA", Path.home())) / "Microsoft/Windows/Start Menu/Programs/Startup")
+
+
+def startup_main(argv: list[str]) -> int:
+    """`iris startup on|off|status`: start voice mode at login, in a minimized console you can see and close."""
+    cmd = startup_dir() / "Iris.cmd"
+    what = argv[0] if argv else "status"
+    if what == "on":
+        cmd.parent.mkdir(parents=True, exist_ok=True)
+        cmd.write_text(f'@echo off\nstart "Iris" /min "{sys.executable}" -m iris --voice\n', encoding="utf-8")
+        print(f"Iris starts in voice mode at login ({cmd}). Let LM Studio start its server at login too.")
+    elif what == "off":
+        cmd.unlink(missing_ok=True)
+        print("Iris no longer starts at login.")
+    elif what == "status":
+        print(f"on ({cmd})" if cmd.exists() else "off")
+    else:
+        print("usage: iris startup on|off|status", file=sys.stderr)
+        return 2
+    return 0
 
 
 def skill_main(argv: list[str]) -> int:
@@ -76,10 +104,16 @@ def main() -> None:
                 port = int(args[i + 1])
         serve(port=port)
         return
+    if len(sys.argv) > 1 and sys.argv[1] == "init":
+        from iris.config import init_main
+
+        raise SystemExit(init_main())
     if len(sys.argv) > 1 and sys.argv[1] == "doctor":
         from iris.doctor import main as doctor_main
 
         raise SystemExit(doctor_main())
+    if len(sys.argv) > 1 and sys.argv[1] == "startup":
+        raise SystemExit(startup_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "skill":
         raise SystemExit(skill_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "autopilot":

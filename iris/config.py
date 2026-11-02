@@ -12,6 +12,7 @@ applies to the next request without a restart.
 
 from __future__ import annotations
 
+import json
 import os
 import tomllib
 from pathlib import Path
@@ -60,3 +61,29 @@ def folders() -> list[Path]:
         if p not in out:
             out.append(p)
     return out
+
+
+TEMPLATE = """# Iris settings; every key is optional. Read again on every request, so edits apply at once.
+name = {name}
+{city}
+# folders = ["D:/Projects"]                # where file tools may write, besides your home folder
+# builder = ["claude", "-p", "{{prompt}}"]   # the coding agent that builds new skills; Cline when unset
+# plugins = ["lmstudio"]                   # opt-in tool groups: lmstudio, comfyui, agents, leadscan, conceptkit
+"""
+
+
+def init_main(ask=input) -> int:
+    """`iris init`: ask two questions and write a starter config.toml; never overwrites one."""
+    path = config_path()
+    if path.exists():
+        print(f"{path} exists already; edit it by hand.")
+        return 1
+    name = ask("What should Iris call you? ").strip() or DEFAULTS["name"]
+    city = ask("Your city, for the weather (Enter to skip): ").strip()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # json.dumps quotes a string the way TOML's basic strings want it
+    text = TEMPLATE.format(name=json.dumps(name, ensure_ascii=False),
+                           city=f"city = {json.dumps(city, ensure_ascii=False)}" if city else '# city = "Utrecht"')
+    path.write_text(text, encoding="utf-8")
+    print(f"wrote {path}. Next: iris doctor")
+    return 0

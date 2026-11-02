@@ -158,10 +158,10 @@ class NameWake:
         return " ".join(s.text.strip() for s in segments).strip()
 
 
-def make_wake(name: str | None = None) -> WakeWord | NameWake:
+def make_wake(name: str | None = None, vad_threshold: float | None = None) -> WakeWord | NameWake:
     """"iris" or "hey_iris" wakes on the name through Whisper; anything else is an openWakeWord model."""
     name = name or os.environ.get("IRIS_WAKEWORD", "hey_jarvis")
-    return NameWake() if name.lower() in ("iris", "hey_iris") else WakeWord(name)
+    return NameWake(threshold=vad_threshold) if name.lower() in ("iris", "hey_iris") else WakeWord(name)
 
 
 class Voice:
@@ -208,7 +208,7 @@ class VoiceSession:
                  vad_threshold: float | None = None, silence_seconds: float = SILENCE_SECONDS,
                  max_record_seconds: float = 30, speaker: Speaker | None = None):
         self.whisper_name = whisper_model or WHISPER_MODEL
-        self.wake = make_wake(wake_word)
+        self.wake = make_wake(wake_word, vad_threshold)
         self.vad_threshold = vad_threshold
         self.silence_seconds = silence_seconds
         self.max_record_seconds = max_record_seconds

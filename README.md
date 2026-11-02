@@ -31,10 +31,12 @@ Iris: Sending messages is something I never do myself. I can open a draft; you p
   and permanent deletes stay with you.
 - **Self-extending, safely.** When you ask for something no tool can do, Iris plans a skill, a coding agent (Cline or
   your own) builds it with tests, and you approve it. Approved code is hashed, frozen and run out of process.
-- **Hands that read the screen.** Windows UI Automation gives named buttons and fields instead of guessed pixels.
+- **Hands that read the screen.** Windows UI Automation gives named buttons and fields instead of guessed pixels;
+  for apps that expose nothing (games, canvas apps, remote desktops) Iris looks at a screenshot with the same
+  local model and can click what it sees, after asking.
 - **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
   email drafts, notes, reminders and timers.
-- **Measured.** An eval of 198 tasks runs against the real model and the result is published below, including the
+- **Measured.** An eval of 207 tasks runs against the real model and the result is published below, including the
   safety traps.
 - **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (SAPI or
   Kokoro) all run on your machine.
@@ -68,6 +70,7 @@ flowchart LR
 3. Check the setup, then talk to it:
 
    ```bash
+   .venv\Scripts\iris init          # optional: your name and city in ~/.iris/config.toml
    .venv\Scripts\iris doctor        # says what is missing and how to fix it
    .venv\Scripts\iris               # type requests
    .venv\Scripts\iris --voice       # say "hey jarvis", then your request
@@ -76,7 +79,8 @@ flowchart LR
 
 ## Configuration
 
-Everything is optional. `~/.iris/config.toml` (or the file `IRIS_CONFIG` names) is read again on every request:
+Everything is optional. `~/.iris/config.toml` (or the file `IRIS_CONFIG` names; `iris init` writes a starter one) is
+read again on every request:
 
 ```toml
 name = "Sam"                          # how Iris refers to you
@@ -214,9 +218,17 @@ transcribes, answers, and waits again. The microphone stays open the whole time,
 word while Iris is still talking cuts the answer short and your next words are taken as the next
 command, without saying the wake word twice.
 
+### Start at login
+
+`iris startup on` starts voice mode when you log in, in a minimized console window you can see and close;
+`iris startup off` stops that. Let LM Studio start its local server at login too (its settings have an option for
+it), or Iris has no model to talk to.
+
 ### Wake word
 
-The default is the built-in openWakeWord model **hey jarvis**: it is tiny and runs on any CPU. To wake Iris by
+The default is the built-in openWakeWord model **hey jarvis**: it is tiny and runs on any CPU. Iris downloads it on
+first use and does not ship it; openWakeWord's pre-trained models are licensed CC BY-NC-SA 4.0 (non-commercial)
+because of their training data, so check that before using it commercially. To wake Iris by
 her own name instead, set `IRIS_WAKEWORD=iris`: short utterances are then checked by Whisper `tiny` with "Iris" as a
 hotword (about 0.6 s on a CPU, `IRIS_WAKE_WHISPER` picks another size), so "Iris" or "hey Iris" works without a
 trained model, at the cost of transcribing every short sound in the room.
@@ -290,16 +302,16 @@ tab, not an error page.
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-11-02 01:46 on `qwen3.8-27b`: 580/594 passed (97.6%), median 4.2 s, 0.29 confirmations per task, safety: 0 forbidden, 11 refused attempts, 0 unknown tools, language: 3 wrong, answers: 0/117 wrong, 188/198 pass every time.
+Run of 2026-11-02 04:06 on `qwen3.8-27b`: 609/621 passed (98.1%), median 4.1 s, 0.28 confirmations per task, safety: 0 forbidden, 11 refused attempts, 0 unknown tools, language: 0 wrong, answers: 0/135 wrong, 200/207 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 57/57 | 100.0% |
-| files | 98/102 | 96.1% |
-| hands | 104/105 | 99.0% |
-| read | 118/123 | 95.9% |
-| safety | 143/144 | 99.3% |
-| skills | 60/63 | 95.2% |
+| agents | 55/57 | 96.5% |
+| files | 103/108 | 95.4% |
+| hands | 108/108 | 100.0% |
+| read | 138/141 | 97.9% |
+| safety | 144/144 | 100.0% |
+| skills | 61/63 | 96.8% |
 
 <!-- eval:end -->
 
@@ -308,7 +320,7 @@ Run of 2026-11-02 01:46 on `qwen3.8-27b`: 580/594 passed (97.6%), median 4.2 s, 
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether the user says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 198 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 207 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.
@@ -422,10 +434,12 @@ shows with its own badge.
 ## Limits
 
 - Windows only: the hands are Windows UI Automation. Apps that expose no accessibility tree (some games and canvas
-  apps) can be opened, focused and given keys, but not read.
+  apps) are read and clicked by sight, which is slower (about 15 seconds a look) and needs a model that reads
+  images.
 - The score depends on the model. The published eval is for `qwen3.8-27b` on a 24 GB GPU; smaller models pick tools
   less reliably, and the eval tells you how much less on your own setup.
-- Tested in Dutch and English. Iris answers in the language you speak.
+- Tested mostly in Dutch and English, with a few German, French and Spanish tasks. Iris answers in the language
+  you speak.
 - On purpose, never: logging in, paying, sending messages to people and permanent deletes. Iris opens the draft or
   the page and you take the last step.
 

@@ -146,12 +146,12 @@ def test_task_lang_explicit_en_loads(tmp_path):
 
 
 def test_task_lang_bad_value_refused(tmp_path):
-    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "Hoi"\nlang = "fr"\n')
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "Hoi"\nlang = "xx"\n')
     try:
         ev.load_tasks(p)
         raise AssertionError("expected ValueError")
     except ValueError as e:
-        assert str(e) == "unknown lang in task a: fr"
+        assert str(e) == "unknown lang in task a: xx"
 
 
 def test_turns_default_empty_and_load_from_toml(tmp_path):
@@ -533,6 +533,20 @@ def test_answer_language_english():
 
 def test_answer_language_german():
     assert ev.answer_language("Das geht leider nicht, das musst du selbst machen.") == "de"
+
+
+def test_answer_language_french_and_spanish():
+    assert ev.answer_language("Demain il fera 12 degrés avec de la pluie.") == "fr"
+    assert ev.answer_language("Mañana hará 12 grados y lloverá.") == "es"
+    assert ev.answer_language("Son las 14:05 del domingo.") == "es"
+
+
+def test_language_words_never_overlap_and_tasks_accept_every_language(tmp_path):
+    words = list(ev._WORDS.values())
+    assert all(not (a & b) for i, a in enumerate(words) for b in words[i + 1:])
+    f = tmp_path / "t.toml"
+    f.write_text('[[task]]\nid = "x"\nrequest = "¿Qué hora es?"\nlang = "es"\n', encoding="utf-8")
+    assert ev.load_tasks(f)[0].lang == "es"
 
 
 def test_answer_language_one_word_and_empty_are_unknown():
@@ -954,15 +968,15 @@ def test_eval_command_json_model(tmp_path, monkeypatch):
 
 def test_shipped_tasks_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 198
+    assert len(tasks) == 207
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
-    assert (ids[0], ids[-1]) == ("gpu_temp", "click_sight_pay")
+    assert (ids[0], ids[-1]) == ("gpu_temp", "weather_es")
 
 
 def test_shipped_task_ids_unique_and_tools_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 198
+    assert len(tasks) == 207
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
 
@@ -1372,3 +1386,18 @@ def test_failed_from_unreadable_file_returns_two(tmp_path, monkeypatch, capsys):
                   "--failed-from", str(missing)])
     assert rc == 2 and f"cannot read {missing}" in capsys.readouterr().out
 
+
+
+def test_the_eval_pins_the_date_its_fixtures_are_written_for(tmp_path):
+    seen = []
+
+    class LLM:
+        def chat(self, messages, tools):
+            seen.append(messages[0]["content"])
+            from iris.llm import Reply
+
+            return Reply("Klaar.", [], {"role": "assistant", "content": "Klaar."})
+
+    task = ev.Task(id="t", request="Hoe laat is het?")
+    ev.run_task(LLM(), task, tmp_path)
+    assert ev.EVAL_TODAY in seen[0] and ev.EVAL_TODAY.startswith("Sunday 01 November")

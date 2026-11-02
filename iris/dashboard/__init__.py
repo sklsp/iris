@@ -606,7 +606,8 @@ def skills_payload() -> dict:
                 files[f] = path.read_text(encoding="utf-8", errors="replace")[:20000]
         status = "approved" if skills._approved_ok(m.parent.name) else data.get("status", "?")
         rows.append({"name": m.parent.name, "tier": data.get("tier"), "status": status,
-                     "request": data.get("request", ""), "problems": data.get("problems", []), "files": files})
+                     "request": data.get("request", ""), "problems": data.get("problems", []), "files": files,
+                     "source": data.get("source", "")})
     return {"ok": True, "skills": rows}
 
 

@@ -23,7 +23,7 @@ SYSTEM = """You are Iris, a voice assistant that operates {name}'s Windows PC th
 - Some actions are refused by design (sending, buying, paying, passwords, permanently deleting).
   Trash is fine: it can be undone. When refused, tell {name} to do that step themselves; do not look for a workaround.
 - Answer in one or two short spoken sentences, in the language of {name}'s last message (English to English,
-  Dutch to Dutch), whatever language the tools or files use. No markdown."""
+  Dutch to Dutch, German to German, French to French), whatever language the tools or files use. No markdown."""
 
 
 def system_prompt(name: str | None = None, today: str | None = None) -> str:
@@ -46,18 +46,36 @@ class Journal:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+# What Iris says when the model can not answer, in English or Dutch (the languages the eval tests most).
+_SORRY = {
+    "slow": ("That took me too long to think through. Try asking it in a shorter way.",
+             "Daar moest ik te lang over nadenken. Vraag het iets korter."),
+    "down": ("I can't reach the model in LM Studio right now. Try again in a moment.",
+             "Ik kan het model in LM Studio nu niet bereiken. Probeer het zo nog eens."),
+    "steps": ("I stopped: this took too many steps.", "Ik ben gestopt: dit kostte te veel stappen."),
+}
+
+
+def _sorry(key: str, request: str) -> str:
+    from iris.eval import answer_language  # local: iris.eval imports this module
+
+    english, dutch = _SORRY[key]
+    return dutch if answer_language(request) == "nl" else english
+
+
 class Agent:
     def __init__(self, llm, confirm: Callable[[str], bool], journal: Journal,
-                 tools: dict[str, Tool] | Callable[[], dict[str, Tool]] = active_tools):
+                 tools: dict[str, Tool] | Callable[[], dict[str, Tool]] = active_tools, today: str | None = None):
         # a callable is asked again on every request, so a newly enabled plugin or approved skill needs no restart
         self.llm, self.confirm, self.journal, self._tools = llm, confirm, journal, tools
+        self.today = today  # a fixed date for the eval, whose fixtures are written for one day; None is the real date
         self.tools = tools() if callable(tools) else tools
-        self.messages: list[dict] = [{"role": "system", "content": system_prompt()}]
+        self.messages: list[dict] = [{"role": "system", "content": system_prompt(today=self.today)}]
 
     def handle(self, request: str) -> str:
         if callable(self._tools):
             self.tools = self._tools()
-        self.messages[0] = {"role": "system", "content": system_prompt()}
+        self.messages[0] = {"role": "system", "content": system_prompt(today=self.today)}
         self.messages.append({"role": "user", "content": request})
         self._trim()
         self.journal.log(event="request", text=request)
@@ -71,8 +89,8 @@ class Agent:
                 starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
                 del self.messages[starts[-1]:]
                 if "ran out of tokens" in str(exc):  # LM Studio answered, the model just thought too long
-                    return "That took me too long to think through. Try asking it in a shorter way."
-                return "I can't reach the model in LM Studio right now. Try again in a moment."
+                    return _sorry("slow", request)
+                return _sorry("down", request)
             self.messages.append(reply.raw)
             if not reply.calls:
                 self.journal.log(event="answer", text=reply.text)
@@ -84,7 +102,7 @@ class Agent:
                                       "content": f"<untrusted_data>\n{result}\n</untrusted_data>"})
         self.journal.log(event="gave_up", steps=MAX_STEPS)
         self._trim()
-        return "I stopped: this took too many steps."
+        return _sorry("steps", request)
 
     def _trim(self) -> None:
         """Drop the oldest whole turns until history fits in MAX_HISTORY_CHARS.

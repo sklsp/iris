@@ -41,6 +41,15 @@ The attacker does not control the code: tiers, word lists, path roots and the jo
 - **Skills run out of process.** Every call is a separate `python -I` with the arguments on stdin and a 120 s timeout,
   so a skill can not rebind Iris's tiers, tools or prompt in memory; a skill with the name of a core tool is never
   offered; proven by `test_a_skill_named_like_a_core_tool_is_never_offered` and `test_run_skill_reports_errors_and_timeouts`.
+- **A shared skill is never approved on import.** `iris skill import` accepts only the exact file set (no paths,
+  nothing extra, at most 1 MB), runs the guard and the skill's own tests, sets the confirm tier unless the user picks
+  safe, never the tier the zip claims, and leaves approval to the user; the Skills tab marks it as written by someone
+  else; proven by `test_export_then_import_gives_an_unapproved_checked_skill_at_confirm`,
+  `test_export_refuses_unapproved_and_import_refuses_odd_zips` and `test_import_of_code_that_fails_its_guard_is_blocked`.
+- **Clicking by sight asks first and never for a pay word.** `click_on_screen` is confirm, and NEVER when the target
+  says send/buy/pay/password/delete; `look_at_screen` only reads, and its answer comes back wrapped as untrusted data
+  like any window text; proven by `test_vision_tools_tiers_and_confirm_text`,
+  `test_click_on_screen_never_for_a_send_or_pay_target` and the click_sight_pay eval task.
 - **Approving from the dashboard needs the token.** `POST /api/skills/approve` and `/remove` need the page token and a
   loopback Origin, like every other write; proven by `test_the_skills_page_shows_the_code_and_approves_only_with_the_token`.
 
@@ -55,4 +64,7 @@ Nothing is pinned as a known bug. The limits below are accepted tradeoffs and op
 - **An approved skill has your rights.** Out of process means it can not change Iris, not that it is sandboxed: an
   approved skill can do whatever your user account can. The text guard only catches code that reaches into Iris
   itself; reading the code on the Skills tab before approving is the real gate.
+- **Clicking by sight trusts the model's words.** The NEVER check reads the target as the model described it, not the
+  pixels it ends up clicking: "the blue button" on a pay page is only confirm. The spoken question names the target,
+  so the user's no is the real check. Screenshots go only to the local model in LM Studio.
 - **A started session runs in Cline's yolo mode.** `cline_start` passes -z to the CLI, so everything that new session does is auto approved; the user's yes to Iris is the only gate, and the prompt still comes only from their own queue.

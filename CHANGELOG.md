@@ -7,6 +7,13 @@
 - Vision fallback: `look_at_screen` answers questions about the screen or one window, and `click_on_screen`
   clicks something found by sight (confirm, never for send/buy/pay/password/delete). Both use the local model, so
   it needs one that reads images, such as `qwen3.8-27b`.
+  `iris doctor` says whether the model does; the dashboard warns on a skill someone else wrote.
+- Iris's own fallback answers (model unreachable, thought too long, too many steps) are in Dutch for a Dutch request.
+- The language rule names German and French too; the eval runs on a fixed date (1 November 2026), the day its
+  fixtures are written for, so a result no longer depends on the day it runs.
+- `iris startup on|off|status`: voice mode at login, in a minimized console you can see and close.
+- `iris init` writes a starter `~/.iris/config.toml` after asking your name and city; it never overwrites one.
+- The eval checks answers in German, French and Spanish too (9 tasks); 207 tasks in all.
 - `IRIS_WAKEWORD=iris`: wake Iris by her name, checked by Whisper tiny with a hotword, no trained model.
 
 ## 0.4.0 (2026-11-01): the first public release

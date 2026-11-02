@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Speech: VoxCPM2 makes speech about 3.4 times faster (0.58 to 1.9 times real time on an RTX 3060): its attention caches are sized for 512 positions instead of 8192, which it read in full on every step, and long answers go in pieces of up to 250 characters. An answer of any length now starts after about 0.3 s instead of up to 17 s, in one go.
 - Web search runs in a background tab of your own browser (Brave Search by default, `IRIS_SEARCH_URL`), because DuckDuckGo now answers Iris with a bot check. A search takes 1.5 to 2.5 s; a "web" question went from 12 model steps and 31 s to 3 steps and about 11 s. DuckDuckGo stays the fallback.
 - Overlay (opt-in, `overlay = true` or `IRIS_OVERLAY=1`): in voice mode a small panel above the taskbar shows what
   Whisper heard and Iris's answer, with a glowing outline that breathes blue while listening, has lights travelling

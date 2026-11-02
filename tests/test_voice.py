@@ -373,3 +373,107 @@ def test_name_wake_loads_tiny_whisper_once_with_iris_as_hotword(monkeypatch):
     assert w.transcribe(np.zeros(10, dtype=np.float32)) == "Iris"
     w.transcribe(np.zeros(10, dtype=np.float32))
     assert made == ["tiny"] and seen[0] == {"hotwords": "Iris"}
+
+
+# --- Piper and Whisper choice ----------------------------------------------------
+
+FAKE_PIPER = """import sys, wave
+from pathlib import Path
+out = Path(sys.argv[sys.argv.index("-d") + 1])
+for i, line in enumerate(sys.stdin):
+    with wave.open(str(out / f"{i}.wav"), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(22050)
+        w.writeframes(bytes(200 * len(line.strip())))
+"""
+
+
+def test_piper_runs_as_its_own_program_and_returns_one_wav_per_text(tmp_path, monkeypatch):
+    import wave
+
+    from iris.voice import PiperProcess
+
+    (tmp_path / "piper").mkdir()
+    (tmp_path / "piper" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "piper" / "__main__.py").write_text(FAKE_PIPER, encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))  # the fake piper wins over an installed one
+    p = PiperProcess(tmp_path / "voice.onnx")
+    try:
+        first, second = p.wav("Hallo daar."), p.wav("Tweede\nregel")
+        assert first != second
+        with wave.open(str(second), "rb") as w:
+            assert w.getnframes() == 100 * len("Tweede regel")  # the newline became a space: one line, one WAV
+    finally:
+        p.proc.stdin.close()
+        p.proc.wait(timeout=10)
+
+
+def test_wav_complete_only_after_the_header_has_frames(tmp_path):
+    import wave
+
+    from iris.voice import _wav_complete
+
+    (tmp_path / "half.wav").write_bytes(b"RIFF")
+    assert not _wav_complete(tmp_path / "half.wav")
+    with wave.open(str(tmp_path / "done.wav"), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(22050)
+        w.writeframes(b"\x00\x00" * 10)
+    assert _wav_complete(tmp_path / "done.wav")
+
+
+def test_piper_picks_the_voice_by_language_and_follows_the_user_for_short_answers(tmp_path, monkeypatch):
+    import iris.voice as v
+
+    used = []
+
+    class FakeVoice:
+        def __init__(self, lang):
+            self.lang = lang
+
+        def wav(self, text):
+            used.append((self.lang, text))
+            return tmp_path / "x.wav"
+
+    spk = Speaker(engine="sapi")
+    spk.engine = "piper"
+    monkeypatch.setattr(spk, "_piper_voice", lambda lang: FakeVoice(lang))
+    monkeypatch.setattr(v, "_play_wav", lambda path, stop: True)
+    assert spk.speak("Het is nu tien over twaalf, neem een paraplu mee.")
+    assert spk.speak("It is ten past twelve, take an umbrella with you.")
+    spk.heard("Hoe laat is het nu eigenlijk?")
+    assert spk.speak("Klaar.")
+    assert [lang for lang, _ in used] == ["nl", "en", "nl"]
+
+
+def test_piper_missing_voice_falls_back_to_sapi(tmp_path, monkeypatch, capsys):
+    import iris.voice as v
+
+    monkeypatch.setattr(v, "PIPER_DIR", tmp_path)
+    spk = Speaker(engine="sapi")
+    spk.engine = "piper"
+    monkeypatch.setitem(sys.modules, "pyttsx3", types.SimpleNamespace(init=lambda: types.SimpleNamespace(
+        say=lambda t: None, runAndWait=lambda: None)))
+    assert spk.speak("Het is nu tien over twaalf.") is True
+    out = capsys.readouterr().out
+    assert "python -m piper.download_voices nl_NL-ronnie-medium" in out and spk.engine == "sapi"
+
+
+def test_whisper_uses_turbo_on_the_gpu_and_small_on_the_cpu(monkeypatch):
+    import iris.voice as v
+
+    built = []
+
+    class FakeModel:
+        def __init__(self, name, device=None, compute_type=None, **kw):
+            built.append((name, device, compute_type, kw))
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=FakeModel))
+    monkeypatch.setattr(v, "_cuda_dlls", lambda: None)
+    v._whisper_model(None, None)
+    monkeypatch.setattr(v, "_cuda_available", lambda: True)
+    monkeypatch.setenv("IRIS_WHISPER_GPU", "1")
+    v._whisper_model(None, None)
+    v._whisper_model("medium", "cpu")
+    assert built == [("small", "cpu", "int8", {}), ("large-v3-turbo", "cuda", "float16", {"device_index": 1}),
+                     ("medium", "cpu", "int8", {})]

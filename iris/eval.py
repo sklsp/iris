@@ -212,7 +212,7 @@ _NL_WORDS = frozenset({"ik", "je", "het", "een", "niet", "dat", "op", "naar", "w
                        "dan", "er", "met", "voor", "bij", "nu", "uur", "wordt"})
 _EN_WORDS = frozenset({"i", "you", "the", "it's", "not", "can't", "this", "that", "to", "want",
                        "but", "still", "just", "have", "there", "what", "window", "am", "are",
-                       "were", "been", "will", "would", "could"})
+                       "were", "been", "will", "would", "could", "it", "with", "your", "and", "for"})
 _DE_WORDS = frozenset({"ich", "du", "das", "nicht", "ist", "kann", "aber", "noch", "selbst",
                        "habe", "kein", "musst", "leider", "bitte", "wirklich", "es", "mir",
                        "dich", "bin", "bist", "sind", "war", "waren", "wird", "werden", "muss", "der", "uhr",

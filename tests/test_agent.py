@@ -291,7 +291,9 @@ def test_confirm_questions_and_fallbacks_in_german_french_and_spanish(tmp_path):
     assert _describe("trash_file", {"path": "a.txt"}, lang="de") == "a.txt in den Papierkorb verschieben?"
     assert _describe("trash_file", {"path": "a.txt"}, lang="fr") == "Mettre a.txt à la corbeille ?"
     assert _describe("trash_file", {"path": "a.txt"}, lang="es") == "¿Muevo a.txt a la papelera?"
-    assert _describe("cline_start", {"agent": "qwen"}, lang="de").startswith("Start a new Cline session")  # English
+    assert _describe("cline_start", {"agent": "qwen"}, lang="de").startswith("Eine neue Cline-Sitzung für qwen")
+    assert _describe("capability_remove", {"tool_name": "hue"}, lang="es") == "¿Quito la habilidad 'hue'?"
+    assert _describe("brand_new_tool", {}, lang="fr") == "Lancer brand_new_tool avec {} ?"
     assert _sorry("down", "Kannst du mir bitte das Wetter sagen? Ich bin unterwegs.").startswith("Ich erreiche")
     assert _sorry("steps", "Je voudrais que tu ranges mes fichiers dans le dossier.").startswith("Je me suis")
     assert _sorry("slow", "¿Puedes ordenar mis archivos para mañana por la tarde?").startswith("Me ha costado")

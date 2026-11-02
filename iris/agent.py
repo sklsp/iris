@@ -257,7 +257,13 @@ def _describe(name: str, args: dict, lang: str = "en") -> str:
         return say(f"Start a new Cline session for {agent} in {repo or 'the default folder'} "
                    f"with the next queued prompt?",
                    f"Een nieuwe Cline-sessie starten voor {agent} in {repo or 'de standaardmap'} met de volgende "
-                   f"prompt uit de wachtrij?")
+                   f"prompt uit de wachtrij?",
+                   f"Eine neue Cline-Sitzung für {agent} in {repo or 'dem Standardordner'} mit dem nächsten Prompt "
+                   f"aus der Warteschlange starten?",
+                   f"Lancer une nouvelle session Cline pour {agent} dans {repo or 'le dossier par défaut'} avec le "
+                   f"prochain prompt de la file ?",
+                   f"¿Inicio una nueva sesión de Cline para {agent} en {repo or 'la carpeta predeterminada'} con el "
+                   f"siguiente prompt de la cola?")
     skill = args.get("tool_name")
     if name == "request_capability":
         return say(f"I can't do that yet. Shall I build a new skill '{skill}' for it? A coding agent writes it, and I "
@@ -272,10 +278,16 @@ def _describe(name: str, args: dict, lang: str = "en") -> str:
                    f"la uso cuando tú la apruebes.")
     if name == "capability_build":
         return say(f"Build the skill '{skill}' again with the coding agent?",
-                   f"De skill '{skill}' opnieuw laten bouwen door de coding agent?")
+                   f"De skill '{skill}' opnieuw laten bouwen door de coding agent?",
+                   f"Den Skill '{skill}' vom Coding-Agent neu bauen lassen?",
+                   f"Faire reconstruire la compétence '{skill}' par l'agent de code ?",
+                   f"¿Hago que el agente de código vuelva a construir la habilidad '{skill}'?")
     if name == "capability_check":
         return say(f"Check the new skill '{skill}'? This runs its tests.",
-                   f"De nieuwe skill '{skill}' controleren? Dan draaien zijn tests.")
+                   f"De nieuwe skill '{skill}' controleren? Dan draaien zijn tests.",
+                   f"Den neuen Skill '{skill}' prüfen? Dabei laufen seine Tests.",
+                   f"Vérifier la nouvelle compétence '{skill}' ? Ses tests vont tourner.",
+                   f"¿Compruebo la nueva habilidad '{skill}'? Se ejecutarán sus pruebas.")
     if name == "capability_approve":
         return say(f"Approve the skill '{skill}'? From then on I can run its code on this PC. Review it on the "
                    f"dashboard first.",
@@ -288,5 +300,8 @@ def _describe(name: str, args: dict, lang: str = "en") -> str:
                    f"¿Apruebo la habilidad '{skill}'? A partir de entonces podré ejecutar su código en este PC. "
                    f"Revísala antes en el panel.")
     if name == "capability_remove":
-        return say(f"Remove the skill '{skill}'?", f"De skill '{skill}' verwijderen?")
-    return say(f"Run {name} with {args}?", f"{name} uitvoeren met {args}?")
+        return say(f"Remove the skill '{skill}'?", f"De skill '{skill}' verwijderen?",
+                   f"Den Skill '{skill}' entfernen?", f"Supprimer la compétence '{skill}' ?",
+                   f"¿Quito la habilidad '{skill}'?")
+    return say(f"Run {name} with {args}?", f"{name} uitvoeren met {args}?", f"{name} mit {args} ausführen?",
+               f"Lancer {name} avec {args} ?", f"¿Ejecuto {name} con {args}?")

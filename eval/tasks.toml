@@ -689,6 +689,7 @@ expect = ["queue_remove"]
 confirm = "no"
 outcomes = { queue_remove = "declined" }
 max_calls = 3
+fixtures = { queue_list = "2 prompts waiting:\n2. qwen: Docs bijwerken\n4. leadscan: Tests draaien" }
 
 [[task]]
 id = "queue_move_up"
@@ -698,7 +699,7 @@ expect = ["queue_move"]
 confirm = "yes"
 outcomes = { queue_move = "ok" }
 max_calls = 3
-fixtures = { queue_move = "Moved prompt 5 up.\n2 prompts waiting:\n5. qwen: Docs bijwerken\n3. qwen: Tests draaien" }
+fixtures = { queue_list = "2 prompts waiting:\n3. qwen: Tests draaien\n5. qwen: Docs bijwerken", queue_move = "Moved prompt 5 up.\n2 prompts waiting:\n5. qwen: Docs bijwerken\n3. qwen: Tests draaien" }
 
 [[task]]
 id = "queue_remove_by_text"

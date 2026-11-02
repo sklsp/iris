@@ -379,7 +379,7 @@ class _Clock:
         return 1000.0 + 0.5 * self.calls
 
 
-def test_next_command_stops_at_the_hard_cap_even_while_speech_continues(monkeypatch):
+def test_next_command_stops_at_the_hard_cap_even_while_speech_continues(monkeypatch, capsys):
     import iris.voice as v
 
     s = VoiceSession(max_record_seconds=30, speaker=_StubSpeaker())
@@ -409,6 +409,7 @@ def test_next_command_stops_at_the_hard_cap_even_while_speech_continues(monkeypa
     finally:
         stop.set()
         t.join(timeout=5)
+    assert "You: capped" in capsys.readouterr().out  # the user sees what Iris heard
 
     audio = captured["audio"]
     assert len(audio) > 0 and np.all(audio == 0.3)  # continuous speech was recorded...

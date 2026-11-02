@@ -184,11 +184,14 @@ def make_folder(path: str) -> str:
     return f"made folder {p}"
 
 
-def _destination(destination: str, name: str) -> Path:
-    """An existing destination folder means 'into that folder'."""
+def _destination(destination: str, source: Path) -> Path:
+    """Where the item lands. 'Into that folder' when the destination is an existing folder, ends in a slash, or is a
+    new path without an extension for a file that has one: "move report.docx to ~/Archive" must not rename the file
+    to "Archive". ponytail: renaming report.docx to an extensionless name now needs the new name to exist first."""
     d = Path(destination).expanduser()
-    if d.is_dir():
-        return d / name
+    new_folder = not d.exists() and not d.suffix and source.is_file() and bool(source.suffix)
+    if d.is_dir() or destination.endswith(("/", "\\")) or new_folder:
+        return d / source.name
     return d
 
 
@@ -197,7 +200,7 @@ def move_file(source: str, destination: str) -> str:
     s = Path(source).expanduser()
     if not s.exists():
         return f"error: no such file or folder: {s}"
-    d = _destination(destination, s.name)
+    d = _destination(destination, s)
     if d.exists():
         return f"error: {d} already exists; never overwrites"
     d.parent.mkdir(parents=True, exist_ok=True)
@@ -210,7 +213,7 @@ def copy_file(source: str, destination: str) -> str:
     s = Path(source).expanduser()
     if not s.exists():
         return f"error: no such file or folder: {s}"
-    d = _destination(destination, s.name)
+    d = _destination(destination, s)
     if d.exists():
         return f"error: {d} already exists; never overwrites"
     d.parent.mkdir(parents=True, exist_ok=True)

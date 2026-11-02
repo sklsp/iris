@@ -8,6 +8,9 @@
   clicks something found by sight (confirm, never for send/buy/pay/password/delete). Both use the local model, so
   it needs one that reads images, such as `qwen3.8-27b`.
   `iris doctor` says whether the model does; the dashboard warns on a skill someone else wrote.
+- Fix: moving or copying a file to a folder that does not exist yet ("move report.docx to ~/Archive") made the
+  folder's name the file's new name; now the folder is made and the file goes in it. With that, Iris calls file
+  tools directly when you give the path instead of listing or searching first.
 - Iris's own fallback answers (model unreachable, thought too long, too many steps) are in Dutch for a Dutch request.
 - The language rule names German and French too; the eval runs on a fixed date (1 November 2026), the day its
   fixtures are written for, so a result no longer depends on the day it runs.

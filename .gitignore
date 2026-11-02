@@ -6,3 +6,5 @@ __pycache__/
 .shots/
 eval/results/
 .coverage
+build/
+dist/

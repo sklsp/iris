@@ -56,6 +56,8 @@ def _install_agent(monkeypatch):
     monkeypatch.setattr(imain, "Agent", agent_factory)
     monkeypatch.setattr(imain, "LMStudio", lambda: FakeLM())
     monkeypatch.setattr(imain, "Journal", FakeJournal)
+    # main() starts the skill watcher; a real one would outlive the test and poll later tests' skill folders
+    monkeypatch.setattr(imain.skills, "watch", lambda say: None)
     return holder
 
 

@@ -15,6 +15,8 @@
   Dutch request.
 - The language rule names German and French too; the eval runs on a fixed date (1 November 2026), the day its
   fixtures are written for, so a result no longer depends on the day it runs.
+- Clicks and typing are refused for German, French and Spanish send/buy/pay/delete/password names too ("Bezahlen",
+  "Envoyer", "Contraseña").
 - `iris startup on|off|status`: voice mode at login, in a minimized console you can see and close.
 - `iris init` writes a starter `~/.iris/config.toml` after asking your name and city; it never overwrites one.
 - The eval checks answers in German, French and Spanish too (9 tasks); 207 tasks in all.

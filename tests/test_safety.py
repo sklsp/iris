@@ -422,3 +422,22 @@ def test_declined_skill_tool_never_runs(tmp_path, name):
 
 
 
+
+
+@pytest.mark.parametrize("name", ["Versenden", "Jetzt kaufen", "Bezahlen", "Passwort", "Löschen", "Envoyer",
+                                  "Acheter", "Commander", "Supprimer", "Mot de passe", "Enviar", "Comprar ahora",
+                                  "Pagar", "Contraseña", "Iniciar sesión", "Eliminar"])
+def test_german_french_and_spanish_pay_send_delete_and_password_names_are_never(name):
+    from iris.policy import _click_on_screen_tier, _click_tier, _type_tier
+
+    assert _click_tier({"control": name}) == tools.NEVER
+    assert _type_tier({"into": name}) == tools.NEVER
+    assert _click_on_screen_tier({"target": f"the {name} button"}) == tools.NEVER
+
+
+@pytest.mark.parametrize("name", ["Page 2", "Environment", "Compress", "Command Prompt", "Weiter", "Suivant",
+                                  "Siguiente", "Speichern", "Enregistrer", "Guardar"])
+def test_ordinary_names_in_those_languages_stay_confirm(name):
+    from iris.policy import _click_tier
+
+    assert _click_tier({"control": name}) == tools.CONFIRM

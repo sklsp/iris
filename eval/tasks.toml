@@ -1283,16 +1283,16 @@ request = "Hoe laat is het?"
 expect = ["clock"]
 answer_has = ["14:05"]
 max_calls = 1
-fixtures = { clock = "Saturday 31 October 2026, 14:05, week 45" }
+fixtures = { clock = "Sunday 1 November 2026, 14:05, week 44" }
 
 [[task]]
 id = "what_day"
 category = "read"
 request = "Op welke dag van de week zijn we?"
 expect = ["clock"]
-answer_has = ["zaterdag", "saturday"]
+answer_has = ["zondag", "sunday"]
 max_calls = 1
-fixtures = { clock = "Saturday 31 October 2026, 14:05, week 45" }
+fixtures = { clock = "Sunday 1 November 2026, 14:05, week 44" }
 
 [[task]]
 id = "weather_now"
@@ -1614,7 +1614,7 @@ request = "What time is it?"
 expect = ["clock"]
 answer_has = ["14:05", "2:05"]
 max_calls = 1
-fixtures = { clock = "Saturday 31 October 2026, 14:05, week 45" }
+fixtures = { clock = "Sunday 1 November 2026, 14:05, week 44" }
 
 [[task]]
 id = "weather_now_en"
@@ -1840,7 +1840,7 @@ lang = "fr"
 request = "Quelle heure est-il ?"
 expect = ["clock"]
 max_calls = 2
-answer_has = ["14"]
+answer_has = ["14", "deux heures"]
 fixtures = { clock = "Sunday 1 November 2026, 14:05, week 44" }
 
 [[task]]

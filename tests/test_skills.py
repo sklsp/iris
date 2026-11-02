@@ -308,3 +308,18 @@ def test_a_removed_skill_can_be_restored_but_needs_approving_again():
     skills.remove("say_hello")
     assert tools.restore_trash("say_hello").startswith("restored")
     assert skills.meta("say_hello")["status"] == "ready" and not skills._approved_ok("say_hello")
+
+
+def test_an_approval_written_during_the_build_is_dropped_and_blocks_the_skill():
+    _built()  # status building, files done
+    approvals = {"say_hello": skills._digest("say_hello", "safe")}  # what a builder could write for itself
+    (skills.skills_dir() / "approved.json").write_text(json.dumps(approvals), encoding="utf-8")
+    assert skills._approved_ok("say_hello")
+    r = skills.check("say_hello")
+    assert r["status"] == "blocked" and "only the user approves" in r["problems"][-1]
+    assert not skills._approved_ok("say_hello") and "say_hello" not in skills._approvals()
+
+
+def test_a_recheck_after_the_users_approval_keeps_it():
+    _approved()
+    assert skills.check("say_hello")["status"] == "ready" and skills._approved_ok("say_hello")

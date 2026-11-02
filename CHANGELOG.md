@@ -8,6 +8,8 @@
   clicks something found by sight (confirm, never for send/buy/pay/password/delete). Both use the local model, so
   it needs one that reads images, such as `qwen3.8-27b`.
   `iris doctor` says whether the model does; the dashboard warns on a skill someone else wrote.
+- A skill builder can not approve its own skill: an approval written during the build is dropped and the skill
+  blocked.
 - File tools can never write, move, copy or trash Iris's own code, `~/.iris`, the skill approvals or config.toml,
   not even with a yes: before, a clone under the home folder or `~/.iris/config.toml` was only confirm.
 - Fix: "restore" brought back the trashed file with the newest contents instead of the last one trashed (a move

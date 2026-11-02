@@ -79,13 +79,13 @@ def make_document(path: str, title: str, content: str) -> str:
         return "error: install the office extra: pip install iris[office]"
 
     p = files.resolve_target(path, ".docx")
+    doc = Document()  # built first: if this fails, the old file stays where it is
+    doc.add_heading(title, 0)
+    n = _add_content(doc, content)
     if p.exists():
         from iris.tools import trash_file  # lazy: tools imports this module
 
         trash_file(str(p))
-    doc = Document()
-    doc.add_heading(title, 0)
-    n = _add_content(doc, content)
     p.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(p))
     return f"made {p} ({n} paragraphs)"
@@ -111,11 +111,7 @@ def make_presentation(path: str, title: str, slides: list) -> str:
             return "error: at most 12 bullets per slide"
 
     p = files.resolve_target(path, ".pptx")
-    if p.exists():
-        from iris.tools import trash_file  # lazy: tools imports this module
-
-        trash_file(str(p))
-    prs = Presentation()
+    prs = Presentation()  # built first: if this fails, the old file stays where it is
     first = prs.slides.add_slide(prs.slide_layouts[0])
     first.shapes.title.text = title
     first.placeholders[1].text = date.today().isoformat()
@@ -129,6 +125,10 @@ def make_presentation(path: str, title: str, slides: list) -> str:
         notes = s.get("notes")
         if notes:
             slide.notes_slide.notes_text_frame.text = str(notes)
+    if p.exists():
+        from iris.tools import trash_file  # lazy: tools imports this module
+
+        trash_file(str(p))
     p.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(p))
     return f"made {p} ({len(slides)} slides)"
@@ -168,11 +168,7 @@ def make_spreadsheet(path: str, sheets: list) -> str:
     except ImportError:
         return "error: install the office extra: pip install iris[office]"
 
-    if p.exists():
-        from iris.tools import trash_file  # lazy: tools imports this module
-
-        trash_file(str(p))
-    wb = Workbook()
+    wb = Workbook()  # built first: if this fails, the old file stays where it is
     header_font = Font(bold=True)
     header_fill = PatternFill("solid", fgColor="D9D9D9")
     for i, s in enumerate(sheets):
@@ -191,6 +187,10 @@ def make_spreadsheet(path: str, sheets: list) -> str:
                     cell.fill = header_fill
         for c, w in widths.items():
             ws.column_dimensions[get_column_letter(c)].width = min(max(w + 2, 8), 60)
+    if p.exists():
+        from iris.tools import trash_file  # lazy: tools imports this module
+
+        trash_file(str(p))
     p.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(p))
     return f"made {p} ({len(sheets)} sheets)"

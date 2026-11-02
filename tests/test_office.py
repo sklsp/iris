@@ -308,3 +308,20 @@ def test_office_tiers_look_at_the_file_with_its_suffix(tmp_path, monkeypatch):
     (iris_dir / "report.docx").write_text("x", encoding="utf-8")
     assert tools.TOOLS["make_document"].tier_of({"path": "report"}) == tools.CONFIRM  # report means report.docx
     assert tools.TOOLS["make_presentation"].tier_of({"path": "report"}) == tools.SAFE  # report.pptx is new
+
+
+def test_a_failed_build_leaves_the_old_document_in_place(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(tmp_path / "trash"))
+    old = tmp_path / "plan.docx"
+    old.write_bytes(b"old")
+
+    def boom(doc, content):
+        raise RuntimeError("bad content")
+
+    monkeypatch.setattr(office, "_add_content", boom)
+    try:
+        office.make_document(str(old), "Plan", "x")
+        raise AssertionError("expected the build to fail")
+    except RuntimeError:
+        pass
+    assert old.read_bytes() == b"old"  # untouched, not in the trash

@@ -41,8 +41,15 @@ class FakeBrowser:
                 return {"result": {"value": self.point}}
             if expr == "document.readyState":
                 return {"result": {"value": "complete"}}
+            if "JSON.stringify({human" in expr:
+                return {"result": {"value": json.dumps(self.search)}}
             return {"result": {}}
+        if method == "Target.createTarget":
+            return {"targetId": "S"}
         return {}
+
+    search = {"human": False, "results": [{"title": "Uitslag GP Mexico", "url": "https://f1.example/mexico",
+                                           "snippet": "Verstappen won."}]}
 
 
 @pytest.fixture
@@ -184,3 +191,33 @@ def test_one_yes_covers_the_site_and_the_question_names_the_button(fake, tmp_pat
     a.handle("Zoek een horrorfilm op Netflix voor mij")
     assert asked == ["Klik op 'Zoeken' op www.netflix.com? Een ja geldt voor alle klikken en typen in "
                      "www.netflix.com tijdens deze opdracht."]
+
+
+def test_search_runs_in_a_background_tab_that_is_closed_after(fake, monkeypatch):
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    assert browser.search("f1 winnaar") == fake.search["results"]
+    create = [c[1] for c in fake.calls if c[0] == "Target.createTarget"][0]
+    assert create["background"] is True and "q=f1+winnaar" in create["url"]
+    assert ("Target.closeTarget", {"targetId": "S"}, None) in fake.calls
+
+
+def test_search_stops_at_a_human_check_and_still_closes_the_tab(fake, monkeypatch):
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    fake.search = {"human": True, "results": []}
+    with pytest.raises(browser.BrowserError, match="human check"):
+        browser.search("f1")
+    assert ("Target.closeTarget", {"targetId": "S"}, None) in fake.calls
+
+
+def test_web_search_uses_the_browser_and_falls_back_to_duckduckgo(fake, monkeypatch):
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    assert "1. Uitslag GP Mexico\n   https://f1.example/mexico\n   Verstappen won." in tools.web_search("f1")
+
+    def no_browser(query):
+        raise browser.BrowserError("not allowed")
+
+    monkeypatch.setattr(browser, "search", no_browser)
+    monkeypatch.setattr("iris.web.search", lambda q: [{"title": "DDG", "url": "https://d.example", "snippet": "s"}])
+    assert tools.web_search("f1").startswith("1. DDG")
+    monkeypatch.setattr("iris.web.search", lambda q: (_ for _ in ()).throw(ValueError("human check")))
+    assert tools.web_search("f1") == "error: search failed: human check"

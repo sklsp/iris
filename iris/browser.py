@@ -338,3 +338,66 @@ def sends_on_enter(index: int) -> bool:
 
 def host(index: int) -> str:
     return urlparse(item(index).get("url", "")).hostname or "the browser"
+
+
+# --- web search in a background tab -----------------------------------------------------------------------------------
+SEARCH_URL = os.environ.get("IRIS_SEARCH_URL", "https://search.brave.com/search?q={q}")
+
+# Results are the links whose text is a heading or a title, on other sites than the search engine; the snippet is the
+# text of the smallest block around the link that holds more than its title. No engine-specific class names, so a
+# redesign of the result page does not break it.
+_RESULTS = r"""(() => {
+  const text = (document.body ? document.body.innerText : '').slice(0, 4000).toLowerCase();
+  const human = /captcha|not a robot|unusual traffic|verify you are (a )?human|bots use|geen robot/.test(text);
+  const site = location.hostname.split('.').slice(-2).join('.');
+  const out = [], seen = new Set();
+  for (const a of document.querySelectorAll('a[href]')) {
+    let url;
+    try { url = new URL(a.href); } catch (e) { continue; }
+    if (!/^https?:$/.test(url.protocol) || url.hostname.endsWith(site) || !a.offsetParent) continue;
+    const head = a.querySelector('h1, h2, h3, h4, [class*="title"]');
+    const title = ((head || a).innerText || '').replace(/\s+/g, ' ').trim();
+    if (!head || title.length < 6) continue;
+    const key = url.href.split('#')[0];
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let box = a, snippet = '';
+    for (let i = 0; i < 6 && box.parentElement; i++) {
+      box = box.parentElement;
+      const t = (box.innerText || '').replace(/\s+/g, ' ').trim();
+      if (t.length > title.length + 40) { snippet = t.replace(title, '').trim().slice(0, 300); break; }
+    }
+    out.push({title: title.slice(0, 150), url: key, snippet});
+    if (out.length >= MAX) break;
+  }
+  return JSON.stringify({human, results: out});
+})()"""
+
+
+def search(query: str, max_results: int = 5, wait: float = 8) -> list[dict]:
+    """Search the web in a background tab of the user's own browser and return [{title, url, snippet}]. The tab is
+    closed afterwards. A search engine that asks for a human check raises BrowserError: Iris never solves those."""
+    from urllib.parse import quote_plus
+
+    target = _call("Target.createTarget", {"url": SEARCH_URL.format(q=quote_plus(query)), "background": True})
+    tid = target["targetId"]
+    try:
+        session = _call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
+        deadline = time.perf_counter() + wait
+        found: dict = {"human": False, "results": []}
+        while time.perf_counter() < deadline:  # the results are often drawn after the page itself has loaded
+            time.sleep(0.25)
+            try:
+                found = json.loads(_eval(session, _RESULTS.replace("MAX", str(max_results)), wait=3) or "{}")
+            except (BrowserError, ValueError):
+                continue  # still navigating: the next look will see the page
+            if found.get("human") or found.get("results"):
+                break
+    finally:
+        try:
+            _call("Target.closeTarget", {"targetId": tid})
+        except BrowserError:
+            pass
+    if found.get("human"):
+        raise BrowserError("the search engine asks for a human check; Iris does not solve those")
+    return found.get("results") or []

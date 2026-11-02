@@ -351,6 +351,10 @@ first connection. Only the browser on this PC is reached (127.0.0.1). This gives
 like a person at the keyboard: the tiers above are what keep paying, sending and passwords with you.
 `IRIS_BROWSER_PROFILE` points at another browser's user-data folder.
 
+`web_search` uses the same connection: it opens the search results in a background tab, reads the result links
+and closes the tab again (search engines block plain HTTP clients). If a search engine asks for a human check, Iris
+stops and says so; it never solves those. Without the browser it falls back to DuckDuckGo's html page.
+
 ## Dashboard
 
 A mostly read-only status page for Iris and the machine it runs on:
@@ -535,6 +539,7 @@ shows with its own badge.
 | `IRIS_EVAL_DIR` | `eval/results` | what the dashboard's Eval tab reads |
 | `IRIS_CONFIG` | `~/.iris/config.toml` | the settings file |
 | `IRIS_BROWSER_PROFILE` | Brave, then Chrome, then Edge | the browser user-data folder whose DevToolsActivePort Iris connects to |
+| `IRIS_SEARCH_URL` | `https://search.brave.com/search?q={q}` | the results page `web_search` opens in a background tab |
 | `IRIS_SKILLS` | `~/.iris/skills` | where self-built skills live |
 | `IRIS_JOURNAL` | `~/.iris/journal.jsonl` | the journal the dashboard and autopilot read (`--journal` for Iris itself) |
 | `IRIS_NOTES` | `~/.iris/notes.md` | where note_add and notes_read keep notes |

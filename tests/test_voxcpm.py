@@ -108,12 +108,35 @@ def chunks(n, started):
         yield np.full(100, i + 1, dtype="float32")
 
 
+def test_the_lead_follows_the_measured_speed():
+    assert voice._lead_needed(10, 2.0) == voice._lead_needed(10, 1.0) == 0.3  # real time: start almost at once
+    assert voice._lead_needed(10, 0.5, margin=1.0) == 5.0  # half speed: half the answer first, then it keeps up
+    assert voice._lead_needed(17.6, 0.56, margin=1.0) == pytest.approx(7.7, abs=0.1)  # the RTX 3060, measured
+
+
 def test_playback_waits_for_the_lead_then_plays_everything_in_order(device):
     started = []
-    assert voice._play_stream(chunks(5, started), 1000, 0.25, None) is True
-    assert started == [0, 0, 0, 1, 1]  # 0.25 s at 1000 Hz: the device starts once the third chunk is in
+    assert voice._play_stream(chunks(5, started), 1000, 0.5, None) is True
+    assert started == [0, 0, 0, 1, 1]  # made much faster than real time: starts once 0.3 s (three chunks) is in
     played = np.concatenate(FakeOut.last.played)
     assert played[:500].tolist() == [v for i in range(5) for v in [i + 1] * 100]
+
+
+def test_speech_that_runs_dry_pauses_once_and_loses_nothing(device, monkeypatch):
+    monkeypatch.setattr(voice, "_lead_needed", lambda expected, speed: 0.1)  # start too early on purpose
+    monkeypatch.setattr(voice, "REBUFFER_SECONDS", 0.3)
+
+    def slow():
+        for i in range(8):
+            yield np.full(100, i + 1, dtype="float32")
+            time.sleep(0.03)  # 0.1 s of speech per 0.03 s, but the fake device plays 100 frames a millisecond
+
+    assert voice._play_stream(slow(), 1000, 0.8, None) is True
+    played = np.concatenate(FakeOut.last.played)
+    sound = played[played != 0]
+    assert sound.tolist() == [v for i in range(8) for v in [i + 1] * 100]  # all of it, in order
+    starts = np.flatnonzero(np.diff((played != 0).astype(int)) == 1)
+    assert len(starts) <= 4  # a few clean restarts after a pause, not a crumb per chunk
 
 
 def test_a_wake_word_stops_streamed_speech(device):

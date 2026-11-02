@@ -58,10 +58,11 @@ PIPER_VOICES = {"nl": os.environ.get("IRIS_PIPER_NL", "nl_NL-ronnie-medium"),
 # torch, so it runs in its own Python through iris/voxcpm_worker.py; the README's Speech section says how to set it up.
 VOXCPM_DIR = Path(os.environ.get("IRIS_VOXCPM_DIR") or (Path.home() / ".iris" / "voxcpm"))
 VOXCPM_PYTHON = Path(os.environ.get("IRIS_VOXCPM_PYTHON") or (VOXCPM_DIR / "venv" / "Scripts" / "python.exe"))
-# A GPU too slow for real time (an RTX 3060 makes 1 s of speech in about 1.5 s) still plays without gaps when this
-# share of the answer is made before it starts.
-VOXCPM_LEAD = float(os.environ.get("IRIS_VOXCPM_LEAD", "0.35"))
+# A GPU too slow for real time (an RTX 3060 makes speech at 0.56 times real time) still plays without gaps when enough
+# is made before it starts: _lead_needed works that out from the speed measured on the answer itself, times this margin.
+VOXCPM_MARGIN = float(os.environ.get("IRIS_VOXCPM_MARGIN", "1.15"))
 CHARS_PER_SECOND = 17  # how fast VoxCPM2 speaks (measured 16 to 20), to guess an answer's length before it is made
+REBUFFER_SECONDS = 1.0  # when the speech still runs dry: one clean pause until this much is ready, not a stutter
 
 # A wake phrase at the start of a request ("Hey Jarvis, ...") is not part of it.
 _WAKE_PHRASE = re.compile(r"^\s*(?:(?:hey|hé|hee|hoi|hi|ok|okay)[\s,!.]*)?(?:jarvis|iris)\b[\s,!.?]*", re.I)
@@ -615,27 +616,50 @@ def _exact(f, n: int) -> bytes:
     return data
 
 
-def _play_stream(chunks, rate: int, lead: float, stop_event: threading.Event | None, slack: float = 3.0) -> bool:
-    """Play streamed float32 audio once `lead` seconds are made (or all of it), so a voice made slower than real time
-    still plays without gaps. Like _play_wav it stops for a wake word and never hangs on a stalled sound device."""
+def _lead_needed(expected: float, speed: float, margin: float = VOXCPM_MARGIN) -> float:
+    """Seconds of speech to have made before playing an answer of about `expected` seconds, made at `speed` times real
+    time, so playback never catches up with the making: the rest, (expected - lead) / speed seconds of work, must not
+    take longer than playing all of it. A real-time GPU needs only a moment."""
+    if speed >= 1:
+        return 0.3
+    return expected * (1 - speed) * margin
+
+
+def _play_stream(chunks, rate: int, expected: float, stop_event: threading.Event | None, slack: float = 3.0) -> bool:
+    """Play streamed float32 audio of about `expected` seconds once enough is made that the rest arrives in time (see
+    _lead_needed). If it still runs dry, it pauses until REBUFFER_SECONDS are ready instead of stuttering. Like
+    _play_wav it stops for a wake word and never hangs on a stalled sound device."""
     import numpy as np
     import sounddevice as sd
 
     pending: queue.Queue = queue.Queue()
     left = np.zeros(0, dtype="float32")
+    waiting, finished = False, threading.Event()
 
     def feed(outdata, frames, _time, _status):
-        nonlocal left
-        while len(left) < frames and not pending.empty():
+        nonlocal left, waiting
+        while not pending.empty():
             left = np.concatenate([left, pending.get_nowait()])
+        if waiting and (len(left) >= REBUFFER_SECONDS * rate or finished.is_set()):
+            waiting = False
+        if waiting:
+            outdata[:, 0] = 0
+            return
         take, left = left[:frames], left[frames:]
         outdata[:len(take), 0] = take
-        outdata[len(take):, 0] = 0  # not made yet: a moment of silence rather than a crash
+        outdata[len(take):, 0] = 0
+        if len(take) < frames and not finished.is_set():
+            waiting = True  # ran dry mid-answer: wait for a real piece rather than play crumbs
 
     def stopped() -> bool:
         return stop_event is not None and stop_event.is_set()
 
-    made = 0
+    def start():
+        s = sd.OutputStream(samplerate=rate, channels=1, dtype="float32", callback=feed)
+        s.start()
+        return s
+
+    made, t0 = 0, time.perf_counter()  # not monotonic(): on Windows it ticks every ~16 ms, so work could read 0
     stream = None
     try:
         for chunk in chunks:
@@ -643,15 +667,13 @@ def _play_stream(chunks, rate: int, lead: float, stop_event: threading.Event | N
                 return False
             pending.put(chunk.astype("float32"))
             made += len(chunk)
-            if stream is None and made >= lead * rate:
-                stream = sd.OutputStream(samplerate=rate, channels=1, dtype="float32", callback=feed)
-                stream.start()
-                started = time.monotonic()
+            work = time.perf_counter() - t0
+            if stream is None and work > 0 and made / rate >= _lead_needed(expected, made / rate / work):
+                stream = start()
+        finished.set()
         if stream is None:
-            stream = sd.OutputStream(samplerate=rate, channels=1, dtype="float32", callback=feed)
-            stream.start()
-            started = time.monotonic()
-        deadline = started + made / rate + slack
+            stream = start()
+        deadline = time.monotonic() + made / rate + slack
         while not pending.empty() or len(left):
             if stopped():
                 return False
@@ -749,8 +771,7 @@ class Speaker:
         if not vox.ready.is_set():  # still loading (a minute or more): Piper says this one rather than keep you waiting
             return self._speak_piper(text, stop_event)
         try:
-            lead = VOXCPM_LEAD * len(text) / CHARS_PER_SECOND
-            return _play_stream(vox.stream(text), vox.rate, lead, stop_event)
+            return _play_stream(vox.stream(text), vox.rate, len(text) / CHARS_PER_SECOND, stop_event)
         except Exception as exc:  # noqa: BLE001 - fall back to Piper so Iris keeps talking
             print(f"VoxCPM failed ({exc}); using Piper instead.")
             self.engine = "piper"

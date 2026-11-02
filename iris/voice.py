@@ -37,13 +37,16 @@ _KOKORO_FILES = {
     "voices-v1.0.bin": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin",
 }
 
-_YES = re.compile(r"\b(yes|yeah|yep|sure|do it|go ahead|ja|jazeker|doe maar|ga je gang|prima|oké|oke|okay)\b", re.I)
+_YES = re.compile(r"\b(yes|yeah|yep|sure|do it|go ahead|ja|jazeker|doe maar|ga je gang|prima|oké|oke|okay|"
+                  r"genau|klar|mach das|oui|d'accord|vas-y|allez-y|sí|si|claro|vale|adelante|hazlo)\b", re.I)
+# Any no-word wins over a yes-word, so a mixed or unclear answer is a "no".
+_NO = re.compile(r"\b(no|nee|niet|stop|cancel|nein|nicht|non|pas|annuler|abbrechen|cancelar)\b", re.I)
 
 
 def is_yes(text: str | None) -> bool:
     if text is None:
         return False  # no answer at all is a "no"
-    return bool(_YES.search(text)) and not re.search(r"\b(no|nee|niet|stop|cancel)\b", text, re.I)
+    return bool(_YES.search(text)) and not _NO.search(text)
 
 
 class SilenceDetector:

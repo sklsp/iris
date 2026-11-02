@@ -138,6 +138,9 @@ def test_real_tool_tiers():
 def test_is_yes():
     assert is_yes("Yes please") and is_yes("ja, doe maar") and is_yes("okay")
     assert not is_yes("no") and not is_yes("nee, niet doen") and not is_yes("yes... no, stop")
+    assert is_yes("Ja, genau") and is_yes("Oui, vas-y") and is_yes("d'accord") and is_yes("Sí, claro")
+    assert is_yes("vale") and not is_yes("Nein") and not is_yes("Non, annuler") and not is_yes("No, cancelar")
+    assert not is_yes("Ja, nicht jetzt") and not is_yes("Oui... non, pas maintenant")
 
 
 def test_describe_asks_clearer_questions_for_trash_and_keys():

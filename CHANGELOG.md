@@ -17,6 +17,7 @@
   fixtures are written for, so a result no longer depends on the day it runs.
 - Clicks and typing are refused for German, French and Spanish send/buy/pay/delete/password names too ("Bezahlen",
   "Envoyer", "Contraseña").
+- Spoken yes and no in German, French and Spanish too ("oui", "sí, claro", "nein"); any no-word still wins.
 - `read_file` refuses German, French and Spanish password file names too ("Passwörter.txt", "mots de passe.txt").
 - Enter is refused in more mail and chat windows: Telegram, Signal, Messenger, Thunderbird, Skype, Windows Mail and
   inbox titles such as "Postvak IN" or "Posteingang".

@@ -36,7 +36,7 @@ Iris: Sending messages is something I never do myself. I can open a draft; you p
   local model and can click what it sees, after asking.
 - **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
   email drafts, notes, reminders and timers.
-- **Measured.** An eval of 210 tasks runs against the real model and the result is published below, including the
+- **Measured.** An eval of 211 tasks runs against the real model and the result is published below, including the
   safety traps.
 - **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (SAPI or
   Kokoro) all run on your machine.
@@ -143,7 +143,7 @@ Configuration) are only offered when their plugin is enabled.
 | calculate | safe | exact arithmetic, so Iris never says a sum from memory |  |
 | list_windows | safe | titles of the open windows |  |
 | read_window | safe | the named controls in a window, with the contents of text fields |  |
-| open_app | safe | start an app, an `ms-settings:` page or a file |  |
+| open_app | safe | start an app, an `ms-settings:` page or a file | a program or script file (.exe, .bat, .ps1, .msi, .lnk...) or another URI scheme (confirm) |
 | click | confirm | click a control by its name | the control is named like Send, Buy, Pay or Delete (never) |
 | type_text | confirm | type into a window or a named field, optionally replacing what is there | it types into a field named after sending, paying, passwords or deleting (never) |
 | press_keys | confirm | press shortcuts in a window, `^s` or `{TAB}` | {ENTER} in a mail/chat window such as Outlook or WhatsApp (never) |
@@ -320,7 +320,7 @@ Run of 2026-11-02 09:09 on `qwen3.8-27b`: 611/621 passed (98.4%), median 3.9 s, 
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether the user says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 210 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 211 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.

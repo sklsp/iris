@@ -452,3 +452,15 @@ def test_ordinary_names_in_those_languages_stay_confirm(name):
     from iris.policy import _click_tier
 
     assert _click_tier({"control": name}) == tools.CONFIRM
+
+
+@pytest.mark.parametrize("name, expected", [
+    ("notepad", tools.SAFE), ("Spotify", tools.SAFE), ("ms-settings:display", tools.SAFE),
+    ("C:/Users/me/Documents/cv.docx", tools.SAFE), (r"C:\Users\me\Downloads", tools.SAFE),
+    ("C:/Users/me/Downloads/setup.exe", tools.CONFIRM), ("factuur.pdf.exe", tools.CONFIRM),
+    ('"C:/Users/me/Downloads/run.bat"', tools.CONFIRM), ("script.PS1", tools.CONFIRM),
+    ("C:/tmp/x.vbs", tools.CONFIRM), ("installer.msi", tools.CONFIRM), ("C:/Users/me/Desktop/Tool.lnk", tools.CONFIRM),
+    ("search-ms:query=x", tools.CONFIRM), ("file:///C:/x.html", tools.CONFIRM),
+])
+def test_open_app_asks_before_it_runs_a_program_or_script_file(name, expected):
+    assert tools.TOOLS["open_app"].tier_of({"name": name}) == expected

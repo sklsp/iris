@@ -5,7 +5,7 @@ import pytest
 
 from iris.agent import MAX_HISTORY_CHARS, MAX_STEPS, Agent, Journal, _describe, system_prompt
 from iris.llm import Reply, ToolCall
-from iris.tools import CONFIRM, SAFE, TOOLS, Tool, _click_tier
+from iris.tools import CONFIRM, NEVER, SAFE, TOOLS, Tool, _click_tier
 from iris.voice import is_yes
 
 
@@ -341,3 +341,49 @@ def test_grant_keys():
     assert _grant_key("press_keys", {"window": "Brave", "keys": "%{F4}"}) is None  # closing always asks
     assert _grant_key("press_keys", {"window": "Brave", "keys": "{ENTER}"}) == "brave"
     assert _grant_key("trash_file", {"path": "x"}) is None
+
+
+# --- confirm = "important" -------------------------------------------------------------
+
+def test_important_mode_asks_only_for_sensitive_clicks_and_each_one_separately(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_CONFIRM", "important")
+    ran, asked = [], []
+    done = Reply("Klaar.", [], {"role": "assistant", "content": ""})
+    llm = ScriptedLLM(_clicks("Jay", "Zoeken", "Nu betalen", "Bevestig betaling"), done)
+    a = agent(tmp_path, llm, ran, confirm=lambda q: asked.append(q) or True)
+    a.handle("Bestel de pizza voor mij en betaal het maar")
+    assert [kw["control"] for _, kw in ran] == ["Jay", "Zoeken", "Nu betalen", "Bevestig betaling"]
+    assert len(asked) == 2 and all("gevoelige actie" in q for q in asked)  # only the two pay buttons, each one
+    sens = [e for e in journal(tmp_path) if e.get("sensitive")]
+    assert len(sens) == 2
+    assert "need Jay's yes" in system_prompt("Jay")
+
+
+def test_important_mode_keeps_the_hard_limits():
+    from iris.agent import _important_tier
+    from iris.tools import TOOLS
+
+    def tier(name, args):
+        return _important_tier(name, args, TOOLS[name].tier_of(args))
+
+    assert tier("type_text", {"window": "Gmail", "text": "x", "into": "Wachtwoord"}) == (NEVER, False)
+    assert tier("type_text", {"window": "Brave", "text": "x", "into": "Inloggen"}) == (NEVER, False)
+    assert tier("read_file", {"path": "C:/Users/me/wachtwoorden.txt"}) == (CONFIRM, True)
+    assert tier("press_keys", {"window": "Gmail - Brave", "keys": "{ENTER}"}) == (CONFIRM, True)
+    assert tier("write_file", {"path": "C:/Windows/x.txt", "text": "x"}) == (NEVER, False)
+    assert tier("open_url", {"url": "file:///C:/x"}) == (NEVER, False)
+    assert tier("open_app", {"name": "C:/Users/me/Downloads/setup.exe"}) == (CONFIRM, False)  # still asks
+    assert tier("cline_start", {"agent": "qwen"}) == (CONFIRM, False)
+    assert tier("move_file", {"source": "~/a.txt", "destination": "~/b"})[0] == SAFE
+    assert tier("trash_file", {"path": "~/a.txt"})[0] == SAFE  # the trash can be undone
+
+
+def test_the_default_still_asks_and_refuses_as_before(tmp_path, monkeypatch):
+    monkeypatch.delenv("IRIS_CONFIRM", raising=False)
+    ran, asked = [], []
+    done = Reply("Klaar.", [], {"role": "assistant", "content": ""})
+    a = agent(tmp_path, ScriptedLLM(_clicks("Zoeken", "Nu betalen"), done), ran,
+              confirm=lambda q: asked.append(q) or True)
+    a.handle("Bestel de pizza")
+    assert [kw["control"] for _, kw in ran] == ["Zoeken"] and len(asked) == 1
+    assert "refused by design" in system_prompt("Jay")

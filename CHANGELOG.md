@@ -10,6 +10,11 @@
 - Speech: Piper voices (`tts = "piper"`), Dutch `nl_NL-ronnie-medium` and English `en_US-joe-medium`, picked by the
   language of the answer. SAPI's English voices made Dutch answers unintelligible.
 - `iris doctor` reports which hearing and speech Iris uses and how to improve them.
+- `confirm = "important"` (opt-in): everyday actions run without a question; paying, sending, deleting in an app and
+  private files are asked one at a time and done after a yes instead of refused. The default is unchanged.
+- Recording waits 1.8 s of silence (was 1.2, `IRIS_SILENCE`) and keeps going through softer words, so a pause to think
+  no longer cuts a request off.
+- "betaling" counts as a pay word, so a "Bevestig betaling" button is treated like "Betalen".
 - Clicking and typing ask once per window per request instead of per click; pay, send, delete and password stay
   refused, and keys that delete or close a window still ask every time.
 - Follow-up questions: for 8 seconds after an answer (`IRIS_FOLLOW_UP`), a new question needs no wake word.

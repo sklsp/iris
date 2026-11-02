@@ -27,7 +27,8 @@ FRAME = 1280  # 80 ms at 16 kHz, the frame size openWakeWord wants
 # IRIS_WAKEWORD picks a built-in openWakeWord name, an .onnx file, or "iris" for NameWake (no model needed).
 # Read at construction time so tests can override it.
 WAKE_THRESHOLD = float(os.environ.get("IRIS_WAKE_THRESHOLD", 0.5))
-SILENCE_SECONDS = 1.2  # stop recording after this much continuous silence
+# Stop recording after this much continuous silence (IRIS_SILENCE). 1.2 s cut people off when they paused to think.
+SILENCE_SECONDS = float(os.environ.get("IRIS_SILENCE", 1.8))
 SPEECH_TIMEOUT = 60.0  # the longest one answer may take to say before Iris carries on without it
 FOLLOW_UP_SECONDS = 8.0  # after an answer, a question that starts this soon needs no wake word (IRIS_FOLLOW_UP)
 VAD_THRESHOLD = float(os.environ.get("IRIS_VAD_THRESHOLD", 0.01))  # RMS below this counts as silence
@@ -416,7 +417,9 @@ class VoiceSession:
         """Record until 1.2 s of silence follows speech (or a hard cap), then transcribe without the wake phrase."""
         import numpy as np
 
-        det = SilenceDetector(threshold=self.vad_threshold, silence_seconds=self.silence_seconds)
+        # once someone talks, half the speech threshold still counts as talking: soft words keep the recording going
+        quiet = (VAD_THRESHOLD if self.vad_threshold is None else self.vad_threshold) / 2
+        det = SilenceDetector(threshold=quiet, silence_seconds=self.silence_seconds)
         for frame in chunks:
             det.feed(frame)
         t0 = time.time()

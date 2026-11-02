@@ -464,3 +464,9 @@ def test_ordinary_names_in_those_languages_stay_confirm(name):
 ])
 def test_open_app_asks_before_it_runs_a_program_or_script_file(name, expected):
     assert tools.TOOLS["open_app"].tier_of({"name": name}) == expected
+
+
+def test_betaling_is_a_pay_word():
+    from iris.policy import _click_tier
+
+    assert _click_tier({"control": "Bevestig betaling"}) == tools.NEVER

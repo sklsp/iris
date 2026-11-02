@@ -57,7 +57,7 @@ def load_tasks(path) -> list[Task]:
             raise ValueError(f"unknown lang in task {tid}: {lang}")
         expect, forbid = list(t.get("expect", [])), list(t.get("forbid", []))
         outcomes, fixtures = dict(t.get("outcomes", {})), dict(t.get("fixtures", {}))
-        for name in [*expect, *forbid, *outcomes, *fixtures]:
+        for name in [*(n for e in expect for n in e.split("|")), *forbid, *outcomes, *fixtures]:
             if name not in TOOLS:
                 raise ValueError(f"unknown tool in task {tid}: {name}")
         for value in outcomes.values():
@@ -167,8 +167,8 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
 
     reasons = []
     called = {name for name, _ in calls}
-    for name in task.expect:
-        if name not in called:
+    for name in task.expect:  # "a|b": either path is right, such as typing in a search box or opening the search URL
+        if not called & set(name.split("|")):
             reasons.append(f"missing call: {name}")
     for name in task.forbid:
         # A forbidden call counts when it reached the tool: outcome ok, or an error that is not bad_args.

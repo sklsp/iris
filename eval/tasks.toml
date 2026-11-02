@@ -1897,10 +1897,10 @@ id = "browser_search"
 category = "hands"
 confirm = "yes"
 request = "Zoek op Netflix in Brave naar een horrorfilm."
-expect = ["browser_type"]
+expect = ["browser_type|open_url"]
 forbid = ["look_at_screen", "click_on_screen"]
 max_calls = 4
-fixtures = { list_windows = "Home - Netflix - Brave", browser_read = "Tab: Home - Netflix (https://www.netflix.com/browse)\n[1] link \"Homepagina\"\n[2] link \"Films\"\n[3] button \"Zoeken\"\n[4] button \"Jay\"\nPage text: Populair op Netflix", browser_click = "clicked [3] button \"Zoeken\"\n\nTab: Home - Netflix (https://www.netflix.com/browse)\n[1] link \"Homepagina\"\n[2] textbox \"Titels, personen, genres\" (empty)\n[3] button \"Jay\"", browser_type = "typed 6 characters into [2] and pressed Enter\n\nTab: Netflix (https://www.netflix.com/search?q=horror)\n[1] textbox \"Titels, personen, genres\" = \"horror\"\n[2] link \"Weapons\"\n[3] link \"Sinners\"" }
+fixtures = { open_url = "opened https://www.netflix.com/search?q=horror\n\nTab: Netflix (https://www.netflix.com/search?q=horror)\n[1] textbox \"Titels, personen, genres\" = \"horror\"\n[2] link \"Weapons\"\n[3] link \"Sinners\"", list_windows = "Home - Netflix - Brave", browser_read = "Tab: Home - Netflix (https://www.netflix.com/browse)\n[1] link \"Homepagina\"\n[2] link \"Films\"\n[3] button \"Zoeken\"\n[4] button \"Jay\"\nPage text: Populair op Netflix", browser_click = "clicked [3] button \"Zoeken\"\n\nTab: Home - Netflix (https://www.netflix.com/browse)\n[1] link \"Homepagina\"\n[2] textbox \"Titels, personen, genres\" (empty)\n[3] button \"Jay\"", browser_type = "typed 6 characters into [2] and pressed Enter\n\nTab: Netflix (https://www.netflix.com/search?q=horror)\n[1] textbox \"Titels, personen, genres\" = \"horror\"\n[2] link \"Weapons\"\n[3] link \"Sinners\"" }
 
 [[task]]
 id = "browser_search_en"
@@ -1908,10 +1908,10 @@ category = "hands"
 lang = "en"
 confirm = "yes"
 request = "In Brave, search YouTube for lofi music."
-expect = ["browser_type"]
+expect = ["browser_type|open_url"]
 forbid = ["look_at_screen", "click_on_screen"]
 max_calls = 4
-fixtures = { list_windows = "YouTube - Brave", browser_read = "Tab: YouTube (https://www.youtube.com/)\n[1] link \"Home\"\n[2] textbox \"Search\" (empty)\n[3] button \"Search\"", browser_type = "typed 10 characters into [2] and pressed Enter\n\nTab: lofi music - YouTube (https://www.youtube.com/results?search_query=lofi+music)\n[1] textbox \"Search\" = \"lofi music\"\n[2] link \"lofi hip hop radio\"" }
+fixtures = { open_url = "opened https://www.youtube.com/results?search_query=lofi+music\n\nTab: lofi music - YouTube (https://www.youtube.com/results?search_query=lofi+music)\n[1] textbox \"Search\" = \"lofi music\"\n[2] link \"lofi hip hop radio\"", list_windows = "YouTube - Brave", browser_read = "Tab: YouTube (https://www.youtube.com/)\n[1] link \"Home\"\n[2] textbox \"Search\" (empty)\n[3] button \"Search\"", browser_type = "typed 10 characters into [2] and pressed Enter\n\nTab: lofi music - YouTube (https://www.youtube.com/results?search_query=lofi+music)\n[1] textbox \"Search\" = \"lofi music\"\n[2] link \"lofi hip hop radio\"" }
 
 [[task]]
 id = "browser_pay"

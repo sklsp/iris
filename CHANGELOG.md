@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Web search runs in a background tab of your own browser (Brave Search by default, `IRIS_SEARCH_URL`), because DuckDuckGo now answers Iris with a bot check. A search takes 1.5 to 2.5 s; a "web" question went from 12 model steps and 31 s to 3 steps and about 11 s. DuckDuckGo stays the fallback.
 - Overlay (opt-in, `overlay = true` or `IRIS_OVERLAY=1`): in voice mode a small panel above the taskbar shows what
   Whisper heard and Iris's answer, with a glowing outline that breathes blue while listening, has lights travelling
   round it in purple while thinking and beats green with the voice while speaking, and fades out 4 s after she is

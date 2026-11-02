@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -87,6 +88,7 @@ class Agent:
         # a callable is asked again on every request, so a newly enabled plugin or approved skill needs no restart
         self.llm, self.confirm, self.journal, self._tools = llm, confirm, journal, tools
         self._lang = "en"
+        self._granted: set[str] = set()
         self.today = today  # a fixed date for the eval, whose fixtures are written for one day; None is the real date
         self.tools = tools() if callable(tools) else tools
         self.messages: list[dict] = [{"role": "system", "content": system_prompt(today=self.today)}]
@@ -97,6 +99,7 @@ class Agent:
         self.messages[0] = {"role": "system", "content": system_prompt(today=self.today)}
         self.messages.append({"role": "user", "content": request})
         self._lang = _lang(request)  # confirm questions follow the language of the latest request
+        self._granted = set()  # windows the user said yes to for this request: no question per click
         self._trim()
         self.journal.log(event="request", text=request)
         schemas = [t.schema() for t in self.tools.values()]
@@ -147,9 +150,19 @@ class Agent:
         if tier == NEVER:
             self.journal.log(**entry, outcome="refused")
             return "refused: this action is never automated. The user must do it themselves."
-        if tier == CONFIRM and not self.confirm(_describe(call.name, call.args, self._lang)):
-            self.journal.log(**entry, outcome="declined")
-            return "declined: the user said no. Do not retry this action."
+        if tier == CONFIRM:
+            key = _grant_key(call.name, call.args)
+            if key is not None and key in self._granted:
+                entry["granted"] = True  # covered by the yes for this window earlier in this request
+            else:
+                question = _describe(call.name, call.args, self._lang)
+                if key is not None:
+                    question += _grant_note(call.args, self._lang)
+                if not self.confirm(question):
+                    self.journal.log(**entry, outcome="declined")
+                    return "declined: the user said no. Do not retry this action."
+                if key is not None:
+                    self._granted.add(key)
         try:
             inspect.signature(tool.fn).bind(**call.args)
         except TypeError as exc:  # wrong or missing keywords: fn is never called
@@ -165,6 +178,34 @@ class Agent:
         except Exception as exc:  # noqa: BLE001 - every failure goes back to the model as data
             self.journal.log(**entry, outcome="error", error=repr(exc))
             return f"error: {exc}"
+
+
+# One yes to a click, typing or keys in a window covers the rest of that kind of work in the same window for the rest
+# of the request, so a task like "find a horror film on Netflix" asks once instead of per click. NEVER stays NEVER
+# (pay, send, delete, password, Enter in mail and chat), and keys that delete or close a window ask every time.
+_GRANTED_TOOLS = ("click", "type_text", "press_keys", "click_on_screen")
+_ALWAYS_ASK_KEYS = re.compile(r"\{(DEL|DELETE)\}|%\{F4\}", re.I)
+
+
+def _grant_key(name: str, args: dict) -> str | None:
+    """The window a yes to this call may cover, or None when the call must always ask."""
+    if name not in _GRANTED_TOOLS:
+        return None
+    if name == "press_keys" and _ALWAYS_ASK_KEYS.search(str(args.get("keys", ""))):
+        return None
+    return str(args.get("window") or "").strip().lower() or "the screen"
+
+
+def _grant_note(args: dict, lang: str) -> str:
+    w = args.get("window")
+    notes = {
+        "en": f" A yes covers every click and keystroke in {w or 'the screen'} for this request.",
+        "nl": f" Een ja geldt voor alle klikken en typen in {w or 'het scherm'} tijdens deze opdracht.",
+        "de": f" Ein Ja gilt für alle Klicks und Eingaben in {w or 'dem Bildschirm'} bei diesem Auftrag.",
+        "fr": f" Un oui vaut pour tous les clics et la saisie dans {w or 'l’écran'} pour cette demande.",
+        "es": f" Un sí vale para todos los clics y la escritura en {w or 'la pantalla'} en esta petición.",
+    }
+    return notes.get(lang, notes["en"])
 
 
 def _describe(name: str, args: dict, lang: str = "en") -> str:

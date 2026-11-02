@@ -17,6 +17,11 @@ The attacker does not control the code: tiers, word lists, path roots and the jo
 
 - **Tiers are enforced in code, before the function runs.** `Agent._run` calls `tool.tier_of(args)` on every call; the model's choice of tool or argument cannot change the tier; proven by `test_every_tool_has_a_known_tier` and `test_never_tool_by_base_tier_is_refused_without_asking`.
 - **NEVER words escalate clicks and typing to refusal.** Control or field names matching send/submit/buy/order/pay/delete/password (English), verzend/betaal/wachtwoord/etc. (Dutch), or their German, French and Spanish stems (versend/bezahl/passwort, envoy/achet/mot de passe, enviar/pagar/contraseña and more), case-insensitively, are refused with no confirmation path; proven by `test_click_escalates_to_never_when_the_control_says_send_pay_or_password`, `test_type_escalates_to_never_on_password_order_or_payment_fields` and end-to-end by `test_never_tool_by_escalation_is_refused_without_asking` ("Verzenden"); the other three languages by `test_german_french_and_spanish_pay_send_delete_and_password_names_are_never`.
+- **One yes per window per task.** The first click, typing or keys in a window asks, and says that a yes covers the
+  rest of that work in the same window for this request; a new request asks again, a "no" grants nothing, NEVER
+  stays NEVER, and keys that delete (`{DEL}`) or close a window (Alt+F4) ask every time; proven by
+  `test_one_yes_covers_the_other_clicks_in_that_window_for_this_request`,
+  `test_a_no_grants_nothing_and_never_words_stay_refused` and `test_grant_keys`.
 - **The mail/chat Enter rule.** `{ENTER}` anywhere in the key string, when the window is a mail or chat app (Outlook, Gmail, WhatsApp, Discord, Teams, Slack, Telegram, Signal, Messenger, Thunderbird, Skype, Windows Mail) or an inbox title in five languages ("Postvak IN", "Posteingang", "Boîte de réception"...), is NEVER; the same keys elsewhere stay confirm; proven by `test_pressing_enter_in_a_mail_or_chat_window_is_never` (21 rows).
 - **A program or script never runs silently.** `open_app` opens apps by name, documents, folders and
   `ms-settings:` at once, but a program or script file (.exe, .bat, .cmd, .ps1, .vbs, .js, .msi, .lnk, .reg and more)
@@ -71,6 +76,9 @@ Nothing is pinned as a known bug. The limits below are accepted tradeoffs and op
 - **Over-refusal is accepted.** The never words match word *starts* without a trailing boundary, so harmless names like "Poster" or "Payment" are refused too (documented in `tools.py`; asserted on purpose in `test_click_escalates_to_never_when_the_control_says_send_pay_or_password`/`test_type_escalates_to_never_on_password_order_or_payment_fields`). Safe direction, but Iris sometimes says no to things that were fine.
 - **The word lists are fixed regexes for five languages.** English, Dutch, German, French and Spanish stems escalate; other languages and new phrasings do not, and stems that would catch common English words ("pag", "envi", "compr") are left out on purpose. A mail or chat app outside the list keeps `{ENTER}` at confirm instead of never.
 - **The wrapping is advisory to the model.** `<untrusted_data>` tells the model the text is data; it cannot prove the model will not be steered into *other* choices. The hard protection is that tiers and path roots are enforced in code no matter what the model decides.
+- **A yes to one click covers the window.** After that first yes, a click on something harmless-sounding that does
+  more than its name says (a button labelled "OK" that confirms an order) is not asked about again during that request.
+  The never-words catch the usual names; the window and the request bound the rest.
 - **A confirm prompt relies on the user listening.** The question is spoken once; silence counts as "no", but a misheard or half-heard "yes" approves with no second check.
 - **The builder has your rights too.** The coding agent that builds a skill (Cline in yolo mode, or your
   `builder`) can do whatever your account can while it works. The plan tells it to stay in the skill's folder and

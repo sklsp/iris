@@ -5,6 +5,11 @@
 - Web pages through the DevTools Protocol (`browser` extra): `browser_read`, `browser_click`, `browser_type` and
   `browser_scroll` work on numbered page elements in Brave, Chrome or Edge. A read takes 0.01 to 0.04 s instead of
   seconds for a screenshot, and pay, send and password controls are recognised by the label the page shows.
+- Brave asks Allow once per run: a slow or frozen tab no longer makes Iris open a new connection.
+- A request may take 30 model steps (was 12), enough to research on one site and check a few titles on another. When
+  the steps run out Iris says what it found and what is left, instead of only that it stopped. Older page views in a
+  request keep their text but drop their numbered items, so a long web task fits the model's context.
+- `iris eval` runs in the default confirm mode whatever the user's `config.toml` says (`IRIS_CONFIRM` still wins).
 - Fix: the "hey jarvis" wake word never fired. openWakeWord wants 16-bit samples and got floats, which it scores as
   silence.
 - Voice mode prints what Iris heard (`You: ...`).

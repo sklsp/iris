@@ -51,8 +51,18 @@ def system_prompt(name: str | None = None, today: str | None = None) -> str:
     return SYSTEM.format(name=name, today=today or time.strftime("%A %d %B %Y"), rules=rules)
 
 
-MAX_STEPS = 12
+MAX_STEPS = 30  # a web task (research, then a few searches on a site) takes 15 to 25; a step is 2 to 5 s
 MAX_HISTORY_CHARS = 40_000
+OUT_OF_STEPS = ("You have used all your steps for this request. Do not call tools. Answer now, in the language of the "
+                "request, with what you found so far, and say in one sentence what is still left to do.")
+_ITEM_LINE = re.compile(r"\[\d+\] ")
+
+
+def _older_page(result: str) -> str:
+    """A browser result once a newer one came: its numbered items go (their numbers no longer apply), the tab line
+    and page text stay, so what Iris read there is not lost. Keeps a long web task inside the model's context."""
+    kept = [line for line in result.splitlines() if not _ITEM_LINE.match(line)]
+    return "\n".join(kept) + "\n(older view of the page: its numbers no longer apply)"
 
 
 class Journal:
@@ -120,6 +130,7 @@ class Agent:
         self._trim()
         self.journal.log(event="request", text=request)
         schemas = [t.schema() for t in self.tools.values()]
+        pages: list[tuple[dict, str]] = []  # browser results of this request, so older ones can be shortened
         for _ in range(MAX_STEPS):
             try:
                 reply = self.llm.chat(self.messages, schemas)
@@ -138,11 +149,32 @@ class Agent:
                 return reply.text
             for call in reply.calls:
                 result = self._run(call)
-                self.messages.append({"role": "tool", "tool_call_id": call.id,
-                                      "content": f"<untrusted_data>\n{result}\n</untrusted_data>"})
+                msg = {"role": "tool", "tool_call_id": call.id,
+                       "content": f"<untrusted_data>\n{result}\n</untrusted_data>"}
+                if call.name.startswith("browser_"):
+                    for old, text in pages:
+                        old["content"] = f"<untrusted_data>\n{_older_page(text)}\n</untrusted_data>"
+                    pages.append((msg, result))
+                self.messages.append(msg)
         self.journal.log(event="gave_up", steps=MAX_STEPS)
+        text = self._out_of_steps()
         self._trim()
-        return _sorry("steps", request)
+        return text or _sorry("steps", request)
+
+    def _out_of_steps(self) -> str:
+        """One last call without tools, so the user hears what was found instead of nothing."""
+        self.messages.append({"role": "user", "content": OUT_OF_STEPS})
+        try:
+            reply = self.llm.chat(self.messages, [])
+        except (OSError, KeyError, IndexError, ValueError) as exc:
+            self.journal.log(event="llm_error", error=repr(exc)[:500])
+            reply = None
+        self.messages.pop()  # the user never said it
+        if reply is None or reply.calls or not reply.text.strip():
+            return ""
+        self.messages.append(reply.raw)
+        self.journal.log(event="answer", text=reply.text)
+        return reply.text
 
     def _trim(self) -> None:
         """Drop the oldest whole turns until history fits in MAX_HISTORY_CHARS.

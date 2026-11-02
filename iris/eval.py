@@ -2,6 +2,7 @@
 import argparse
 import fnmatch
 import json
+import os
 import re
 import statistics
 import tempfile
@@ -532,6 +533,8 @@ def main(argv: list[str]) -> int:
     if a.command == "history":
         return print_history(a.results, a.last)
 
+    # the numbers are for the default confirm mode, whatever the user's own config.toml says (IRIS_CONFIRM still wins)
+    os.environ.setdefault("IRIS_CONFIRM", "all")
     tasks = load_tasks(Path(a.tasks))
     if a.only:
         ids = [t.id for t in tasks]

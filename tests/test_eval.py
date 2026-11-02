@@ -3,6 +3,7 @@ import urllib.error
 from pathlib import Path
 
 from iris import eval as ev
+from iris.agent import MAX_STEPS
 
 
 def _write(tmp_path, text):
@@ -402,9 +403,19 @@ def test_run_task_skips_broken_journal_lines(tmp_path):
     assert (r.passed, r.calls) == (True, [("open_app", "ok")])
 
 
+def test_eval_runs_in_the_default_confirm_mode_whatever_the_users_config_says(monkeypatch):
+    from iris import agent, config
+
+    monkeypatch.delenv("IRIS_CONFIRM", raising=False)
+    monkeypatch.setattr(config, "get", lambda key, default=None: "important" if key == "confirm" else default)
+    assert agent.important_only()
+    assert ev.main(["--only", "no_such_task"]) == 2
+    assert not agent.important_only()
+
+
 def test_run_task_gives_up_after_max_steps(tmp_path):
-    task = ev.Task(id="t11", request="doe iets", max_calls=12)
-    llm = ScriptedLLM(*[call("open_app")] * 12)   # never answers: hits MAX_STEPS
+    task = ev.Task(id="t11", request="doe iets", max_calls=MAX_STEPS)
+    llm = ScriptedLLM(*[call("open_app")] * MAX_STEPS, answer("Half klaar."))  # hits MAX_STEPS, then sums up
     r = ev.run_task(llm, task, tmp_path)
     assert (r.passed, r.reasons) == (False, ["gave up"])
 

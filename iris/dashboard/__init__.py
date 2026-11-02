@@ -284,8 +284,9 @@ def set_iris_model(body: dict) -> dict:
     path.parent.mkdir(parents=True, exist_ok=True)
     data = read_settings()   # keep any other keys the user has in the file
     data["model"] = model
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    tmp = path.with_name(path.name + ".tmp")  # write aside, then swap: a crash never leaves half a file
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
     _log_model_event("select", model, "ok")
     return iris_model_payload()
 

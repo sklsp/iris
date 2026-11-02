@@ -12,6 +12,7 @@
   blocked.
 - File tools can never write, move, copy or trash Iris's own code, `~/.iris`, the skill approvals or config.toml,
   not even with a yes: before, a clone under the home folder or `~/.iris/config.toml` was only confirm.
+- Reminders, notes and the dashboard's model choice are saved atomically: a crash mid-write no longer empties them.
 - Fix: "restore" brought back the trashed file with the newest contents instead of the last one trashed (a move
   keeps a file's own date); now it goes by when each item was trashed. A removed skill can be restored too.
 - Fix: moving or copying a file to a folder that does not exist yet ("move report.docx to ~/Archive") made the

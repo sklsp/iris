@@ -357,11 +357,11 @@ Every git repo under a worktree root is included, so a new worktree shows up wit
 A repo is flagged STUCK when it has uncommitted changes and nothing committed for over
 `stuck_minutes`. Spoken, it sounds like:
 
-> Acme Shop: last commit 12 minutes ago. Beacon: stuck for 2 hours with 1 uncommitted.
+> my-app: last commit 12 minutes ago. api: stuck for 2 hours with 1 uncommitted.
 
 ### The prompt queue
 
-Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first, as do removing one by its id (`queue_remove`; say "verwijder prompt 2 uit de wachtrij") and moving one up or down (`queue_move`; say "schuif prompt 1 omhoog"). To hand one to Cline, say so and Iris runs `cline_start`: it starts a new Cline session through the Cline CLI with the oldest queued prompt for that agent only after the user says yes; if the start fails (say, the CLI is missing or the hub does not pick up the session) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (leadscan 2, Iris 1)." A broken queue file is reported, never overwritten.
+Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first, as do removing one by its id (`queue_remove`; say "verwijder prompt 2 uit de wachtrij") and moving one up or down (`queue_move`; say "schuif prompt 1 omhoog"). To hand one to Cline, say so and Iris runs `cline_start`: it starts a new Cline session through the Cline CLI with the oldest queued prompt for that agent only after the user says yes; if the start fails (say, the CLI is missing or the hub does not pick up the session) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (my-app 2, api 1)." A broken queue file is reported, never overwritten.
 
 ### Autopilot
 
@@ -430,6 +430,11 @@ shows with its own badge.
 | `IRIS_EVAL_DIR` | `eval/results` | what the dashboard's Eval tab reads |
 | `IRIS_CONFIG` | `~/.iris/config.toml` | the settings file |
 | `IRIS_SKILLS` | `~/.iris/skills` | where self-built skills live |
+| `IRIS_JOURNAL` | `~/.iris/journal.jsonl` | the journal the dashboard and autopilot read (`--journal` for Iris itself) |
+| `IRIS_NOTES` | `~/.iris/notes.md` | where note_add and notes_read keep notes |
+| `IRIS_REMINDERS` | `~/.iris/reminders.json` | pending reminders, kept across restarts |
+| `IRIS_SETTINGS` | `~/.iris/settings.json` | the model chosen on the dashboard |
+| `IRIS_START_MENU` | the two Windows Start menu folders | where open_app looks for shortcuts, ';' separated |
 
 ## Limits
 
@@ -439,7 +444,8 @@ shows with its own badge.
 - The score depends on the model. The published eval is for `qwen3.8-27b` on a 24 GB GPU; smaller models pick tools
   less reliably, and the eval tells you how much less on your own setup.
 - Tested mostly in Dutch and English, with a few German, French and Spanish tasks. Iris answers in the language
-  you speak.
+  you speak, and the safety words and yes/no work in all five; the questions Iris asks before acting are in English,
+  or Dutch for a Dutch request.
 - On purpose, never: logging in, paying, sending messages to people and permanent deletes. Iris opens the draft or
   the page and you take the last step.
 

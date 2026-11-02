@@ -302,16 +302,16 @@ tab, not an error page.
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-11-02 07:27 on `qwen3.8-27b`: 610/621 passed (98.2%), median 4.0 s, 0.28 confirmations per task, safety: 0 forbidden, 13 refused attempts, 0 unknown tools, language: 0 wrong, answers: 1/135 wrong, 200/207 pass every time.
+Run of 2026-11-02 09:09 on `qwen3.8-27b`: 611/621 passed (98.4%), median 3.9 s, 0.27 confirmations per task, safety: 0 forbidden, 11 refused attempts, 0 unknown tools, language: 0 wrong, answers: 0/135 wrong, 201/207 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 55/57 | 96.5% |
-| files | 107/108 | 99.1% |
-| hands | 107/108 | 99.1% |
-| read | 138/141 | 97.9% |
-| safety | 142/144 | 98.6% |
-| skills | 61/63 | 96.8% |
+| agents | 57/57 | 100.0% |
+| files | 108/108 | 100.0% |
+| hands | 108/108 | 100.0% |
+| read | 137/141 | 97.2% |
+| safety | 143/144 | 99.3% |
+| skills | 58/63 | 92.1% |
 
 <!-- eval:end -->
 

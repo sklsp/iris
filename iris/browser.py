@@ -77,15 +77,22 @@ class Connection:
         self.ws: Any = websocket.create_connection(url, timeout=60, suppress_origin=True)
         self.ws.settimeout(15)
         self._id = 0
+        self._slow = (TimeoutError, websocket.WebSocketTimeoutException)
 
-    def send(self, method: str, params: dict | None = None, session: str | None = None) -> dict:
+    def send(self, method: str, params: dict | None = None, session: str | None = None, wait: float = 15) -> dict:
         self._id += 1
         msg: dict[str, Any] = {"id": self._id, "method": method, "params": params or {}}
         if session:
             msg["sessionId"] = session
         self.ws.send(json.dumps(msg))
+        self.ws.settimeout(wait)
         while True:
-            reply = json.loads(self.ws.recv())
+            try:
+                reply = json.loads(self.ws.recv())
+            except self._slow:
+                # a busy or frozen tab, not a dead socket: reconnecting would make the browser ask Allow again,
+                # and the late reply is skipped by its id
+                raise BrowserError(f"the browser did not answer {method} within {wait:g} s") from None
             if reply.get("id") == self._id:  # events and other replies are skipped
                 if "error" in reply:
                     raise BrowserError(f"{method} failed: {reply['error'].get('message', reply['error'])}")
@@ -105,21 +112,21 @@ def _connect() -> Connection:
     return _conn
 
 
-def _call(method: str, params: dict | None = None, session: str | None = None) -> dict:
+def _call(method: str, params: dict | None = None, session: str | None = None, wait: float = 15) -> dict:
     """A command, with one reconnect when the browser was restarted since the last one."""
     global _conn
     try:
-        return _connect().send(method, params, session)
+        return _connect().send(method, params, session, wait)
     except BrowserError:
         raise
     except Exception:  # noqa: BLE001 - a dropped socket: connect again once
         _conn = None
-        return _connect().send(method, params, session)
+        return _connect().send(method, params, session, wait)
 
 
-def _eval(session: str, expression: str) -> Any:
+def _eval(session: str, expression: str, wait: float = 15) -> Any:
     result = _call("Runtime.evaluate", {"expression": expression, "returnByValue": True, "awaitPromise": True},
-                   session)
+                   session, wait)
     if "exceptionDetails" in result:
         raise BrowserError("the page refused the script: " + str(result["exceptionDetails"].get("text", ""))[:200])
     return result.get("result", {}).get("value")
@@ -139,14 +146,21 @@ def _tab(tab: str = "") -> str:
     best: tuple[int, str] | None = None
     for t in pages:
         tid = t["targetId"]
-        if tid not in _sessions:
-            _sessions[tid] = _call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
-        score = _eval(_sessions[tid], "(document.visibilityState === 'visible') + document.hasFocus()") or 0
+        try:
+            if tid not in _sessions:
+                _sessions[tid] = _call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
+            score = _eval(_sessions[tid], "(document.visibilityState === 'visible') + document.hasFocus()", 2) or 0
+        except BrowserError:  # a frozen background tab, or one whose session went stale: not the one in front
+            _sessions.pop(tid, None)
+            if tab:
+                raise
+            continue
         if best is None or score > best[0]:
             best = (score, tid)
         if score == 2 or tab:
             break
-    assert best is not None
+    if best is None:
+        raise BrowserError("no browser tab answered; click in the tab you mean and ask again")
     return _sessions[best[1]]
 
 

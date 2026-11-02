@@ -274,7 +274,10 @@ def remove(name: str) -> str:
     approvals = _approvals()
     if approvals.pop(name, None) is not None:
         _write(skills_dir() / "approved.json", json.dumps(approvals, indent=1) + "\n")
-    shutil.move(str(folder), str(_trash_dir() / f"{time.strftime('%Y%m%d-%H%M%S')}_skill_{name}"))
+    dest = _trash_dir() / f"{time.strftime('%Y%m%d-%H%M%S')}_skill_{name}"
+    shutil.move(str(folder), str(dest))
+    # the same sidecar trash_file writes, so restore_trash can put it back (unapproved: the approval is gone)
+    (dest.parent / (dest.name + ".json")).write_text(json.dumps({"original": str(folder)}), encoding="utf-8")
     return f"removed {name}; it is in Iris's trash"
 
 

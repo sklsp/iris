@@ -8,6 +8,8 @@
   clicks something found by sight (confirm, never for send/buy/pay/password/delete). Both use the local model, so
   it needs one that reads images, such as `qwen3.8-27b`.
   `iris doctor` says whether the model does; the dashboard warns on a skill someone else wrote.
+- Fix: "restore" brought back the trashed file with the newest contents instead of the last one trashed (a move
+  keeps a file's own date); now it goes by when each item was trashed. A removed skill can be restored too.
 - Fix: moving or copying a file to a folder that does not exist yet ("move report.docx to ~/Archive") made the
   folder's name the file's new name; now the folder is made and the file goes in it. With that, Iris calls file
   tools directly when you give the path instead of listing or searching first.

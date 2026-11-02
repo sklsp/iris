@@ -198,7 +198,9 @@ class Voice:
             return ""
         audio = np.concatenate(chunks)[:, 0]
         segments, _ = self.model.transcribe(audio, vad_filter=True)
-        return " ".join(s.text.strip() for s in segments).strip()
+        text = " ".join(s.text.strip() for s in segments).strip()
+        print(f"You: {text or '(nothing heard)'}")
+        return text
 
 
 class VoiceSession:
@@ -291,7 +293,9 @@ class VoiceSession:
                 break
             if time.time() - t0 > self.max_record_seconds:
                 break
-        return self._transcribe(np.concatenate(chunks))
+        text = self._transcribe(np.concatenate(chunks))
+        print(f"You: {text or '(nothing heard)'}")  # so the user sees what Iris understood
+        return text
 
     def speak(self, text: str) -> bool:
         """Speak with barge-in and block until done. Returns True if a wake word cut it short."""

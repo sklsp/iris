@@ -165,6 +165,9 @@ def main() -> None:
     skills.watch(say)  # says when a skill the coding agent built is checked and ready, or blocked
 
     agent = Agent(LMStudio(), confirm, Journal(Path(a.journal)))
+    cancelled = getattr(session, "cancelled", None)  # set by the overlay's cancel button, see VoiceSession.cancel
+    if cancelled is not None:
+        agent.cancel = cancelled  # one flag: the agent checks it before every model and tool call
     try:
         if session is not None:
             session.__enter__()  # keep the mic open so a wake word can interrupt speech later
@@ -177,7 +180,9 @@ def main() -> None:
             if request.lower() in {"quit", "exit", "stop", "stoppen"}:
                 break
             if request:
-                say(agent.handle(request))
+                answer = agent.handle(request)
+                if cancelled is None or not cancelled.is_set():  # a cancelled request says nothing
+                    say(answer)
     except KeyboardInterrupt:
         # stopped with Ctrl+C while busy: show where every thread was, so a hang can be found afterwards
         import faulthandler

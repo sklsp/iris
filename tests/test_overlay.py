@@ -7,6 +7,7 @@ import math
 import queue
 import subprocess
 import sys
+import threading
 import time
 import types
 from unittest import mock
@@ -18,6 +19,7 @@ from iris import overlay, tools
 from iris.overlay import (
     ALPHA,
     BG,
+    CANCEL,
     COLOUR_FADE,
     COLOURS,
     EDGE_PIECES,
@@ -457,8 +459,9 @@ def test_win32_keeps_the_window_out_of_the_way():
     (_, hwnd, index, style), = u.named("SetWindowLongW")
     assert hwnd == 42 and index == Win32.GWL_EXSTYLE
     assert not style & Win32.WS_EX_APPWINDOW  # no taskbar button
-    for flag in (Win32.WS_EX_NOACTIVATE, Win32.WS_EX_TOOLWINDOW, Win32.WS_EX_TRANSPARENT, Win32.WS_EX_LAYERED):
+    for flag in (Win32.WS_EX_NOACTIVATE, Win32.WS_EX_TOOLWINDOW, Win32.WS_EX_LAYERED):
         assert style & flag
+    assert not style & Win32.WS_EX_TRANSPARENT  # the cancel button takes clicks; the see-through corners pass them on
     assert u.named("SetWindowDisplayAffinity") == [("SetWindowDisplayAffinity", 42, 0x11)]
     w.show()
     w.hide()
@@ -719,7 +722,7 @@ def test_panel_draws_the_glow_and_outline_in_the_see_through_margin():
     events.put({"event": "listening"})
     p.step()
     assert len(canvas.create_polygon.call_args_list) == len(OUTER) + 1 + len(INNER)  # the glow, the panel, the glow
-    assert len(canvas.create_line.call_args_list) == EDGE_PIECES  # the outline
+    assert len([c for c in canvas.create_line.call_args_list if c.kwargs["tags"] == "edge"]) == EDGE_PIECES
     w, h, left, top = _geometry(root)
     m = p.margin
     assert w == p.width and h == p.height
@@ -796,3 +799,304 @@ def test_the_indicator_is_centred_when_there_is_no_text():
     assert not canvas.create_text.called
     _, y0, _, y1 = canvas.create_rectangle.call_args.args
     assert (y0 + y1) / 2 == pytest.approx(p.height / 2)
+
+
+# --- the cancel button -------------------------------------------------------------------------------------------
+
+
+def _binding(canvas, sequence):
+    """The handler Panel bound to the cancel button's tag for one event sequence."""
+    return next(c.args[2] for c in canvas.tag_bind.call_args_list if c.args[:2] == ("cancel", sequence))
+
+
+def _button_items(canvas):
+    return [c for c in canvas.create_oval.call_args_list + canvas.create_line.call_args_list
+            if "cancel" in c.kwargs["tags"]]
+
+
+@pytest.mark.parametrize("event, shown", [("listening", True), ("thinking", True), ("answer", True), ("idle", False)])
+def test_the_cancel_button_shows_only_while_there_is_a_request(event, shown):
+    tk, events = _fake_tk(), queue.Queue()
+    p = Panel(tk, events, clock=Clock())
+    canvas = tk.Canvas.return_value
+    events.put({"event": "heard", "text": "hoe laat is het"})
+    p.step()
+    canvas.reset_mock()
+    events.put({"event": event, "text": "Tien over vier."})
+    p.step()
+    items = _button_items(canvas)
+    assert (len(items) == 3) is shown and (not items) is (not shown)  # a ring and the two lines of its X
+
+
+def test_the_cancel_button_sits_right_level_with_the_first_line_and_clear_of_the_text():
+    tk, events = _fake_tk(), queue.Queue()
+    canvas = tk.Canvas.return_value
+    canvas.bbox.return_value = (64, 28, 300, 46)
+    p = Panel(tk, events, clock=Clock())
+    events.put({"event": "heard", "text": "hoe laat is het"})
+    p.step()
+    ring = next(c for c in canvas.create_oval.call_args_list if "cancel_ring" in c.kwargs["tags"])
+    x0, y0, x1, y1 = ring.args
+    assert (y0 + y1) / 2 == pytest.approx(37)  # level with the first line, like the indicator
+    assert (x0 + x1) / 2 == pytest.approx(p.width - p.anchor[0])  # mirrors the indicator
+    text = canvas.create_text.call_args_list[0]
+    assert text.args[0] + text.kwargs["width"] < x0  # the text wraps before it reaches the button
+    assert x1 < p.width - p.margin  # on the panel, not in the see-through margin
+
+
+def test_a_click_on_the_cancel_button_tells_iris_and_lets_the_panel_go():
+    tk, events, out, clock = _fake_tk(), queue.Queue(), io.StringIO(), Clock()
+    p = Panel(tk, events, clock=clock, out=out)
+    canvas = tk.Canvas.return_value
+    click = _binding(canvas, "<Button-1>")
+    events.put({"event": "answer", "text": "Er was eens..."})
+    p.step()
+    canvas.reset_mock()
+    click(None)
+    assert out.getvalue() == CANCEL and json.loads(out.getvalue()) == {"event": "cancel"}
+    assert p.view.mode == "done" and not _button_items(canvas)  # redrawn without the button, fading out
+    click(None)  # a second click on a panel that is going: nothing more to cancel
+    assert out.getvalue() == CANCEL
+    clock.now = HIDE_AFTER + 0.1
+    p.step()
+    assert not p.shown
+
+
+def test_a_click_with_iris_gone_still_lets_the_panel_go():
+    class Broken(io.StringIO):
+        def write(self, text):
+            raise OSError("pipe gone")
+
+    tk, events = _fake_tk(), queue.Queue()
+    p = Panel(tk, events, clock=Clock(), out=Broken())
+    events.put({"event": "listening"})
+    p.step()
+    p.cancel()
+    assert p.view.mode == "done"
+    Panel(tk, events, clock=Clock()).cancel()  # no pipe at all (pythonw): nothing to write, no error
+
+
+def test_the_cancel_button_lights_up_in_the_state_colour_under_the_mouse():
+    tk, events, clock = _fake_tk(), queue.Queue(), Clock()
+    p = Panel(tk, events, clock=clock)
+    canvas = tk.Canvas.return_value
+    enter, leave = _binding(canvas, "<Enter>"), _binding(canvas, "<Leave>")
+    events.put({"event": "listening"})
+    p.step()
+    canvas.reset_mock()
+    clock.now = 5.0
+    enter(None)
+    ring = next(c for c in canvas.itemconfigure.call_args_list if c.args == ("cancel_ring",))
+    assert ring.kwargs["outline"] == p.tint.at(5.0)
+    canvas.configure.assert_called_with(cursor="hand2")
+    enter(None)  # already lit: nothing to repaint
+    assert len(canvas.itemconfigure.call_args_list) == 2
+    events.put({"event": "heard", "text": "hoe laat is het"})
+    p.step()  # drawn anew under the mouse: still lit
+    ring = next(c for c in canvas.create_oval.call_args_list if "cancel_ring" in c.kwargs["tags"])
+    assert ring.kwargs["outline"] == p.tint.at(5.0)
+    leave(None)
+    canvas.configure.assert_called_with(cursor="")
+    assert not p.hover
+
+
+def test_the_cancel_line_is_recognised():
+    assert overlay.is_cancel(CANCEL) and overlay.is_cancel('{"event": "cancel"}')
+    assert not overlay.is_cancel("garbage") and not overlay.is_cancel('{"event": "idle"}')
+    assert not overlay.is_cancel('["cancel"]')
+
+
+def test_the_overlay_calls_back_on_each_cancel_line():
+    got, two = [], threading.Event()
+
+    def on_cancel():
+        got.append(1)
+        if len(got) == 1:
+            raise RuntimeError("a bug in the callback")  # printed; the next cancel still arrives
+        two.set()
+
+    back = io.StringIO(CANCEL + "garbage\n" + '{"event": "x"}\n' + CANCEL)
+    proc = types.SimpleNamespace(stdin=io.StringIO(), stdout=back)
+    Overlay(proc, on_cancel=on_cancel)  # type: ignore[arg-type]
+    assert two.wait(5)
+    assert len(got) == 2
+
+
+def test_a_cancel_from_a_real_overlay_process_reaches_the_voice_loop():
+    script = f"import sys; sys.stdout.write({CANCEL!r}); sys.stdout.flush(); sys.stdin.read()"
+    proc = subprocess.Popen([sys.executable, "-c", script], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+                            encoding="ascii")
+    clicked = threading.Event()
+    o = Overlay(proc)
+    o.on_cancel = clicked.set  # set after the start, as VoiceSession does
+    assert clicked.wait(30)
+    o.close()
+    assert proc.poll() is not None
+
+
+def test_cancel_lines_without_a_callback_go_nowhere():
+    proc = types.SimpleNamespace(stdin=io.StringIO(), stdout=io.StringIO(CANCEL))
+    Overlay(proc)  # type: ignore[arg-type]  # nothing to call: read and ignored
+
+
+def test_launch_gives_the_overlay_a_pipe_back(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_OVERLAY", "1")
+    started = {}
+
+    def fake_popen(args, **kw):
+        started.update(kw)
+        return types.SimpleNamespace(stdin=io.StringIO(), stdout=io.StringIO())
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    overlay.launch()
+    assert started["stdout"] == subprocess.PIPE
+
+
+def test_win32_keeps_a_click_from_activating_the_panel():
+    u = User32()
+    w = Win32(u, 42)
+    w.no_activate_on_click()
+    (_, hwnd, index, _proc), = u.named("SetWindowLongPtrW")
+    assert hwnd == 42 and index == Win32.GWLP_WNDPROC
+    assert w._wndproc(42, Win32.WM_MOUSEACTIVATE, 0, 0) == Win32.MA_NOACTIVATE  # the click lands, no activation
+    assert not u.named("CallWindowProcW")
+    w._wndproc(42, 0x0201, 0, 0)  # WM_LBUTTONDOWN and everything else: on to Tk's own window procedure
+    assert u.named("CallWindowProcW")[0][1:3] == (1, 42)  # through the procedure it replaced
+
+
+def test_a_panel_without_the_click_hook_still_starts():
+    u = User32()
+    u.SetWindowLongPtrW = mock.Mock(side_effect=OSError("no hook"))
+    p = Panel(_fake_tk(), queue.Queue(), user32=u)
+    assert p.win is not None and u.named("SetWindowDisplayAffinity")
+
+
+def test_the_panel_hooks_the_click_on_windows():
+    u = User32()
+    Panel(_fake_tk(), queue.Queue(), user32=u)
+    assert u.named("SetWindowLongPtrW")
+
+
+def test_main_writes_cancel_to_stdout(monkeypatch):
+    tk = _fake_tk()
+    tk.Tk.return_value.mainloop.side_effect = lambda: None
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    made = []
+    real = overlay.Panel
+
+    def panel(*args, **kw):
+        made.append(real(*args, **kw))
+        return made[-1]
+
+    monkeypatch.setattr(overlay, "Panel", panel)
+    assert overlay.main(io.StringIO(""), tk=tk) == 0
+    assert made[0].out is out
+
+
+# --- what the voice loop does on a cancel --------------------------------------------------------------------------
+
+
+def test_the_voice_session_listens_to_the_overlays_cancel(monkeypatch):
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(InputStream=_Stream))
+    o = Overlay()
+    monkeypatch.setattr("iris.voice.launch", lambda: o)
+    s = VoiceSession(speaker=_Speaker())
+    with s:
+        assert o.on_cancel == s.cancel
+
+
+def test_a_cancel_while_speaking_stops_the_speech_at_once():
+    s = _session("")
+    started = threading.Event()
+
+    def speak(text, stop_event=None):
+        started.set()
+        return not stop_event.wait(30)  # a long answer, until something stops it
+
+    s.speaker.speak = speak  # type: ignore[method-assign]
+    s.speak_async("Er was eens een heel lang verhaal...")
+    assert started.wait(5)
+    t0 = time.perf_counter()
+    s.cancel()
+    assert s.wait_for_speech() is True  # cut short
+    assert time.perf_counter() - t0 < 10  # stopped, not played out
+    assert s.cancelled.is_set() and not s._answered  # back to the wake word: no follow-up window
+    assert s.overlay.sent == [("answer", "Er was eens een heel lang verhaal..."), "idle"]  # idle once, from the cancel
+
+
+def test_a_cancel_while_listening_ends_the_recording_without_transcribing():
+    s = _session("never")
+    s._transcribe = mock.Mock(side_effect=AssertionError("must not transcribe"))  # type: ignore[method-assign]
+
+    def click_then_frame(timeout=None):
+        s.cancel()  # the click lands while Iris records
+        return np.zeros(FRAME, dtype="float32")
+
+    s._frames.get = click_then_frame  # type: ignore[method-assign]
+    assert s.next_command() == ""
+    assert s.overlay.sent == ["listening", "idle"]  # no "heard": the panel is going
+
+
+def test_a_cancelled_confirm_question_waits_for_no_answer():
+    s = _session("ja")
+    started = threading.Event()
+
+    def speak(text, stop_event=None):
+        started.set()
+        return not stop_event.wait(30)
+
+    s.speaker.speak = speak  # type: ignore[method-assign]
+    s.speak_async("Zal ik het bestand weggooien?")
+    assert started.wait(5)
+    s.cancel()
+    s.wait_for_speech()
+    assert s.next_command() == ""  # the agent hears no yes, and stops before its next step
+    assert s.overlay.sent == [("answer", "Zal ik het bestand weggooien?"), "idle"]  # not listening again
+
+
+def test_a_cancel_while_whisper_works_drops_the_text():
+    s = _session("")
+
+    def transcribe(audio):
+        s.cancel()
+        return "hoe laat is het"
+
+    s._transcribe = transcribe  # type: ignore[method-assign]
+    s._frames.put(np.zeros(FRAME, dtype="float32"))
+    assert s.next_command() == ""
+    assert "heard" not in s.overlay.sent and ("heard", "hoe laat is het") not in s.overlay.sent
+
+
+def test_the_next_request_is_not_cancelled_by_an_old_click(monkeypatch):
+    monkeypatch.setenv("IRIS_CHIME", "0")
+    s = _session("hoe laat is het")
+    s.wake = _Wake(True)
+    s.cancel()  # the last request was cancelled
+    s._frames.put(np.zeros(FRAME, dtype="float32"))
+    s._frames.put(np.zeros(FRAME, dtype="float32"))
+    assert s.next_request() == "hoe laat is het"
+
+    class ClickWhileWaiting:
+        def detect(self, frame):
+            s.cancel()  # a late click that lands while Iris waits for the wake word
+            return True
+
+    s.wake = ClickWhileWaiting()
+    for _ in range(3):
+        s._frames.put(np.zeros(FRAME, dtype="float32"))
+    assert s.next_request() == "hoe laat is het"
+
+
+def test_voice_mode_carries_on_when_the_overlay_pipe_back_is_dead():
+    proc = subprocess.Popen([sys.executable, "-c", "pass"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+                            encoding="ascii")
+    proc.wait(timeout=30)
+    s = _session("hoe laat is het")
+    s.overlay = Overlay(proc, on_cancel=s.cancel)
+    for _ in range(3):
+        s._frames.put(np.zeros(FRAME, dtype="float32"))
+        assert s.next_command() == "hoe laat is het"
+        assert s.speak("Tien over vier.") is False
+    assert s.speaker.said == ["Tien over vier."] * 3 and not s.cancelled.is_set()
+    s.overlay.close()

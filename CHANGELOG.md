@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Overlay: a round cancel button on the panel while Iris listens, thinks or speaks. A click stops the speech at once,
+  stops the agent before its next model or tool call (a tool call it did not run gets "cancelled by the user" as its
+  result, so the history stays whole), logs `cancelled` to the journal and goes back to waiting for the wake word.
+  The overlay tells Iris through its stdout, now a pipe. The panel is no longer click-through so the button can take
+  the click; it still never takes the focus (WS_EX_NOACTIVATE plus MA_NOACTIVATE on WM_MOUSEACTIVATE).
 - Overlay (opt-in, `overlay = true` or `IRIS_OVERLAY=1`): in voice mode a small panel above the taskbar shows what
   Whisper heard and Iris's answer, with a glowing outline that breathes blue while listening, has lights travelling
   round it in purple while thinking and beats green with the voice while speaking, and fades out 4 s after she is

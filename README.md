@@ -241,8 +241,13 @@ of the screen, above the taskbar, like Siri: a dot while Iris listens, what Whis
 while she thinks and her answer while she speaks. It fades out 4 seconds after she is done; a long answer keeps its
 last lines. It is off by default.
 
-The panel never takes the keyboard focus and has no taskbar button, so Iris keeps typing into the window you were in;
-clicks go through it, and it is left out of screenshots (Windows 10 2004 or later), so `look_at_screen` never sees it.
+While Iris listens, thinks or speaks, a round cancel button (an X in a circle) sits at the right of the panel. A click
+stops that request: the speech stops at once, the agent takes no further step (a model call already under way may
+finish, but its result is dropped), the journal gets a `cancelled` entry, and Iris waits for the wake word again.
+
+The panel never takes the keyboard focus, also not when you click its button, and has no taskbar button, so Iris keeps
+typing into the window you were in. Clicks on the see-through corners go through to the window behind; the panel
+itself catches them. It is left out of screenshots (Windows 10 2004 or later), so `look_at_screen` never sees it.
 `list_windows` and `read_window` skip it too. It runs as its own process (`python -m iris.overlay`, tkinter only, no
 extra packages) and writes errors to `~/.iris/overlay.log`; if it fails or is closed, voice mode carries on without it.
 

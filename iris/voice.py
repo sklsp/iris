@@ -297,7 +297,8 @@ class VoiceSession:
     """Mic + wake word + VAD in one long-lived session.
 
     The input stream stays open the whole time, so a new wake word can interrupt speech even while
-    the agent is thinking or talking (speak() returns True when that happens)."""
+    the agent is thinking or talking (speak() returns True when that happens). The overlay's cancel button calls
+    cancel(): it stops the speech, sets `cancelled` (the agent checks it between steps) and ends the request."""
 
     def __init__(self, whisper_model: str | None = None, wake_word: str | None = None,
                  vad_threshold: float | None = None, silence_seconds: float = SILENCE_SECONDS,
@@ -315,6 +316,8 @@ class VoiceSession:
         self._interrupted = False
         self._wake_seen = False  # a wake word landed while Iris was talking (barge-in)
         self._answered = False  # Iris spoke since the last request: a follow-up may come without the wake word
+        self._stop: threading.Event | None = None  # stops the speech that is playing now
+        self.cancelled = threading.Event()  # this request was cancelled; cleared when the next one starts
         self.overlay = Overlay()  # sends nothing until __enter__ starts the overlay (opt-in, see iris.overlay)
 
     def __enter__(self):
@@ -337,6 +340,7 @@ class VoiceSession:
         self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", blocksize=FRAME, callback=cb)
         self._stream.__enter__()
         self.overlay = launch()
+        self.overlay.on_cancel = self.cancel
         return self
 
     def __exit__(self, *exc):
@@ -363,9 +367,21 @@ class VoiceSession:
                 self._speech = None
         return self._interrupted
 
+    def cancel(self) -> None:
+        """Stop this request (the overlay's cancel button, from its reader thread): the speech stops as for a wake
+        word, the agent stops before its next step, and Iris waits for the wake word again."""
+        print("Cancelled.")
+        self.cancelled.set()
+        self._answered = False  # no follow-up window after a cancel
+        stop = self._stop
+        if stop is not None:
+            stop.set()
+        self.overlay.send("idle")
+
     def next_request(self) -> str:
         """Block until the user says the wake word and then an utterance; returns the transcript."""
         self.wait_for_speech()  # never race the wake watcher for frames
+        self.cancelled.clear()  # a new request; a cancel of the last one is done with
         if self._wake_seen:  # barge-in: the user said the wake word while Iris was talking
             self._wake_seen = False
             self.chime()
@@ -379,6 +395,7 @@ class VoiceSession:
         while True:  # phase 1: wait for the wake word
             if self.wake.detect(self._frames.get()):
                 break
+        self.cancelled.clear()  # a click that came while Iris waited for the wake word cancels nothing
         self.chime()
         return self.next_command()
 
@@ -427,6 +444,8 @@ class VoiceSession:
 
     def next_command(self) -> str:
         """The wake word was already heard (barge-in); record and transcribe what follows."""
+        if self.cancelled.is_set():  # a confirm question the user cancelled: no answer to wait for
+            return ""
         print("Listening...")
         self.overlay.send("listening")
         self._drain()  # drop the wake word itself so it does not end up in the transcript
@@ -443,13 +462,17 @@ class VoiceSession:
             det.feed(frame)
         t0 = time.time()
         while True:
-            frame = self._frames.get()
+            frame = self._frames.get()  # every 80 ms, so a cancel ends the recording at once
+            if self.cancelled.is_set():
+                return ""  # the overlay already went idle; nothing to transcribe
             chunks.append(frame)
             if det.feed(frame):
                 break
             if time.time() - t0 > self.max_record_seconds:
                 break
         text = _strip_wake(self._transcribe(np.concatenate(chunks)))
+        if self.cancelled.is_set():  # cancelled while Whisper was busy
+            return ""
         print(f"You: {text or '(nothing heard)'}")  # so the user sees what Iris understood
         self.overlay.send("heard", text)
         if not text:
@@ -479,7 +502,7 @@ class VoiceSession:
 
     def _speak_and_watch(self, text: str) -> None:
         self.overlay.send("answer", text)  # before the watcher starts, so an interruption always comes after it
-        stop = threading.Event()
+        stop = self._stop = threading.Event()
         watcher = threading.Thread(target=self._watch_for_wake, args=(stop,), daemon=True)
         watcher.start()
         try:
@@ -488,7 +511,7 @@ class VoiceSession:
             stop.set()  # release the watcher whether or not it was interrupted
         watcher.join(timeout=1.0)
         self._interrupted = not finished
-        if finished:  # when the wake word cut it short, the panel is listening again already
+        if finished:  # not when a wake word or a cancel cut it short: the panel moved on
             self.overlay.send("idle")
 
     def _watch_for_wake(self, stop: threading.Event) -> None:

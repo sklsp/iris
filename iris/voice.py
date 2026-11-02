@@ -746,9 +746,9 @@ class Speaker:
             return self.speak(text, stop_event)
 
     def _speak_voxcpm(self, vox: VoxProcess, text: str, stop_event: threading.Event | None) -> bool:
+        if not vox.ready.is_set():  # still loading (a minute or more): Piper says this one rather than keep you waiting
+            return self._speak_piper(text, stop_event)
         try:
-            if not vox.ready.wait(vox.startup):
-                raise TimeoutError("VoxCPM did not start")
             lead = VOXCPM_LEAD * len(text) / CHARS_PER_SECOND
             return _play_stream(vox.stream(text), vox.rate, lead, stop_event)
         except Exception as exc:  # noqa: BLE001 - fall back to Piper so Iris keeps talking

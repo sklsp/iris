@@ -141,6 +141,17 @@ def test_speaker_uses_piper_when_voxcpm_is_not_installed(tmp_path, monkeypatch, 
     assert "using Piper instead" in capsys.readouterr().out
 
 
+def test_piper_speaks_while_voxcpm_is_still_loading(monkeypatch):
+    class Loading:
+        ready = threading.Event()
+
+    spk = voice.Speaker(engine="sapi")
+    spk.engine, spk._vox = "voxcpm", Loading()
+    said = []
+    monkeypatch.setattr(spk, "_speak_piper", lambda text, stop: said.append(text) or True)
+    assert spk.speak("Ready.") is True and said == ["Ready."] and spk.engine == "voxcpm"  # VoxCPM once it is loaded
+
+
 def test_speaker_falls_back_to_piper_when_voxcpm_fails_mid_answer(monkeypatch):
     class Broken:
         ready, rate, startup = threading.Event(), 48000, 1

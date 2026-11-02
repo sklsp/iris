@@ -18,13 +18,15 @@ SNAP = {"title": "Home - Netflix", "url": "https://www.netflix.com/browse",
 
 class FakeBrowser:
     def __init__(self, point="[100, 200]", snap=SNAP):
-        self.point, self.snap, self.calls = point, snap, []
+        self.point, self.snap, self.calls, self.frozen = point, snap, [], set()
         self.targets = [{"targetId": "A", "type": "page", "title": "Home - Netflix", "url": SNAP["url"]},
                         {"targetId": "B", "type": "page", "title": "YouTube", "url": "https://www.youtube.com/"},
                         {"targetId": "C", "type": "page", "title": "DevTools", "url": "devtools://x"}]
 
-    def send(self, method, params=None, session=None):
+    def send(self, method, params=None, session=None, wait=15):
         self.calls.append((method, params or {}, session))
+        if session in self.frozen:
+            raise browser.BrowserError(f"the browser did not answer {method} within {wait:g} s")
         if method == "Target.getTargets":
             return {"targetInfos": self.targets}
         if method == "Target.attachToTarget":
@@ -68,6 +70,36 @@ def test_a_tab_can_be_picked_by_title_or_address(fake):
     assert [c[2] for c in fake.calls if c[0] == "Runtime.evaluate"][-1] == "s-B"
     with pytest.raises(browser.BrowserError, match="no browser tab"):
         browser.browser_read("spotify")
+
+
+def test_a_frozen_tab_is_skipped_not_waited_on(fake):
+    fake.frozen.add("s-A")
+    assert browser.browser_read().startswith("Tab: Home - Netflix")  # the snapshot itself is faked
+    assert "A" not in browser._sessions and "B" in browser._sessions
+    fake.frozen.add("s-B")
+    browser._sessions.clear()
+    with pytest.raises(browser.BrowserError, match="no browser tab answered"):
+        browser.browser_read()
+
+
+def test_a_slow_answer_keeps_the_socket_so_the_browser_does_not_ask_allow_again(monkeypatch):
+    class SlowSocket:
+        def send(self, data):
+            pass
+
+        def settimeout(self, s):
+            pass
+
+        def recv(self):
+            raise TimeoutError("timed out")
+
+    c = object.__new__(browser.Connection)
+    c.ws, c._id, c._slow = SlowSocket(), 0, (TimeoutError,)
+    monkeypatch.setattr(browser, "_conn", c)
+    monkeypatch.setattr(browser, "_ws_url", lambda: pytest.fail("reconnected"))
+    with pytest.raises(browser.BrowserError, match="did not answer Runtime.evaluate within 2 s"):
+        browser._call("Runtime.evaluate", {}, "s", 2)
+    assert browser._conn is c
 
 
 def test_click_presses_the_mouse_on_the_element_and_returns_the_new_page(fake):

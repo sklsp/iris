@@ -204,3 +204,14 @@ def test_speaker_falls_back_to_piper_when_voxcpm_fails_mid_answer(monkeypatch):
     said = []
     monkeypatch.setattr(spk, "_speak_piper", lambda text, stop: said.append(text) or True)
     assert spk.speak("Hallo") is True and said == ["Hallo"] and spk.engine == "piper"
+
+
+def test_the_worker_speaks_a_long_answer_in_pieces_that_fit_its_cache():
+    from iris.voxcpm_worker import pieces
+
+    assert pieces("  Klaar.  ") == ["Klaar."]
+    assert pieces("") == []
+    long = "Eerste zin met wat woorden. " * 12 + "Een lange zin, met komma's, " * 12 + "x" * 600
+    out = pieces(long, 100)
+    assert all(len(p) <= 100 for p in out) and " ".join(out).replace(" ", "") == long.replace(" ", "")
+    assert out[0] == "Eerste zin met wat woorden. Eerste zin met wat woorden. Eerste zin met wat woorden."

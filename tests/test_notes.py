@@ -345,3 +345,17 @@ def test_reminder_default_path_is_under_home(reminders_file, monkeypatch, tmp_pa
     monkeypatch.setattr(reminders.Path, "home", staticmethod(lambda: tmp_path))
     assert reminders._path() == tmp_path / ".iris" / "reminders.json"
 
+
+
+def test_rewrites_never_leave_a_temp_file_behind(tmp_path, monkeypatch):
+    from iris import notes, reminders
+
+    monkeypatch.setenv("IRIS_NOTES", str(tmp_path / "notes.md"))
+    monkeypatch.setenv("IRIS_REMINDERS", str(tmp_path / "reminders.json"))
+    notes.note_add("tandarts donderdag")
+    notes.note_add("loodgieter vrijdag")
+    assert notes.note_remove("tandarts").startswith("removed")
+    reminders._write(None, [{"id": 1, "due": "2026-11-01T09:30", "text": "bellen"}])
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["notes.md", "reminders.json"]
+    assert "loodgieter" in (tmp_path / "notes.md").read_text(encoding="utf-8")
+    assert reminders._read()[0]["text"] == "bellen"

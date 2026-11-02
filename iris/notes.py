@@ -85,6 +85,8 @@ def note_remove(query: str) -> str:
         shown = "\n".join(f"- {dt:%Y-%m-%d %H:%M} {text[:80]}" for dt, text in hits)
         return f'error: {len(hits)} notes contain "{query}"; say which one:\n{shown}'
     del lines[first_idx]
-    p.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    tmp = p.with_name(p.name + ".tmp")  # write aside, then swap: a crash mid-write never loses the other notes
+    tmp.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    os.replace(tmp, p)
     dt, _ = hits[0]
     return f"removed a note ({dt:%Y-%m-%d %H:%M})"

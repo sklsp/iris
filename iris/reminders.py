@@ -81,8 +81,9 @@ def _read(path: Path | None = None) -> list[dict]:
 def _write(path: Path | None, rows: list[dict]) -> None:
     p = path or _path()
     p.parent.mkdir(parents=True, exist_ok=True)  # a fresh PC has no ~/.iris yet
-    with p.open("w", encoding="utf-8") as f:
-        json.dump(rows, f, ensure_ascii=False, indent=2)
+    tmp = p.with_name(p.name + ".tmp")  # write aside, then swap: a crash mid-write never empties the list
+    tmp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, p)
 
 
 def _parse_when(when: str, now: datetime) -> datetime | None:

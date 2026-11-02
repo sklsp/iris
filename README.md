@@ -297,8 +297,10 @@ uv pip install --python %USERPROFILE%\.iris\voxcpm\venv --reinstall torch torcha
 Then set `tts = "voxcpm"`. The model (about 5 GB) is downloaded from Hugging Face on the first start, which takes a
 few minutes; later starts take about half a minute. Iris keeps one voice in `~/.iris/voxcpm/voice.wav`: made on the
 first start, or put any clean 5 to 10 second recording there to speak in that voice. `voxcpm_gpu` in config.toml (or
-`IRIS_VOXCPM_GPU`) picks the GPU (default 0, in PCI bus order). A 24 GB card holds both the LLM, loaded with a
-32k context, and VoxCPM2, which runs at about 1.45 times real time on an RTX 3090 and starts within a second. On a
+`IRIS_VOXCPM_GPU`) picks the GPU (default 0, in PCI bus order). On an RTX 3090 VoxCPM2 runs at about 1.45 times
+real time and starts within a second, but give it a card with 6 GB truly free: next to a 27B LLM (32k context) and the
+desktop's own apps the 3090 spilled into system memory and the LLM's prompt processing fell from 1100 to 140
+tokens a second. On a
 GPU slower than real time (an RTX 3060 makes speech at 0.56 times real time) Iris starts talking once enough is made that the rest arrives in time, from the speed measured on each answer times
 `IRIS_VOXCPM_MARGIN` (default 1.15), so it plays without gaps; if it still runs dry it pauses once instead of
 stuttering. That costs a wait: on the 3060 about half the answer's length (2.5 s for a short answer, 17 s for a long

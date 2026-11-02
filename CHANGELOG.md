@@ -10,6 +10,9 @@
 - Speech: Piper voices (`tts = "piper"`), Dutch `nl_NL-ronnie-medium` and English `en_US-joe-medium`, picked by the
   language of the answer. SAPI's English voices made Dutch answers unintelligible.
 - `iris doctor` reports which hearing and speech Iris uses and how to improve them.
+- Follow-up questions: for 8 seconds after an answer (`IRIS_FOLLOW_UP`), a new question needs no wake word.
+- A beep after the wake word says Iris is listening; "Hey Jarvis" at the start of a request is dropped.
+- Fix: Piper's WAV was read while Piper still wrote it, which crashed the voice back to SAPI.
 
 ## 0.4.0 (2026-11-02): the first public release
 

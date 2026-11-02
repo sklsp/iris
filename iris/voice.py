@@ -28,6 +28,7 @@ FRAME = 1280  # 80 ms at 16 kHz, the frame size openWakeWord wants
 # Read at construction time so tests can override it.
 WAKE_THRESHOLD = float(os.environ.get("IRIS_WAKE_THRESHOLD", 0.5))
 SILENCE_SECONDS = 1.2  # stop recording after this much continuous silence
+FOLLOW_UP_SECONDS = 8.0  # after an answer, a question that starts this soon needs no wake word (IRIS_FOLLOW_UP)
 VAD_THRESHOLD = float(os.environ.get("IRIS_VAD_THRESHOLD", 0.01))  # RMS below this counts as silence
 
 # Kokoro TTS (optional, IRIS_TTS=kokoro). fp16: 0.999 spectral correlation with the 326 MB fp32 model
@@ -297,6 +298,7 @@ class VoiceSession:
         self._speech: threading.Thread | None = None
         self._interrupted = False
         self._wake_seen = False  # a wake word landed while Iris was talking (barge-in)
+        self._answered = False  # Iris spoke since the last request: a follow-up may come without the wake word
 
     def __enter__(self):
         import sounddevice as sd
@@ -346,6 +348,11 @@ class VoiceSession:
             self._wake_seen = False
             self.chime()
             return self.next_command()
+        if self._answered:
+            self._answered = False
+            text = self.follow_up()
+            if text:
+                return text
         print("Say the wake word...")
         while True:  # phase 1: wait for the wake word
             if self.wake.detect(self._frames.get()):
@@ -354,7 +361,7 @@ class VoiceSession:
         return self.next_command()
 
     def chime(self) -> None:
-        """A short soft tone right after the wake word, so the user hears that Iris is listening (IRIS_CHIME=0 mutes
+        """A short tone right after the wake word, so the user hears that Iris is listening (IRIS_CHIME=0 mutes
         it). It finishes before recording starts, so it never ends up in the request."""
         if os.environ.get("IRIS_CHIME", "1") == "0":
             return
@@ -363,20 +370,53 @@ class VoiceSession:
             import sounddevice as sd
 
             t = np.arange(int(0.12 * 22050)) / 22050
-            tone = (0.15 * np.sin(2 * np.pi * 880 * t) * np.minimum(1, (0.12 - t) * 40)).astype("float32")
+            tone = (0.4 * np.sin(2 * np.pi * 880 * t) * np.minimum(1, (0.12 - t) * 40)).astype("float32")
             sd.play(tone, 22050, blocking=True)
         except Exception:  # noqa: BLE001 - the chime is a nicety; listening goes on without it
             pass
 
-    def next_command(self) -> str:
-        """The wake word was already heard (barge-in); record and transcribe what follows."""
+    def follow_up(self) -> str | None:
+        """Right after an answer: if the user starts talking within IRIS_FOLLOW_UP seconds (default 8), record and
+        transcribe that as the next request, no wake word needed. None when nobody spoke, so talk that is not meant
+        for Iris only reaches her within that short window."""
         import numpy as np
 
+        window = float(os.environ.get("IRIS_FOLLOW_UP", FOLLOW_UP_SECONDS))
+        if window <= 0:
+            return None
+        print(f"Listening for a follow-up ({window:g} s, no wake word needed)...")
+        self._drain()  # the tail of Iris's own voice is not a question
+        threshold = VAD_THRESHOLD if self.vad_threshold is None else self.vad_threshold
+        recent: list[np.ndarray] = []
+        loud = 0
+        deadline = time.monotonic() + window
+        while time.monotonic() < deadline:
+            try:
+                frame = self._frames.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            recent = [*recent[-3:], frame]  # a little lead-in, so the first word is not cut
+            rms = float(np.sqrt(np.mean(frame.astype("float64") ** 2))) if len(frame) else 0.0
+            loud = loud + 1 if rms > threshold else 0
+            if loud >= 3:  # 240 ms of sound: speech, not a click or a cough
+                return self._record(recent)
+        return None
+
+    def next_command(self) -> str:
+        """The wake word was already heard (barge-in); record and transcribe what follows."""
         print("Listening...")
         self._drain()  # drop the wake word itself so it does not end up in the transcript
+        return self._record([])
+
+    def _record(self, chunks: list) -> str:
+        """Record until 1.2 s of silence follows speech (or a hard cap), then transcribe without the wake phrase."""
+        import numpy as np
+
         det = SilenceDetector(threshold=self.vad_threshold, silence_seconds=self.silence_seconds)
-        chunks, t0 = [], time.time()
-        while True:  # phase 2: record until 1.2 s of silence (or a hard cap)
+        for frame in chunks:
+            det.feed(frame)
+        t0 = time.time()
+        while True:
             frame = self._frames.get()
             chunks.append(frame)
             if det.feed(frame):
@@ -402,6 +442,7 @@ class VoiceSession:
         instead of waiting for a new wake word."""
         self.wait_for_speech()  # one speech at a time
         self._interrupted = False
+        self._answered = True
         thread = threading.Thread(target=self._speak_and_watch, args=(text,), daemon=True)
         self._speech = thread
         thread.start()

@@ -515,3 +515,46 @@ def test_whisper_uses_turbo_on_the_gpu_and_small_on_the_cpu(monkeypatch):
     v._whisper_model("medium", "cpu")
     assert built == [("small", "cpu", "int8", {}), ("large-v3-turbo", "cuda", "float16", {"device_index": 1}),
                      ("medium", "cpu", "int8", {})]
+
+
+# --- follow-up without the wake word -------------------------------------------------
+
+class _Quiet:
+    def speak(self, text, stop_event=None):
+        return True
+
+
+def test_a_question_soon_after_an_answer_needs_no_wake_word(monkeypatch):
+    s = VoiceSession(speaker=_Quiet())
+    monkeypatch.setattr(s, "_transcribe", lambda audio: "en morgen?")
+    monkeypatch.setattr(s, "_drain", lambda: None)  # keep the frames this test queues up front
+    s.speak("Het is tien over twaalf.")
+    for level in [0.0] * 3 + [0.2] * 6 + [0.0] * 20:  # silence, a question, then silence again
+        s._frames.put(np.full(FRAME, level, dtype="float32"))
+    woken = []
+    monkeypatch.setattr(s.wake, "detect", lambda frame: woken.append(1) or True)
+    assert s.next_request() == "en morgen?"
+    assert woken == []  # no wake word was needed
+
+
+def test_the_follow_up_window_expires_back_to_the_wake_word(monkeypatch):
+    monkeypatch.setenv("IRIS_FOLLOW_UP", "0.3")
+    s = VoiceSession(speaker=_Quiet())
+    monkeypatch.setattr(s, "_transcribe", lambda audio: "hoe laat is het")
+    monkeypatch.setattr(s, "_drain", lambda: None)
+    s.speak("Klaar.")
+    calls = []
+
+    def wake(frame):  # reached only after the window passed in silence
+        calls.append(1)
+        for level in [0.2] * 6 + [0.0] * 20:
+            s._frames.put(np.full(FRAME, level, dtype="float32"))
+        return True
+
+    monkeypatch.setattr(s.wake, "detect", wake)
+    threading.Timer(0.6, lambda: s._frames.put(np.zeros(FRAME, dtype="float32"))).start()  # after the window
+    t0 = time.monotonic()
+    assert s.next_request() == "hoe laat is het"
+    assert calls == [1] and time.monotonic() - t0 >= 0.3
+    monkeypatch.setenv("IRIS_FOLLOW_UP", "0")
+    assert s.follow_up() is None  # 0 turns the window off

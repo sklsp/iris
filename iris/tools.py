@@ -342,14 +342,21 @@ def _desktop():
     return Desktop(backend="uia")
 
 
+def _windows() -> list:
+    """The open top-level windows, without Iris's own overlay: it is no window to read, click or type into."""
+    from iris.overlay import TITLE
+
+    return [w for w in _desktop().windows() if w.window_text() != TITLE]
+
+
 def list_windows() -> str:
-    titles = [w.window_text() for w in _desktop().windows() if w.window_text().strip()]
+    titles = [w.window_text() for w in _windows() if w.window_text().strip()]
     return "\n".join(titles) or "(no windows)"
 
 
 def _window(title: str):
     t = title.lower()
-    wins = [w for w in _desktop().windows() if t in w.window_text().lower()]
+    wins = [w for w in _windows() if t in w.window_text().lower()]
     if not wins:
         raise LookupError(
             f"no window whose title contains {title!r}; it is not open now. Call list_windows once to check, "

@@ -13,3 +13,4 @@ def _journal_in_tmp(tmp_path, monkeypatch):
 
     monkeypatch.setattr(iris.voice, "_cuda_available", lambda: False)
     monkeypatch.setenv("IRIS_CHIME", "0")  # no beeps from the test run
+    monkeypatch.delenv("IRIS_OVERLAY", raising=False)  # no overlay window from the test run, even where it is on

@@ -8,6 +8,7 @@ applies to the next request without a restart.
     plugins = ["lmstudio"]       # opt-in tool groups, see iris.registry.PLUGINS
     builder = ["claude", "-p", "{prompt}"]   # the coding agent that builds new skills; Cline when unset
     folders = ["D:/Projects"]   # extra folders file tools may search and trash_file may touch
+    overlay = true               # voice mode shows what you said and Iris's answer on screen (iris.overlay)
 """
 
 from __future__ import annotations
@@ -69,6 +70,7 @@ name = {name}
 # folders = ["D:/Projects"]                # where file tools may write, besides your home folder
 # builder = ["claude", "-p", "{{prompt}}"]   # the coding agent that builds new skills; Cline when unset
 # plugins = ["lmstudio"]                   # opt-in tool groups: lmstudio, comfyui, agents, leadscan, conceptkit
+# overlay = true                           # voice mode shows what you said and the answer on screen
 """
 
 

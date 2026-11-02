@@ -17,6 +17,8 @@ import wave
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from iris.overlay import Overlay, launch
+
 if TYPE_CHECKING:
     import numpy as np
 
@@ -313,6 +315,7 @@ class VoiceSession:
         self._interrupted = False
         self._wake_seen = False  # a wake word landed while Iris was talking (barge-in)
         self._answered = False  # Iris spoke since the last request: a follow-up may come without the wake word
+        self.overlay = Overlay()  # sends nothing until __enter__ starts the overlay (opt-in, see iris.overlay)
 
     def __enter__(self):
         import sounddevice as sd
@@ -333,9 +336,11 @@ class VoiceSession:
 
         self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", blocksize=FRAME, callback=cb)
         self._stream.__enter__()
+        self.overlay = launch()
         return self
 
     def __exit__(self, *exc):
+        self.overlay.close()
         if self._stream is not None:
             try:
                 self._stream.__exit__(*exc)
@@ -416,12 +421,14 @@ class VoiceSession:
             rms = float(np.sqrt(np.mean(frame.astype("float64") ** 2))) if len(frame) else 0.0
             loud = loud + 1 if rms > threshold else 0
             if loud >= 3:  # 240 ms of sound: speech, not a click or a cough
+                self.overlay.send("listening")
                 return self._record(recent)
         return None
 
     def next_command(self) -> str:
         """The wake word was already heard (barge-in); record and transcribe what follows."""
         print("Listening...")
+        self.overlay.send("listening")
         self._drain()  # drop the wake word itself so it does not end up in the transcript
         return self._record([])
 
@@ -444,6 +451,9 @@ class VoiceSession:
                 break
         text = _strip_wake(self._transcribe(np.concatenate(chunks)))
         print(f"You: {text or '(nothing heard)'}")  # so the user sees what Iris understood
+        self.overlay.send("heard", text)
+        if not text:
+            self.overlay.send("idle")  # nothing to answer, so the panel can go
         heard = getattr(self.speaker, "heard", None)
         if callable(heard):
             heard(text)
@@ -468,6 +478,7 @@ class VoiceSession:
         return thread
 
     def _speak_and_watch(self, text: str) -> None:
+        self.overlay.send("answer", text)  # before the watcher starts, so an interruption always comes after it
         stop = threading.Event()
         watcher = threading.Thread(target=self._watch_for_wake, args=(stop,), daemon=True)
         watcher.start()
@@ -477,6 +488,8 @@ class VoiceSession:
             stop.set()  # release the watcher whether or not it was interrupted
         watcher.join(timeout=1.0)
         self._interrupted = not finished
+        if finished:  # when the wake word cut it short, the panel is listening again already
+            self.overlay.send("idle")
 
     def _watch_for_wake(self, stop: threading.Event) -> None:
         while not stop.is_set():
@@ -486,6 +499,7 @@ class VoiceSession:
                 continue
             if self.wake.detect(frame):
                 print("Interrupted.")
+                self.overlay.send("interrupted")
                 self._wake_seen = True
                 stop.set()
 

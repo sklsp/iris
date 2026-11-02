@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Overlay (opt-in, `overlay = true` or `IRIS_OVERLAY=1`): in voice mode a small panel above the taskbar shows what
+  Whisper heard and Iris's answer, with a glowing outline that breathes blue while listening, has lights travelling
+  round it in purple while thinking and beats green with the voice while speaking, and fades out 4 s after she is
+  done. It never takes the focus, lets clicks through and is left out of screenshots; `list_windows` and
+  `read_window` skip it. It runs as its own process (tkinter, no new packages), and voice mode carries on if it fails.
 - Web pages through the DevTools Protocol (`browser` extra): `browser_read`, `browser_click`, `browser_type` and
   `browser_scroll` work on numbered page elements in Brave, Chrome or Edge. A read takes 0.01 to 0.04 s instead of
   seconds for a screenshot, and pay, send and password controls are recognised by the label the page shows.

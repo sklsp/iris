@@ -89,6 +89,7 @@ city = "Utrecht"                      # the default place for the weather
 builder = ["claude", "-p", "{prompt}"]  # the coding agent that builds new skills; Cline when unset
 plugins = ["lmstudio", "comfyui"]     # opt-in tool groups, see below
 confirm = "important"                 # ask only before paying, sending and private files (default: "all")
+overlay = true                        # voice mode shows your request and the answer on screen
 ```
 
 **Plugins** are tool groups for particular setups, off until you list them: `lmstudio` (load and unload models),
@@ -232,6 +233,18 @@ silence, transcribes and answers. For 8 seconds after an answer you can ask the 
 again, so talk that is not meant for her is ignored. The microphone stays open the whole time, so saying the wake
 word while Iris is still talking cuts the answer short and your next words are taken as the next
 command, without saying the wake word twice.
+
+### Overlay
+
+With `overlay = true` in `~/.iris/config.toml` (or `IRIS_OVERLAY=1`) voice mode shows a small dark panel at the bottom
+of the screen, above the taskbar, like Siri: a dot while Iris listens, what Whisper heard as `You: ...`, three dots
+while she thinks and her answer while she speaks. It fades out 4 seconds after she is done; a long answer keeps its
+last lines. It is off by default.
+
+The panel never takes the keyboard focus and has no taskbar button, so Iris keeps typing into the window you were in;
+clicks go through it, and it is left out of screenshots (Windows 10 2004 or later), so `look_at_screen` never sees it.
+`list_windows` and `read_window` skip it too. It runs as its own process (`python -m iris.overlay`, tkinter only, no
+extra packages) and writes errors to `~/.iris/overlay.log`; if it fails or is closed, voice mode carries on without it.
 
 ### Start at login
 
@@ -492,6 +505,7 @@ shows with its own badge.
 | `IRIS_SILENCE` | `1.8` | seconds of silence that end a request |
 | `IRIS_FOLLOW_UP` | `8` | seconds after an answer in which a question needs no wake word; 0 turns it off |
 | `IRIS_CHIME` | `1` | `0` mutes the beep after the wake word |
+| `IRIS_OVERLAY` | config `overlay`, else off | `1` shows your request and the answer on screen in voice mode, `0` hides them |
 | `IRIS_VAD_THRESHOLD` | `0.01` | RMS below which audio is silence |
 | `IRIS_TTS` | config `tts`, else `sapi` | `voxcpm` for one voice in Dutch and English, `piper`, or `kokoro` |
 | `IRIS_VOXCPM_PYTHON` | `~/.iris/voxcpm/venv/Scripts/python.exe` | the Python that has VoxCPM2 |

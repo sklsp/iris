@@ -3,6 +3,7 @@ No window opens: Panel gets a MagicMock for tkinter and a recorder for user32.""
 
 import io
 import json
+import math
 import queue
 import subprocess
 import sys
@@ -14,7 +15,31 @@ import numpy as np
 import pytest
 
 from iris import overlay, tools
-from iris.overlay import ALPHA, HIDE_AFTER, Overlay, Panel, View, Win32, dots, parse, tail
+from iris.overlay import (
+    ALPHA,
+    BG,
+    COLOUR_FADE,
+    COLOURS,
+    EDGE_PIECES,
+    HIDE_AFTER,
+    INNER,
+    KEY,
+    OUTER,
+    Overlay,
+    Panel,
+    Tint,
+    View,
+    Win32,
+    blend,
+    dots,
+    edge,
+    glow,
+    parse,
+    pulse,
+    rounded_rect,
+    split_ring,
+    tail,
+)
 from iris.voice import FRAME, VoiceSession
 
 
@@ -564,3 +589,209 @@ def test_main_says_so_without_tkinter(monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, "tkinter", None)
     assert overlay.main(io.StringIO("")) == 1
     assert "no tkinter" in capsys.readouterr().err
+
+
+# --- the look: a coloured outline per state ----------------------------------------------------------------------
+
+
+def _rgb(colour):
+    return tuple(int(colour[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def _far(a, b):
+    """How far apart two colours are."""
+    return sum(abs(x - y) for x, y in zip(_rgb(a), _rgb(b), strict=True))
+
+
+TIMES = [i * 0.07 for i in range(120)]  # a bit over 8 s of frames
+
+
+def test_blend_mixes_two_colours():
+    assert blend("#000000", "#ffffff", 0) == "#000000"
+    assert blend("#000000", "#ffffff", 1) == "#ffffff"
+    assert blend("#000000", "#FFFFFF", 0.5) == "#808080"
+    assert blend("#102030", "#ffffff", -1) == "#102030" and blend("#102030", "#ffffff", 2) == "#ffffff"
+    mid = _rgb(blend(COLOURS["listening"], BG, 0.25))
+    assert all(min(a, b) <= m <= max(a, b) for m, a, b in zip(mid, _rgb(COLOURS["listening"]), _rgb(BG), strict=True))
+
+
+def test_the_outline_colour_fades_between_states_instead_of_jumping():
+    t = Tint()
+    assert t.at(0) == COLOURS["done"]  # a panel that appears grows into its colour
+    t.toward(COLOURS["listening"], 1.0)
+    assert t.at(1.0) == COLOURS["done"]
+    halfway = t.at(1.0 + COLOUR_FADE / 2)
+    assert halfway not in (COLOURS["done"], COLOURS["listening"])
+    assert t.at(1.0 + COLOUR_FADE) == t.at(9.0) == COLOURS["listening"]
+    t.toward(COLOURS["listening"], 1.1)  # the same colour again does not start over
+    assert t.at(1.0 + COLOUR_FADE) == COLOURS["listening"]
+
+    t = Tint()
+    t.toward(COLOURS["thinking"], 0.0)
+    now = COLOUR_FADE / 2
+    before = t.at(now)
+    t.toward(COLOURS["speaking"], now)  # a new state in the middle of a fade
+    assert t.at(now) == before  # carries on from where it was
+    assert t.at(now + COLOUR_FADE) == COLOURS["speaking"]
+
+
+@pytest.mark.parametrize("mode", ["listening", "thinking", "speaking", "done", "hidden"])
+def test_the_outline_pulses_between_0_and_1(mode):
+    values = {round(pulse(mode, t), 4) for t in TIMES}
+    assert all(0 <= v <= 1 for v in values)
+    assert (len(values) > 10) == (mode in ("listening", "thinking", "speaking"))  # calm once Iris is done
+
+
+def test_the_outline_beats_with_the_speaking_bars():
+    def bars(t):
+        return sum(r for _, _, r in dots("speaking", t))
+
+    loud, quiet = max(TIMES, key=bars), min(TIMES, key=bars)
+    assert pulse("speaking", loud) > pulse("speaking", quiet) + 0.1
+
+
+@pytest.mark.parametrize("mode", ["listening", "thinking", "speaking", "done"])
+def test_the_glow_fades_away_from_the_edge_and_stays_in_the_margin(mode):
+    base = COLOURS[mode]
+    for t in TIMES:
+        outer, inner = glow(base, mode, t)
+        assert len(outer) == len(OUTER) and len(inner) == len(INNER)
+        colours = [c for c, _ in outer] + inner
+        assert KEY not in colours  # a band in the see-through colour would be a hole in the glow
+        assert all(c.startswith("#") and len(c) == 7 for c in colours)
+        # outermost (or deepest) first: each band is closer to the outline's colour than the one before it
+        for bands in ([c for c, _ in outer], inner):
+            assert all(_far(a, base) > _far(b, base) for a, b in zip(bands, bands[1:], strict=False))
+        assert all(0 < w <= full for (_, w), (full, _) in zip(outer, OUTER, strict=True))
+    assert Panel.MARGIN >= max(w for w, _ in OUTER) / 2  # the widest outer stroke still fits round the panel
+
+
+def test_the_outline_is_one_colour_except_while_thinking():
+    for mode in ("listening", "speaking", "done"):
+        colours = edge(COLOURS[mode], mode, 1.0)
+        assert len(colours) == EDGE_PIECES and len(set(colours)) == 1
+
+
+def test_while_thinking_two_lights_travel_round_the_outline():
+    def lights(t):
+        colours = edge(COLOURS["thinking"], "thinking", t)
+        return sorted(range(EDGE_PIECES), key=lambda i: _far(colours[i], BG))[-1]
+
+    colours = edge(COLOURS["thinking"], "thinking", 0.0)
+    brightness = [_far(c, BG) for c in colours]
+    assert len(set(colours)) > 5
+    first = brightness.index(max(brightness))
+    opposite = (first + EDGE_PIECES // 2) % EDGE_PIECES
+    assert brightness[opposite] > brightness[(first + EDGE_PIECES // 4) % EDGE_PIECES]  # a second light across
+    assert lights(0.0) != lights(1.0)  # it moves
+
+
+def test_rounded_rect_follows_the_edges():
+    pts = rounded_rect(10, 20, 110, 70, 12)
+    xs, ys = [x for x, _ in pts], [y for _, y in pts]
+    assert (min(xs), max(xs), min(ys), max(ys)) == pytest.approx((10, 110, 20, 70))
+    assert len(pts) == 4 * 9
+    assert all(abs(math.dist(p, (98, 32)) - 12) < 1e-9 for p in pts[:9])  # the top-right corner is a real arc
+    big = rounded_rect(0, 0, 40, 20, 100)  # a radius larger than the panel: a pill, not a mess
+    assert all(0 - 1e-9 <= x <= 40 + 1e-9 and 0 - 1e-9 <= y <= 20 + 1e-9 for x, y in big)
+
+
+def test_split_ring_cuts_the_outline_into_even_connected_pieces():
+    ring = rounded_rect(0, 0, 500, 100, 20)
+    pieces = split_ring(ring, 40, chords=5)
+    assert len(pieces) == 40 and all(len(p) == 6 for p in pieces)
+    assert all(a[-1] == b[0] for a, b in zip(pieces, pieces[1:], strict=False)) and pieces[-1][-1] == pieces[0][0]
+    lengths = [sum(math.dist(a, b) for a, b in zip(p, p[1:], strict=False)) for p in pieces]
+    assert max(lengths) - min(lengths) < 0.5  # about 30 px each
+
+
+def _geometry(root):
+    size, left, top = root.geometry.call_args.args[0].split("+")
+    w, h = size.split("x")
+    return int(w), int(h), int(left), int(top)
+
+
+def test_panel_draws_the_glow_and_outline_in_the_see_through_margin():
+    tk, events = _fake_tk(), queue.Queue()
+    p = Panel(tk, events, clock=Clock())
+    canvas, root = tk.Canvas.return_value, tk.Tk.return_value
+    events.put({"event": "listening"})
+    p.step()
+    assert len(canvas.create_polygon.call_args_list) == len(OUTER) + 1 + len(INNER)  # the glow, the panel, the glow
+    assert len(canvas.create_line.call_args_list) == EDGE_PIECES  # the outline
+    w, h, left, top = _geometry(root)
+    m = p.margin
+    assert w == p.width and h == p.height
+    assert left == (1920 - w) // 2  # centred
+    assert top + h - m == 1080 - 48 - 16  # the panel 16 px above the taskbar, its glow in the margin below it
+    for call in canvas.create_polygon.call_args_list:
+        xs, ys = call.args[0][0::2], call.args[0][1::2]
+        assert m <= min(xs) and max(xs) <= w - m and m <= min(ys) and max(ys) <= h - m
+    assert m >= max(width for width, _ in OUTER) * p.scale / 2  # the outer glow fits; the corners stay see-through
+    canvas.tag_raise.assert_called_with("text")  # the text on top of the shapes
+    assert {c.kwargs["tags"] for c in canvas.create_text.call_args_list} == {"text"}
+
+
+def test_each_frame_touches_only_what_changed():
+    tk, events, clock = _fake_tk(), queue.Queue(), Clock()
+    p = Panel(tk, events, clock=clock)
+    canvas = tk.Canvas.return_value
+    events.put({"event": "listening"})
+    p.step()
+    assert canvas.itemconfigure.called
+    canvas.reset_mock()
+    clock.now = 0.6
+    p.step()
+    assert not canvas.create_text.called and not canvas.create_polygon.called  # the text and shapes stay
+    assert [c.args for c in canvas.delete.call_args_list] == [("dots",)]
+    assert canvas.itemconfigure.called  # the colours moved on
+    canvas.reset_mock()
+    p.step()  # the same moment again: nothing to repaint but the indicator
+    assert not canvas.itemconfigure.called
+
+
+def test_the_outline_is_coloured_per_piece_while_thinking_and_at_once_otherwise():
+    tk, events, clock = _fake_tk(), queue.Queue(), Clock()
+    p = Panel(tk, events, clock=clock)
+    canvas = tk.Canvas.return_value
+    events.put({"event": "listening"})
+    p.step()
+    assert mock.call("edge", fill=mock.ANY) in canvas.itemconfigure.call_args_list
+    events.put({"event": "heard", "text": "hoe laat is het"})
+    clock.now = 1.0
+    p.step()
+    pieces = [c for c in canvas.itemconfigure.call_args_list if c.args[0] != "edge" and "fill" in c.kwargs]
+    assert len(pieces) >= EDGE_PIECES // 2
+    canvas.reset_mock()
+    events.put({"event": "answer", "text": "tien over vier"})
+    clock.now = 2.0
+    p.step()
+    clock.now = 2.0 + COLOUR_FADE
+    p.step()
+    last = [c for c in canvas.itemconfigure.call_args_list if c.args[0] == "edge"][-1]
+    assert last.kwargs["fill"] == edge(COLOURS["speaking"], "speaking", clock.now)[0]  # green, all round
+
+
+def test_the_indicator_sits_level_with_the_first_line_in_the_outline_colour():
+    tk, events, clock = _fake_tk(), queue.Queue(), Clock()
+    canvas = tk.Canvas.return_value
+    canvas.bbox.return_value = (64, 28, 300, 46)
+    p = Panel(tk, events, clock=clock)
+    events.put({"event": "listening"})
+    clock.now = 5.0
+    p.step()
+    (_, y0, x1, y1), kw = canvas.create_oval.call_args.args, canvas.create_oval.call_args.kwargs
+    assert (y0 + y1) / 2 == pytest.approx(37)  # the middle of the first line
+    assert x1 < p.margin + Panel.INDENT * p.scale  # left of the text
+    assert kw["fill"] == p.tint.at(5.0)
+
+
+def test_the_indicator_is_centred_when_there_is_no_text():
+    tk, events = _fake_tk(), queue.Queue()
+    canvas = tk.Canvas.return_value
+    p = Panel(tk, events, clock=Clock())
+    events.put({"event": "answer", "text": ""})  # nothing to write: only the speaking bars
+    p.step()
+    assert not canvas.create_text.called
+    _, y0, _, y1 = canvas.create_rectangle.call_args.args
+    assert (y0 + y1) / 2 == pytest.approx(p.height / 2)

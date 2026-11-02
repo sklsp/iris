@@ -259,19 +259,130 @@ def _user32() -> Any:
         return None
 
 
-BG, KEY, MUTED, TEXT = "#1c1c22", "#010203", "#9aa0ab", "#f2f2f5"  # KEY: the see-through colour round the corners
+BG, KEY, MUTED, TEXT = "#15151b", "#010203", "#8f94a3", "#f4f4f7"  # KEY: the see-through colour round the panel
 COLOURS = {"listening": "#4ea1ff", "thinking": "#b28dff", "speaking": "#5ad19a", "done": "#5c6070"}
 FONT = "Segoe UI"
+WHITE = "#ffffff"
+COLOUR_FADE = 0.35  # seconds the outline takes to go from one state's colour to the next
+# The glow, faked with bands of colour mixed into the panel's, outermost first, each (width or depth in px, strength).
+# OUTER: strokes along the edge drawn under the panel, so only their outer half shows, in the see-through margin.
+# INNER: bands from the edge inwards, over the panel, fading into it; the part that reads as a glow on any wallpaper.
+OUTER = ((12, 0.26), (7, 0.5))
+INNER = ((18, 0.05), (13, 0.10), (9, 0.17), (6, 0.26), (3, 0.38))
+EDGE_WIDTH, EDGE_PIECES = 2.5, 48  # the crisp outline, cut into pieces so a light can travel along it
+
+
+def blend(colour: str, other: str, t: float) -> str:
+    """`colour` moved a fraction t of the way to `other`, both "#rrggbb". Tk has no alpha per stroke, so a soft glow
+    is a stroke whose colour is mixed with the panel's."""
+    t = min(1.0, max(0.0, t))
+    a = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
+    b = (int(other[i:i + 2], 16) for i in (1, 3, 5))
+    return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(a, b, strict=True))
+
+
+def ease(t: float) -> float:
+    """0 to 1 with a soft start and end."""
+    t = min(1.0, max(0.0, t))
+    return t * t * (3 - 2 * t)
+
+
+@dataclass
+class Tint:
+    """The outline's colour, which fades from one state's colour to the next over COLOUR_FADE instead of jumping.
+    It starts neutral, so a panel that appears grows into its colour."""
+
+    start: str = COLOURS["done"]
+    target: str = COLOURS["done"]
+    since: float = 0.0
+
+    def toward(self, colour: str, now: float) -> None:
+        if colour != self.target:  # from wherever it is now: a change in the middle of a fade does not jump either
+            self.start, self.target, self.since = self.at(now), colour, now
+
+    def at(self, now: float) -> str:
+        return blend(self.start, self.target, ease((now - self.since) / COLOUR_FADE))
+
+
+def pulse(mode: str, t: float) -> float:
+    """How bright the outline is at time t, 0 to 1: breathing while listening, a slow shimmer while thinking, with the
+    sound bars while speaking, and calm once Iris is done."""
+    if mode == "listening":
+        return 0.55 + 0.45 * (0.5 + 0.5 * math.sin(t * math.tau / 1.6))
+    if mode == "thinking":
+        return 0.7 + 0.15 * math.sin(t * 2.3)
+    if mode == "speaking":  # the bars' height, 3 to 7: the outline beats with them
+        bars = dots("speaking", t)
+        return 0.45 + 0.55 * sum(r - 3 for _, _, r in bars) / (4 * len(bars))
+    return 0.35
+
+
+def glow(base: str, mode: str, t: float) -> tuple[list[tuple[str, float]], list[str]]:
+    """The glow at time t: (colour, width in px) of each OUTER stroke, a little wider as the outline pulses but never
+    wider than OUTER says, and the colour of each INNER band. All `base` mixed into the panel colour, brighter as
+    the outline pulses."""
+    p = 0.4 + 0.6 * pulse(mode, t)
+    outer = [(blend(BG, base, strength * p), width * (0.75 + 0.25 * p)) for width, strength in OUTER]
+    return outer, [blend(BG, base, strength * p) for _, strength in INNER]
+
+
+def edge(base: str, mode: str, t: float, pieces: int = EDGE_PIECES) -> list[str]:
+    """The colour of each piece of the crisp outline at time t. One colour all round, except while thinking: then two
+    soft lights travel round the panel, slowly, opposite each other."""
+    p = pulse(mode, t)
+    if mode != "thinking":
+        return [blend(BG, base, 0.5 + 0.5 * p)] * pieces
+    out = []
+    for i in range(pieces):
+        u = (i + 0.5) / pieces - t * 0.12  # one lap in about 8 s
+        d = min(abs(u - round(u)), abs(u + 0.5 - round(u + 0.5)))  # distance to the nearest of the two lights
+        light = max(0.0, 1 - d / 0.16) ** 2
+        out.append(blend(blend(BG, base, 0.4 + 0.6 * max(light, p - 0.3)), WHITE, 0.35 * light))
+    return out
+
+
+def rounded_rect(x0: float, y0: float, x1: float, y1: float, r: float, steps: int = 8) -> list[tuple[float, float]]:
+    """A rounded rectangle as a polygon, clockwise from the top edge: each corner a real arc of `steps` chords, so
+    the panel, its outline and its glow all follow exactly the same edge."""
+    r = max(0.0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))
+    pts = []
+    for cx, cy, start in ((x1 - r, y0 + r, -90), (x1 - r, y1 - r, 0), (x0 + r, y1 - r, 90), (x0 + r, y0 + r, 180)):
+        for k in range(steps + 1):
+            a = math.radians(start + 90 * k / steps)
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return pts
+
+
+def split_ring(points: list[tuple[float, float]], pieces: int, chords: int = 6) -> list[list[tuple[float, float]]]:
+    """A closed polygon cut into `pieces` of equal length, each a line of `chords` short chords, in order round it:
+    piece i ends where piece i + 1 starts and the last ends where the first starts."""
+    loop = points + points[:1]
+    lengths = [math.dist(a, b) for a, b in zip(loop, loop[1:], strict=False)]
+    total, n = sum(lengths), pieces * chords
+    samples, i, walked = [], 0, 0.0
+    for j in range(n):
+        want = total * j / n
+        while i < len(lengths) - 1 and walked + lengths[i] < want:
+            walked += lengths[i]
+            i += 1
+        k = (want - walked) / lengths[i] if lengths[i] else 0.0
+        (ax, ay), (bx, by) = loop[i], loop[i + 1]
+        samples.append((ax + (bx - ax) * k, ay + (by - ay) * k))
+    samples.append(samples[0])
+    return [samples[p * chords:(p + 1) * chords + 1] for p in range(pieces)]
 
 
 class Panel:
     """The Tk window. Thin on purpose: View decides what to show, Panel only draws it. `tk` is the tkinter module and
-    `user32` ctypes' user32 (None off Windows), passed in so tests can hand it fakes and never open a window."""
+    `user32` ctypes' user32 (None off Windows), passed in so tests can hand it fakes and never open a window.
 
-    WIDTH, PAD, INDENT, RADIUS, POLL_MS = 540, 16, 52, 18, 40
+    The window is the panel plus a MARGIN of see-through KEY all round, where the glow goes. Text is written once per
+    change; each frame only the indicator, the glow and the outline are touched, and those only when they change."""
+
+    WIDTH, MARGIN, PAD, INDENT, RADIUS, POLL_MS = 560, 10, 18, 54, 20, 40  # WIDTH: the window, glow margin included
 
     def __init__(self, tk: Any, events: queue.Queue, clock=time.monotonic, user32: Any = None):
-        self.tk, self.events, self.clock, self.view = tk, events, clock, View()
+        self.tk, self.events, self.clock, self.view, self.tint = tk, events, clock, View(), Tint()
         if user32 is not None:
             try:
                 user32.SetProcessDPIAware()  # sharp text; Tk then scales its point sizes to the real DPI
@@ -289,10 +400,15 @@ class Panel:
             pass
         root.attributes("-alpha", 0.0)
         self.scale = max(1.0, float(root.winfo_fpixels("1i")) / 96)
-        self.width = int(self.WIDTH * self.scale)
+        self.width, self.margin = int(self.WIDTH * self.scale), int(self.MARGIN * self.scale)
         self.canvas = tk.Canvas(root, width=self.width, height=60, bg=KEY, highlightthickness=0, bd=0)
         self.canvas.pack()
         self.height, self.shown, self._alpha = 60, False, 0.0
+        self.anchor = (0.0, 0.0)  # the indicator's centre: level with the first line of text
+        self._outer: list[Any] = []
+        self._inner: list[Any] = []
+        self._edge: list[Any] = []
+        self._drawn: dict[tuple[str, int], tuple] = {}  # what each outline item shows now, so a frame skips the rest
         self.win: Win32 | None = None
         if user32 is not None:
             # Tk makes the real top-level window only when it is first mapped, so map it once, see-through, give it
@@ -327,6 +443,7 @@ class Panel:
         if self.view.visible:
             if changed or not self.shown:
                 self.layout()
+            self.draw_outline(now)
             self.draw_dots(now)
             self.set_alpha(self.view.alpha(now))
             if not self.shown:
@@ -336,45 +453,87 @@ class Panel:
         self.root.after(self.POLL_MS, self.step)
 
     def layout(self) -> None:
-        """Write the two lines, size the panel to them and put it bottom-center above the taskbar."""
-        c, s = self.canvas, self.scale
+        """Write the two lines, size the panel to them, lay its glow and outline round it and put it bottom-center
+        above the taskbar."""
+        c, s, m = self.canvas, self.scale, self.margin
         c.delete("all")
-        pad, x = int(self.PAD * s), int(self.INDENT * s)
+        self._drawn.clear()
+        pad, x, gap = int(self.PAD * s), m + int(self.INDENT * s), int(8 * s)
         top, answer = self.view.lines()
-        y = pad
+        y, first = m + pad, None  # first: the box round the first line
         for text, colour, size in ((top, MUTED, 10), (answer, TEXT, 12)):
             if not text:
                 continue
-            item = self._text(x, y, text, colour, size)
-            y = c.bbox(item)[3] + int(6 * s)
-        self.height = max(int(48 * s), y - int(6 * s) + pad)
-        self._round_rect(0, 0, self.width, self.height, int(self.RADIUS * s))
-        c.tag_lower("panel")
+            box = c.bbox(self._text(x, y, text, colour, size))
+            first = first or box
+            y = box[3] + gap
+        panel = max(int(52 * s), y - gap + pad - m)  # the panel's height; the window adds the margin twice
+        self.height = panel + 2 * m
+        left_x = m + (self.INDENT - 24) * s  # the indicator, centred in the column left of the text
+        self.anchor = (left_x, (first[1] + first[3]) / 2 if first else m + panel / 2)
+        ring = rounded_rect(m, m, self.width - m, self.height - m, self.RADIUS * s)
+        flat = [v for pt in ring for v in pt]
+        self._outer = [c.create_polygon(flat, fill="", outline=BG, width=1, joinstyle="round", tags="glow")
+                       for _ in OUTER]
+        c.create_polygon(flat, fill=BG, outline="", tags="panel")
+        self._inner = []
+        for depth, _ in INNER:  # a stroke as wide as the band, along the edge moved in by half of it
+            d = depth * s / 2
+            inset = rounded_rect(m + d, m + d, self.width - m - d, self.height - m - d, self.RADIUS * s - d)
+            self._inner.append(c.create_polygon([v for pt in inset for v in pt], fill="", outline=BG,
+                                                width=depth * s, joinstyle="round", tags="glow"))
+        self._edge = [c.create_line([v for pt in piece for v in pt], fill=BG, width=EDGE_WIDTH * s, capstyle="round",
+                                    joinstyle="round", tags="edge") for piece in split_ring(ring, EDGE_PIECES)]
+        c.tag_raise("text")  # drawn first to measure it; the shapes stack in the order they were made, under it
         c.configure(height=self.height)
         area = self.win.work_area() if self.win else None
         if area is None:
             area = (0, 0, int(self.root.winfo_screenwidth()), int(self.root.winfo_screenheight()) - int(48 * s))
         left = area[0] + (area[2] - area[0] - self.width) // 2
-        self.root.geometry(f"{self.width}x{self.height}+{left}+{area[3] - self.height - int(16 * s)}")
+        bottom = area[3] - int(16 * s) + m  # the panel 16 px above the taskbar; its glow sits in the margin
+        self.root.geometry(f"{self.width}x{self.height}+{left}+{bottom - self.height}")
 
     def _text(self, x: int, y: int, text: str, colour: str, size: int) -> Any:
-        width = self.width - x - int(self.PAD * self.scale)
+        look = {"anchor": "nw", "width": self.width - x - int(self.PAD * self.scale) - self.margin, "fill": colour,
+                "font": (FONT, size), "tags": "text"}
         try:
-            return self.canvas.create_text(x, y, text=text, anchor="nw", width=width, fill=colour, font=(FONT, size))
+            return self.canvas.create_text(x, y, text=text, **look)
         except self.tk.TclError:  # an old Tk that cannot take a character outside the BMP, such as some emoji
             text = "".join(ch if ord(ch) <= 0xFFFF else "?" for ch in text)
-            return self.canvas.create_text(x, y, text=text, anchor="nw", width=width, fill=colour, font=(FONT, size))
+            return self.canvas.create_text(x, y, text=text, **look)
 
-    def _round_rect(self, x0: int, y0: int, x1: int, y1: int, r: int) -> None:
-        pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1,
-               x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
-        self.canvas.create_polygon(pts, smooth=True, fill=BG, outline="", tags="panel")
+    def draw_outline(self, now: float) -> None:
+        """Colour the glow and the outline for this frame. Only items whose look changed are touched."""
+        mode, s = self.view.mode, self.scale
+        self.tint.toward(COLOURS.get(mode, COLOURS["done"]), now)
+        base = self.tint.at(now)
+        outer, inner = glow(base, mode, now)
+        for i, (item, (colour, width)) in enumerate(zip(self._outer, outer, strict=True)):
+            self._set(("outer", i), item, outline=colour, width=round(width * s * 2) / 2)
+        for i, (item, colour) in enumerate(zip(self._inner, inner, strict=True)):
+            self._set(("inner", i), item, outline=colour)
+        colours = edge(base, mode, now, len(self._edge))
+        if len(set(colours)) == 1:  # one colour all round: one call for the lot
+            if self._drawn.get(("edge", -1)) != (colours[0],):
+                self.canvas.itemconfigure("edge", fill=colours[0])
+                self._drawn = {k: v for k, v in self._drawn.items() if k[0] != "edge"}
+                self._drawn[("edge", -1)] = (colours[0],)
+            return
+        self._drawn.pop(("edge", -1), None)
+        for i, (item, colour) in enumerate(zip(self._edge, colours, strict=True)):
+            self._set(("edge", i), item, fill=colour)
+
+    def _set(self, key: tuple[str, int], item: Any, **look: Any) -> None:
+        values = tuple(look.values())
+        if self._drawn.get(key) != values:
+            self._drawn[key] = values
+            self.canvas.itemconfigure(item, **look)
 
     def draw_dots(self, now: float) -> None:
         c, s = self.canvas, self.scale
         c.delete("dots")
-        cx, cy = (self.PAD + 14) * s, (self.PAD + 10) * s
-        colour = COLOURS.get(self.view.mode, MUTED)
+        cx, cy = self.anchor
+        colour = self.tint.at(now)
         for dx, dy, r in dots(self.view.mode, now):
             x, y = cx + dx * s, cy + dy * s
             if self.view.mode == "speaking":

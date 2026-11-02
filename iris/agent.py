@@ -46,6 +46,23 @@ class Journal:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+# What Iris says when the model can not answer, in English or Dutch (the languages the eval tests most).
+_SORRY = {
+    "slow": ("That took me too long to think through. Try asking it in a shorter way.",
+             "Daar moest ik te lang over nadenken. Vraag het iets korter."),
+    "down": ("I can't reach the model in LM Studio right now. Try again in a moment.",
+             "Ik kan het model in LM Studio nu niet bereiken. Probeer het zo nog eens."),
+    "steps": ("I stopped: this took too many steps.", "Ik ben gestopt: dit kostte te veel stappen."),
+}
+
+
+def _sorry(key: str, request: str) -> str:
+    from iris.eval import answer_language  # local: iris.eval imports this module
+
+    english, dutch = _SORRY[key]
+    return dutch if answer_language(request) == "nl" else english
+
+
 class Agent:
     def __init__(self, llm, confirm: Callable[[str], bool], journal: Journal,
                  tools: dict[str, Tool] | Callable[[], dict[str, Tool]] = active_tools):
@@ -71,8 +88,8 @@ class Agent:
                 starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
                 del self.messages[starts[-1]:]
                 if "ran out of tokens" in str(exc):  # LM Studio answered, the model just thought too long
-                    return "That took me too long to think through. Try asking it in a shorter way."
-                return "I can't reach the model in LM Studio right now. Try again in a moment."
+                    return _sorry("slow", request)
+                return _sorry("down", request)
             self.messages.append(reply.raw)
             if not reply.calls:
                 self.journal.log(event="answer", text=reply.text)
@@ -84,7 +101,7 @@ class Agent:
                                       "content": f"<untrusted_data>\n{result}\n</untrusted_data>"})
         self.journal.log(event="gave_up", steps=MAX_STEPS)
         self._trim()
-        return "I stopped: this took too many steps."
+        return _sorry("steps", request)
 
     def _trim(self) -> None:
         """Drop the oldest whole turns until history fits in MAX_HISTORY_CHARS.

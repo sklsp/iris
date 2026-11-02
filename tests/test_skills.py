@@ -301,3 +301,10 @@ def test_skill_cli_lists_exports_and_imports(tmp_path, monkeypatch, capsys):
     assert "imported say_hello: ready" in capsys.readouterr().out
     assert skills.meta("say_hello")["tier"] == "safe"
     assert skill_main(["import", str(tmp_path / "missing.zip")]) == 1
+
+
+def test_a_removed_skill_can_be_restored_but_needs_approving_again():
+    _approved()
+    skills.remove("say_hello")
+    assert tools.restore_trash("say_hello").startswith("restored")
+    assert skills.meta("say_hello")["status"] == "ready" and not skills._approved_ok("say_hello")

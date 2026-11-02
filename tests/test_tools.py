@@ -1142,3 +1142,18 @@ def test_duration_text_never_reads_out_a_long_fraction():
     assert tools._duration_text(1.5) == "1.5 minutes"
     assert tools._duration_text(60) == "1 h"
     assert tools._duration_text(10) == "10 minutes"
+
+
+def test_restore_brings_back_the_last_trashed_not_the_newest_file(home):
+    import os
+
+    new, old = home / "edited-yesterday.txt", home / "edited-last-week.txt"
+    new.write_text("new")
+    old.write_text("old")
+    os.utime(old, (1_700_000_000, 1_700_000_000))  # the file itself is older...
+    tools.trash_file(str(new))
+    tools.trash_file(str(old))  # ...but it went to the trash last
+    for f in (home / "trash").glob("*.json"):  # make the order unambiguous even within one second
+        os.utime(f, (2_000_000_000 if "last-week" in f.name else 1_900_000_000,) * 2)
+    tools.restore_trash()
+    assert old.exists() and not new.exists()

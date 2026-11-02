@@ -35,7 +35,7 @@ from iris.desktop import (
     screenshot,
     start_menu_match,
 )
-from iris.files import copy_file, find_files, list_folder, make_folder, move_file, read_file, write_file
+from iris.files import _mtime, copy_file, find_files, list_folder, make_folder, move_file, read_file, write_file
 from iris.notes import note_add, note_remove, notes_read
 from iris.office import make_document, make_presentation, make_spreadsheet
 from iris.policy import (
@@ -513,7 +513,9 @@ def trash_file(path: str) -> str:
 def restore_trash(name: str = "") -> str:
     d = _trash_dir()
     items = [x for x in d.iterdir() if not x.name.endswith(".json")]
-    items.sort(key=lambda x: x.stat().st_mtime, reverse=True)  # most recently trashed first
+    # most recently trashed first: the .json written at trash time says when, the file's own mtime (kept by the
+    # move) does not
+    items.sort(key=lambda x: _mtime(d / (x.name + ".json")), reverse=True)
     hits = [x for x in items if name.lower() in x.name.lower()] if name else list(items)
     if not hits:
         raise LookupError(f"nothing matching {name!r} in the trash")

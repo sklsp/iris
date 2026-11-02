@@ -12,3 +12,4 @@ def _journal_in_tmp(tmp_path, monkeypatch):
     import iris.voice  # tests never depend on this PC's GPU: Whisper is built for the CPU unless a test says otherwise
 
     monkeypatch.setattr(iris.voice, "_cuda_available", lambda: False)
+    monkeypatch.setenv("IRIS_CHIME", "0")  # no beeps from the test run

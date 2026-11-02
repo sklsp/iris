@@ -49,6 +49,14 @@ PIPER_DIR = Path(os.environ.get("IRIS_PIPER_DIR") or (Path.home() / ".iris" / "p
 PIPER_VOICES = {"nl": os.environ.get("IRIS_PIPER_NL", "nl_NL-ronnie-medium"),
                 "en": os.environ.get("IRIS_PIPER_EN", "en_US-joe-medium")}
 
+# A wake phrase at the start of a request ("Hey Jarvis, ...") is not part of it.
+_WAKE_PHRASE = re.compile(r"^\s*(?:(?:hey|hé|hee|hoi|hi|ok|okay)[\s,!.]*)?(?:jarvis|iris)\b[\s,!.?]*", re.I)
+
+
+def _strip_wake(text: str) -> str:
+    return _WAKE_PHRASE.sub("", text).strip()
+
+
 _YES = re.compile(r"\b(yes|yeah|yep|sure|do it|go ahead|ja|jazeker|doe maar|ga je gang|prima|oké|oke|okay|"
                   r"genau|klar|mach das|oui|d'accord|vas-y|allez-y|sí|si|claro|vale|adelante|hazlo)\b", re.I)
 # Any no-word wins over a yes-word, so a mixed or unclear answer is a "no".
@@ -336,12 +344,29 @@ class VoiceSession:
         self.wait_for_speech()  # never race the wake watcher for frames
         if self._wake_seen:  # barge-in: the user said the wake word while Iris was talking
             self._wake_seen = False
+            self.chime()
             return self.next_command()
         print("Say the wake word...")
         while True:  # phase 1: wait for the wake word
             if self.wake.detect(self._frames.get()):
                 break
+        self.chime()
         return self.next_command()
+
+    def chime(self) -> None:
+        """A short soft tone right after the wake word, so the user hears that Iris is listening (IRIS_CHIME=0 mutes
+        it). It finishes before recording starts, so it never ends up in the request."""
+        if os.environ.get("IRIS_CHIME", "1") == "0":
+            return
+        try:
+            import numpy as np
+            import sounddevice as sd
+
+            t = np.arange(int(0.12 * 22050)) / 22050
+            tone = (0.15 * np.sin(2 * np.pi * 880 * t) * np.minimum(1, (0.12 - t) * 40)).astype("float32")
+            sd.play(tone, 22050, blocking=True)
+        except Exception:  # noqa: BLE001 - the chime is a nicety; listening goes on without it
+            pass
 
     def next_command(self) -> str:
         """The wake word was already heard (barge-in); record and transcribe what follows."""
@@ -358,7 +383,7 @@ class VoiceSession:
                 break
             if time.time() - t0 > self.max_record_seconds:
                 break
-        text = self._transcribe(np.concatenate(chunks))
+        text = _strip_wake(self._transcribe(np.concatenate(chunks)))
         print(f"You: {text or '(nothing heard)'}")  # so the user sees what Iris understood
         heard = getattr(self.speaker, "heard", None)
         if callable(heard):
@@ -432,19 +457,27 @@ class PiperProcess:
             if self.proc.poll() is not None:
                 raise RuntimeError("piper stopped")
             for path in set(self.dir.glob("*.wav")) - before:
-                if _wav_complete(path):
-                    return path
+                mine = _claim(path, self.dir / "done")
+                if mine is not None:
+                    return mine
             time.sleep(0.05)
         raise TimeoutError("piper took too long")
 
 
-def _wav_complete(path: Path) -> bool:
-    """Python's wave module writes the frame count into the header only when the file is closed."""
+def _claim(path: Path, done: Path) -> Path | None:
+    """Move a WAV Piper has finished into `done`; None while Piper still writes it. Windows refuses to move a file
+    another process has open, which is exactly the signal: the header alone is not, it is written per sentence."""
+    done.mkdir(exist_ok=True)
+    target = done / path.name
     try:
-        with wave.open(str(path), "rb") as w:
-            return w.getnframes() > 0
+        os.replace(path, target)
+    except OSError:
+        return None
+    try:
+        with wave.open(str(target), "rb") as w:
+            return target if w.getnframes() > 0 else None
     except (OSError, EOFError, wave.Error):
-        return False
+        return None
 
 
 class Speaker:

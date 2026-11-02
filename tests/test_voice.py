@@ -423,19 +423,41 @@ def test_piper_runs_as_its_own_program_and_returns_one_wav_per_text(tmp_path, mo
         p.proc.wait(timeout=10)
 
 
-def test_wav_complete_only_after_the_header_has_frames(tmp_path):
+def test_claim_takes_a_wav_only_once_piper_has_closed_it(tmp_path):
     import wave
 
-    from iris.voice import _wav_complete
+    from iris.voice import _claim
 
-    (tmp_path / "half.wav").write_bytes(b"RIFF")
-    assert not _wav_complete(tmp_path / "half.wav")
-    with wave.open(str(tmp_path / "done.wav"), "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(22050)
-        w.writeframes(b"\x00\x00" * 10)
-    assert _wav_complete(tmp_path / "done.wav")
+    path = tmp_path / "1.wav"
+    w = wave.open(str(path), "wb")
+    w.setnchannels(1)
+    w.setsampwidth(2)
+    w.setframerate(22050)
+    w.writeframes(bytes(20))  # the header already counts these frames, but Piper is still writing
+    assert _claim(path, tmp_path / "done") is None and path.exists()
+    w.close()
+    mine = _claim(path, tmp_path / "done")
+    assert mine == tmp_path / "done" / "1.wav" and not path.exists()
+
+
+def test_the_wake_phrase_is_not_part_of_the_request():
+    from iris.voice import _strip_wake
+
+    assert _strip_wake("Hey Jarvis, hoe laat is het?") == "hoe laat is het?"
+    assert _strip_wake("Hey Jarvis") == "" and _strip_wake("hé Iris.") == ""
+    assert _strip_wake("Wat is een iris?") == "Wat is een iris?"
+
+
+def test_chime_plays_unless_muted(monkeypatch):
+    played = []
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
+        play=lambda tone, rate, blocking=False: played.append((len(tone), rate, blocking))))
+    s = VoiceSession.__new__(VoiceSession)
+    s.chime()
+    assert played == []  # the tests mute it
+    monkeypatch.setenv("IRIS_CHIME", "1")
+    s.chime()
+    assert played == [(int(0.12 * 22050), 22050, True)]
 
 
 def test_piper_picks_the_voice_by_language_and_follows_the_user_for_short_answers(tmp_path, monkeypatch):

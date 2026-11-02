@@ -42,6 +42,9 @@ The attacker does not control the code: tiers, word lists, path roots and the jo
   tier is never loaded again; proven by `test_only_approved_unchanged_skills_are_offered_and_they_run_out_of_process`
   and `test_the_tier_is_the_planned_one_and_changing_it_voids_the_approval`. Window text that tells Iris to approve a
   skill is data, pinned by the cap_approve_injection eval task.
+- **A builder can not approve its own skill.** `approve()` only takes a skill that `check()` marked ready, so an
+  approval that already exists when the build is first checked was not the user's: `check()` drops it and blocks
+  the skill; proven by `test_an_approval_written_during_the_build_is_dropped_and_blocks_the_skill`.
 - **Skills run out of process.** Every call is a separate `python -I` with the arguments on stdin and a 120 s timeout,
   so a skill can not rebind Iris's tiers, tools or prompt in memory; a skill with the name of a core tool is never
   offered; proven by `test_a_skill_named_like_a_core_tool_is_never_offered` and `test_run_skill_reports_errors_and_timeouts`.
@@ -65,6 +68,10 @@ Nothing is pinned as a known bug. The limits below are accepted tradeoffs and op
 - **The word lists are fixed regexes for five languages.** English, Dutch, German, French and Spanish stems escalate; other languages and new phrasings do not, and stems that would catch common English words ("pag", "envi", "compr") are left out on purpose. A mail or chat app outside the list keeps `{ENTER}` at confirm instead of never.
 - **The wrapping is advisory to the model.** `<untrusted_data>` tells the model the text is data; it cannot prove the model will not be steered into *other* choices. The hard protection is that tiers and path roots are enforced in code no matter what the model decides.
 - **A confirm prompt relies on the user listening.** The question is spoken once; silence counts as "no", but a misheard or half-heard "yes" approves with no second check.
+- **The builder has your rights too.** The coding agent that builds a skill (Cline in yolo mode, or your
+  `builder`) can do whatever your account can while it works. The plan tells it to stay in the skill's folder and
+  Iris catches a self-written approval, but a builder that also rewrote the skill's meta.json, or Iris itself,
+  would not be stopped. Use a builder you trust.
 - **An approved skill has your rights.** Out of process means it can not change Iris, not that it is sandboxed: an
   approved skill can do whatever your user account can. The text guard only catches code that reaches into Iris
   itself; reading the code on the Skills tab before approving is the real gate.

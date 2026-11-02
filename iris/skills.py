@@ -214,6 +214,12 @@ def check(name: str, run: Callable[..., subprocess.CompletedProcess[str]] = subp
     folder = _folder(name)
     _, problems = _spec(folder)
     problems += guard(folder)
+    approvals = _approvals()
+    if data["status"] == "building" and name in approvals:
+        # approve() needs a ready skill, so an approval that exists while it is still building was not the user's
+        del approvals[name]
+        _write(skills_dir() / "approved.json", json.dumps(approvals, indent=1) + "\n")
+        problems.append("approved.json was changed during the build; only the user approves a skill")
     output = ""
     if not problems:
         try:

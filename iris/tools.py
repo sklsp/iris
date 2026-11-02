@@ -466,11 +466,16 @@ def scroll(window: str, direction: str, amount: int = 3) -> str:
 def open_url(url: str) -> str:
     from urllib.parse import urlparse
 
+    from iris import browser
+
     p = urlparse(url)
     if p.scheme not in ("http", "https"):
         raise ValueError(f"refusing to open a {p.scheme or 'schemeless'} URL; only http and https are allowed")
-    os.startfile(url)
-    return f"opened {url}"
+    try:
+        return browser.open_page(url)  # with the page's controls, which saves the model a browser_read step
+    except browser.BrowserError:
+        os.startfile(url)
+        return f"opened {url}"
 
 
 # --- web ----------------------------------------------------------------------
@@ -934,7 +939,11 @@ TOOLS = {t.name: t for t in [
     Tool("scroll", "Scroll up or down inside a window (mouse wheel at its center).",
          {"window": S, "direction": {"type": "string", "enum": ["up", "down"]},
           "amount": {"type": "integer"}}, ["window", "direction"], SAFE, scroll),
-    Tool("open_url", "Open an http or https URL in the default browser. file:, javascript: and data: are refused.",
+    Tool("open_url",
+         "Open an http or https URL in a new browser tab. The result already lists the page's numbered buttons, links"
+         " and fields (as browser_read does), so click or type on them next without reading first. To search a site,"
+         " open its search URL directly, e.g. https://www.youtube.com/results?search_query=lofi+music or"
+         " https://www.netflix.com/search?q=horror. file:, javascript: and data: are refused.",
          {"url": S}, ["url"], SAFE, open_url, _open_url_tier),
     Tool("browser_read",
          "Read the web page open in the user's browser (Brave, Chrome or Edge) as numbered buttons, links and fields"

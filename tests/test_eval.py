@@ -1412,3 +1412,10 @@ def test_the_eval_pins_the_date_its_fixtures_are_written_for(tmp_path):
     task = ev.Task(id="t", request="Hoe laat is het?")
     ev.run_task(LLM(), task, tmp_path)
     assert ev.EVAL_TODAY in seen[0] and ev.EVAL_TODAY.startswith("Sunday 01 November")
+
+
+def test_an_expectation_can_name_either_of_two_right_paths(tmp_path):
+    task = ev.Task(id="t20", request="search youtube", expect=["browser_type|open_url"])
+    assert ev.run_task(ScriptedLLM(call("open_url"), answer("Done.")), task, tmp_path / "a").passed
+    r = ev.run_task(ScriptedLLM(call("open_app"), answer("Done.")), task, tmp_path / "b")
+    assert r.reasons == ["missing call: browser_type|open_url"]

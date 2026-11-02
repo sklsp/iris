@@ -290,6 +290,31 @@ def browser_read(tab: str = "") -> str:
     return _read(_tab(tab))
 
 
+def open_page(url: str, wait: float = 4) -> str:
+    """Open `url` in a new tab in front and return that page as browser_read does, so the next step can act on it at
+    once instead of spending a step on reading it. Raises BrowserError only when no tab could be opened."""
+    tid = _call("Target.createTarget", {"url": url})["targetId"]
+    try:
+        session = _sessions[tid] = _call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
+        deadline = time.perf_counter() + wait
+        text = ""
+        while time.perf_counter() < deadline:
+            time.sleep(0.4)
+            try:
+                if _eval(session, "document.readyState", 2) != "complete":
+                    continue
+                text = _read(session)
+            except BrowserError:
+                continue  # still navigating
+            if text.count("\n[") >= 3:  # a page that draws itself after loading (Netflix) has its links by now
+                break
+        if not text:
+            text = _read(session)
+    except BrowserError as exc:
+        return f"opened {url} (could not read it yet: {exc}; call browser_read)"
+    return f"opened {url}\n\n{text}"
+
+
 def browser_click(index: int, tab: str = "") -> str:
     """Click item `index` from the last browser_read and return the page as it is now."""
     session = _tab(tab)

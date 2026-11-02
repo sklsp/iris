@@ -221,3 +221,26 @@ def test_web_search_uses_the_browser_and_falls_back_to_duckduckgo(fake, monkeypa
     assert tools.web_search("f1").startswith("1. DDG")
     monkeypatch.setattr("iris.web.search", lambda q: (_ for _ in ()).throw(ValueError("human check")))
     assert tools.web_search("f1") == "error: search failed: human check"
+
+
+def test_open_url_returns_the_new_page_so_no_read_step_is_needed(fake, monkeypatch):
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    out = tools.open_url("https://www.netflix.com/search?q=horror")
+    assert out.startswith("opened https://www.netflix.com/search?q=horror\n\nTab: Home - Netflix")
+    assert '[2] button "Zoeken"' in out and browser.item(2)["name"] == "Zoeken"  # the tiers know the page too
+    create = [c[1] for c in fake.calls if c[0] == "Target.createTarget"][0]
+    assert create == {"url": "https://www.netflix.com/search?q=horror"}  # in front, not a background tab
+
+
+def test_open_url_without_browser_access_opens_the_default_browser(monkeypatch):
+    opened = []
+
+    def no_browser(url):
+        raise browser.BrowserError("not allowed")
+
+    monkeypatch.setattr(browser, "open_page", no_browser)
+    monkeypatch.setattr(tools.os, "startfile", opened.append, raising=False)
+    assert tools.open_url("https://example.com/") == "opened https://example.com/"
+    assert opened == ["https://example.com/"]
+    with pytest.raises(ValueError, match="only http and https"):
+        tools.open_url("file:///C:/x")

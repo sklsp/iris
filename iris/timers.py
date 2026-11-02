@@ -61,7 +61,7 @@ class Timers:
         With a non-empty `message`, Iris says that sentence out loud when the timer fires instead of
         the English default; longer than 200 characters is refused."""
         seconds = float(seconds)
-        if seconds <= 0:
+        if not math.isfinite(seconds) or seconds <= 0:  # NaN passes both range checks below
             raise ValueError("seconds must be greater than zero")
         if seconds > MAX_SECONDS:
             raise ValueError(f"seconds must be at most {MAX_SECONDS} (24 hours)")

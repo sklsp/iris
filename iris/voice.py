@@ -28,6 +28,7 @@ FRAME = 1280  # 80 ms at 16 kHz, the frame size openWakeWord wants
 # Read at construction time so tests can override it.
 WAKE_THRESHOLD = float(os.environ.get("IRIS_WAKE_THRESHOLD", 0.5))
 SILENCE_SECONDS = 1.2  # stop recording after this much continuous silence
+SPEECH_TIMEOUT = 60.0  # the longest one answer may take to say before Iris carries on without it
 FOLLOW_UP_SECONDS = 8.0  # after an answer, a question that starts this soon needs no wake word (IRIS_FOLLOW_UP)
 VAD_THRESHOLD = float(os.environ.get("IRIS_VAD_THRESHOLD", 0.01))  # RMS below this counts as silence
 
@@ -338,7 +339,10 @@ class VoiceSession:
     def wait_for_speech(self) -> bool:
         """Block until any running speech (and its watcher) is done. Returns True if it was interrupted."""
         if self._speech is not None:
-            self._speech.join()
+            self._speech.join(SPEECH_TIMEOUT)  # bounded: a stuck speech thread must never freeze Iris
+            if self._speech.is_alive():
+                print("(speech got stuck; carrying on without it)")
+                self._speech = None
         return self._interrupted
 
     def next_request(self) -> str:
@@ -432,8 +436,8 @@ class VoiceSession:
 
     def speak(self, text: str) -> bool:
         """Speak with barge-in and block until done. Returns True if a wake word cut it short."""
-        self.speak_async(text).join()
-        return self._interrupted
+        self.speak_async(text)
+        return self.wait_for_speech()
 
     def speak_async(self, text: str) -> threading.Thread:
         """Speak in a background thread, so the agent can listen for the next request while Iris talks.
@@ -488,7 +492,7 @@ class PiperProcess:
                                      stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                      text=True, encoding="utf-8")
 
-    def wav(self, text: str, timeout: float = 60) -> Path:
+    def wav(self, text: str, timeout: float = 20) -> Path:
         before = set(self.dir.glob("*.wav"))
         assert self.proc.stdin is not None
         self.proc.stdin.write(" ".join(text.split()) + "\n")  # one line is one WAV; Piper splits the sentences
@@ -624,8 +628,10 @@ class Speaker:
             return self.speak(text, stop_event)
 
 
-def _play_wav(path: Path, stop_event: threading.Event | None) -> bool:
-    """Play a 16-bit mono WAV in 0.2 s blocks, so a wake word can stop it between blocks; the file is removed after."""
+def _play_wav(path: Path, stop_event: threading.Event | None, slack: float = 3.0) -> bool:
+    """Play a 16-bit mono WAV in the background and wait for it, stopping when a wake word sets stop_event. Playback
+    never blocks Iris: if the sound device stalls (another app holding it), it is cut off `slack` seconds after the
+    audio should have ended. The file is removed after."""
     import numpy as np
     import sounddevice as sd
 
@@ -635,13 +641,19 @@ def _play_wav(path: Path, stop_event: threading.Event | None) -> bool:
             audio = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype("float32") / 32768
     finally:
         path.unlink(missing_ok=True)
-    block = rate // 5
-    with sd.OutputStream(samplerate=rate, channels=1, dtype="float32") as out:
-        for i in range(0, len(audio), block):
+    sd.play(audio, rate)
+    deadline = time.monotonic() + len(audio) / rate + slack
+    try:
+        while sd.get_stream().active:
             if stop_event is not None and stop_event.is_set():
                 return False
-            out.write(audio[i:i + block])
-    return True
+            if time.monotonic() > deadline:
+                print("(the sound device stalled; skipped the rest of that answer)")
+                return True
+            time.sleep(0.05)
+        return True
+    finally:
+        sd.stop()
 
 
 _speaker: Speaker | None = None

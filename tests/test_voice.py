@@ -558,3 +558,65 @@ def test_the_follow_up_window_expires_back_to_the_wake_word(monkeypatch):
     assert calls == [1] and time.monotonic() - t0 >= 0.3
     monkeypatch.setenv("IRIS_FOLLOW_UP", "0")
     assert s.follow_up() is None  # 0 turns the window off
+
+
+# --- speech never blocks Iris ----------------------------------------------------------
+
+def _fake_sd(monkeypatch, active):
+    calls = []
+    stream = types.SimpleNamespace(active=active)
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
+        play=lambda audio, rate: calls.append(("play", len(audio), rate)),
+        get_stream=lambda: stream, stop=lambda: calls.append(("stop",))))
+    return calls, stream
+
+
+def _wav(path, seconds=0.1, rate=8000):
+    import wave
+
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(bytes(2 * int(seconds * rate)))
+    return path
+
+
+def test_play_wav_plays_in_the_background_and_removes_the_file(tmp_path, monkeypatch):
+    from iris.voice import _play_wav
+
+    calls, _ = _fake_sd(monkeypatch, active=False)
+    path = _wav(tmp_path / "a.wav")
+    assert _play_wav(path, None) is True
+    assert calls == [("play", 800, 8000), ("stop",)] and not path.exists()
+
+
+def test_play_wav_stops_for_a_wake_word_and_gives_up_on_a_stalled_device(tmp_path, monkeypatch, capsys):
+    from iris.voice import _play_wav
+
+    calls, _ = _fake_sd(monkeypatch, active=True)  # the device never finishes
+    stop = threading.Event()
+    stop.set()
+    assert _play_wav(_wav(tmp_path / "a.wav"), stop) is False
+    t0 = time.monotonic()
+    assert _play_wav(_wav(tmp_path / "b.wav"), None, slack=0.2) is True  # cut off, not hung
+    assert time.monotonic() - t0 < 2 and "stalled" in capsys.readouterr().out
+    assert calls.count(("stop",)) == 2
+
+
+def test_a_stuck_speech_thread_does_not_freeze_the_session(monkeypatch, capsys):
+    import iris.voice as v
+
+    release = threading.Event()
+
+    class Stuck:
+        def speak(self, text, stop_event=None):
+            release.wait(5)
+            return True
+
+    monkeypatch.setattr(v, "SPEECH_TIMEOUT", 0.2)
+    s = VoiceSession(speaker=Stuck())
+    t0 = time.monotonic()
+    s.speak("Klikken op het vergrootglas?")
+    assert time.monotonic() - t0 < 2 and "speech got stuck" in capsys.readouterr().out
+    release.set()

@@ -14,6 +14,8 @@
   refused, and keys that delete or close a window still ask every time.
 - Follow-up questions: for 8 seconds after an answer (`IRIS_FOLLOW_UP`), a new question needs no wake word.
 - A beep after the wake word says Iris is listening; "Hey Jarvis" at the start of a request is dropped.
+- Speech can no longer freeze Iris: playback stops at the answer's length plus 3 s if the sound device stalls, Piper
+  gets 20 s, and a stuck speech thread is left behind after 60 s. Ctrl+C prints every thread, to find a hang.
 - Fix: Piper's WAV was read while Piper still wrote it, which crashed the voice back to SAPI.
 
 ## 0.4.0 (2026-11-02): the first public release

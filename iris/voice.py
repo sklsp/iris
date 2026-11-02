@@ -100,6 +100,10 @@ class WakeWord:
         return self._m
 
     def detect(self, frame: np.ndarray) -> bool:
+        import numpy as np
+
+        if frame.dtype != np.int16:  # openWakeWord wants 16-bit PCM; float samples in [-1, 1] score as silence
+            frame = (np.clip(frame, -1.0, 1.0) * 32767).astype(np.int16)
         scores = self._model().predict(frame) or {}
         return max(scores.values(), default=0.0) >= self.threshold
 

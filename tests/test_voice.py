@@ -72,6 +72,20 @@ def test_wake_word_detect_uses_threshold():
     assert strict.detect(np.zeros(FRAME)) is False
 
 
+def test_wake_word_feeds_openwakeword_16_bit_pcm():
+    seen = []
+
+    class Recorder(FakeModel):
+        def predict(self, x):
+            seen.append(x)
+            return {"hey_jarvis": 0.0}
+
+    w = WakeWord()
+    w._m = Recorder(0.0)
+    w.detect(np.full(FRAME, 0.5, dtype=np.float32))  # the mic stream delivers float32 in [-1, 1]
+    assert seen[0].dtype == np.int16 and seen[0][0] == 16383
+
+
 def test_wake_word_name_from_env(monkeypatch):
     monkeypatch.setenv("IRIS_WAKEWORD", "hey_iris")
     assert WakeWord().name == "hey_iris"

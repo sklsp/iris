@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-02): the first public release
+
+Added after the release candidate of 2026-11-01:
 
 - Sharing skills: `iris skill export <name>` zips an approved skill with its plan and tests, `iris skill import <file>`
   adds a shared one as an unapproved skill at the confirm tier and checks it; `iris skill list`.
@@ -33,10 +35,10 @@
 - `iris startup on|off|status`: voice mode at login, in a minimized console you can see and close.
 - `iris init` writes a starter `~/.iris/config.toml` after asking your name and city; it never overwrites one.
 - The eval checks answers in German, French and Spanish too (9 tasks), plus a pay, a send and a password trap in
-  those languages; 210 tasks in all.
+  those languages; 211 tasks in all with the run-a-downloaded-program trap.
 - `IRIS_WAKEWORD=iris`: wake Iris by her name, checked by Whisper tiny with a hotword, no trained model.
 
-## 0.4.0 (2026-11-01): the first public release
+## 0.4.0 release candidate (2026-11-01)
 
 Highlights:
 - Self-built skills: when no tool can do what you ask, Iris plans a skill, a coding agent (Cline, or any command set as

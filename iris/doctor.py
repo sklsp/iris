@@ -71,13 +71,20 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
                                           f"--data-dir {v.PIPER_DIR}"))))
         else:
             out.append((False, f'speech: {engine}; tts = "piper" in config.toml for natural Dutch and English voices'))
+    from iris import browser
+
+    ws = importlib.util.find_spec("websocket") is not None
+    port = next((p for p in browser._profiles() if (p / "DevToolsActivePort").exists()), None)
+    out.append((ws and port is not None, "browser: " + (f"remote control allowed ({port.parent.name})" if ws and port
+                else "pip install -e .[browser]" if not ws else
+                "open brave://inspect/#remote-debugging and tick 'Allow remote debugging' for fast web pages")))
     return out
 
 
 def main() -> int:
     results = checks()
     # Iris runs without these; everything else must pass
-    optional = ("voice", "config", "skill builder", "vision", "hearing", "speech")
+    optional = ("voice", "config", "skill builder", "vision", "hearing", "speech", "browser")
     for ok, line in results:
         mark = "ok " if ok else ("-- " if line.startswith(optional) else "FIX")
         print(f"{mark} {line}")

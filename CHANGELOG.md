@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Web pages through the DevTools Protocol (`browser` extra): `browser_read`, `browser_click`, `browser_type` and
+  `browser_scroll` work on numbered page elements in Brave, Chrome or Edge. A read takes 0.01 to 0.04 s instead of
+  seconds for a screenshot, and pay, send and password controls are recognised by the label the page shows.
 - Fix: the "hey jarvis" wake word never fired. openWakeWord wants 16-bit samples and got floats, which it scores as
   silence.
 - Voice mode prints what Iris heard (`You: ...`).

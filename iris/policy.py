@@ -76,6 +76,25 @@ def _open_app_tier(args: dict) -> str:
     return SAFE
 
 
+def _browser_click_tier(args: dict) -> str:
+    """NEVER when the item, as the page itself labels it, is a pay, send, delete or password control."""
+    from iris import browser  # local: browser is only needed once a page was read
+
+    return NEVER if _NEVER_WORDS.search(browser.item(args.get("index", 0)).get("name", "")) else CONFIRM
+
+
+def _browser_type_tier(args: dict) -> str:
+    """NEVER for a password field or one whose label is a never-word, and for Enter on a mail or chat site."""
+    from iris import browser
+
+    it = browser.item(args.get("index", 0))
+    if it.get("type") == "password" or _NEVER_WORDS.search(it.get("name", "")):
+        return NEVER
+    if args.get("enter") and browser.sends_on_enter(args.get("index", 0)):
+        return NEVER
+    return CONFIRM
+
+
 def _open_url_tier(args: dict) -> str:
     from urllib.parse import urlparse
 

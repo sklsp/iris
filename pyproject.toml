@@ -26,6 +26,7 @@ voice = ["faster-whisper>=1.0", "sounddevice>=0.4", "numpy", "pyttsx3>=2.90", "o
 office = ["python-docx>=1.1", "python-pptx>=1.0", "openpyxl>=3.1"]  # Word, PowerPoint and Excel files
 tts = ["kokoro-onnx>=0.6"]  # optional Kokoro TTS (IRIS_TTS=kokoro); SAPI is the default and needs nothing
 piper = ["piper-tts>=1.3"]  # natural Dutch and English voices (IRIS_TTS=piper); GPL, run as a separate program
+browser = ["websocket-client>=1.7"]  # web pages in Brave, Chrome or Edge through the DevTools Protocol
 gpu = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"]  # Whisper large-v3-turbo on an NVIDIA GPU
 dev = ["pytest", "pytest-cov", "ruff", "mypy"]
 

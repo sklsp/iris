@@ -1,0 +1,326 @@
+"""Web pages in the user's own Chromium browser (Brave, Chrome or Edge) through the DevTools Protocol.
+
+browser_read lists the buttons, links and fields a person can see as numbered lines; browser_click and browser_type
+act on a number from that list and return the page as it is afterwards. Reading the page this way takes tens of
+milliseconds and clicks exactly the element that was read, where UI Automation sees little of a web page and a
+screenshot plus a vision model takes seconds and guesses coordinates.
+
+The browser must allow it once: open brave://inspect/#remote-debugging (or chrome://, edge://), tick "Allow remote
+debugging for this browser instance", and click Allow when the browser asks. Iris keeps one connection open, so it
+asks once per run. Nothing here reaches the network: only the browser on this PC at 127.0.0.1.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+MAX_ITEMS = 120  # numbered controls per read; a page full of links is cut off here
+MAX_TEXT = 1500  # characters of visible page text after the list
+
+
+class BrowserError(Exception):
+    """Something the user can fix, said in words."""
+
+
+def _profiles() -> list[Path]:
+    env = os.environ.get("IRIS_BROWSER_PROFILE")
+    if env:
+        return [Path(env)]
+    local = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    return [local / "BraveSoftware" / "Brave-Browser" / "User Data", local / "Google" / "Chrome" / "User Data",
+            local / "Microsoft" / "Edge" / "User Data"]
+
+
+def _ws_url() -> str:
+    """The browser's DevTools websocket, from the DevToolsActivePort file it writes when remote debugging is on."""
+    for base in _profiles():
+        try:
+            lines = (base / "DevToolsActivePort").read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        port, path = (lines + ["", ""])[0].strip(), (lines + ["", ""])[1].strip()
+        if not port.isdigit():
+            continue
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=1) as r:
+                return json.load(r)["webSocketDebuggerUrl"]
+        except urllib.error.HTTPError as exc:
+            if exc.code == 403:
+                raise BrowserError("the browser is waiting for you to click Allow on its remote debugging "
+                                   "question") from None
+            if exc.code == 404 and path:  # newer browsers turn off /json/* on the default profile
+                return f"ws://127.0.0.1:{port}{path}"
+        except (OSError, ValueError, KeyError):
+            continue  # a stale file from a browser that is closed now
+    raise BrowserError("the browser does not allow remote control yet: open brave://inspect/#remote-debugging, tick "
+                       "'Allow remote debugging for this browser instance', and click Allow when it asks")
+
+
+class Connection:
+    """One DevTools websocket to the whole browser; commands for a tab carry its session id."""
+
+    def __init__(self, url: str):
+        try:
+            import websocket  # websocket-client, the browser extra
+        except ImportError:
+            raise BrowserError("install the browser extra first: pip install -e .[browser]") from None
+
+        # the first connect waits for the user to click Allow in the browser, so the handshake gets a minute
+        self.ws: Any = websocket.create_connection(url, timeout=60, suppress_origin=True)
+        self.ws.settimeout(15)
+        self._id = 0
+
+    def send(self, method: str, params: dict | None = None, session: str | None = None) -> dict:
+        self._id += 1
+        msg: dict[str, Any] = {"id": self._id, "method": method, "params": params or {}}
+        if session:
+            msg["sessionId"] = session
+        self.ws.send(json.dumps(msg))
+        while True:
+            reply = json.loads(self.ws.recv())
+            if reply.get("id") == self._id:  # events and other replies are skipped
+                if "error" in reply:
+                    raise BrowserError(f"{method} failed: {reply['error'].get('message', reply['error'])}")
+                return reply.get("result", {})
+
+
+_conn: Connection | None = None
+_sessions: dict[str, str] = {}  # targetId -> sessionId, so a tab is attached once
+_last: dict[int, dict] = {}  # number -> item of the last list Iris read, for tiers and confirm questions
+
+
+def _connect() -> Connection:
+    global _conn
+    if _conn is None:
+        _conn = Connection(_ws_url())
+        _sessions.clear()
+    return _conn
+
+
+def _call(method: str, params: dict | None = None, session: str | None = None) -> dict:
+    """A command, with one reconnect when the browser was restarted since the last one."""
+    global _conn
+    try:
+        return _connect().send(method, params, session)
+    except BrowserError:
+        raise
+    except Exception:  # noqa: BLE001 - a dropped socket: connect again once
+        _conn = None
+        return _connect().send(method, params, session)
+
+
+def _eval(session: str, expression: str) -> Any:
+    result = _call("Runtime.evaluate", {"expression": expression, "returnByValue": True, "awaitPromise": True},
+                   session)
+    if "exceptionDetails" in result:
+        raise BrowserError("the page refused the script: " + str(result["exceptionDetails"].get("text", ""))[:200])
+    return result.get("result", {}).get("value")
+
+
+def _tab(tab: str = "") -> str:
+    """The session of the tab whose title or address contains `tab`, else the tab the user is looking at."""
+    pages = [t for t in _call("Target.getTargets").get("targetInfos", [])
+             if t.get("type") == "page" and not t.get("url", "").startswith(("devtools://", "chrome-extension://"))]
+    if tab:
+        want = tab.lower()
+        pages = [t for t in pages if want in t.get("title", "").lower() or want in t.get("url", "").lower()]
+        if not pages:
+            raise BrowserError(f"no browser tab whose title or address contains {tab!r}")
+    if not pages:
+        raise BrowserError("the browser has no open tab")
+    best: tuple[int, str] | None = None
+    for t in pages:
+        tid = t["targetId"]
+        if tid not in _sessions:
+            _sessions[tid] = _call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
+        score = _eval(_sessions[tid], "(document.visibilityState === 'visible') + document.hasFocus()") or 0
+        if best is None or score > best[0]:
+            best = (score, tid)
+        if score == 2 or tab:
+            break
+    assert best is not None
+    return _sessions[best[1]]
+
+
+# Numbers every control a person can see, keeps the elements in window.__iris for clicking, and returns the list.
+_SNAPSHOT = """(() => {
+const sel = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[role=button],[role=link],[role=tab],' +
+  '[role=menuitem],[role=option],[role=checkbox],[role=radio],[role=switch],[role=combobox],[role=searchbox],' +
+  '[role=textbox],[contenteditable=""],[contenteditable=true],[onclick],[tabindex]:not([tabindex="-1"])';
+const seen = new Set(), items = [], els = [];
+const vw = innerWidth, vh = innerHeight;
+const clean = s => (s || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
+for (const el of document.querySelectorAll(sel)) {
+  if (els.length >= MAX_ITEMS) break;
+  const r = el.getBoundingClientRect();
+  if (r.width < 2 || r.height < 2 || r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) continue;
+  const cs = getComputedStyle(el);
+  if (cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0) continue;
+  let p = el.parentElement, inside = false;
+  while (p) {
+    if (seen.has(p) && p.matches('a[href],button,[role=button],[role=link]')) { inside = true; break; }
+    p = p.parentElement;
+  }
+  if (inside) continue;
+  seen.add(el);
+  const tag = el.tagName.toLowerCase(), type = (el.getAttribute('type') || '').toLowerCase();
+  const by = el.getAttribute('aria-labelledby');
+  const labelled = by ? by.split(/\\s+/).map(id => (document.getElementById(id) || {}).innerText || '').join(' ') : '';
+  const img = el.querySelector && el.querySelector('img[alt]');
+  const own = el.labels && el.labels[0] && el.labels[0].innerText;
+  const name = clean(el.getAttribute('aria-label') || labelled || own ||
+    el.innerText || el.getAttribute('placeholder') || el.getAttribute('title') || (img && img.alt) ||
+    (tag === 'input' && ['submit', 'button'].includes(type) ? el.value : ''));
+  const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'select' ? 'select' :
+    tag === 'textarea' ? 'textbox' : tag === 'input' ? (['checkbox', 'radio', 'submit', 'button'].includes(type) ?
+    (['submit', 'button'].includes(type) ? 'button' : type) : 'textbox') : tag === 'button' ? 'button' : 'clickable');
+  const field = ['input', 'textarea', 'select'].includes(tag) &&
+    !['submit', 'button', 'checkbox', 'radio'].includes(type);
+  const tick = type === 'checkbox' || type === 'radio';
+  const value = field ? (type === 'password' ? '' : clean(el.value)) : (tick ? (el.checked ? 'checked' : '') : null);
+  if (!name && value === null) continue;
+  els.push(el);
+  items.push({role, name, value, type});
+}
+window.__iris = els;
+const text = document.body ? (document.body.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, MAX_TEXT) : '';
+return JSON.stringify({title: document.title, url: location.href, items, text});
+})()""".replace("MAX_ITEMS", str(MAX_ITEMS)).replace("MAX_TEXT", str(MAX_TEXT))
+
+
+def _format(snap: dict) -> str:
+    lines = [f"Tab: {snap.get('title', '')} ({snap.get('url', '')})"]
+    for i, it in enumerate(snap.get("items", []), 1):
+        line = f'[{i}] {it["role"]} "{it["name"]}"'
+        if it.get("value") is not None:
+            line += f' = "{it["value"]}"' if it["value"] else " (empty)"
+        lines.append(line)
+    if not snap.get("items"):
+        lines.append("(no buttons, links or fields visible; scroll, or wait for the page to load)")
+    if snap.get("text"):
+        lines.append("Page text: " + snap["text"])
+    return "\n".join(lines)
+
+
+def remember(text: str) -> None:
+    """Keep the numbered items of a list Iris read, so tiers and questions know what number 3 is."""
+    _last.clear()
+    url = ""
+    for line in text.splitlines():
+        if line.startswith("Tab: ") and line.endswith(")") and " (" in line:
+            url = line[line.rindex(" (") + 2:-1]
+        m = re.match(r'\[(\d+)\] (\S+) "(.*?)"', line)
+        if m:
+            _last[int(m[1])] = {"role": m[2], "name": m[3], "url": url,
+                                "type": "password" if "password" in m[3].lower() else ""}
+
+
+def item(index: int) -> dict:
+    """What number `index` was in the last list, or {} when Iris has not read it."""
+    try:
+        return _last.get(int(index), {})
+    except (TypeError, ValueError):
+        return {}
+
+
+def _read(session: str) -> str:
+    snap = json.loads(_eval(session, _SNAPSHOT))
+    text = _format(snap)
+    remember(text)
+    for i, it in enumerate(snap.get("items", []), 1):  # the real type, which the text leaves out
+        _last[i]["type"] = it.get("type", "")
+    return text
+
+
+def _settle(session: str) -> None:
+    """Give the page a moment to react: a short pause, then up to 2 s while it is still loading."""
+    time.sleep(0.4)
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and _eval(session, "document.readyState") != "complete":
+        time.sleep(0.1)
+
+
+def _point(session: str, index: int) -> tuple[float, float]:
+    """The centre of element `index` after scrolling it into view; an error when it is gone or covered."""
+    js = """(() => { const el = (window.__iris || [])[INDEX];
+      if (!el || !el.isConnected) return 'stale';
+      el.scrollIntoView({block: 'center', inline: 'center'});
+      const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const top = document.elementFromPoint(x, y);
+      if (top && top !== el && !el.contains(top) && !top.contains(el)) return 'covered';
+      return JSON.stringify([x, y]); })()""".replace("INDEX", str(int(index) - 1))
+    got = _eval(session, js)
+    if got == "stale":
+        raise BrowserError(f"item {index} is no longer on the page; call browser_read again")
+    if got == "covered":
+        raise BrowserError(f"item {index} is covered by something else (a pop-up?); call browser_read again")
+    x, y = json.loads(got)
+    return float(x), float(y)
+
+
+def _mouse_click(session: str, x: float, y: float) -> None:
+    for kind in ("mouseMoved", "mousePressed", "mouseReleased"):
+        _call("Input.dispatchMouseEvent", {"type": kind, "x": x, "y": y, "button": "left", "clickCount": 1}, session)
+
+
+def browser_read(tab: str = "") -> str:
+    """The current tab (or the one matching `tab`) as numbered buttons, links and fields plus some visible text."""
+    return _read(_tab(tab))
+
+
+def browser_click(index: int, tab: str = "") -> str:
+    """Click item `index` from the last browser_read and return the page as it is now."""
+    session = _tab(tab)
+    what = item(index)
+    _mouse_click(session, *_point(session, index))
+    _settle(session)
+    return f'clicked [{index}] {what.get("role", "")} "{what.get("name", "")}"\n\n' + _read(session)
+
+
+def browser_type(index: int, text: str, enter: bool = False, tab: str = "") -> str:
+    """Replace the text in field `index` with `text`; enter=True presses Enter after (to search). Returns the page."""
+    session = _tab(tab)
+    _mouse_click(session, *_point(session, index))
+    _eval(session, """(() => { const el = (window.__iris || [])[INDEX]; if (!el) return;
+      el.focus(); if (el.select) el.select(); else document.execCommand('selectAll'); })()"""
+          .replace("INDEX", str(int(index) - 1)))
+    _call("Input.insertText", {"text": text}, session)
+    if enter:
+        for kind in ("keyDown", "keyUp"):
+            _call("Input.dispatchKeyEvent", {"type": kind, "key": "Enter", "code": "Enter",
+                                             "windowsVirtualKeyCode": 13, "text": "\r"}, session)
+    _settle(session)
+    return f"typed {len(text)} characters into [{index}]" + (" and pressed Enter" if enter else "") + "\n\n" + \
+        _read(session)
+
+
+def browser_scroll(direction: str = "down", tab: str = "") -> str:
+    """Scroll the page by most of a screen and return what is visible then."""
+    if direction not in ("down", "up"):
+        return "error: direction must be down or up"
+    session = _tab(tab)
+    _eval(session, "window.scrollBy(0, %s * innerHeight * 0.8)" % ("1" if direction == "down" else "-1"))
+    time.sleep(0.3)
+    return f"scrolled {direction}\n\n" + _read(session)
+
+
+# Sites where Enter sends a message: typing there with enter=True is sending.
+_SENDS_ON_ENTER = re.compile(r"(mail\.google|outlook\.(live|office)|web\.whatsapp|discord\.com|slack\.com|"
+                             r"teams\.microsoft|messenger\.com|web\.telegram|linkedin\.com/messaging|x\.com/messages)",
+                             re.I)
+
+
+def sends_on_enter(index: int) -> bool:
+    return bool(_SENDS_ON_ENTER.search(item(index).get("url", "")))
+
+
+def host(index: int) -> str:
+    return urlparse(item(index).get("url", "")).hostname or "the browser"

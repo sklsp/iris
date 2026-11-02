@@ -29,7 +29,8 @@ with `monkeypatch`. `tests/conftest.py` already points the journal, `config.toml
    paying, passwords and permanent deletes are `never`. When the arguments can make it riskier, add a `tier_for`
    function in `iris/policy.py`.
 3. A line in `iris/tier_lock.json`, a test that pins every tier literally, and a `_describe` case in `iris/agent.py`
-   for a confirm tool (English and Dutch), so the spoken question is plain.
+   for a confirm tool, so the spoken question is plain: English is required, Dutch, German, French and Spanish are
+   welcome (a missing one falls back to English).
 4. Two eval tasks in `eval/tasks.toml` (one Dutch, one English) and a row in the README's risk tier table. Give every
    tool the model may call first a fixture too: without one it gets a dry-run placeholder, not what the real tool
    says. Fixtures are written for the eval's fixed date, Sunday 1 November 2026.

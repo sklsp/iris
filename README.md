@@ -444,8 +444,8 @@ shows with its own badge.
 - The score depends on the model. The published eval is for `qwen3.8-27b` on a 24 GB GPU; smaller models pick tools
   less reliably, and the eval tells you how much less on your own setup.
 - Tested mostly in Dutch and English, with a few German, French and Spanish tasks. Iris answers in the language
-  you speak, and the safety words and yes/no work in all five; the questions Iris asks before acting are in English,
-  or Dutch for a Dutch request.
+  you speak, and the safety words, yes/no and the questions Iris asks before acting work in all five (a few rare
+  questions fall back to English).
 - On purpose, never: logging in, paying, sending messages to people and permanent deletes. Iris opens the draft or
   the page and you take the last step.
 

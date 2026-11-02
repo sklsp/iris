@@ -17,8 +17,8 @@
 - Fix: moving or copying a file to a folder that does not exist yet ("move report.docx to ~/Archive") made the
   folder's name the file's new name; now the folder is made and the file goes in it. With that, Iris calls file
   tools directly when you give the path instead of listing or searching first.
-- Iris's own fallback answers and every confirm question ("a.txt naar de prullenbak verplaatsen?") are in Dutch for a
-  Dutch request.
+- Iris's own fallback answers and the confirm questions ("a.txt naar de prullenbak verplaatsen?") follow the language
+  of the request: English, Dutch, German, French or Spanish.
 - The language rule names German and French too; the eval runs on a fixed date (1 November 2026), the day its
   fixtures are written for, so a result no longer depends on the day it runs.
 - Clicks and typing are refused for German, French and Spanish send/buy/pay/delete/password names too ("Bezahlen",

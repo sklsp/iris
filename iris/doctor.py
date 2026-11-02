@@ -62,7 +62,12 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
                     else "hearing: Whisper small on the CPU; pip install -e .[gpu] for a better, faster model on an "
                          "NVIDIA GPU"))
         engine = os.environ.get("IRIS_TTS") or config.get("tts", "sapi")
-        if engine == "piper":
+        if engine == "voxcpm":
+            have = v.VOXCPM_PYTHON.exists()
+            out.append((have, f"speech: VoxCPM2 through {v.VOXCPM_PYTHON}" if have else
+                        f"speech: VoxCPM2 is not installed at {v.VOXCPM_PYTHON} (see Speech out in the README); "
+                        "Piper speaks instead"))
+        elif engine == "piper":
             missing = [n for n in v.PIPER_VOICES.values() if not (v.PIPER_DIR / f"{n}.onnx").exists()]
             piper = importlib.util.find_spec("piper") is not None
             out.append((piper and not missing, "speech: Piper " + (", ".join(v.PIPER_VOICES.values()) if piper and

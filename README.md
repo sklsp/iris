@@ -285,6 +285,22 @@ Then set `tts = "piper"` in `~/.iris/config.toml` (or `IRIS_TTS=piper`). `IRIS_P
 voices. Piper is GPL-3.0, so Iris never imports it: it runs Piper's own command line as a separate program and plays
 the WAV it writes. Both default voices were trained on CC0 data; check a voice's model card before you pick another.
 
+VoxCPM2 (Apache-2.0) speaks Dutch and English in one voice, also when they mix in one sentence ("The Shining staat op
+Netflix"). It needs PyTorch and a GPU with about 6 GB free, so it gets its own Python next to Iris:
+
+```bash
+uv venv -p 3.11 %USERPROFILE%\.iris\voxcpm\venv
+uv pip install --python %USERPROFILE%\.iris\voxcpm\venv voxcpm "triton-windows<3.3"
+uv pip install --python %USERPROFILE%\.iris\voxcpm\venv --reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+```
+
+Then set `tts = "voxcpm"`. The model (about 5 GB) is downloaded from Hugging Face on the first start, which takes a
+few minutes; later starts take about half a minute. Iris keeps one voice in `~/.iris/voxcpm/voice.wav`: made on the
+first start, or put any clean 5 to 10 second recording there to speak in that voice. `IRIS_VOXCPM_GPU` picks the GPU
+(default 0, in PCI bus order). On a GPU slower than real time (an RTX 3060 makes 1 s of speech in about 1.5 s) Iris
+starts talking once part of the answer is made, so it plays without gaps; `IRIS_VOXCPM_LEAD` (default 0.35) is that
+part. The worker's log is `~/.iris/voxcpm/worker.log`; if VoxCPM fails, Piper speaks instead.
+
 For Kokoro (English only), install the extra and put the two model files in `~/.iris` (or `IRIS_KOKORO_DIR`):
 
 ```bash
@@ -471,7 +487,10 @@ shows with its own badge.
 | `IRIS_FOLLOW_UP` | `8` | seconds after an answer in which a question needs no wake word; 0 turns it off |
 | `IRIS_CHIME` | `1` | `0` mutes the beep after the wake word |
 | `IRIS_VAD_THRESHOLD` | `0.01` | RMS below which audio is silence |
-| `IRIS_TTS` | config `tts`, else `sapi` | `piper` for natural Dutch and English voices, or `kokoro` |
+| `IRIS_TTS` | config `tts`, else `sapi` | `voxcpm` for one voice in Dutch and English, `piper`, or `kokoro` |
+| `IRIS_VOXCPM_PYTHON` | `~/.iris/voxcpm/venv/Scripts/python.exe` | the Python that has VoxCPM2 |
+| `IRIS_VOXCPM_GPU` / `IRIS_VOXCPM_LEAD` | `0` / `0.35` | GPU for VoxCPM2; share of an answer made before it plays |
+| `IRIS_VOXCPM_STEPS` | `10` | VoxCPM2 diffusion steps (fewer is a little faster, a little rougher) |
 | `IRIS_PIPER_DIR` | `~/.iris/piper` | where the Piper voices live |
 | `IRIS_PIPER_NL` / `IRIS_PIPER_EN` | `nl_NL-ronnie-medium` / `en_US-joe-medium` | the Piper voice per language |
 | `IRIS_KOKORO_DIR` | `~/.iris` | where the Kokoro model files live |

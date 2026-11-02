@@ -3,9 +3,11 @@ Windows SAPI or Kokoro to speak."""
 
 from __future__ import annotations
 
+import json
 import os
 import queue
 import re
+import struct
 import subprocess
 import sys
 import tempfile
@@ -51,6 +53,15 @@ _KOKORO_FILES = {
 PIPER_DIR = Path(os.environ.get("IRIS_PIPER_DIR") or (Path.home() / ".iris" / "piper"))
 PIPER_VOICES = {"nl": os.environ.get("IRIS_PIPER_NL", "nl_NL-ronnie-medium"),
                 "en": os.environ.get("IRIS_PIPER_EN", "en_US-joe-medium")}
+
+# VoxCPM2 (tts = "voxcpm"): one natural voice for Dutch and English, also when they mix in one sentence. It needs
+# torch, so it runs in its own Python through iris/voxcpm_worker.py; the README's Speech section says how to set it up.
+VOXCPM_DIR = Path(os.environ.get("IRIS_VOXCPM_DIR") or (Path.home() / ".iris" / "voxcpm"))
+VOXCPM_PYTHON = Path(os.environ.get("IRIS_VOXCPM_PYTHON") or (VOXCPM_DIR / "venv" / "Scripts" / "python.exe"))
+# A GPU too slow for real time (an RTX 3060 makes 1 s of speech in about 1.5 s) still plays without gaps when this
+# share of the answer is made before it starts.
+VOXCPM_LEAD = float(os.environ.get("IRIS_VOXCPM_LEAD", "0.35"))
+CHARS_PER_SECOND = 17  # how fast VoxCPM2 speaks (measured 16 to 20), to guess an answer's length before it is made
 
 # A wake phrase at the start of a request ("Hey Jarvis, ...") is not part of it.
 _WAKE_PHRASE = re.compile(r"^\s*(?:(?:hey|hé|hee|hoi|hi|ok|okay)[\s,!.]*)?(?:jarvis|iris)\b[\s,!.?]*", re.I)
@@ -528,9 +539,137 @@ def _claim(path: Path, done: Path) -> Path | None:
         return None
 
 
+class VoxProcess:
+    """The running VoxCPM2 worker. stream(text) yields float32 chunks while the worker is still making the rest."""
+
+    FAILED = 0xFFFFFFFF
+
+    def __init__(self, python: Path | None = None, voice: Path | None = None, startup: float = 300,
+                 worker: Path | None = None):
+        python = python or VOXCPM_PYTHON
+        if not python.exists():
+            raise FileNotFoundError(f"no VoxCPM Python at {python}; see Speech in the README to install it")
+        VOXCPM_DIR.mkdir(parents=True, exist_ok=True)
+        env = {**os.environ, "CUDA_DEVICE_ORDER": "PCI_BUS_ID", "TQDM_DISABLE": "1",
+               "CUDA_VISIBLE_DEVICES": os.environ.get("IRIS_VOXCPM_GPU", "0")}
+        worker = worker or Path(__file__).with_name("voxcpm_worker.py")
+        with (VOXCPM_DIR / "worker.log").open("ab") as log:  # the child keeps its own handle
+            self.proc = subprocess.Popen([str(python), str(worker), str(voice or VOXCPM_DIR / "voice.wav")],
+                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, env=env)
+        self.rate = 0
+        self.startup = startup  # loading and compiling the model takes 30 s to a few minutes the first time
+        self.ready = threading.Event()
+        self._frames: queue.Queue = queue.Queue()
+        self._behind = 0  # answers cut short whose rest is still coming back
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self) -> None:
+        import numpy as np
+
+        assert self.proc.stdout is not None
+        out = self.proc.stdout
+        try:
+            self.rate = struct.unpack("<I", _exact(out, 4))[0]
+            self.ready.set()
+            while True:
+                n = struct.unpack("<I", _exact(out, 4))[0]
+                self._frames.put(n if n in (0, self.FAILED) else np.frombuffer(_exact(out, 4 * n), dtype="<f4"))
+        except EOFError:
+            self._frames.put(EOFError)
+            self.ready.set()  # so a waiting stream() sees the stop at once
+
+    def _next(self, timeout: float):
+        try:
+            item = self._frames.get(timeout=timeout)
+        except queue.Empty:
+            raise TimeoutError("VoxCPM took too long") from None
+        if item is EOFError:
+            self._frames.put(EOFError)
+            raise RuntimeError(f"VoxCPM stopped; see {VOXCPM_DIR / 'worker.log'}")
+        return item
+
+    def stream(self, text: str, timeout: float = 30):
+        if not self.ready.wait(self.startup):
+            raise TimeoutError("VoxCPM did not start")
+        while self._behind:  # the rest of an answer that a wake word cut short
+            if isinstance(self._next(timeout), int):
+                self._behind -= 1
+        assert self.proc.stdin is not None
+        self.proc.stdin.write((json.dumps({"text": " ".join(text.split())}) + "\n").encode("utf-8"))
+        self.proc.stdin.flush()
+        self._behind += 1
+        while not isinstance(item := self._next(timeout), int):
+            yield item
+        self._behind -= 1
+        if item == self.FAILED:
+            raise RuntimeError(f"VoxCPM failed on this answer; see {VOXCPM_DIR / 'worker.log'}")
+
+
+def _exact(f, n: int) -> bytes:
+    data = b""
+    while len(data) < n:
+        part = f.read(n - len(data))
+        if not part:
+            raise EOFError
+        data += part
+    return data
+
+
+def _play_stream(chunks, rate: int, lead: float, stop_event: threading.Event | None, slack: float = 3.0) -> bool:
+    """Play streamed float32 audio once `lead` seconds are made (or all of it), so a voice made slower than real time
+    still plays without gaps. Like _play_wav it stops for a wake word and never hangs on a stalled sound device."""
+    import numpy as np
+    import sounddevice as sd
+
+    pending: queue.Queue = queue.Queue()
+    left = np.zeros(0, dtype="float32")
+
+    def feed(outdata, frames, _time, _status):
+        nonlocal left
+        while len(left) < frames and not pending.empty():
+            left = np.concatenate([left, pending.get_nowait()])
+        take, left = left[:frames], left[frames:]
+        outdata[:len(take), 0] = take
+        outdata[len(take):, 0] = 0  # not made yet: a moment of silence rather than a crash
+
+    def stopped() -> bool:
+        return stop_event is not None and stop_event.is_set()
+
+    made = 0
+    stream = None
+    try:
+        for chunk in chunks:
+            if stopped():
+                return False
+            pending.put(chunk.astype("float32"))
+            made += len(chunk)
+            if stream is None and made >= lead * rate:
+                stream = sd.OutputStream(samplerate=rate, channels=1, dtype="float32", callback=feed)
+                stream.start()
+                started = time.monotonic()
+        if stream is None:
+            stream = sd.OutputStream(samplerate=rate, channels=1, dtype="float32", callback=feed)
+            stream.start()
+            started = time.monotonic()
+        deadline = started + made / rate + slack
+        while not pending.empty() or len(left):
+            if stopped():
+                return False
+            if time.monotonic() > deadline:
+                print("(the sound device stalled; skipped the rest of that answer)")
+                return True
+            time.sleep(0.05)
+        time.sleep(float(stream.latency) + 0.05)  # the device's own buffer still has to play out
+        return True
+    finally:
+        if stream is not None:
+            stream.abort()
+            stream.close()
+
+
 class Speaker:
-    """The mouth. Windows SAPI by default; Piper when IRIS_TTS=piper (or tts = "piper" in config.toml), Kokoro when
-    IRIS_TTS=kokoro.
+    """The mouth. Windows SAPI by default; Piper when IRIS_TTS=piper (or tts = "piper" in config.toml), VoxCPM2 when
+    tts = "voxcpm", Kokoro when IRIS_TTS=kokoro.
 
     speak() blocks until done and returns True if the text was fully spoken, False if a wake word
     cut it short. SAPI cannot be interrupted mid-utterance, so barge-in only lands between chunks
@@ -542,7 +681,14 @@ class Speaker:
         self.engine = engine or os.environ.get("IRIS_TTS") or config.get("tts", "sapi")
         self._kokoro: Any = None  # kokoro_onnx.Kokoro; loaded lazily (no type stubs)
         self._piper: dict[str, PiperProcess] = {}
+        self._vox: VoxProcess | None = None
         self._lang = "en"  # the language of the last answer, for a short one whose language is unclear
+        if self.engine == "voxcpm":  # start loading now: it takes half a minute or more
+            try:
+                self._vox = VoxProcess()
+            except FileNotFoundError as exc:
+                print(f"{exc}; using Piper instead.")
+                self.engine = "piper"
         if self.engine == "piper":  # start the voices now: loading a model takes seconds, the first answer should not
             for lang in PIPER_VOICES:
                 try:
@@ -552,6 +698,8 @@ class Speaker:
 
     def speak(self, text: str, stop_event: threading.Event | None = None) -> bool:
         print(f"Iris: {text}")
+        if self.engine == "voxcpm" and self._vox is not None:
+            return self._speak_voxcpm(self._vox, text, stop_event)
         if self.engine == "piper":
             return self._speak_piper(text, stop_event)
         if self.engine == "kokoro":
@@ -596,6 +744,17 @@ class Speaker:
             print(f"Piper failed ({exc}); using Windows SAPI instead.")
             self.engine = "sapi"
             return self.speak(text, stop_event)
+
+    def _speak_voxcpm(self, vox: VoxProcess, text: str, stop_event: threading.Event | None) -> bool:
+        try:
+            if not vox.ready.wait(vox.startup):
+                raise TimeoutError("VoxCPM did not start")
+            lead = VOXCPM_LEAD * len(text) / CHARS_PER_SECOND
+            return _play_stream(vox.stream(text), vox.rate, lead, stop_event)
+        except Exception as exc:  # noqa: BLE001 - fall back to Piper so Iris keeps talking
+            print(f"VoxCPM failed ({exc}); using Piper instead.")
+            self.engine = "piper"
+            return self._speak_piper(text, stop_event)
 
     def _kokoro_model(self):
         if self._kokoro is None:

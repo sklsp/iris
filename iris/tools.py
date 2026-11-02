@@ -475,13 +475,18 @@ def open_url(url: str) -> str:
 
 # --- web ----------------------------------------------------------------------
 def web_search(query: str) -> str:
-    """Search the web (DuckDuckGo) and list titles, links and snippets."""
+    """Search the web and list titles, links and snippets: in a background tab of the user's browser when it allows
+    remote control (search engines block plain HTTP clients like Iris), else DuckDuckGo's html page."""
+    from iris import browser
     from iris.web import search
 
     try:
-        results = search(query)
-    except (OSError, ValueError) as e:
-        return f"error: search failed: {e}"
+        results = browser.search(query)
+    except browser.BrowserError:
+        try:
+            results = search(query)
+        except (OSError, ValueError) as e:
+            return f"error: search failed: {e}"
     if not results:
         return f"No results for '{query}'."
     blocks = [f"{n}. {r['title']}\n   {r['url']}\n   {r['snippet']}" for n, r in enumerate(results, 1)]

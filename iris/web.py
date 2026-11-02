@@ -94,6 +94,10 @@ def search(query: str, max_results: int = 5, get=http_get) -> list[dict]:
     """Search DuckDuckGo (html endpoint) and return up to max_results dicts with title, url and snippet."""
     page_url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote_plus(query)
     _, _, html_text = get(page_url)
+    if "bots use DuckDuckGo too" in html_text or "anomaly-modal" in html_text:
+        # its human check, not an empty result: saying so stops the model from retrying search after search
+        raise ValueError("DuckDuckGo asks for a human check (it took Iris for a bot), so web search is unavailable "
+                         "right now; do not retry it")
     parser = _ResultParser()
     parser.feed(html_text)
     results = parser.results[:max_results]

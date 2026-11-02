@@ -315,15 +315,17 @@ uv pip install --python %USERPROFILE%\.iris\voxcpm\venv --reinstall torch torcha
 Then set `tts = "voxcpm"`. The model (about 5 GB) is downloaded from Hugging Face on the first start, which takes a
 few minutes; later starts take about half a minute. Iris keeps one voice in `~/.iris/voxcpm/voice.wav`: made on the
 first start, or put any clean 5 to 10 second recording there to speak in that voice. `voxcpm_gpu` in config.toml (or
-`IRIS_VOXCPM_GPU`) picks the GPU (default 0, in PCI bus order). On an RTX 3090 VoxCPM2 runs at about 1.45 times
-real time and starts within a second, but give it a card with 6 GB truly free: next to a 27B LLM (32k context) and the
-desktop's own apps the 3090 spilled into system memory and the LLM's prompt processing fell from 1100 to 140
-tokens a second. On a
-GPU slower than real time (an RTX 3060 makes speech at 0.56 times real time) Iris starts talking once enough is made that the rest arrives in time, from the speed measured on each answer times
-`IRIS_VOXCPM_MARGIN` (default 1.15), so it plays without gaps; if it still runs dry it pauses once instead of
-stuttering. That costs a wait: on the 3060 about half the answer's length (2.5 s for a short answer, 17 s for a long
-one). A GPU that runs it in real time starts at once. The worker's log is `~/.iris/voxcpm/worker.log`; if VoxCPM
-fails, Piper speaks instead.
+`IRIS_VOXCPM_GPU`) picks the GPU (default 0, in PCI bus order); give it a card with about 4 GB truly free, not the
+one the LLM fills: next to a 27B LLM and the desktop's own apps a 3090 spilled into system memory and the LLM's prompt
+processing fell from 1100 to 140 tokens a second.
+
+The worker sizes VoxCPM2's attention caches for 512 positions (`IRIS_VOXCPM_CACHE`) instead of the model's 8192, which
+it otherwise reads in full on every step, and speaks a long answer in pieces of up to 250 characters that fit them.
+On an RTX 3060 that took speech from 0.58 to about 1.9 times real time, so an answer of any length starts after
+about 0.3 s and plays in one go. On a GPU still slower than real time, Iris starts once enough is made that the rest
+arrives in time (from the speed measured on each answer, times `IRIS_VOXCPM_MARGIN`, default 1.15), and if it runs
+dry it pauses once instead of stuttering. The worker's log is `~/.iris/voxcpm/worker.log`; if VoxCPM fails, Piper
+speaks instead.
 
 For Kokoro (English only), install the extra and put the two model files in `~/.iris` (or `IRIS_KOKORO_DIR`):
 
@@ -355,6 +357,10 @@ address bar, tick "Allow remote debugging for this browser instance", and click 
 first connection. Only the browser on this PC is reached (127.0.0.1). This gives Iris full control of that browser,
 like a person at the keyboard: the tiers above are what keep paying, sending and passwords with you.
 `IRIS_BROWSER_PROFILE` points at another browser's user-data folder.
+
+`web_search` uses the same connection: it opens the search results in a background tab, reads the result links
+and closes the tab again (search engines block plain HTTP clients). If a search engine asks for a human check, Iris
+stops and says so; it never solves those. Without the browser it falls back to DuckDuckGo's html page.
 
 ## Dashboard
 
@@ -516,6 +522,7 @@ shows with its own badge.
 | `IRIS_VOXCPM_PYTHON` | `~/.iris/voxcpm/venv/Scripts/python.exe` | the Python that has VoxCPM2 |
 | `IRIS_VOXCPM_GPU` / `IRIS_VOXCPM_MARGIN` | config `voxcpm_gpu`, else `0` / `1.15` | GPU for VoxCPM2; safety margin on the wait before it plays |
 | `IRIS_VOXCPM_STEPS` | `10` | VoxCPM2 diffusion steps (fewer is a little faster, a little rougher) |
+| `IRIS_VOXCPM_CACHE` | `512` | VoxCPM2 attention cache positions; smaller is faster, a long answer is spoken in pieces |
 | `IRIS_PIPER_DIR` | `~/.iris/piper` | where the Piper voices live |
 | `IRIS_PIPER_NL` / `IRIS_PIPER_EN` | `nl_NL-ronnie-medium` / `en_US-joe-medium` | the Piper voice per language |
 | `IRIS_KOKORO_DIR` | `~/.iris` | where the Kokoro model files live |
@@ -540,6 +547,7 @@ shows with its own badge.
 | `IRIS_EVAL_DIR` | `eval/results` | what the dashboard's Eval tab reads |
 | `IRIS_CONFIG` | `~/.iris/config.toml` | the settings file |
 | `IRIS_BROWSER_PROFILE` | Brave, then Chrome, then Edge | the browser user-data folder whose DevToolsActivePort Iris connects to |
+| `IRIS_SEARCH_URL` | `https://search.brave.com/search?q={q}` | the results page `web_search` opens in a background tab |
 | `IRIS_SKILLS` | `~/.iris/skills` | where self-built skills live |
 | `IRIS_JOURNAL` | `~/.iris/journal.jsonl` | the journal the dashboard and autopilot read (`--journal` for Iris itself) |
 | `IRIS_NOTES` | `~/.iris/notes.md` | where note_add and notes_read keep notes |

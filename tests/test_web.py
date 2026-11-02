@@ -206,6 +206,14 @@ def test_search_no_results():
     assert web.search("nothing here", get=get) == []
 
 
+def test_search_says_so_when_duckduckgo_asks_for_a_human_check():
+    def get(url):
+        return url, "text/html", "<html><body>Unfortunately, bots use DuckDuckGo too. Select all squares</body></html>"
+
+    with pytest.raises(ValueError, match="do not retry"):
+        web.search("F1 winner", get=get)
+
+
 def test_search_plain_http_href_is_used_as_is():
     html = '<a class="result__a" href="https://www.example.com/direct">Direct</a>'
 

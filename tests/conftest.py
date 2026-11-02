@@ -14,3 +14,8 @@ def _journal_in_tmp(tmp_path, monkeypatch):
     monkeypatch.setattr(iris.voice, "_cuda_available", lambda: False)
     monkeypatch.setenv("IRIS_CHIME", "0")  # no beeps from the test run
     monkeypatch.delenv("IRIS_OVERLAY", raising=False)  # no overlay window from the test run, even where it is on
+    # nor the real browser: with no DevToolsActivePort in an empty profile, browser tools say it is not allowed
+    monkeypatch.setenv("IRIS_BROWSER_PROFILE", str(tmp_path / "no-browser"))
+    import iris.browser
+
+    monkeypatch.setattr(iris.browser, "_conn", None)

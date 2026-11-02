@@ -78,6 +78,17 @@ PRESS_KEYS_TIER = [
     ({"keys": "{ENTER}", "window": "Teams"}, tools.NEVER),
     ({"keys": "{ENTER}", "window": "Slack"}, tools.NEVER),
     ({"keys": "{ENTER}{BACKSPACE}", "window": "Outlook"}, tools.NEVER),  # Enter anywhere in the string counts
+    ({"keys": "{ENTER}", "window": "Telegram"}, tools.NEVER),
+    ({"keys": "{ENTER}", "window": "Signal"}, tools.NEVER),
+    ({"keys": "{ENTER}", "window": "Messenger | Facebook - Brave"}, tools.NEVER),
+    ({"keys": "{ENTER}", "window": "Inbox - Mozilla Thunderbird"}, tools.NEVER),
+    ({"keys": "{ENTER}", "window": "Mail"}, tools.NEVER),  # the Windows Mail app
+    ({"keys": "{ENTER}", "window": "Postvak IN - jan@example.com"}, tools.NEVER),
+    ({"keys": "{ENTER}", "window": "Posteingang - GMX"}, tools.NEVER),
+    ({"keys": "{ENTER}", "window": "Boîte de réception - Orange"}, tools.NEVER),
+    ({"keys": "{ENTER}", "window": "Bandeja de entrada - Yahoo"}, tools.NEVER),
+    ({"keys": "{ENTER}", "window": "Signalen.txt - Kladblok"}, tools.CONFIRM),  # a word boundary, not a substring
+    ({"keys": "{ENTER}", "window": "Mailing list.docx - Word"}, tools.CONFIRM),
 ]
 
 

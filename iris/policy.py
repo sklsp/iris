@@ -32,7 +32,8 @@ _NEVER_WORDS = re.compile(
 )
 
 # Window titles that mean "pressing Enter sends a message or email": never automated.
-_MAIL_CHAT = re.compile(r"(outlook|gmail|whatsapp|discord|\bteams\b|slack)", re.I)
+_MAIL_CHAT = re.compile(r"(outlook|gmail|whatsapp|discord|\bteams\b|slack|telegram|\bsignal\b|messenger|thunderbird|"
+                        r"skype|\bmail\b|\binbox\b|postvak in|posteingang|boîte de réception|bandeja de entrada)", re.I)
 
 
 def _unload_tier(args: dict) -> str:

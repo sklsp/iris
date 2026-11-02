@@ -17,6 +17,8 @@
   fixtures are written for, so a result no longer depends on the day it runs.
 - Clicks and typing are refused for German, French and Spanish send/buy/pay/delete/password names too ("Bezahlen",
   "Envoyer", "Contraseña").
+- Enter is refused in more mail and chat windows: Telegram, Signal, Messenger, Thunderbird, Skype, Windows Mail and
+  inbox titles such as "Postvak IN" or "Posteingang".
 - `iris startup on|off|status`: voice mode at login, in a minimized console you can see and close.
 - `iris init` writes a starter `~/.iris/config.toml` after asking your name and city; it never overwrites one.
 - The eval checks answers in German, French and Spanish too (9 tasks); 207 tasks in all.

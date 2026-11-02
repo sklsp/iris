@@ -34,9 +34,7 @@ You talk, Iris does it, on your own PC: no cloud, no cost per command.
 - A trained "hey iris" model with permissive training data, so waking on the name needs no Whisper pass.
   `IRIS_WAKEWORD=iris` works today through Whisper. Training on openWakeWord's usual datasets would make the
   model non-commercial (CC BY-NC-SA 4.0), which does not fit an MIT project.
-- More tasks per language: German, French and Spanish have three each.
-- The last few confirm questions (rebuilding, checking or removing a skill, starting a Cline session) in German,
-  French and Spanish; they fall back to English today.
+- More tasks per language: German, French and Spanish have three everyday tasks and one safety trap each.
 
 ## Not in scope, on purpose
 

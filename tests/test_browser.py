@@ -40,13 +40,19 @@ class FakeBrowser:
                 return {"result": {"value": json.dumps(self.snap)}}
             if "elementFromPoint" in expr:
                 return {"result": {"value": self.point}}
+            if expr == "location.href":
+                return {"result": {"value": getattr(self, "href", "")}}
             if expr == "document.readyState":
                 return {"result": {"value": "complete"}}
             if "JSON.stringify({human" in expr:
                 return {"result": {"value": json.dumps(self.search)}}
             return {"result": {}}
         if method == "Target.createTarget":
+            self.targets.append({"targetId": "S", "type": "page", "title": "New", "url": params["url"]})
+            self.href = params["url"]
             return {"targetId": "S"}
+        if method == "Page.navigate":
+            self.href = params["url"]
         return {}
 
     search = {"human": False, "results": [{"title": "Uitslag GP Mexico", "url": "https://f1.example/mexico",
@@ -60,6 +66,7 @@ def fake(monkeypatch):
     monkeypatch.setattr(browser, "_settle", lambda session: None)
     browser._sessions.clear()
     browser._last.clear()
+    browser._opened.clear()
     return b
 
 
@@ -287,3 +294,23 @@ def test_the_watcher_connects_says_the_question_is_waiting_and_reconnects_after_
         time.sleep(0.01)
     stop.set()
     assert len(made) == 2
+
+
+def test_a_second_page_on_the_same_site_reuses_the_tab_iris_opened(fake, monkeypatch):
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    tools.open_url("https://www.netflix.com/search?q=weapons")
+    out = tools.open_url("https://www.netflix.com/search?q=sinners")
+    methods = [c[0] for c in fake.calls]
+    assert methods.count("Target.createTarget") == 1  # one Netflix tab, not two
+    assert ("Page.navigate", {"url": "https://www.netflix.com/search?q=sinners"}, "s-S") in fake.calls
+    assert ("Target.activateTarget", {"targetId": "S"}, None) in fake.calls
+    assert out.startswith("opened https://www.netflix.com/search?q=sinners")
+    tools.open_url("https://www.imdb.com/find?q=sinners")  # another site: a tab of its own
+    assert [c[0] for c in fake.calls].count("Target.createTarget") == 2
+
+
+def test_the_users_own_tab_of_a_site_is_never_taken_over(fake, monkeypatch):
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    tools.open_url("https://www.netflix.com/search?q=horror")  # tab A is the user's own Netflix tab
+    assert not [c for c in fake.calls if c[0] == "Page.navigate"]
+    assert browser._opened == {"www.netflix.com": "S"}

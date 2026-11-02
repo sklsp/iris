@@ -342,12 +342,29 @@ def browser_read(tab: str = "") -> str:
     return _read(_tab(tab))
 
 
+_opened: dict[str, str] = {}  # site -> the tab Iris opened for it, reused for the next page on that site
+
+
 def open_page(url: str, wait: float = 4) -> str:
-    """Open `url` in a new tab in front and return that page as browser_read does, so the next step can act on it at
-    once instead of spending a step on reading it. Raises BrowserError only when no tab could be opened."""
-    tid = _call("Target.createTarget", {"url": url})["targetId"]
+    """Open `url` in front and return that page as browser_read does, so the next step can act on it at once instead
+    of spending a step on reading it. A site Iris already opened a tab for gets that tab again (three searches on
+    Netflix are one tab, not three); the user's own tabs are never taken over. Raises BrowserError only when no tab
+    could be opened."""
+    site = urlparse(url).hostname or ""
+    tid = _opened.get(site, "")
+    alive = {t["targetId"] for t in _call("Target.getTargets").get("targetInfos", [])} if tid else set()
+    before = None
+    if tid in alive:
+        if tid not in _sessions:
+            _sessions[tid] = _call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
+        before = _eval(_sessions[tid], "location.href", 2)
+        _call("Page.navigate", {"url": url}, _sessions[tid])
+        _call("Target.activateTarget", {"targetId": tid})
+    else:
+        tid = _opened[site] = _call("Target.createTarget", {"url": url})["targetId"]
     try:
-        session = _sessions[tid] = _call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
+        session = _sessions.get(tid) or _call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
+        _sessions[tid] = session
         deadline = time.perf_counter() + wait
         text = ""
         while time.perf_counter() < deadline:
@@ -355,6 +372,8 @@ def open_page(url: str, wait: float = 4) -> str:
             try:
                 if _eval(session, "document.readyState", 2) != "complete":
                     continue
+                if before is not None and before != url and _eval(session, "location.href", 2) == before:
+                    continue  # the reused tab still shows the old page
                 text = _read(session)
             except BrowserError:
                 continue  # still navigating

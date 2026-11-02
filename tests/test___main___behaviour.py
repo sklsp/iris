@@ -6,6 +6,7 @@ journal, input and voice objects. No microphone, no network, no real TTS.
 """
 import json
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -334,3 +335,41 @@ def test_startup_on_status_off(tmp_path, monkeypatch, capsys):
     assert startup_main(["off"]) == 0 and not (tmp_path / "Startup" / "Iris.cmd").exists()
     assert startup_main(["off"]) == 0  # already off is fine
     assert startup_main(["sideways"]) == 2
+
+
+def test_a_request_cancelled_from_the_overlay_is_not_spoken(tmp_path, monkeypatch):
+    """The agent shares the session's cancel flag, and the main loop says nothing for a cancelled request."""
+    _install_agent(monkeypatch)
+    session_holder = {}
+    agents = []
+
+    class CancellableSession(FakeSession):
+        def __init__(self, script):
+            super().__init__(script)
+            self.cancelled = threading.Event()
+
+    class CancellableAgent(FakeAgent):
+        def handle(self, request):
+            self.cancel.clear()  # like the real Agent: a new request starts uncancelled
+            if request == "zoek iets lang":
+                self.cancel.set()  # the cancel button, clicked while the agent works
+            return super().handle(request)
+
+    def agent_factory(llm, confirm, journal):
+        agents.append(CancellableAgent(llm, confirm, journal))
+        return agents[-1]
+
+    def session_factory():
+        session_holder["session"] = CancellableSession(["zoek iets lang", "hoe laat is het", "quit"])
+        return session_holder["session"]
+
+    monkeypatch.setattr(imain, "Agent", agent_factory)
+    monkeypatch.setattr(ivoice, "VoiceSession", session_factory)
+    monkeypatch.setattr(sys, "argv", ["iris", "--voice", "--journal", str(tmp_path / "j.jsonl")])
+
+    imain.main()
+
+    session = session_holder["session"]
+    assert agents[0].cancel is session.cancelled
+    assert agents[0].requests == ["zoek iets lang", "hoe laat is het"]
+    assert session.async_said == ["Ready.", "answer:hoe laat is het"]

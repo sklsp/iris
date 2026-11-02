@@ -2,10 +2,11 @@
 
 Opt-in: `overlay = true` in config.toml or IRIS_OVERLAY=1. It runs as its own process, `python -m iris.overlay`, and
 reads one JSON event per line on stdin, so a crash or a Python without Tk never touches the voice loop. Iris types into
-and looks at other windows, so the panel never takes focus, stays out of the taskbar, lets clicks through and is left
-out of screenshots. Stdlib only: tkinter and ctypes.
+and looks at other windows, so the panel never takes focus, stays out of the taskbar and is left out of screenshots.
+While Iris listens, thinks or talks it shows a round cancel button; a click writes one JSON line back on stdout.
+Stdlib only: tkinter and ctypes.
 
-Events: listening, heard (text), thinking, answer (text), idle, interrupted."""
+Events in: listening, heard (text), thinking, answer (text), idle, interrupted. Events out: cancel."""
 
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import IO, Any
 
@@ -28,6 +30,8 @@ FADE = 0.4  # the last part of HIDE_AFTER, in which the panel fades out
 ALPHA = 0.93
 PROMPT_CHARS, ANSWER_CHARS, ANSWER_LINES = 160, 300, 6  # longer text keeps its end, which is what is being said
 EVENTS = {"listening", "heard", "thinking", "answer", "idle", "interrupted"}
+ACTIVE = {"listening", "thinking", "speaking"}  # the panel modes in which there is a request to cancel
+CANCEL = json.dumps({"event": "cancel"}) + "\n"  # the line the overlay writes when its cancel button is clicked
 _ON = {"1", "true", "on", "yes"}
 
 
@@ -127,13 +131,17 @@ def dots(mode: str, t: float) -> list[tuple[float, float, float]]:
 
 class Overlay:
     """The voice loop's side. send() queues an event and returns at once; a daemon thread writes it to the overlay
-    process. When that process is missing, dead or stuck, events go nowhere and the voice loop never notices."""
+    process. When that process is missing, dead or stuck, events go nowhere and the voice loop never notices.
+    Another daemon thread reads what the overlay writes back: a click on its cancel button calls on_cancel."""
 
-    def __init__(self, proc: subprocess.Popen | None = None):
+    def __init__(self, proc: subprocess.Popen | None = None, on_cancel: Callable[[], None] | None = None):
         self._proc = proc
+        self.on_cancel = on_cancel
         self._queue: queue.Queue[str | None] = queue.Queue(maxsize=64)
         if proc is not None:
             threading.Thread(target=self._write, args=(proc,), daemon=True, name="overlay").start()
+            if getattr(proc, "stdout", None) is not None:
+                threading.Thread(target=self._read, args=(proc.stdout,), daemon=True, name="overlay-read").start()
 
     def send(self, event: str, text: str = "") -> None:
         if self._proc is None:
@@ -153,6 +161,18 @@ class Overlay:
                 self._proc = None
                 _close_quietly(pipe)
                 return
+
+    def _read(self, pipe: IO[str]) -> None:
+        """Every cancel line from the overlay calls on_cancel; ends quietly when the overlay quits or dies."""
+        try:
+            for line in pipe:
+                if is_cancel(line) and self.on_cancel is not None:
+                    try:
+                        self.on_cancel()
+                    except Exception as exc:  # noqa: BLE001 - a failing cancel must not stop the next one
+                        print(f"(cancelling did not work: {exc!r})")
+        except (OSError, ValueError):  # the pipe broke or was closed
+            pass
 
     def close(self) -> None:
         """Let the overlay go: end of input makes it quit; one that hangs is killed after two seconds."""
@@ -183,8 +203,18 @@ def _close_quietly(pipe: IO[str] | None) -> None:
         pass
 
 
+def is_cancel(line: str) -> bool:
+    """True for the line the overlay writes when its cancel button is clicked."""
+    try:
+        event = json.loads(line)
+    except ValueError:
+        return False
+    return isinstance(event, dict) and event.get("event") == "cancel"
+
+
 def launch() -> Overlay:
-    """The overlay process when it is switched on, else an Overlay that sends nothing. Never raises."""
+    """The overlay process when it is switched on, else an Overlay that sends nothing. Never raises.
+    Its stdout is a pipe back to Iris, for the cancel button; set on_cancel on the result to hear it."""
     if not enabled():
         return Overlay()
     log_path = config.config_path().parent / "overlay.log"
@@ -192,7 +222,7 @@ def launch() -> Overlay:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as log:  # the child keeps its own handle
             proc = subprocess.Popen([sys.executable, "-m", "iris.overlay"], stdin=subprocess.PIPE,
-                                    stdout=subprocess.DEVNULL, stderr=log, text=True, encoding="ascii",
+                                    stdout=subprocess.PIPE, stderr=log, text=True, encoding="ascii",
                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except OSError as exc:
         print(f"(the overlay did not start: {exc}; carrying on without it)")
@@ -214,9 +244,10 @@ def read_events(stream: IO[str], out: queue.Queue) -> None:
 
 
 class Win32:
-    """What Tk cannot do on Windows: no focus, no taskbar button, click-through, no screenshots of it."""
+    """What Tk cannot do on Windows: no focus, also not on a click, no taskbar button, no screenshots of it."""
 
-    GWL_EXSTYLE = -20
+    GWL_EXSTYLE, GWLP_WNDPROC = -20, -4
+    WM_MOUSEACTIVATE, MA_NOACTIVATE = 0x21, 3
     WS_EX_TRANSPARENT, WS_EX_TOOLWINDOW, WS_EX_APPWINDOW = 0x20, 0x80, 0x40000
     WS_EX_LAYERED, WS_EX_NOACTIVATE = 0x80000, 0x08000000
     WDA_EXCLUDEFROMCAPTURE = 0x11  # Windows 10 2004 and later; older ones keep showing it in screenshots
@@ -225,13 +256,40 @@ class Win32:
 
     def __init__(self, user32: Any, hwnd: int):
         self.user32, self.hwnd = user32, hwnd
+        self._wndproc: Any = None  # the ctypes callback; kept here, or Python frees it while Windows still calls it
 
     def no_focus(self) -> None:
+        """Never the active window, no taskbar button, out of screenshots. Not click-through (WS_EX_TRANSPARENT): the
+        cancel button needs the click. The see-through KEY round the panel still lets clicks through by itself."""
         style = self.user32.GetWindowLongW(self.hwnd, self.GWL_EXSTYLE)
-        style = (style & ~self.WS_EX_APPWINDOW) | self.WS_EX_TOOLWINDOW | self.WS_EX_NOACTIVATE | \
-            self.WS_EX_TRANSPARENT | self.WS_EX_LAYERED
+        style = (style & ~(self.WS_EX_APPWINDOW | self.WS_EX_TRANSPARENT)) | self.WS_EX_TOOLWINDOW | \
+            self.WS_EX_NOACTIVATE | self.WS_EX_LAYERED
         self.user32.SetWindowLongW(self.hwnd, self.GWL_EXSTYLE, style)
         self.user32.SetWindowDisplayAffinity(self.hwnd, self.WDA_EXCLUDEFROMCAPTURE)
+
+    def no_activate_on_click(self) -> None:
+        """Answer WM_MOUSEACTIVATE with MA_NOACTIVATE: a click lands on the panel, but the window Iris types into keeps
+        the keyboard. WS_EX_NOACTIVATE alone should do that; this also covers Tk's own handling of the message.
+        Done by subclassing the window: a small window procedure in front of Tk's that passes on everything else."""
+        import ctypes
+
+        functype = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)  # CFUNCTYPE off Windows, for the tests
+        lresult, wparam = ctypes.c_ssize_t, ctypes.c_size_t
+        wndproc = functype(lresult, ctypes.c_void_p, ctypes.c_uint, wparam, lresult)
+        set_proc = getattr(self.user32, "SetWindowLongPtrW", None) or self.user32.SetWindowLongW  # 32-bit Python
+        set_proc.argtypes, set_proc.restype = [ctypes.c_void_p, ctypes.c_int, lresult], lresult
+        call = self.user32.CallWindowProcW
+        call.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint, wparam, lresult]
+        call.restype = lresult
+        previous: int | None = None
+
+        def on_message(hwnd: int | None, msg: int, w: int, lp: int) -> int:
+            if msg == self.WM_MOUSEACTIVATE:
+                return self.MA_NOACTIVATE
+            return call(previous, hwnd, msg, w, lp)
+
+        self._wndproc = wndproc(on_message)
+        previous = set_proc(self.hwnd, self.GWLP_WNDPROC, ctypes.cast(self._wndproc, ctypes.c_void_p).value)
 
     def show(self) -> None:
         self.user32.ShowWindow(self.hwnd, self.SW_SHOWNOACTIVATE)
@@ -270,6 +328,7 @@ COLOUR_FADE = 0.35  # seconds the outline takes to go from one state's colour to
 OUTER = ((12, 0.26), (7, 0.5))
 INNER = ((18, 0.05), (13, 0.10), (9, 0.17), (6, 0.26), (3, 0.38))
 EDGE_WIDTH, EDGE_PIECES = 2.5, 48  # the crisp outline, cut into pieces so a light can travel along it
+BUTTON_RADIUS, BUTTON_CROSS = 11, 4  # the cancel button: a circle with an X, its arms this far from the centre
 
 
 def blend(colour: str, other: str, t: float) -> str:
@@ -374,15 +433,18 @@ def split_ring(points: list[tuple[float, float]], pieces: int, chords: int = 6) 
 
 class Panel:
     """The Tk window. Thin on purpose: View decides what to show, Panel only draws it. `tk` is the tkinter module and
-    `user32` ctypes' user32 (None off Windows), passed in so tests can hand it fakes and never open a window.
+    `user32` ctypes' user32 (None off Windows), passed in so tests can hand it fakes and never open a window. `out` is
+    where a click on the cancel button is written: stdout, the pipe back to Iris.
 
     The window is the panel plus a MARGIN of see-through KEY all round, where the glow goes. Text is written once per
     change; each frame only the indicator, the glow and the outline are touched, and those only when they change."""
 
     WIDTH, MARGIN, PAD, INDENT, RADIUS, POLL_MS = 560, 10, 18, 54, 20, 40  # WIDTH: the window, glow margin included
 
-    def __init__(self, tk: Any, events: queue.Queue, clock=time.monotonic, user32: Any = None):
+    def __init__(self, tk: Any, events: queue.Queue, clock=time.monotonic, user32: Any = None,
+                 out: IO[str] | None = None):
         self.tk, self.events, self.clock, self.view, self.tint = tk, events, clock, View(), Tint()
+        self.out, self.hover = out, False
         if user32 is not None:
             try:
                 user32.SetProcessDPIAware()  # sharp text; Tk then scales its point sizes to the real DPI
@@ -403,6 +465,10 @@ class Panel:
         self.width, self.margin = int(self.WIDTH * self.scale), int(self.MARGIN * self.scale)
         self.canvas = tk.Canvas(root, width=self.width, height=60, bg=KEY, highlightthickness=0, bd=0)
         self.canvas.pack()
+        # bound to the tag, not to items: the button is drawn anew with every layout and keeps these
+        self.canvas.tag_bind("cancel", "<Button-1>", self.cancel)
+        self.canvas.tag_bind("cancel", "<Enter>", lambda _e: self.set_hover(True))
+        self.canvas.tag_bind("cancel", "<Leave>", lambda _e: self.set_hover(False))
         self.height, self.shown, self._alpha = 60, False, 0.0
         self.anchor = (0.0, 0.0)  # the indicator's centre: level with the first line of text
         self._outer: list[Any] = []
@@ -418,6 +484,10 @@ class Panel:
             root.update()
             self.win = Win32(user32, int(root.wm_frame(), 16))
             self.win.no_focus()
+            try:
+                self.win.no_activate_on_click()
+            except Exception as exc:  # noqa: BLE001 - WS_EX_NOACTIVATE still keeps the focus where it is
+                print(f"no WM_MOUSEACTIVATE hook: {exc!r}", file=sys.stderr)
             self.win.hide()
             if before:
                 user32.SetForegroundWindow(before)
@@ -485,6 +555,10 @@ class Panel:
         self._edge = [c.create_line([v for pt in piece for v in pt], fill=BG, width=EDGE_WIDTH * s, capstyle="round",
                                     joinstyle="round", tags="edge") for piece in split_ring(ring, EDGE_PIECES)]
         c.tag_raise("text")  # drawn first to measure it; the shapes stack in the order they were made, under it
+        if self.view.mode in ACTIVE:
+            self.draw_button()
+        else:
+            self.set_hover(False)  # the button is gone, and with it the hand cursor
         c.configure(height=self.height)
         area = self.win.work_area() if self.win else None
         if area is None:
@@ -494,13 +568,57 @@ class Panel:
         self.root.geometry(f"{self.width}x{self.height}+{left}+{bottom - self.height}")
 
     def _text(self, x: int, y: int, text: str, colour: str, size: int) -> Any:
-        look = {"anchor": "nw", "width": self.width - x - int(self.PAD * self.scale) - self.margin, "fill": colour,
+        # the text column stops as far from the right edge as it starts from the left: the cancel button goes there
+        look = {"anchor": "nw", "width": self.width - x - int(self.INDENT * self.scale) - self.margin, "fill": colour,
                 "font": (FONT, size), "tags": "text"}
         try:
             return self.canvas.create_text(x, y, text=text, **look)
         except self.tk.TclError:  # an old Tk that cannot take a character outside the BMP, such as some emoji
             text = "".join(ch if ord(ch) <= 0xFFFF else "?" for ch in text)
             return self.canvas.create_text(x, y, text=text, **look)
+
+    def button_centre(self) -> tuple[float, float]:
+        """The cancel button mirrors the indicator: as far from the right edge, level with the first line."""
+        return self.width - self.anchor[0], self.anchor[1]
+
+    def button_look(self) -> tuple[str, str, str]:
+        """(fill, ring, cross) of the cancel button: quiet on the panel, in the state's colour under the mouse."""
+        if self.hover:
+            tint = self.tint.at(self.clock())
+            return blend(BG, tint, 0.3), tint, TEXT
+        return blend(BG, WHITE, 0.07), blend(BG, WHITE, 0.2), MUTED
+
+    def draw_button(self) -> None:
+        c, s = self.canvas, self.scale
+        (cx, cy), r, a = self.button_centre(), BUTTON_RADIUS * s, BUTTON_CROSS * s
+        fill, ring, cross = self.button_look()
+        c.create_oval(cx - r, cy - r, cx + r, cy + r, fill=fill, outline=ring, width=1.5 * s,
+                      tags=("cancel", "cancel_ring"))
+        for dx in (a, -a):  # the X; its lines are part of the button, so a click on them counts too
+            c.create_line(cx - dx, cy - a, cx + dx, cy + a, fill=cross, width=1.8 * s, capstyle="round",
+                          tags=("cancel", "cancel_x"))
+
+    def set_hover(self, on: bool) -> None:
+        if on == self.hover:
+            return
+        self.hover = on
+        fill, ring, cross = self.button_look()
+        self.canvas.itemconfigure("cancel_ring", fill=fill, outline=ring)
+        self.canvas.itemconfigure("cancel_x", fill=cross)
+        self.canvas.configure(cursor="hand2" if on else "")
+
+    def cancel(self, _event: Any = None) -> None:
+        """The cancel button was clicked: tell Iris, and let the panel go at once instead of waiting for Iris's idle."""
+        if self.view.mode not in ACTIVE:  # a click that came in just after the request ended
+            return
+        try:
+            if self.out is not None:
+                self.out.write(CANCEL)
+                self.out.flush()
+        except (OSError, ValueError):  # Iris is gone or closed the pipe; the panel still goes
+            pass
+        self.view.apply({"event": "idle"}, self.clock())
+        self.layout()
 
     def draw_outline(self, now: float) -> None:
         """Colour the glow and the outline for this frame. Only items whose look changed are touched."""
@@ -573,7 +691,7 @@ def main(stdin: IO[str] | None = None, tk: Any = None, user32: Any = None) -> in
         user32 = _user32()
     events: queue.Queue = queue.Queue()
     threading.Thread(target=read_events, args=(stdin or sys.stdin, events), daemon=True).start()
-    Panel(tk, events, user32=user32).run()
+    Panel(tk, events, user32=user32, out=sys.stdout).run()
     return 0
 
 

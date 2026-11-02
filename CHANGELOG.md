@@ -3,12 +3,17 @@
 ## Unreleased
 
 - `open_url` opens the page in a new tab over the DevTools connection and returns its numbered controls, and its description points at a site's own search URL: "search lo-fi on YouTube" went from 5 model steps and 18.9 s to 2 steps and 8.8 s, a Netflix search from 6 steps to 2.
+- Overlay: a round cancel button on the panel while Iris listens, thinks or speaks. A click stops the speech at once,
+  stops the agent before its next model or tool call (a tool call it did not run gets "cancelled by the user" as its
+  result, so the history stays whole), logs `cancelled` to the journal and goes back to waiting for the wake word.
+  The overlay tells Iris through its stdout, now a pipe. The panel is no longer click-through so the button can take
+  the click; it still never takes the focus (WS_EX_NOACTIVATE plus MA_NOACTIVATE on WM_MOUSEACTIVATE).
 - Speech: VoxCPM2 makes speech about 3.4 times faster (0.58 to 1.9 times real time on an RTX 3060): its attention caches are sized for 512 positions instead of 8192, which it read in full on every step, and long answers go in pieces of up to 250 characters. An answer of any length now starts after about 0.3 s instead of up to 17 s, in one go.
 - Web search runs in a background tab of your own browser (Brave Search by default, `IRIS_SEARCH_URL`), because DuckDuckGo now answers Iris with a bot check. A search takes 1.5 to 2.5 s; a "web" question went from 12 model steps and 31 s to 3 steps and about 11 s. DuckDuckGo stays the fallback.
 - Overlay (opt-in, `overlay = true` or `IRIS_OVERLAY=1`): in voice mode a small panel above the taskbar shows what
   Whisper heard and Iris's answer, with a glowing outline that breathes blue while listening, has lights travelling
   round it in purple while thinking and beats green with the voice while speaking, and fades out 4 s after she is
-  done. It never takes the focus, lets clicks through and is left out of screenshots; `list_windows` and
+  done. It never takes the focus and is left out of screenshots; `list_windows` and
   `read_window` skip it. It runs as its own process (tkinter, no new packages), and voice mode carries on if it fails.
 - Web pages through the DevTools Protocol (`browser` extra): `browser_read`, `browser_click`, `browser_type` and
   `browser_scroll` work on numbered page elements in Brave, Chrome or Edge. A read takes 0.01 to 0.04 s instead of

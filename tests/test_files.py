@@ -437,3 +437,24 @@ def test_write_tier_of_a_bare_name_looks_in_the_iris_documents_folder(tmp_path, 
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.chdir("C:/Windows")  # the cwd must not matter
     assert tools.TOOLS["write_file"].tier_of({"path": "notes.txt"}) == tools.CONFIRM
+
+
+def test_move_and_copy_into_a_new_folder_never_rename_the_file(tmp_path):
+    from iris.files import copy_file, move_file
+
+    src = tmp_path / "facturen-2026-118.docx"
+    src.write_text("x", encoding="utf-8")
+    assert move_file(str(src), str(tmp_path / "Archief")).endswith(str(tmp_path / "Archief" / src.name))
+    assert (tmp_path / "Archief" / src.name).exists() and not src.exists()
+    budget = tmp_path / "budget.xlsx"
+    budget.write_text("b", encoding="utf-8")
+    copy_file(str(budget), str(tmp_path / "Backups"))
+    assert (tmp_path / "Backups" / "budget.xlsx").read_text(encoding="utf-8") == "b"
+    copy_file(str(budget), str(tmp_path / "Kopie") + "/")  # a trailing slash means a folder
+    assert (tmp_path / "Kopie" / "budget.xlsx").exists()
+    copy_file(str(budget), str(tmp_path / "budget-oud.xlsx"))  # a name with an extension is a new name
+    assert (tmp_path / "budget-oud.xlsx").exists()
+    folder = tmp_path / "fotos"
+    folder.mkdir()
+    move_file(str(folder), str(tmp_path / "fotos-2026"))  # a folder without extension is still a rename
+    assert (tmp_path / "fotos-2026").is_dir() and not (tmp_path / "fotos-2026" / "fotos").exists()

@@ -1010,12 +1010,12 @@ TOOLS = {t.name: t for t in [
          "Create a folder with any missing parents. An existing path is an error; it never overwrites.",
          {"path": S}, ["path"], SAFE, make_folder, _make_folder_tier),
     Tool("move_file",
-         "Move a file or folder for the user. An existing destination is an error unless it's a folder,"
-         " in which case the item goes into that folder.",
+         "Move a file or folder for the user. A destination folder (existing or new) gets the item inside it and is"
+         " made when missing; an existing file is never overwritten. Reports a missing source itself.",
          {"source": S, "destination": S}, ["source", "destination"], CONFIRM, move_file, _move_tier),
     Tool("copy_file",
-         "Copy a file or folder (folders with all their contents) for the user. An existing destination is an"
-         " error unless it's a folder, in which case the copy goes into that folder.",
+         "Copy a file or folder (folders with all their contents) for the user. A destination folder (existing or"
+         " new) gets the copy inside it and is made when missing; an existing file is never overwritten.",
          {"source": S, "destination": S}, ["source", "destination"], CONFIRM, copy_file, _copy_tier),
     Tool("make_document",
          "Make a Word .docx for the user from a title and simple markdown content; use it when the user wants a"

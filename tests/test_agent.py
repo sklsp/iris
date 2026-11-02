@@ -101,6 +101,29 @@ def test_loop_stops_after_max_steps(tmp_path):
     assert len(ran) == MAX_STEPS
 
 
+def test_out_of_steps_answers_with_what_was_found(tmp_path):
+    ran = []
+    found = "Psycho staat op Netflix; The Shining nog niet gecheckt."
+    llm = ScriptedLLM(*[call("status") for _ in range(MAX_STEPS)], answer(found))
+    a = agent(tmp_path, llm, ran)
+    assert a.handle("zoek een horrorfilm") == found
+    assert "Do not call tools" in llm.seen[-1][-1]["content"]
+    assert a.messages[-1]["content"].startswith("Psycho") and "Do not call tools" not in a.messages[-2]["content"]
+    assert [e["event"] for e in journal(tmp_path)][-2:] == ["gave_up", "answer"]
+
+
+def test_older_browser_views_keep_their_text_but_lose_their_numbers(tmp_path):
+    page = ('clicked [2] link "Top 250"\n\nTab: IMDb (https://www.imdb.com/)\n[1] link "Home"\n[2] link "Psycho 8.5"\n'
+            "Page text: Psycho 8.5 Alien 8.5")
+    tools = {"browser_click": Tool("browser_click", "", {}, [], SAFE, lambda **kw: page)}
+    llm = ScriptedLLM(call("browser_click", index=2), call("browser_click", index=1), answer("Klaar."))
+    a = Agent(llm, lambda q: True, Journal(tmp_path / "j.jsonl"), tools)
+    a.handle("zoek")
+    first, second = [m["content"] for m in a.messages if m["role"] == "tool"]
+    assert '[1] link "Home"' not in first and "Page text: Psycho 8.5 Alien 8.5" in first and "Tab: IMDb" in first
+    assert "older view" in first and '[1] link "Home"' in second
+
+
 def test_unknown_tool_goes_back_to_the_model(tmp_path):
     llm = ScriptedLLM(call("format_disk"), answer("I can't do that."))
     agent(tmp_path, llm, []).handle("format c")

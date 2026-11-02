@@ -224,6 +224,8 @@ def test_find_files_and_list_folder_are_safe():
     "password.txt", "Wachtwoord.md", "my-secret.json", "token.log", "credentials.csv",
     "apikey.ini", "api_key.toml", "private notes.txt", "server.key", "cert.pem",
     "store.pfx", "vault.kdbx", ".env", "id_rsa", "id_ed25519", "id_ed25519.pub",
+    "Passwörter.txt", "kennwort.docx", "mots de passe.txt", "mot_de_passe.csv", "contraseñas.xlsx",
+    "contrasenas.txt", "geheim.md",
 ])
 def test_read_file_never_reads_secret_looking_files(name):
     assert tools.TOOLS["read_file"].tier_of({"path": f"C:/Users/jay/{name}"}) == tools.NEVER

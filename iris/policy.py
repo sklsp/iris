@@ -75,7 +75,8 @@ def _press_keys_tier(args: dict) -> str:
 
 
 # File names that look like secrets; reading them is never automated.
-_SECRET_WORDS = re.compile(r"(password|wachtwoord|secret|token|credential|apikey|api_key|private"
+_SECRET_WORDS = re.compile(r"(password|wachtwoord|passw[oö]rt|kennw[oö]rt|mots?.?de.?passe|contrase[nñ]a|geheim|secret"
+                           r"|token|credential|apikey|api_key|private"
                            r"|(^|[^a-z])keys?([^a-z]|$))", re.I)  # key as a word: google_key.txt, not keyboard
 _SECRET_SUFFIXES = (".key", ".pem", ".pfx", ".kdbx")
 

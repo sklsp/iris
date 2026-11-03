@@ -1,7 +1,7 @@
 # Night run qwen1 progress
 
 - [x] Q1. Tests for the uncovered lines of iris/reminders.py (1846 passed in 63.52s)
-- [ ] Q2. Tests for the uncovered lines of iris/timers.py and iris/update.py
+- [x] Q2. Tests for the uncovered lines of iris/timers.py and iris/update.py (1848 passed in 63.09s)
 - [ ] Q3. Tests for the uncovered lines of iris/weather.py and iris/notes.py
 - [ ] Q4. Tests for the uncovered lines of iris/files.py
 - [ ] Q5. Tests for the uncovered lines of iris/agents.py

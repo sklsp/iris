@@ -188,6 +188,7 @@ WRITE_ROUTES = (
     "/api/cline/start",
     "/api/skills/approve", "/api/skills/remove",
     "/api/settings", "/api/app/voice/restart",
+    "/api/setup/server", "/api/setup/mic", "/api/setup/speaker", "/api/setup/done",
 )   # the only POST routes: model control, the prompt queue, Cline, skill review, settings and the app's voice loop
 APP_HOOKS: dict = {}   # set by `iris app`: "restart_voice" -> a callable; empty under `iris dashboard`
 
@@ -215,12 +216,9 @@ def run_lms(args: list[str]) -> tuple[int, str]:
 
 
 def _known_model_ids() -> list[str]:
-    """The ids LM Studio reports right now; the only ids a model action may name."""
-    try:
-        data = _fetch_json(V0_MODELS_URL)
-        return [str(m.get("id", "")) for m in data.get("data", [])]
-    except Exception:  # noqa: BLE001 - if we cannot ask, no id is acceptable
-        return []
+    """The ids the model server reports right now (LM Studio's v0 list, else the OpenAI-style one); the only ids a
+    model action may name. Unreachable means none."""
+    return [m["id"] for m in lmstudio_payload().get("models", [])]
 
 
 def _log_model_event(action: str, model: str, outcome: str) -> None:
@@ -845,6 +843,14 @@ class Handler(BaseHTTPRequestHandler):
             self._json(skills_payload())
         elif path == "/api/logs":
             self._json(logs_payload())
+        elif path == "/api/setup":
+            from iris import firstrun
+
+            self._json(firstrun.payload())
+        elif path == "/api/update":
+            from iris import update
+
+            self._json(update.status())   # only what the app's last check found; this route never goes online
         elif path == "/api/app":
             self._json({"ok": True, "app": bool(APP_HOOKS)})
         else:
@@ -882,6 +888,12 @@ class Handler(BaseHTTPRequestHandler):
                 payload = settings.save(body.get("values") or {})
             elif path == "/api/app/voice/restart":
                 payload = app_voice_restart()
+            elif path.startswith("/api/setup/"):
+                from iris import firstrun
+
+                step = path.rsplit("/", 1)[1]
+                payload = (firstrun.use_server(body) if step == "server" else firstrun.mic_test() if step == "mic"
+                           else firstrun.speaker_test() if step == "speaker" else firstrun.finish(body))
             else:
                 action = "load" if path.endswith("/load") else "unload"
                 payload = model_action(action, body)

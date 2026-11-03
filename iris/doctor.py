@@ -11,11 +11,14 @@ from pathlib import Path
 from iris import config
 from iris.registry import PLUGINS
 
+# Iris runs without these; everything else must pass
+OPTIONAL = ("voice", "config", "skill builder", "vision", "hearing", "speech", "browser")
+
 
 def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
     """(ok, line) per check; payload is the LM Studio model list (tests pass one in)."""
     from iris.dashboard import lmstudio_payload
-    from iris.llm import BASE_URL, effective_model
+    from iris.llm import effective_model
 
     out: list[tuple[bool, str]] = []
     out.append((sys.version_info >= (3, 11), f"Python {sys.version.split()[0]} (3.11 or newer needed)"))
@@ -30,7 +33,9 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
     p = payload if payload is not None else lmstudio_payload()
     model = effective_model()
     if not p.get("reachable"):
-        out.append((False, f"LM Studio not reachable at {BASE_URL}: start it and its local server"))
+        url = config.setting("IRIS_LLM_URL", "llm_url", "http://127.0.0.1:1234/v1")
+        out.append((False, f"model server not reachable at {url}: start LM Studio (or your own server) "
+                           "and its local server, or set llm_url"))
     else:
         ids = [m["id"] for m in p["models"]]
         out.append((model in ids, f"model {model} " + ("available in LM Studio" if model in ids
@@ -88,9 +93,7 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
 
 def main() -> int:
     results = checks()
-    # Iris runs without these; everything else must pass
-    optional = ("voice", "config", "skill builder", "vision", "hearing", "speech", "browser")
     for ok, line in results:
-        mark = "ok " if ok else ("-- " if line.startswith(optional) else "FIX")
+        mark = "ok " if ok else ("-- " if line.startswith(OPTIONAL) else "FIX")
         print(f"{mark} {line}")
-    return 0 if all(ok for ok, line in results if not line.startswith(optional)) else 1
+    return 0 if all(ok for ok, line in results if not line.startswith(OPTIONAL)) else 1

@@ -346,15 +346,40 @@ class FakeVoice:
 
 
 def test_app_run_serves_the_dashboard_in_a_window_and_cleans_up(monkeypatch):
+    from iris import firstrun
+
+    firstrun.mark_done()
     monkeypatch.setenv("IRIS_DASHBOARD_PORT", "0")
     wv, voice = FakeWebview(), FakeVoice()
+    started = []
+    voice.start = lambda: started.append(1) or "Iris is listening."
     a = app.App(wv, forms=fake_forms(), voice=voice)
     assert a.run() == 0
-    assert wv.title == "Iris" and wv.url.startswith("http://127.0.0.1:") and wv.url == a.url
+    assert wv.title == "Iris" and wv.url.startswith("http://127.0.0.1:") and wv.url.endswith("/") and wv.url == a.url
     assert wv.kw["hidden"] is False
     assert wv.started["private_mode"] is False and wv.started["icon"].endswith("iris.ico")
-    assert voice.running is False and voice.stops >= 1  # started on open, stopped on the way out
+    assert started == [1] and voice.stops >= 1  # started on open, stopped on the way out
     assert app.ICON.exists()
+
+
+def test_first_run_opens_the_setup_tab_and_waits_to_listen(monkeypatch):
+    monkeypatch.setenv("IRIS_DASHBOARD_PORT", "0")
+    wv, voice = FakeWebview(), FakeVoice()
+    voice.start = lambda: pytest.fail("no listening before setup is finished")
+    a = app.App(wv, voice=voice)
+    a.run()
+    assert wv.url.endswith("/#setup")
+
+
+def test_the_app_tells_about_a_newer_release_through_the_tray(monkeypatch):
+    from iris import update
+
+    monkeypatch.setattr(update, "_fetch", lambda: {"tag_name": "v99.0.0", "html_url": "u"})
+    a = app.App(FakeWebview(), forms=fake_forms(), voice=FakeVoice(), listen=False)
+    a.tray.start()
+    a.tray.start = lambda: None
+    a._started()
+    assert wait_for(lambda: any("v99.0.0" in b for b in a.tray.icon.balloons))
 
 
 def test_app_falls_back_to_a_free_port_and_starts_hidden_in_the_background(monkeypatch):

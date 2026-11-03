@@ -2,7 +2,7 @@
 
 - [x] Q1. Tests for the uncovered lines of iris/reminders.py (1846 passed in 63.52s)
 - [x] Q2. Tests for the uncovered lines of iris/timers.py and iris/update.py (1848 passed in 63.09s)
-- [ ] Q3. Tests for the uncovered lines of iris/weather.py and iris/notes.py
+- [x] Q3. Tests for the uncovered lines of iris/weather.py and iris/notes.py (1852 passed in 63.44s)
 - [ ] Q4. Tests for the uncovered lines of iris/files.py
 - [ ] Q5. Tests for the uncovered lines of iris/agents.py
 - [ ] Q6. Tests for the uncovered lines of iris/firstrun.py

@@ -98,6 +98,36 @@ def test_a_network_failure_is_an_error(monkeypatch):
     assert w.weather("Rotterdam") == "error: could not reach the weather service"
 
 
+def test_a_forecast_key_error_is_an_error(monkeypatch):
+    def fake(url, timeout=15, max_bytes=2_000_000):
+        if "geocoding-api" in url:
+            return url, "application/json", json.dumps(GEO)
+        raise AssertionError("the forecast is faked; no network call may be made")
+
+    monkeypatch.setattr(w.web, "http_get", fake)
+
+    def broken(lat, lon, days):
+        raise KeyError("current")
+
+    monkeypatch.setattr(w, "_forecast", broken)
+    assert w.weather("Rotterdam") == "error: could not read the weather"
+
+
+def test_a_forecast_os_error_is_an_error(monkeypatch):
+    def fake(url, timeout=15, max_bytes=2_000_000):
+        if "geocoding-api" in url:
+            return url, "application/json", json.dumps(GEO)
+        raise AssertionError("the forecast is faked; no network call may be made")
+
+    monkeypatch.setattr(w.web, "http_get", fake)
+
+    def broken(lat, lon, days):
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(w, "_forecast", broken)
+    assert w.weather("Rotterdam") == "error: could not read the weather"
+
+
 def test_weather_is_safe_and_does_not_escalate():
     tool = tools.TOOLS["weather"]
     assert tool.tier == "safe"

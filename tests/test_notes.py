@@ -96,7 +96,19 @@ def test_notes_read_last_below_one_is_an_error(notes_file):
     assert notes.notes_read(last=0).startswith("error:")
 
 
+# --- find_notes ------------------------------------------------------------------
+
+def test_find_notes_with_a_blank_query_is_empty(notes_file):
+    notes_file.write_text("- 2026-10-31 09:01 buy milk\n", encoding="utf-8")
+    assert notes.find_notes("   ") == []
+
+
 # --- note_remove ---------------------------------------------------------------
+
+def test_note_remove_with_a_blank_query_is_an_error(notes_file):
+    assert notes.note_remove("") == "error: say which note to remove"
+    assert notes.note_remove("   ") == "error: say which note to remove"
+
 
 def test_note_remove_removes_the_single_match(notes_file):
     notes_file.write_text(

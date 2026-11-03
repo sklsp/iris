@@ -12,7 +12,7 @@ from iris import config
 from iris.registry import PLUGINS
 
 # Iris runs without these; everything else must pass
-OPTIONAL = ("voice", "config", "skill builder", "vision", "hearing", "speech", "browser")
+OPTIONAL = ("voice", "config", "skill builder", "vision", "hearing", "speech", "browser", "overlay")
 
 
 def bundled() -> bool:
@@ -96,6 +96,13 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
             out.append((False, f"speech: {engine}; " + ("a voice pack on the Setup tab (Piper or VoxCPM2)" if app
                                                         else 'tts = "piper" in config.toml')
                         + " for natural Dutch and English voices"))
+    from iris import overlay
+
+    if overlay.enabled():
+        have_tk = importlib.util.find_spec("tkinter") is not None
+        out.append((have_tk, "overlay: on, tkinter found" if have_tk else
+                    "overlay: on, but tkinter is missing: reinstall Python with the tcl/tk option ticked,"
+                    " or set overlay = false"))
     from iris import browser
 
     ws = importlib.util.find_spec("websocket") is not None

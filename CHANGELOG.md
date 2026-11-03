@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.6.0 (2026-11-03): Iris as a desktop app
+
+- **Installer.** `IrisSetup-0.6.0.exe` (about 150 MB) installs Iris for your account, without administrator rights,
+  with its own Python: a Start menu entry, and if you tick them a desktop shortcut and starting in the tray at sign-in.
+  It checks for WebView2 and the Visual C++ Redistributable and links to Microsoft when one is missing. Uninstalling
+  keeps `~/.iris` unless you tick "Also remove my Iris data". It is not code-signed yet, so SmartScreen warns first;
+  the README says how to check the download.
+- **The app.** `iris app` (and the installed Iris) shows the dashboard in its own window (Edge WebView2 through
+  pywebview, the new `app` extra) with a tray icon: Open, Start/Stop listening, Settings, Quit. One instance per user;
+  a second start brings the first forward. Voice mode runs as a supervised child in a Windows Job Object, so the
+  overlay and speech workers never outlive the app, and stops cleanly (microphone and GPU freed) from the tray.
+  Closing the window keeps Iris in the tray. The window never comes forward by itself, so it never takes the focus
+  from the window Iris types into.
+- **Setup tab**, opened on the first start: finds LM Studio, Ollama or a llama.cpp server (or takes any
+  OpenAI-compatible URL), picks the model, tests the microphone (it only measures the level) and the speakers, shows
+  `iris doctor`'s checks, and asks about update checks.
+- **Voice packs** on the Setup tab, each with its size and license, downloaded only when you click: the Whisper model,
+  the openWakeWord model (CC BY-NC-SA, non-commercial; never bundled), NVIDIA's CUDA libraries, Piper and its voices
+  (GPL, run as a separate program) and VoxCPM2 (through uv, pinned and checksum-verified).
+- **Settings tab**: every `config.toml` option with an explanation and validation. Saving keeps your comments,
+  unknown keys and tables, and swaps the file in atomically; the file stays the place to edit by hand too. Settings
+  that only had an environment variable (such as `llm_url`, `silence`, `follow_up` and `whisper_gpu`) now have a
+  config key; the environment still wins.
+- **Logs tab**: voice mode, the overlay, the VoxCPM2 worker, the app (which writes `logs/app.log` when it has no
+  console) and voice pack downloads.
+- **Update check**: at most once a day the app asks GitHub for the latest release and says so on the dashboard and in
+  the tray. It never downloads or installs anything; `update_check = false` turns it off.
+- Any OpenAI-compatible server: model ids fall back to the `/v1/models` list, so a model can be picked on Ollama or
+  llama.cpp. Loading and unloading models stays LM Studio only.
+- `iris doctor` in the installed app points to the Setup tab's voice packs instead of pip extras.
+- Fix: the dashboard server no longer sets `SO_REUSEADDR`, which on Windows let two servers share port 8765.
+
 ## 0.5.0 (2026-11-03): a fast, natural voice, hands for web pages and an overlay
 
 - `iris shortcut` puts an `Iris.cmd` on the desktop that starts voice mode with a double-click.

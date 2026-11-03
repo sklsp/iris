@@ -1,6 +1,6 @@
 """config.toml and the plugin registry: what the user sets decides the name in the prompt and the tools offered."""
 
-from iris import config, registry
+from iris import __version__, config, registry
 from iris.agent import Agent, Journal, system_prompt
 from iris.tools import TOOLS
 
@@ -119,7 +119,7 @@ def test_version_is_0_4_0(capsys, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["iris", "--version"])
     with pytest.raises(SystemExit):
         imain.main()
-    assert capsys.readouterr().out.strip() == "iris 0.5.0"
+    assert capsys.readouterr().out.strip() == f"iris {__version__}"
 
 
 def test_doctor_marks_optional_misses_and_exits_on_required_ones(capsys, monkeypatch):
@@ -175,3 +175,30 @@ def test_doctor_reads_the_speech_engine_from_config_and_names_missing_voices(tmp
     monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a: object())  # every package "installed"
     lines = [(ok, line) for ok, line in doctor.checks({"reachable": False}) if line.startswith("speech")]
     assert lines and lines[0][0] is False and "download_voices nl_NL-ronnie-medium en_US-joe-medium" in lines[0][1]
+
+
+def test_doctor_in_the_installed_app_points_to_the_setup_tab(tmp_path, monkeypatch):
+    import importlib.util
+
+    from iris import doctor
+    from iris import voice as v
+
+    monkeypatch.delenv("IRIS_TTS", raising=False)
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setattr(v, "PIPER_DIR", tmp_path)
+    monkeypatch.setattr(v, "VOXCPM_PYTHON", tmp_path / "missing" / "python.exe")
+    monkeypatch.setattr(v, "_cuda_available", lambda: False)
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a: object())
+    assert doctor.bundled() is False  # a venv or a normal Python: the pip hints stay
+
+    def lines(tts: str) -> list[str]:
+        (tmp_path / "config.toml").write_text(f'tts = "{tts}"', encoding="utf-8")
+        return [line for _, line in doctor.checks({"reachable": False}) if line.startswith(("speech", "hearing"))]
+
+    assert "pip install -e .[gpu]" in lines("sapi")[0] and 'tts = "piper"' in lines("sapi")[1]
+    monkeypatch.setattr(doctor, "bundled", lambda: True)
+    hearing, speech = lines("sapi")
+    assert "NVIDIA libraries pack on the Setup tab" in hearing and "pip" not in hearing
+    assert "voice pack on the Setup tab" in speech
+    assert lines("piper")[1] == "speech: Piper not installed: the Piper voices pack on the Setup tab"
+    assert "the VoxCPM2 voice pack on the Setup tab" in lines("voxcpm")[1]

@@ -51,3 +51,16 @@ def test_main_marks_a_missing_tkinter_optional(capsys, monkeypatch):
     assert doctor.main() == 0
     out = capsys.readouterr().out.splitlines()
     assert len(out) == 1 and out[0].startswith("-- ") and out[0].removeprefix("--").strip() == missing
+
+
+def test_shortcut_missing_reports_the_none_line(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_DESKTOP_DIR", str(tmp_path))
+    rows = doctor.checks(payload={"reachable": False})
+    assert (False, "shortcut: none on the desktop; iris shortcut puts one there (optional)") in rows
+
+
+def test_shortcut_present_reports_found(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_DESKTOP_DIR", str(tmp_path))
+    (tmp_path / "Iris.cmd").touch()
+    rows = doctor.checks(payload={"reachable": False})
+    assert (True, "shortcut: Iris.cmd on the desktop") in rows

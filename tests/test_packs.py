@@ -129,15 +129,17 @@ def test_fetch_uv_checks_the_checksum(tmp_path, monkeypatch):
     assert not (tmp_path / "voxcpm" / "uv" / "uv.zip").exists()
 
 
-def test_child_env_keeps_models_under_iris_and_puts_piper_on_its_path(monkeypatch):
+def test_child_env_inherits_hf_home_and_puts_piper_only_on_the_piper_path(monkeypatch):
     monkeypatch.delenv("HF_HOME", raising=False)
-    env = packs.child_env()
-    assert env["HF_HOME"] == str(packs.home() / "models")
-    assert not env.get("PYTHONPATH", "").startswith(str(packs.piper_runtime()))  # no Piper pack yet
-    packs.piper_runtime().mkdir(parents=True)
-    assert packs.child_env()["PYTHONPATH"].startswith(str(packs.piper_runtime()) + os.pathsep)
+    assert "HF_HOME" not in packs.child_env("whisper")  # `iris dashboard`: the cache `iris --voice` reads
     monkeypatch.setenv("HF_HOME", "D:/hf")
-    assert packs.child_env()["HF_HOME"] == "D:/hf"  # the user's own cache wins
+    assert packs.child_env("whisper")["HF_HOME"] == "D:/hf"  # the app's ~/.iris/models, or the user's own
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    assert "PYTHONPATH" not in packs.child_env("piper")  # no Piper pack yet
+    packs.piper_runtime().mkdir(parents=True)
+    assert packs.child_env("piper")["PYTHONPATH"].startswith(str(packs.piper_runtime()) + os.pathsep)
+    for other in ("whisper", "wake", "gpu", "voxcpm"):  # Piper's own numpy must not shadow Iris's
+        assert "PYTHONPATH" not in packs.child_env(other)
 
 
 def test_installed_checks(tmp_path, monkeypatch):

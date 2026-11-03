@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from iris.agents import DEFAULT_REPOS, Config, _age, agents_status, discover, load_config, repo_status
+from iris import agents
+from iris.agents import DEFAULT_REPOS, Config, RepoStatus, _age, agents_status, discover, load_config, repo_status
 from iris.tools import SAFE, TOOLS
 
 
@@ -82,6 +83,39 @@ def test_missing_repo_reports_an_error_instead_of_raising(tmp_path):
     assert s.exists is False and "not a git repo" in s.spoken()
 
 
+def test_git_raises_the_last_stderr_line_when_a_command_fails(tmp_path, monkeypatch):
+    """A failing git command raises with git's own last stderr line; no real git runs here."""
+    repo = tmp_path / "broken"
+    (repo / ".git").mkdir(parents=True)
+
+    class _Proc:
+        returncode = 1
+        stdout = ""
+        stderr = "fatal: not a git repository\nthe last line\n"
+
+    monkeypatch.setattr(agents.subprocess, "run", lambda *args, **kwargs: _Proc())
+    with pytest.raises(RuntimeError) as excinfo:
+        agents._git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    assert str(excinfo.value) == "the last line"
+
+
+def test_repo_status_reports_git_failure_as_an_error(tmp_path, monkeypatch):
+    repo = tmp_path / "broken"
+    (repo / ".git").mkdir(parents=True)
+
+    class _Proc:
+        returncode = 1
+        stdout = ""
+        stderr = "fatal: not a git repository\nthe last line\n"
+
+    def broken(*args, **kwargs):
+        return _Proc()
+
+    monkeypatch.setattr(agents.subprocess, "run", broken)
+    s = repo_status(repo)
+    assert s.exists is False and s.error == "git failed: the last line"
+
+
 def test_spoken_answer_matches_the_documented_style(tmp_path):
     repo = make_repo(tmp_path, "Acme Shop", minutes_ago=12)
     old = make_repo(tmp_path, "Beacon", minutes_ago=120)
@@ -89,6 +123,11 @@ def test_spoken_answer_matches_the_documented_style(tmp_path):
     out = agents_status(str(write_config(tmp_path, repos=[str(repo), str(old)], worktrees=[])))
     assert "Acme Shop: last commit 12 minutes ago." in out
     assert "Beacon: stuck for 2 hours with 1 uncommitted." in out
+
+
+def test_spoken_says_no_commits_yet_for_a_fresh_repo():
+    s = RepoStatus(name="Fresh", path="/tmp/fresh")
+    assert s.spoken() == "Fresh: no commits yet."
 
 
 def test_agents_status_appends_the_queue_summary(tmp_path):
@@ -107,6 +146,11 @@ def test_agents_status_reports_a_broken_queue_file(tmp_path):
     (tmp_path / "queue.json").write_text("{oops", encoding="utf-8")
     out = agents_status(cfg)
     assert out.endswith("Queue: the queue file is broken.")
+
+
+def test_agents_status_says_so_when_nothing_is_configured(tmp_path):
+    out = agents_status(str(write_config(tmp_path, repos=[], worktrees=[])))
+    assert out == "No agent repos are configured (iris/agents.toml)."
 
 
 def write_config(tmp_path: Path, repos: list[str], worktrees: list[str], stuck: int = 60) -> Path:
@@ -132,6 +176,19 @@ def test_worktree_repos_are_discovered_under_the_hash_directories(tmp_path):
     assert "Acme Shop [09f4f]: last commit just now." in out
     assert "Beacon [d1ac6]: last commit just now." in out
     assert "Acme Shop [934d0]" in out  # same project, both worktrees listed separately
+
+
+def test_discover_skips_worktree_roots_that_are_not_folders(tmp_path):
+    found = discover(Config(repos=[], worktrees=[str(tmp_path / "missing-root")]))
+    assert found == []
+
+
+def test_discover_skips_files_inside_a_worktree_root(tmp_path):
+    root = tmp_path / "worktrees"
+    root.mkdir()
+    (root / "stray.txt").write_text("x", encoding="utf-8")  # a file where a hash dir should be: skipped, no crash
+    found = discover(Config(repos=[], worktrees=[str(root)]))
+    assert found == []
 
 
 def test_stuck_summary_line_counts_the_stuck_repos(tmp_path):

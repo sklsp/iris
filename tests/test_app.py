@@ -497,3 +497,33 @@ def test_main_runs_the_app(monkeypatch):
     monkeypatch.setattr(app, "App", FakeApp)
     assert app.main(["--background"]) == 0
     assert seen == {"app_id": True, "forms": "forms", "background": True}
+
+
+# --- started without a console (Iris.exe is pythonw) -----------------------------------------------------------------
+
+def test_log_when_windowless_sends_output_to_app_log(monkeypatch):
+    out, err = sys.stdout, sys.stderr
+    assert app.log_when_windowless() is None  # a console (here: pytest's capture): nothing changes
+    assert (sys.stdout, sys.stderr) == (out, err)
+    path = app.log_dir() / "app.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x" * (app.LOG_MAX_BYTES + 1), encoding="utf-8")
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    assert app.log_when_windowless() == path
+    try:
+        print("hello from pythonw")
+        print("an error", file=sys.stderr)
+        assert sys.stdout is sys.stderr
+    finally:
+        sys.stdout.close()
+    assert path.read_text(encoding="utf-8") == "hello from pythonw\nan error\n"
+    assert path.with_name("app.log.1").stat().st_size == app.LOG_MAX_BYTES + 1  # the big one moved aside
+
+
+def test_main_logs_to_a_file_first(monkeypatch):
+    calls = []
+    monkeypatch.setattr(app, "log_when_windowless", lambda: calls.append("log"))
+    monkeypatch.setitem(sys.modules, "webview", None)  # not installed: main says so and stops
+    assert app.main([]) == 1
+    assert calls == ["log"]

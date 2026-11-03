@@ -1,0 +1,74 @@
+name: Installer
+
+# Builds IrisSetup-<version>.exe and tests it (install, start, uninstall) on a fresh Windows runner. On a version tag
+# (v0.6.0) it also attaches the installer to a draft release; publishing that release stays a person's decision.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "installer/**"
+      - ".github/workflows/installer.yml"
+      - "pyproject.toml"
+      - "iris/app.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"  # the official CPython for Windows that gets bundled
+      - name: Build the installer
+        shell: pwsh
+        run: ./installer/build.ps1
+      - name: Install, start, uninstall
+        shell: pwsh
+        run: ./installer/smoke.ps1 -Installer (Get-ChildItem dist/IrisSetup-*.exe).FullName
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IrisSetup
+          path: |
+            dist/IrisSetup-*.exe
+            dist/IrisSetup-*.exe.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: IrisSetup
+          path: dist
+      - name: Attach to a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 installer/release_notes.py "$TAG" dist > notes.md
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" != "true" ]; then
+              echo "release $TAG is already published; not touching it" >&2
+              exit 1
+            fi
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --draft --verify-tag --title "Iris ${TAG#v}" --notes-file notes.md
+          fi

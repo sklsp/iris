@@ -358,6 +358,9 @@ class App:
     def run(self) -> int:
         from iris import dashboard
 
+        # models the app downloads (Whisper, VoxCPM2) live under ~/.iris, so uninstall can remove them on request
+        os.environ.setdefault("HF_HOME", str(config.config_path().parent / "models"))
+
         try:
             self.server = dashboard.make_server(port=dashboard.default_port())
         except OSError:  # `iris dashboard` or another program has the port: any free one will do

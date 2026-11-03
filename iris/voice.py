@@ -59,6 +59,11 @@ PIPER_VOICES = {"nl": config.setting("IRIS_PIPER_NL", "piper_nl", "nl_NL-ronnie-
 
 # VoxCPM2 (tts = "voxcpm"): one natural voice for Dutch and English, also when they mix in one sentence. It needs
 # torch, so it runs in its own Python through iris/voxcpm_worker.py; the README's Speech section says how to set it up.
+def piper_runtime() -> Path:
+    """Where the app's Piper pack installs Piper (GPL-3.0), so it stays a separate program next to Iris."""
+    return config.config_path().parent / "piper" / "runtime"
+
+
 VOXCPM_DIR = Path(os.environ.get("IRIS_VOXCPM_DIR") or (Path.home() / ".iris" / "voxcpm"))
 VOXCPM_PYTHON = Path(os.environ.get("IRIS_VOXCPM_PYTHON") or (VOXCPM_DIR / "venv" / "Scripts" / "python.exe"))
 # A GPU too slow for real time (an RTX 3060 makes speech at 0.56 times real time) still plays without gaps when enough
@@ -154,15 +159,16 @@ class WakeWord:
 
 
 def _cuda_dlls() -> None:
-    """The nvidia-* wheels of the gpu extra ship cuBLAS and cuDNN as DLLs that Windows does not find on its own."""
+    """The nvidia-* wheels ship cuBLAS and cuDNN as DLLs that Windows does not find on its own: from the gpu extra,
+    or from the app's GPU pack in ~/.iris/gpu (iris.packs)."""
     import sysconfig
 
-    root = Path(sysconfig.get_paths()["purelib"]) / "nvidia"
-    for sub in ("cublas", "cudnn", "cuda_nvrtc"):
-        d = root / sub / "bin"
-        if d.is_dir() and str(d) not in os.environ.get("PATH", ""):
-            os.add_dll_directory(str(d))
-            os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+    for root in (Path(sysconfig.get_paths()["purelib"]) / "nvidia", config.config_path().parent / "gpu" / "nvidia"):
+        for sub in ("cublas", "cudnn", "cuda_nvrtc"):
+            d = root / sub / "bin"
+            if d.is_dir() and str(d) not in os.environ.get("PATH", ""):
+                os.add_dll_directory(str(d))
+                os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
 
 
 def _cuda_available() -> bool:
@@ -541,9 +547,12 @@ class PiperProcess:
 
     def __init__(self, model: Path):
         self.dir = Path(tempfile.mkdtemp(prefix="iris-piper-"))
+        runtime = piper_runtime()  # the app's Piper pack keeps Piper in its own folder, outside Iris's packages
+        env = {**os.environ, "PYTHONPATH": str(runtime) + os.pathsep + os.environ.get("PYTHONPATH", "")} \
+            if runtime.is_dir() else None
         self.proc = subprocess.Popen([sys.executable, "-m", "piper", "-m", str(model), "-d", str(self.dir)],
                                      stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                     text=True, encoding="utf-8")
+                                     text=True, encoding="utf-8", env=env)
 
     def wav(self, text: str, timeout: float = 20) -> Path:
         before = set(self.dir.glob("*.wav"))

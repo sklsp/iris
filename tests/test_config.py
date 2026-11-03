@@ -65,7 +65,7 @@ def test_doctor_reports_what_to_fix(tmp_path, monkeypatch):
     lines = dict((line.split(" ")[0], ok) for ok, line in doctor.checks(payload))
     assert lines["model"] is True and lines["plugins"] is False
     down = [line for ok, line in doctor.checks({"reachable": False}) if not ok]
-    assert any("LM Studio not reachable" in line for line in down)
+    assert any("model server not reachable" in line for line in down)
 
 
 def test_doctor_checks_the_skill_builder(tmp_path, monkeypatch):

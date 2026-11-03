@@ -262,12 +262,31 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .set-msg.bad{color:#f85149}
 .hidden{display:none}
 @media (max-width:700px){.set-row{grid-template-columns:1fr}.set-help,.set-err,.set-env{grid-column:1}}
+.su-step{border-top:1px solid #23262c;padding:12px 0;display:grid;grid-template-columns:28px minmax(0,1fr);gap:4px 10px}
+.su-step:first-child{border-top:none}
+.su-num{width:22px;height:22px;border-radius:50%;border:1px solid #2c313a;color:#8a9099;font-size:11px;
+  display:flex;align-items:center;justify-content:center}
+.su-num.ok{border-color:#3fb950;color:#3fb950}
+.su-title{font-size:13px;font-weight:600;padding-top:2px}
+.su-body{grid-column:2;font-size:12px;color:#c3c7cd;display:flex;flex-direction:column;gap:8px}
+.su-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.su-row select,.su-row input[type=text]{background:#0e0f11;border:1px solid #23262c;border-radius:4px;
+  color:#e6e6e6;font-family:inherit;font-size:12px;padding:5px 8px;min-width:220px}
+.su-srv{display:flex;align-items:center;gap:8px;font-size:12px}
+.su-dim{color:#8a9099}
+.su-meter{width:220px;height:8px;background:#0e0f11;border:1px solid #23262c;border-radius:4px;overflow:hidden}
+.su-meter i{display:block;height:100%;width:0;background:#7aa2ff;transition:width .3s}
+.su-check{display:flex;gap:8px;align-items:baseline}
+.su-mark{font-family:ui-monospace,Consolas,monospace;font-size:11px;width:28px;flex:none}
+.su-mark.ok{color:#3fb950}.su-mark.opt{color:#8a9099}.su-mark.fix{color:#f85149}
+.update-note{margin-left:12px;font-size:11px;color:#d29922}
+.update-note a{color:#7aa2ff}
 .log-path{color:#565c66;font-size:11px;font-weight:400;margin-left:8px;text-transform:none;letter-spacing:0}
 </style>
 </head>
 <body>
 <header class="top">
-  <div class="brand">IRIS<small>local dashboard</small></div>
+  <div class="brand">IRIS<small>local dashboard</small></div><span class="update-note" id="update-note"></span>
   <div class="status"><span class="dot" id="pulse"></span><span class="num" id="updated">connecting...</span></div>
 </header>
 <nav class="tabs" id="tabs">
@@ -279,6 +298,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <button type="button" class="tab" data-tab="eval">Eval</button>
   <button type="button" class="tab" data-tab="queue">Autopilot</button>
   <button type="button" class="tab" data-tab="skills">Skills</button>
+  <button type="button" class="tab" data-tab="setup">Setup</button>
   <button type="button" class="tab" data-tab="settings">Settings</button>
   <button type="button" class="tab" data-tab="logs">Logs</button>
 </nav>
@@ -385,6 +405,17 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
       <section class="panel wide">
         <h2>Skills Iris built</h2>
         <div id="skills-body"><div class="empty">loading...</div></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="setup-pane" class="pane hidden">
+    <div class="grid">
+      <section class="panel wide">
+        <h2>Set up Iris<span class="log-path" id="setup-version"></span></h2>
+        <div class="set-intro">Five short steps. Everything stays on this PC: nothing is sent anywhere, and you can
+          change every choice later on the Settings tab or in config.toml.</div>
+        <div id="setup-body"><div class="empty">checking this PC...</div></div>
       </section>
     </div>
   </section>
@@ -1475,6 +1506,112 @@ $("settings-restart").onclick = async () => {
   $("settings-restart").classList.add("hidden");
 };
 
+// --- setup: the first-run wizard ---------------------------------------------------
+function suStep(n, title, ok, ...body){
+  const s = el("div", "su-step");
+  s.append(el("div", "su-num" + (ok ? " ok" : ""), ok ? "✓" : String(n)), el("div", "su-title", title));
+  const b = el("div", "su-body"); b.append(...body); s.append(b);
+  return s;
+}
+function suButton(text, fn){ const b = el("button", "mbtn", text); b.type = "button"; b.onclick = fn; return b; }
+function renderSetup(d){
+  const body = $("setup-body");
+  if (!d || !d.ok){ body.replaceChildren(el("div", "empty", "setup unavailable")); return; }
+  $("setup-version").textContent = "Iris " + d.version + (d.done ? " - setup was finished before" : "");
+  // 1: model server and model
+  const reach = d.servers.filter(s => s.reachable);
+  const pick = el("select"); const models = el("select"); const custom = el("input");
+  custom.type = "text"; custom.placeholder = "or another URL, like http://127.0.0.1:5000/v1";
+  for (const s of d.servers){
+    const o = el("option", null, s.name + ": " + s.url + (s.reachable ? "  (" + s.models.length + " models)"
+                                                                       : "  (not running)"));
+    o.value = s.url; pick.append(o);
+  }
+  pick.value = (reach.find(s => s.current) || reach[0] || d.servers[0]).url;
+  const fillModels = () => {
+    const s = d.servers.find(x => x.url === pick.value);
+    models.replaceChildren(...(s && s.models.length ? s.models : ["(no models)"]).map(m => {
+      const o = el("option", null, m); o.value = m; return o; }));
+  };
+  pick.onchange = fillModels; fillModels();
+  const srvMsg = el("span", "su-dim");
+  const srvOk = reach.length > 0;
+  body.replaceChildren(
+    suStep(1, "A model server", srvOk,
+      el("div", null, srvOk ? "Iris found a server on this PC. Pick it and the model Iris should talk to."
+        : "No model server answers yet. Install LM Studio (lmstudio.ai), download a model that can call tools "
+          + "(Iris is tuned on Qwen), load it and start the local server, then press Check again."),
+      (() => { const r = el("div", "su-row"); r.append(pick, models); return r; })(),
+      (() => { const r = el("div", "su-row"); r.append(custom, suButton("Use this", async () => {
+        const url = custom.value.trim() || pick.value;
+        srvMsg.textContent = "saving...";
+        const r2 = await postModel("/api/setup/server", {url, model: models.value});
+        srvMsg.textContent = r2 && r2.ok ? "Iris will use " + r2.model + " at " + r2.url + "."
+          : ((r2 && (r2.error || r2.errors && Object.values(r2.errors).join("; "))) || "could not save");
+        srvMsg.className = r2 && r2.ok ? "set-msg ok" : "set-msg bad";
+      }), suButton("Check again", loadSetup), srvMsg); return r; })()),
+    suStep(2, "Your microphone", false,
+      el("div", null, "Press Test, then say a sentence. Iris records three seconds and only measures how loud it was."),
+      (() => {
+        const r = el("div", "su-row"); const meter = el("div", "su-meter"); const bar = el("i"); meter.append(bar);
+        const msg = el("span", "su-dim");
+        r.append(suButton("Test microphone", async () => {
+          msg.textContent = "listening for three seconds..."; bar.style.width = "0";
+          const m = await postModel("/api/setup/mic", {});
+          bar.style.width = ((m && m.level) || 0) + "%";
+          msg.textContent = (m && m.message) || "could not reach Iris";
+          msg.className = m && m.ok ? "set-msg ok" : "set-msg bad";
+        }), meter, msg);
+        return r;
+      })()),
+    suStep(3, "Your speakers", false,
+      el("div", null, "Iris says one sentence with the Windows voice. Your chosen voice speaks once Iris listens."),
+      (() => {
+        const r = el("div", "su-row"); const msg = el("span", "su-dim");
+        r.append(suButton("Play test sentence", async () => {
+          msg.textContent = "playing...";
+          const m = await postModel("/api/setup/speaker", {});
+          msg.textContent = (m && m.message) || "could not reach Iris";
+          msg.className = m && m.ok ? "set-msg ok" : "set-msg bad";
+        }), msg);
+        return r;
+      })()),
+    suStep(4, "Voice, speech and browser", d.checks.every(c => c.ok || c.optional),
+      el("div", null, "What iris doctor finds. Lines marked -- are optional; the README and the Settings tab say "
+        + "how to add them. FIX lines need attention before Iris can work."),
+      ...d.checks.map(c => {
+        const row = el("div", "su-check");
+        row.append(el("span", "su-mark " + (c.ok ? "ok" : c.optional ? "opt" : "fix"), c.ok ? "ok" : c.optional ? "--" : "FIX"),
+                   el("span", null, c.line));
+        return row;
+      })),
+    suStep(5, "Updates", d.done,
+      (() => {
+        const lab = el("label", "su-srv"); const box = el("input"); box.type = "checkbox"; box.id = "su-update";
+        box.checked = d.update_check;
+        lab.append(box, "Check GitHub once a day for a newer Iris and tell me. Never downloads or installs anything.");
+        return lab;
+      })(),
+      (() => {
+        const r = el("div", "su-row"); const msg = el("span", "su-dim");
+        r.append(suButton(d.done ? "Save" : "Finish setup", async () => {
+          const f = await postModel("/api/setup/done", {update_check: $("su-update").checked});
+          msg.textContent = (f && (f.message || f.error)) || "could not reach Iris";
+          msg.className = f && f.ok ? "set-msg ok" : "set-msg bad";
+        }), msg);
+        return r;
+      })()));
+}
+async function loadSetup(){ renderSetup(await j("/api/setup")); }
+async function loadUpdate(){
+  const u = await j("/api/update");
+  const n = $("update-note");
+  if (!n || !u || !u.newer){ if (n) n.replaceChildren(); return; }
+  const a = el("a", null, "Iris " + u.latest + " is available"); a.href = u.url; a.target = "_blank"; a.rel = "noopener";
+  n.replaceChildren(a, " (you have " + u.current + ")");
+}
+loadUpdate();
+
 // --- logs: the voice loop the app runs, the overlay, the VoxCPM worker ------------
 function renderLogs(d){
   const body = $("logs-body");
@@ -1497,7 +1634,7 @@ function renderLogs(d){
 async function loadLogs(){ renderLogs(await j("/api/logs")); }
 let logsTimer = null;
 
-const PANES = ["overview", "agents", "activity", "repos", "tools", "eval", "queue", "skills", "settings", "logs"];
+const PANES = ["overview", "agents", "activity", "repos", "tools", "eval", "queue", "skills", "setup", "settings", "logs"];
 function showTab(name){
   if (!PANES.includes(name)) name = "overview";
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
@@ -1505,6 +1642,7 @@ function showTab(name){
   if (name === "eval") loadEval();   // the eval tab fetches when shown, not on every poll
   if (name === "skills") loadSkills();
   if (name === "settings") loadSettings();
+  if (name === "setup") loadSetup();
   clearInterval(logsTimer);
   if (name === "logs"){ loadLogs(); logsTimer = setInterval(loadLogs, 3000); }   // only polls while visible
   if (name === "queue"){ loadQueue(); startRunsPolling(); }   // queue tab: fetch when shown; runs keep polling while visible

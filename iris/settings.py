@@ -75,6 +75,9 @@ FIELDS: list[dict] = [
     {"key": "browser_profile", "type": "text", "group": "Apps", "label": "Browser profile folder", "default": "",
      "env": "IRIS_BROWSER_PROFILE",
      "help": "The User Data folder of the Brave, Chrome or Edge Iris reads web pages in. Empty: Iris finds it."},
+    {"key": "update_check", "type": "bool", "group": "Apps", "label": "Check for updates", "default": True,
+     "help": "The desktop app asks GitHub once a day whether a newer Iris exists and tells you. It never downloads "
+             "or installs anything, and sends no information about you."},
     {"key": "plugins", "type": "plugins", "group": "Apps", "label": "Plugins", "default": [],
      "help": "Extra tool groups for particular setups. They keep their risk tiers."},
 ]

@@ -22,3 +22,9 @@ def _journal_in_tmp(tmp_path, monkeypatch):
     import threading
 
     monkeypatch.setattr(iris.browser, "_watching", threading.Event())  # a voice-mode test may have started watch()
+    import iris.update
+
+    def offline():
+        raise OSError("tests never ask GitHub for releases")
+
+    monkeypatch.setattr(iris.update, "_fetch", offline)

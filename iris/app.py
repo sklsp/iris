@@ -365,6 +365,11 @@ class App:
         threading.Thread(target=self.server.serve_forever, name="iris-dashboard", daemon=True).start()
         dashboard.APP_HOOKS["restart_voice"] = self.restart_voice
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}/"
+        from iris import firstrun
+
+        if not firstrun.done():  # the wizard first; listening starts when it is finished
+            self.url += "#setup"
+            self.listen = False
         self.window = self.webview.create_window(TITLE, self.url, width=1280, height=860, min_size=(900, 600),
                                                  hidden=self.background, background_color="#0d0f12")
         self.window.events.closing += self._on_closing
@@ -388,6 +393,10 @@ class App:
         """Runs once the window exists (pywebview calls it on its own thread)."""
         if self.tray is not None:
             self.tray.start()
+            from iris import update
+
+            threading.Thread(target=update.tell_once, args=(self.tray.notify,), name="iris-update",
+                             daemon=True).start()
         if self.listen:
             message = self.voice.start()
             if message != "Iris is listening." and self.tray is not None:

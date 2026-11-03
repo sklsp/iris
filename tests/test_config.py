@@ -119,7 +119,7 @@ def test_version_is_0_4_0(capsys, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["iris", "--version"])
     with pytest.raises(SystemExit):
         imain.main()
-    assert capsys.readouterr().out.strip() == "iris 0.4.0"
+    assert capsys.readouterr().out.strip() == "iris 0.5.0"
 
 
 def test_doctor_marks_optional_misses_and_exits_on_required_ones(capsys, monkeypatch):

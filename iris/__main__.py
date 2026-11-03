@@ -6,6 +6,7 @@ python -m iris autopilot       wait for a run in --repo to finish, then ask befo
 python -m iris init            write a starter ~/.iris/config.toml (asks your name and city)
 python -m iris doctor          check the setup (LM Studio, model, config, plugins, voice) and say what to fix
 python -m iris startup on      start voice mode at login in a minimized console (off, status)
+python -m iris shortcut        put an Iris.cmd on the desktop that starts voice mode with a double-click
 python -m iris skill list      the skills Iris built; `skill export NAME` zips an approved one to share,
                                `skill import FILE [--tier safe]` adds a shared one for review (confirm by default)"""
 
@@ -47,6 +48,27 @@ def startup_main(argv: list[str]) -> int:
     else:
         print("usage: iris startup on|off|status", file=sys.stderr)
         return 2
+    return 0
+
+
+def desktop_dir() -> Path:
+    """The user's real desktop folder (OneDrive may have moved it); IRIS_DESKTOP_DIR overrides it (tests)."""
+    if os.environ.get("IRIS_DESKTOP_DIR"):
+        return Path(os.environ["IRIS_DESKTOP_DIR"])
+    import ctypes
+
+    buf = ctypes.create_unicode_buffer(260)
+    ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, buf)  # type: ignore[attr-defined]  # DESKTOPDIRECTORY
+    return Path(buf.value or Path.home() / "Desktop")
+
+
+def shortcut_main(argv: list[str]) -> int:
+    """`iris shortcut`: an Iris.cmd on the desktop that starts voice mode in its own window; closing it stops Iris."""
+    cmd = desktop_dir() / "Iris.cmd"
+    cmd.parent.mkdir(parents=True, exist_ok=True)
+    cmd.write_text(f'@echo off\ntitle Iris\nset PYTHONUTF8=1\n"{sys.executable}" -m iris --voice\npause\n',
+                   encoding="utf-8")
+    print(f"Double-click {cmd} to start Iris in voice mode. Delete it to remove the shortcut.")
     return 0
 
 
@@ -114,6 +136,8 @@ def main() -> None:
         raise SystemExit(doctor_main())
     if len(sys.argv) > 1 and sys.argv[1] == "startup":
         raise SystemExit(startup_main(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "shortcut":
+        raise SystemExit(shortcut_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "skill":
         raise SystemExit(skill_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "autopilot":

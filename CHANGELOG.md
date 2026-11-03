@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-11-03): a fast, natural voice, hands for web pages and an overlay
 
+- `iris shortcut` puts an `Iris.cmd` on the desktop that starts voice mode with a double-click.
 - `open_url` reuses the tab Iris opened for the same site, so looking up three films on Netflix is one Netflix tab, not three. The user's own tabs are never taken over.
 - Voice mode connects to the browser in the background when it starts (and again after the browser restarts), so Brave's "allow remote debugging" question comes once per run, right away, with Iris saying so, instead of halfway through a request. A request waits at most 5 s for that connection instead of a minute.
 - `open_url` opens the page in a new tab over the DevTools connection and returns its numbered controls, and its description points at a site's own search URL: "search lo-fi on YouTube" went from 5 model steps and 18.9 s to 2 steps and 8.8 s, a Netflix search from 6 steps to 2.

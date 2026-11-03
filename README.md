@@ -32,14 +32,18 @@ Iris: Sending messages is something I never do myself. I can open a draft; you p
 - **Self-extending, safely.** When you ask for something no tool can do, Iris plans a skill, a coding agent (Cline or
   your own) builds it with tests, and you approve it. Approved code is hashed, frozen and run out of process.
 - **Hands that read the screen.** Windows UI Automation gives named buttons and fields instead of guessed pixels;
-  for apps that expose nothing (games, canvas apps, remote desktops) Iris looks at a screenshot with the same
-  local model and can click what it sees, after asking.
+  web pages in your own Brave, Chrome or Edge are read through the DevTools Protocol in hundredths of a second; for
+  apps that expose nothing (games, canvas apps, remote desktops) Iris looks at a screenshot with the same local model
+  and can click what it sees, after asking.
+- **Fast.** Speech starts about 0.3 s after an answer is ready, in one natural voice for Dutch and English; a web
+  search is three model steps; a search on YouTube or Netflix is two. A benchmark measures every change.
 - **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
   email drafts, notes, reminders and timers.
 - **Measured.** An eval of 215 tasks runs against the real model and the result is published below, including the
   safety traps.
-- **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (SAPI or
-  Kokoro) all run on your machine.
+- **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (VoxCPM2,
+  Piper, SAPI or Kokoro) all run on your machine. An optional overlay shows what you said and the answer, with a
+  button to cancel.
 
 ```mermaid
 flowchart LR
@@ -51,6 +55,7 @@ flowchart LR
   Tiers -->|confirm| Ask[Ask you] --> Tools
   Tiers -->|never| Refuse[Refuse]
   Tools --> UIA[Windows UI Automation]
+  Tools --> CDP[Your browser via DevTools]
   Tools --> Skills[Approved skills, out of process]
   Agent --> TTS[Speech] --> Speaker
 ```
@@ -64,7 +69,7 @@ flowchart LR
    ```bash
    git clone https://github.com/sklsp/Iris && cd Iris
    python -m venv .venv
-   .venv\Scripts\python -m pip install -e ".[voice,office]"
+   .venv\Scripts\python -m pip install -e ".[voice,office,browser]"
    ```
 
 3. Check the setup, then talk to it:
@@ -75,6 +80,7 @@ flowchart LR
    .venv\Scripts\iris               # type requests
    .venv\Scripts\iris --voice       # say "hey jarvis", then your request
    .venv\Scripts\iris dashboard     # status, activity, eval and skill review at http://127.0.0.1:8765
+   .venv\Scripts\iris shortcut      # an Iris.cmd on your desktop: double-click to start voice mode
    ```
 
 ## Configuration
@@ -227,8 +233,8 @@ The file tools work in your home folder and the folders you list under `folders`
 .venv\Scripts\python -m iris --push-to-talk       # old mode: press Enter to stop recording
 ```
 
-`--voice` is the normal way to use Iris. It waits for the wake word, plays a short beep, records until 1.2 s of
-silence, transcribes and answers. For 8 seconds after an answer you can ask the next question without the wake word
+`--voice` is the normal way to use Iris. It waits for the wake word, plays a short beep, records until 1.8 s of
+silence (`IRIS_SILENCE`), transcribes and answers. For 8 seconds after an answer you can ask the next question without the wake word
 (`IRIS_FOLLOW_UP` sets the window, 0 turns it off); when nobody speaks in that window, Iris waits for the wake word
 again, so talk that is not meant for her is ignored. The microphone stays open the whole time, so saying the wake
 word while Iris is still talking cuts the answer short and your next words are taken as the next
@@ -251,9 +257,10 @@ itself catches them. It is left out of screenshots (Windows 10 2004 or later), s
 `list_windows` and `read_window` skip it too. It runs as its own process (`python -m iris.overlay`, tkinter only, no
 extra packages) and writes errors to `~/.iris/overlay.log`; if it fails or is closed, voice mode carries on without it.
 
-### Start at login
+### Launcher and start at login
 
-`iris startup on` starts voice mode when you log in, in a minimized console window you can see and close;
+`iris shortcut` puts an `Iris.cmd` on your desktop: double-click it and voice mode starts in its own window; close the
+window to stop Iris. `iris startup on` starts voice mode when you log in, in a minimized console window you can see and close;
 `iris startup off` stops that. Let LM Studio start its local server at login too (its settings have an option for
 it), or Iris has no model to talk to.
 
@@ -271,8 +278,8 @@ set IRIS_WAKEWORD=hey_jarvis    # any built-in openWakeWord name, a path to your
 ```
 
 `IRIS_WAKE_THRESHOLD` (default 0.5) decides how loud the wake word has to be. `IRIS_VAD_THRESHOLD`
-(default 0.01) is the RMS below which audio counts as silence, and the 1.2 s of silence that ends a
-recording is the `silence_seconds` default in `iris/voice.py`.
+(default 0.01) is the RMS below which audio counts as silence, and `IRIS_SILENCE` (default 1.8 s) is the silence
+that ends a recording; a shorter one answers sooner but cuts you off when you pause to think.
 
 ### Hearing
 
@@ -352,11 +359,16 @@ the page itself shows, so a "Bestellen en betalen" button is refused however the
 .venv\Scripts\python -m pip install -e ".[browser]"
 ```
 
-Then allow it once in the browser: type `brave://inspect/#remote-debugging` (or `chrome://`, `edge://`) in the
-address bar, tick "Allow remote debugging for this browser instance", and click Allow when the browser asks Iris's
-first connection. Only the browser on this PC is reached (127.0.0.1). This gives Iris full control of that browser,
+Then allow it in the browser: type `brave://inspect/#remote-debugging` (or `chrome://`, `edge://`) in the address
+bar and tick "Allow remote debugging for this browser instance". The browser asks every new connection whether it may
+be controlled; voice mode connects as soon as it starts (and again after the browser restarts) and says when the
+question is waiting, so you click Allow once per run, not in the middle of a request. Only the browser on this PC is reached (127.0.0.1). This gives Iris full control of that browser,
 like a person at the keyboard: the tiers above are what keep paying, sending and passwords with you.
 `IRIS_BROWSER_PROFILE` points at another browser's user-data folder.
+
+`open_url` opens a page in a tab in front and returns it numbered, so the next step can click without reading
+first; a site's own search URL (`youtube.com/results?search_query=...`) makes a search one step. A second page on the
+same site reuses the tab Iris opened for it; tabs you opened yourself are never taken over.
 
 `web_search` uses the same connection: it opens the search results in a background tab, reads the result links
 and closes the tab again (search engines block plain HTTP clients). If a search engine asks for a human check, Iris
@@ -407,16 +419,16 @@ tab, not an error page.
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-11-02 09:09 on `qwen3.8-27b`: 611/621 passed (98.4%), median 3.9 s, 0.27 confirmations per task, safety: 0 forbidden, 11 refused attempts, 0 unknown tools, language: 0 wrong, answers: 0/135 wrong, 201/207 pass every time.
+Run of 2026-11-03 01:58 on `qwen3.8-27b`: 632/645 passed (98.0%), median 3.9 s, 0.27 confirmations per task, safety: 0 forbidden, 13 refused attempts, 0 unknown tools, language: 0 wrong, answers: 0/135 wrong, 207/215 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 57/57 | 100.0% |
+| agents | 53/57 | 93.0% |
 | files | 108/108 | 100.0% |
-| hands | 108/108 | 100.0% |
-| read | 137/141 | 97.2% |
-| safety | 143/144 | 99.3% |
-| skills | 58/63 | 92.1% |
+| hands | 111/114 | 97.4% |
+| read | 138/141 | 97.9% |
+| safety | 161/162 | 99.4% |
+| skills | 61/63 | 96.8% |
 
 <!-- eval:end -->
 

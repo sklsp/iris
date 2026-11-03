@@ -6,7 +6,7 @@
 **A local voice agent for Windows that does things on your PC, asks before it changes anything, and builds the
 skills it is missing.**
 
-Python 3.11+ . Windows 10/11 . runs on a local model in LM Studio . no cloud, no cost per command
+Windows 10/11 . an installer or Python 3.11+ . runs on a local model in LM Studio . no cloud, no cost per command
 
 ```
 You:  Hey Jarvis, maak een presentatie van vijf slides over de geschiedenis van Rotterdam.
@@ -60,7 +60,48 @@ flowchart LR
   Agent --> TTS[Speech] --> Speaker
 ```
 
-## Quickstart
+## Install
+
+The desktop app, for everyone. It needs Windows 10 or 11 (64-bit) and about 1 GB of disk, more for the optional voice
+packs.
+
+1. Install [LM Studio](https://lmstudio.ai), download a model that supports tool calling (Iris is tuned on
+   `qwen3.8-27b`; smaller Qwen models work with a lower score), load it and start the local server. Ollama, a
+   llama.cpp server or any other OpenAI-compatible server works too.
+2. Download `IrisSetup-<version>.exe` from [Releases](https://github.com/sklsp/Iris/releases) and run it. It needs no
+   administrator rights and installs for your account only (about 150 MB to download, 610 MB installed).
+   - The installer is not code-signed yet, so Windows SmartScreen says "Windows protected your PC". Click
+     **More info**, then **Run anyway**. To check the file first, compare `Get-FileHash .\IrisSetup-<version>.exe`
+     in PowerShell with the SHA-256 on the release page.
+   - If the PC lacks Microsoft Edge WebView2 (the window) or the Visual C++ Redistributable (speech recognition),
+     the installer says so and links to Microsoft's download page. Windows 11 usually has both.
+3. Iris opens on its **Setup** tab: pick the model server and the model, test the microphone and the speakers, choose
+   optional voice packs (each shows its size and license, and downloads only when you click it), read what
+   `iris doctor` finds, and press **Finish**. Iris starts listening: say "hey jarvis", then your request.
+
+![The Setup tab: model server, microphone, speakers and optional voice packs](docs/images/setup.png)
+
+After that Iris lives in the tray: **Open Iris**, **Start/Stop listening**, **Settings** and **Quit Iris**. Closing the
+window keeps it running there; Quit stops everything, including the microphone. Install options: a desktop shortcut
+and starting in the tray when you sign in, both off unless you tick them.
+
+![The Settings tab: every option of config.toml, explained and validated](docs/images/settings.png)
+
+- **Settings** edits every option of `~/.iris/config.toml` with an explanation and validation, and keeps your
+  comments. The file stays the source of truth: edit it by hand whenever you like ([Configuration](#configuration)).
+- **Skills** is where you review and approve the skills Iris builds; **Logs** shows voice mode, the overlay, the
+  speech worker, the app itself and voice pack downloads.
+- Iris checks GitHub once a day for a newer release and says so on the dashboard and in the tray. It never downloads
+  or installs anything by itself; turn it off on the Settings tab (`update_check = false`).
+- **Uninstall** from Windows Settings, Apps. Your settings, skills, notes, logs and voice packs in `~/.iris` stay
+  unless you tick "Also remove my Iris data", so a reinstall brings everything back.
+
+The command line keeps working next to the app: `%LOCALAPPDATA%\Programs\Iris\python.exe -m iris doctor`, for
+example. [docs/desktop-app.md](docs/desktop-app.md) explains how the app is built and why.
+
+## Developer setup
+
+From source, for development and for the command line.
 
 1. Install [LM Studio](https://lmstudio.ai), download a model that supports tool calling (Iris is tuned on
    `qwen3.8-27b`; smaller Qwen models work with a lower score), load it and start the local server.
@@ -395,12 +436,15 @@ set IRIS_DASHBOARD_PORT=9000                        # same, via environment vari
 
 The server binds to loopback only. Every data endpoint answers GET; the writes are the two model actions,
 `POST /api/models/load` and `POST /api/models/unload`, the queue edits, `POST /api/queue/add`, `/delete` and `/move`,
-`POST /api/cline/start`, and approving or removing a skill (`POST /api/skills/approve` and `/remove`). All of them require a loopback Origin or Referer plus the per-start `IRIS_TOKEN` header, so
+`POST /api/cline/start`, approving or removing a skill (`POST /api/skills/approve` and `/remove`), saving settings
+(`POST /api/settings`), the Setup tab's steps (`POST /api/setup/...`), starting a voice pack download
+(`POST /api/packs/install`) and, in the app, restarting voice mode (`POST /api/app/voice/restart`). All of them
+require a loopback Origin or Referer plus the per-start `X-Iris-Token` header, so
 a page opened from anywhere else cannot trigger them; every other method gets a 405. A start additionally needs a click
 on its button and a confirm dialog, so it never happens on its own. The journal file is opened read-only, there are no
 CORS headers, and the page inserts every string with `textContent`, so journal text cannot run as HTML.
 
-The page polls every 3 seconds and has eight tabs:
+The page polls every 3 seconds and has eleven tabs:
 
 - Overview: System (CPU and RAM with sparklines over the last five minutes, plus load, VRAM and temperature per GPU) and
   Models (every LM Studio model with its type badge and a load or unload button, or a note when it is not reachable).
@@ -420,6 +464,11 @@ The page polls every 3 seconds and has eight tabs:
   allowed, a browser notification. See [Autopilot](#autopilot).
 - Skills: every skill Iris built or is building, with its request, tier, status and problems, and its plan, code, tests
   and test output to read before you press **Approve** (or **Remove**). See [Self-extension](#self-extension).
+- Setup: the first-run wizard (model server and model, microphone and speaker tests, optional voice packs, `iris doctor`'s
+  checks, the update check). The desktop app opens it until it is finished once.
+- Settings: every config.toml option with an explanation and validation; saving keeps comments and unknown keys.
+- Logs: the last lines of voice mode (when the app runs it), the overlay, the VoxCPM2 worker, the app and voice pack
+  downloads.
 
 Agents, LM Studio, Claude and runs data are cached for 30 seconds so the page does not hammer git or LM Studio; the
 sessions database is small enough to read fresh on every poll. A missing or unreadable source shows an empty list in its

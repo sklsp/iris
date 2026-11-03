@@ -1,6 +1,6 @@
 # Iris as a desktop app: architecture decision
 
-Status: **approved** on 2026-11-03, as recommended (see Decisions at the end).
+Status: **approved** on 2026-11-03, as recommended (see Decisions at the end), and **built** in 0.6.0 (PRs #27 to #34).
 
 Goal: people install Iris like LM Studio. They download one installer, find Iris in the Start menu, and get an app
 window with a dashboard and settings, a tray icon and a first-run setup, instead of a terminal plus a localhost

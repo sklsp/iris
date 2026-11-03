@@ -15,6 +15,11 @@ from iris.registry import PLUGINS
 OPTIONAL = ("voice", "config", "skill builder", "vision", "hearing", "speech", "browser")
 
 
+def bundled() -> bool:
+    """True in the installed desktop app (its Python sits next to Iris.exe), where voice packs replace pip extras."""
+    return (Path(sys.prefix) / "Iris.exe").exists()
+
+
 def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
     """(ok, line) per check; payload is the LM Studio model list (tests pass one in)."""
     from iris.dashboard import lmstudio_payload
@@ -62,25 +67,35 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
     if voice:
         from iris import voice as v
 
+        app = bundled()
         gpu = v._cuda_available()
         out.append((gpu, "hearing: Whisper large-v3-turbo on the GPU" if gpu
-                    else "hearing: Whisper small on the CPU; pip install -e .[gpu] for a better, faster model on an "
-                         "NVIDIA GPU"))
+                    else "hearing: Whisper small on the CPU; " + ("the NVIDIA libraries pack on the Setup tab"
+                                                                  if app else "pip install -e .[gpu]")
+                    + " for a better, faster model on an NVIDIA GPU"))
         engine = os.environ.get("IRIS_TTS") or config.get("tts", "sapi")
         if engine == "voxcpm":
             have = v.VOXCPM_PYTHON.exists()
             out.append((have, f"speech: VoxCPM2 through {v.VOXCPM_PYTHON}" if have else
-                        f"speech: VoxCPM2 is not installed at {v.VOXCPM_PYTHON} (see Speech out in the README); "
-                        "Piper speaks instead"))
+                        f"speech: VoxCPM2 is not installed at {v.VOXCPM_PYTHON} ("
+                        + ("the VoxCPM2 voice pack on the Setup tab" if app else "see Speech out in the README")
+                        + "); Piper speaks instead"))
         elif engine == "piper":
             missing = [n for n in v.PIPER_VOICES.values() if not (v.PIPER_DIR / f"{n}.onnx").exists()]
             piper = importlib.util.find_spec("piper") is not None or (v.piper_runtime() / "piper").is_dir()
-            out.append((piper and not missing, "speech: Piper " + (", ".join(v.PIPER_VOICES.values()) if piper and
-                        not missing else ("not installed: pip install -e .[piper]" if not piper else
-                                          f"voices missing: python -m piper.download_voices {' '.join(missing)} "
-                                          f"--data-dir {v.PIPER_DIR}"))))
+            if piper and not missing:
+                line = ", ".join(v.PIPER_VOICES.values())
+            elif app:
+                line = "not installed: the Piper voices pack on the Setup tab"
+            elif not piper:
+                line = "not installed: pip install -e .[piper]"
+            else:
+                line = f"voices missing: python -m piper.download_voices {' '.join(missing)} --data-dir {v.PIPER_DIR}"
+            out.append((piper and not missing, "speech: Piper " + line))
         else:
-            out.append((False, f'speech: {engine}; tts = "piper" in config.toml for natural Dutch and English voices'))
+            out.append((False, f"speech: {engine}; " + ("a voice pack on the Setup tab (Piper or VoxCPM2)" if app
+                                                        else 'tts = "piper" in config.toml')
+                        + " for natural Dutch and English voices"))
     from iris import browser
 
     ws = importlib.util.find_spec("websocket") is not None

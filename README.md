@@ -97,7 +97,15 @@ builder = ["claude", "-p", "{prompt}"]  # the coding agent that builds new skill
 plugins = ["lmstudio", "comfyui"]     # opt-in tool groups, see below
 confirm = "important"                 # ask only before paying, sending and private files (default: "all")
 overlay = true                        # voice mode shows your request and the answer on screen
+tts = "piper"                         # speech: sapi (default), piper, voxcpm or kokoro
+llm_url = "http://127.0.0.1:1234/v1"  # any OpenAI-compatible server (LM Studio, Ollama, llama.cpp)
+wakeword = "hey_jarvis"               # or "iris" to wake on the name; wake_threshold = 0.5
+silence = 1.8                         # seconds of silence that end a request; follow_up = 8
+whisper_model = "large-v3-turbo"      # speech recognition; whisper_gpu = 0 picks the GPU
 ```
+
+The desktop app's **Settings** tab edits all of these with an explanation per option, and keeps your comments.
+Environment variables still win over the file (`IRIS_SILENCE` over `silence`, and so on).
 
 **Plugins** are tool groups for particular setups, off until you list them: `lmstudio` (load and unload models),
 `comfyui` (status and queueing saved workflows), `agents` (watch coding-agent repos, a prompt queue and starting

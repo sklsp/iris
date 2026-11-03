@@ -39,6 +39,17 @@ def get(key: str, default: str = "") -> str:
     return value if isinstance(value, str) and value.strip() else default
 
 
+def setting(env: str, key: str, default: str = "") -> str:
+    """The environment variable when it is set (it always wins), else the config.toml key (a string or a number),
+    else the default. For settings that were environment-only before, such as IRIS_SILENCE and silence."""
+    if os.environ.get(env, "").strip():
+        return os.environ[env].strip()
+    value = raw().get(key)
+    if isinstance(value, bool) or not isinstance(value, str | int | float):
+        return default
+    return str(value).strip() or default
+
+
 def load() -> dict:
     """DEFAULTS overlaid with the file's keys; a key with the wrong type keeps its default."""
     out = dict(DEFAULTS)

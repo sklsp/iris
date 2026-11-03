@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from iris import config
+
 MAX_ITEMS = 120  # numbered controls per read; a page full of links is cut off here
 MAX_TEXT = 1500  # characters of visible page text after the list
 
@@ -32,7 +34,7 @@ class BrowserError(Exception):
 
 
 def _profiles() -> list[Path]:
-    env = os.environ.get("IRIS_BROWSER_PROFILE")
+    env = config.setting("IRIS_BROWSER_PROFILE", "browser_profile")
     if env:
         return [Path(env)]
     local = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))

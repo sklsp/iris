@@ -400,19 +400,28 @@ def test_open_restores_only_a_minimized_window():
     assert a.window.calls == ["show", "show", "restore"]
 
 
-def test_settings_opens_config_toml_and_writes_a_starter(monkeypatch):
-    from iris import config
-
-    opened = []
-    monkeypatch.setattr(app.subprocess, "Popen", lambda cmd: opened.append(cmd))
+def test_settings_opens_the_settings_tab():
     a = app.App(FakeWebview(), voice=FakeVoice())
+    a.window = FakeWindow()
     a.settings()
-    path = config.config_path()
-    assert opened == [["notepad.exe", str(path)]]
-    assert config.load()["name"] == "the user"
-    path.write_text('name = "Sam"\n', encoding="utf-8")
-    a.settings()
-    assert path.read_text(encoding="utf-8") == 'name = "Sam"\n'  # never overwritten
+    assert a.window.calls == ["show", "evaluate_js"]
+
+
+def test_restart_voice_stops_then_starts_and_is_offered_to_the_dashboard(monkeypatch):
+    from iris import dashboard
+
+    monkeypatch.setenv("IRIS_DASHBOARD_PORT", "0")
+    voice = FakeVoice()
+    a = app.App(FakeWebview(), voice=voice, listen=False)
+    seen = {}
+
+    def start(func, **kw):
+        seen["hook"] = dashboard.APP_HOOKS.get("restart_voice")
+
+    a.webview.start = start
+    a.run()
+    assert seen["hook"] == a.restart_voice and "restart_voice" not in dashboard.APP_HOOKS
+    assert a.restart_voice() == "Iris is listening." and voice.running and voice.stops == 2
 
 
 def test_toggle_listening_and_quit():

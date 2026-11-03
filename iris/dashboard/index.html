@@ -240,6 +240,28 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .sk details{margin-top:6px}
 .sk summary{cursor:pointer;color:#8a9099}
 .sk-btns{margin-left:auto;display:flex;gap:6px}
+.set-intro{color:#8a9099;font-size:12px;margin-bottom:10px}
+.set-group{border-top:1px solid #23262c;padding:10px 0 4px}
+.set-group:first-child{border-top:none;padding-top:0}
+.set-group h3{margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7aa2ff}
+.set-row{display:grid;grid-template-columns:minmax(160px,240px) minmax(0,1fr);gap:4px 14px;padding:6px 0;
+  align-items:start}
+.set-row label{font-size:13px;padding-top:4px}
+.set-row input[type=text],.set-row input[type=number],.set-row select,.set-row textarea{width:100%;max-width:520px;
+  box-sizing:border-box;background:#0e0f11;border:1px solid #23262c;border-radius:4px;color:#e6e6e6;
+  font-family:inherit;font-size:12px;padding:5px 8px}
+.set-row input:focus,.set-row select:focus,.set-row textarea:focus{outline:none;border-color:#7aa2ff}
+.set-help{grid-column:2;color:#8a9099;font-size:11px;line-height:1.45;max-width:620px}
+.set-err{grid-column:2;color:#f85149;font-size:11px}
+.set-env{grid-column:2;color:#d29922;font-size:11px}
+.set-checks{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px}
+.set-bar{display:flex;align-items:center;gap:10px;margin-top:12px;position:sticky;bottom:0;background:#16181c;
+  padding:8px 0;border-top:1px solid #23262c}
+.set-msg{font-size:12px;color:#8a9099}
+.set-msg.ok{color:#3fb950}
+.set-msg.bad{color:#f85149}
+.hidden{display:none}
+@media (max-width:700px){.set-row{grid-template-columns:1fr}.set-help,.set-err,.set-env{grid-column:1}}
 .log-path{color:#565c66;font-size:11px;font-weight:400;margin-left:8px;text-transform:none;letter-spacing:0}
 </style>
 </head>
@@ -257,6 +279,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <button type="button" class="tab" data-tab="eval">Eval</button>
   <button type="button" class="tab" data-tab="queue">Autopilot</button>
   <button type="button" class="tab" data-tab="skills">Skills</button>
+  <button type="button" class="tab" data-tab="settings">Settings</button>
   <button type="button" class="tab" data-tab="logs">Logs</button>
 </nav>
 <div id="done-banner" class="done-banner">
@@ -362,6 +385,20 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
       <section class="panel wide">
         <h2>Skills Iris built</h2>
         <div id="skills-body"><div class="empty">loading...</div></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="settings-pane" class="pane hidden">
+    <div class="grid">
+      <section class="panel wide">
+        <h2>Settings<span class="log-path" id="settings-path"></span></h2>
+        <div class="set-intro">Saved to config.toml, which stays the place to edit by hand too. Voice settings apply
+          when listening starts again; everything else on the next request.</div>
+        <form id="settings-form" class="set-form"><div class="empty">loading...</div></form>
+        <div class="set-bar"><button type="submit" form="settings-form" class="mbtn" id="settings-save">Save</button>
+          <span id="settings-msg" class="set-msg"></span>
+          <button type="button" class="mbtn hidden" id="settings-restart">Restart listening</button></div>
       </section>
     </div>
   </section>
@@ -1320,6 +1357,124 @@ tick();
 setInterval(tick, 3000);
 
 // --- tabs ------------------------------------------------------------------------
+// --- settings: every config.toml option, saved through the token-protected POST route ----
+let settingsData = null;
+function settingInput(f, gpus){
+  let input;
+  if (f.type === "bool"){
+    input = el("input"); input.type = "checkbox"; input.checked = !!f.value;
+  } else if (f.type === "choice" || (f.type === "gpu" && gpus.length)){
+    input = el("select");
+    let opts = f.type === "gpu"
+      ? [["", "(default)"], ...gpus.map(g => [String(g.index), g.index + ": " + g.name])]
+      : f.choices.map(c => [c, c === "" ? "(automatic)" : c]);
+    const cur = f.value === null || f.value === undefined ? "" : String(f.value);
+    if (!opts.some(o => o[0] === cur)) opts = [[cur, cur], ...opts];   // a hand-edited value stays selectable
+    for (const [v, label] of opts){ const o = el("option", null, label); o.value = v; input.append(o); }
+    input.value = cur;
+  } else if (f.type === "list"){
+    input = el("textarea"); input.rows = 3; input.value = (f.value || []).join("\n");
+  } else if (f.type === "plugins"){
+    input = el("div", "set-checks");
+    for (const name of f.choices){
+      const lab = el("label"); const box = el("input"); box.type = "checkbox"; box.value = name;
+      box.checked = (f.value || []).includes(name); lab.append(box, " " + name); input.append(lab);
+    }
+  } else {
+    input = el("input"); input.type = (f.type === "number" || f.type === "gpu") ? "number" : "text";
+    if (f.type === "number"){ input.step = "any"; input.min = f.min; input.max = f.max; }
+    if (f.type === "gpu"){ input.min = 0; input.step = 1; }
+    input.value = f.value === null || f.value === undefined ? "" : f.value;
+  }
+  input.id = "set-" + f.key;
+  return input;
+}
+function settingValue(f){
+  const n = $("set-" + f.key);
+  if (f.type === "bool") return n.checked;
+  if (f.type === "plugins") return [...n.querySelectorAll("input:checked")].map(b => b.value);
+  if (f.type === "list") return n.value.split("\n").map(s => s.trim()).filter(Boolean);
+  if ((f.type === "number" || f.type === "gpu") && n.value !== "") return Number(n.value);
+  return n.value;
+}
+function renderSettings(d){
+  const form = $("settings-form");
+  if (!d || !d.ok){ form.replaceChildren(el("div", "empty", "settings unavailable")); return; }
+  settingsData = d;
+  $("settings-path").textContent = d.path;
+  const groups = new Map();
+  for (const f of d.fields){
+    if (!groups.has(f.group)){
+      const g = el("div", "set-group"); g.append(el("h3", null, f.group)); groups.set(f.group, g);
+    }
+    const row = el("div", "set-row");
+    const label = el("label", null, f.label); label.htmlFor = "set-" + f.key;
+    row.append(label, settingInput(f, d.gpus), el("div", "set-help", f.help));
+    if (f.overridden_by) row.append(el("div", "set-env", "Overridden by " + f.overridden_by
+                                       + " in the environment, which wins over this file."));
+    const err = el("div", "set-err hidden"); err.id = "set-err-" + f.key; row.append(err);
+    groups.get(f.group).append(row);
+    if (f.key === "llm_url"){
+      const note = el("div", "set-row");
+      note.append(el("label", null, "Model"), el("div", "set-help",
+        "Pick the model on the Overview tab; Iris keeps that choice in settings.json."));
+      groups.get(f.group).append(note);
+    }
+  }
+  const ro = Object.entries(d.read_only || {});
+  if (ro.length){
+    const g = el("div", "set-group"); g.append(el("h3", null, "Edit in the file"));
+    for (const [k, v] of ro){
+      const row = el("div", "set-row");
+      row.append(el("label", null, k), el("code", null, JSON.stringify(v)),
+                 el("div", "set-help", "A command line, so the app never changes it. Edit it in config.toml."));
+      g.append(row);
+    }
+    groups.set("_ro", g);
+  }
+  form.replaceChildren(...groups.values());
+}
+async function loadSettings(){ renderSettings(await j("/api/settings")); }
+function sameValue(a, b){ return JSON.stringify(a ?? null) === JSON.stringify(b ?? null); }
+async function saveSettings(){
+  if (!settingsData) return;
+  const values = {};
+  for (const f of settingsData.fields){   // only what changed: a hand-edited value elsewhere is left alone
+    const v = settingValue(f);
+    const before = f.set ? f.value : (f.type === "bool" ? !!f.default : f.default);
+    if (!sameValue(v, before) && !(v === "" && !f.set)) values[f.key] = v;
+  }
+  document.querySelectorAll(".set-err").forEach(e => e.classList.add("hidden"));
+  const msg = $("settings-msg");
+  if (!Object.keys(values).length){ msg.className = "set-msg"; msg.textContent = "Nothing changed."; return; }
+  $("settings-save").disabled = true;
+  const r = await postModel("/api/settings", {values});
+  $("settings-save").disabled = false;
+  if (!r || !r.ok){
+    for (const [k, e] of Object.entries((r && r.errors) || {_file: "could not reach Iris"})){
+      const n = $("set-err-" + k); if (n){ n.textContent = e; n.classList.remove("hidden"); }
+    }
+    msg.className = "set-msg bad";
+    msg.textContent = (r && r.errors && r.errors._file) || "Not saved: check the fields marked in red.";
+    return;
+  }
+  msg.className = "set-msg ok";
+  msg.textContent = "Saved " + r.changed.join(", ") + "."
+    + (r.restart.length ? " Voice settings apply when listening starts again." : "");
+  const app = await j("/api/app");
+  $("settings-restart").classList.toggle("hidden", !(r.restart.length && app && app.app));
+  await loadSettings();
+}
+$("settings-form").addEventListener("submit", (e) => { e.preventDefault(); saveSettings(); });
+$("settings-restart").onclick = async () => {
+  const msg = $("settings-msg");
+  msg.className = "set-msg"; msg.textContent = "Restarting voice mode...";
+  const r = await postModel("/api/app/voice/restart", {});
+  msg.className = "set-msg " + (r && r.ok ? "ok" : "bad");
+  msg.textContent = r && r.ok ? r.message : ((r && r.error) || "could not restart voice mode");
+  $("settings-restart").classList.add("hidden");
+};
+
 // --- logs: the voice loop the app runs, the overlay, the VoxCPM worker ------------
 function renderLogs(d){
   const body = $("logs-body");
@@ -1342,13 +1497,14 @@ function renderLogs(d){
 async function loadLogs(){ renderLogs(await j("/api/logs")); }
 let logsTimer = null;
 
-const PANES = ["overview", "agents", "activity", "repos", "tools", "eval", "queue", "skills", "logs"];
+const PANES = ["overview", "agents", "activity", "repos", "tools", "eval", "queue", "skills", "settings", "logs"];
 function showTab(name){
   if (!PANES.includes(name)) name = "overview";
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   for (const p of PANES) $(p + "-pane").classList.toggle("hidden", p !== name);
   if (name === "eval") loadEval();   // the eval tab fetches when shown, not on every poll
   if (name === "skills") loadSkills();
+  if (name === "settings") loadSettings();
   clearInterval(logsTimer);
   if (name === "logs"){ loadLogs(); logsTimer = setInterval(loadLogs, 3000); }   // only polls while visible
   if (name === "queue"){ loadQueue(); startRunsPolling(); }   // queue tab: fetch when shown; runs keep polling while visible

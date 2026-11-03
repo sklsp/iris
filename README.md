@@ -81,6 +81,7 @@ flowchart LR
    .venv\Scripts\iris --voice       # say "hey jarvis", then your request
    .venv\Scripts\iris dashboard     # status, activity, eval and skill review at http://127.0.0.1:8765
    .venv\Scripts\iris shortcut      # an Iris.cmd on your desktop: double-click to start voice mode
+   .venv\Scripts\iris app           # the desktop app (install the .[app] extra): dashboard window, tray, voice mode
    ```
 
 ## Configuration

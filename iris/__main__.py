@@ -2,6 +2,8 @@
 python -m iris --voice         wake word mode: say "hey jarvis" (IRIS_WAKEWORD), stop on silence, hear answers
 python -m iris --push-to-talk  old voice mode: press Enter to stop recording
 python -m iris dashboard       read-only status page at http://127.0.0.1:8765 (add --port N if taken)
+python -m iris app             the desktop app: the dashboard in a window, a tray icon, voice mode supervised
+                               (pip install -e .[app]; --background starts in the tray only)
 python -m iris autopilot       wait for a run in --repo to finish, then ask before starting the next queued prompt
 python -m iris init            write a starter ~/.iris/config.toml (asks your name and city)
 python -m iris doctor          check the setup (LM Studio, model, config, plugins, voice) and say what to fix
@@ -126,6 +128,10 @@ def main() -> None:
                 port = int(args[i + 1])
         serve(port=port)
         return
+    if len(sys.argv) > 1 and sys.argv[1] == "app":
+        from iris.app import main as app_main
+
+        raise SystemExit(app_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "init":
         from iris.config import init_main
 
@@ -149,8 +155,16 @@ def main() -> None:
     ap.add_argument("--voice", action="store_true")
     ap.add_argument("--push-to-talk", action="store_true")
     ap.add_argument("--journal", default=str(Path.home() / ".iris" / "journal.jsonl"))
+    ap.add_argument("--supervised", action="store_true", help=argparse.SUPPRESS)  # started by `iris app`
     a = ap.parse_args()
     Path(a.journal).parent.mkdir(parents=True, exist_ok=True)
+    if a.voice:
+        from iris.app import VOICE_MUTEX, quit_when_set, take_mutex
+
+        voice_mutex = take_mutex(VOICE_MUTEX)  # noqa: F841 - held until exit, so the app sees voice mode is running
+        if a.supervised:  # the app sets this event to stop us cleanly
+            threading.Thread(target=quit_when_set, args=(os.environ.get("IRIS_STOP_EVENT", ""),),
+                             name="iris-supervised", daemon=True).start()
 
     session = None
     hear: Callable[[], str]

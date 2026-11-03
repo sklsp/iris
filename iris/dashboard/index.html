@@ -240,6 +240,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .sk details{margin-top:6px}
 .sk summary{cursor:pointer;color:#8a9099}
 .sk-btns{margin-left:auto;display:flex;gap:6px}
+.log-path{color:#565c66;font-size:11px;font-weight:400;margin-left:8px;text-transform:none;letter-spacing:0}
 </style>
 </head>
 <body>
@@ -256,6 +257,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   <button type="button" class="tab" data-tab="eval">Eval</button>
   <button type="button" class="tab" data-tab="queue">Autopilot</button>
   <button type="button" class="tab" data-tab="skills">Skills</button>
+  <button type="button" class="tab" data-tab="logs">Logs</button>
 </nav>
 <div id="done-banner" class="done-banner">
   <span id="done-banner-text"></span>
@@ -362,6 +364,10 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
         <div id="skills-body"><div class="empty">loading...</div></div>
       </section>
     </div>
+  </section>
+
+  <section id="logs-pane" class="pane hidden">
+    <div class="grid" id="logs-body"><div class="empty">loading...</div></div>
   </section>
 </main>
 
@@ -1314,13 +1320,37 @@ tick();
 setInterval(tick, 3000);
 
 // --- tabs ------------------------------------------------------------------------
-const PANES = ["overview", "agents", "activity", "repos", "tools", "eval", "queue", "skills"];
+// --- logs: the voice loop the app runs, the overlay, the VoxCPM worker ------------
+function renderLogs(d){
+  const body = $("logs-body");
+  if (!d || !d.ok){ body.replaceChildren(el("div", "empty", "logs unavailable")); return; }
+  const reading = new Set([...body.querySelectorAll(".sk-code")].filter(p => p.scrollTop + p.clientHeight
+                                                                          < p.scrollHeight - 4).map(p => p.id));
+  body.replaceChildren(...d.logs.map((log, i) => {
+    const panel = el("section", "panel wide");
+    const h = el("h2", null, log.name);
+    h.append(el("span", "log-path", log.path));
+    const pre = el("pre", "sk-code", log.lines.length ? log.lines.join("\n")
+                   : (log.exists ? "(empty)" : "(no log yet)"));
+    pre.id = "log-" + i;
+    panel.append(h, pre);
+    return panel;
+  }));
+  // follow the end of each log, unless the user scrolled up to read
+  body.querySelectorAll(".sk-code").forEach(p => { if (!reading.has(p.id)) p.scrollTop = p.scrollHeight; });
+}
+async function loadLogs(){ renderLogs(await j("/api/logs")); }
+let logsTimer = null;
+
+const PANES = ["overview", "agents", "activity", "repos", "tools", "eval", "queue", "skills", "logs"];
 function showTab(name){
   if (!PANES.includes(name)) name = "overview";
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   for (const p of PANES) $(p + "-pane").classList.toggle("hidden", p !== name);
   if (name === "eval") loadEval();   // the eval tab fetches when shown, not on every poll
   if (name === "skills") loadSkills();
+  clearInterval(logsTimer);
+  if (name === "logs"){ loadLogs(); logsTimer = setInterval(loadLogs, 3000); }   // only polls while visible
   if (name === "queue"){ loadQueue(); startRunsPolling(); }   // queue tab: fetch when shown; runs keep polling while visible
   else stopRunsPolling();
 }

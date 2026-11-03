@@ -27,6 +27,7 @@ office = ["python-docx>=1.1", "python-pptx>=1.0", "openpyxl>=3.1"]  # Word, Powe
 tts = ["kokoro-onnx>=0.6"]  # optional Kokoro TTS (IRIS_TTS=kokoro); SAPI is the default and needs nothing
 piper = ["piper-tts>=1.3"]  # natural Dutch and English voices (IRIS_TTS=piper); GPL, run as a separate program
 browser = ["websocket-client>=1.7"]  # web pages in Brave, Chrome or Edge through the DevTools Protocol
+app = ["pywebview>=6.2"]  # the desktop app: `iris app`, a window on Edge WebView2 plus a tray icon
 gpu = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"]  # Whisper large-v3-turbo on an NVIDIA GPU
 dev = ["pytest", "pytest-cov", "ruff", "mypy"]
 
@@ -34,7 +35,7 @@ dev = ["pytest", "pytest-cov", "ruff", "mypy"]
 packages = ["iris", "iris.dashboard"]
 
 [tool.setuptools.package-data]
-iris = ["tier_lock.json", "agents.toml"]
+iris = ["tier_lock.json", "agents.toml", "assets/iris.ico"]
 "iris.dashboard" = ["index.html"]
 
 [tool.setuptools.dynamic]

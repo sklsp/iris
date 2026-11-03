@@ -1471,3 +1471,35 @@ def test_tools_payload_marks_plugin_tools_off_and_lists_approved_skills(tmp_path
     assert by_name["comfy_status"]["active"] is True and by_name["followups"]["active"] is False
     assert by_name["calculate"]["active"] is True and by_name["calculate"]["kind"] == "core"
     assert (by_name["say_hello"]["kind"], by_name["say_hello"]["tier"]) == ("skill", "confirm")
+
+
+def test_logs_payload_tails_each_log(tmp_path, monkeypatch):
+    import iris.voice
+    from iris import config
+    from iris import dashboard as d
+
+    monkeypatch.setattr(iris.voice, "VOXCPM_DIR", tmp_path / "voxcpm")  # never this PC's real worker.log
+
+    voice_log = config.config_path().parent / "logs" / "voice.log"
+    voice_log.parent.mkdir(parents=True, exist_ok=True)
+    voice_log.write_text("".join(f"line {i}\n" for i in range(300)), encoding="utf-8")
+    payload = d.logs_payload()
+    by_name = {log["name"]: log for log in payload["logs"]}
+    assert by_name["Voice mode"]["lines"][-1] == "line 299" and len(by_name["Voice mode"]["lines"]) == 200
+    assert by_name["Overlay"] == {"name": "Overlay", "path": str(config.config_path().parent / "overlay.log"),
+                                  "exists": False, "lines": []}
+    assert by_name["VoxCPM2 speech"]["path"] == str(tmp_path / "voxcpm" / "worker.log")
+
+
+def test_tail_lines_reads_only_the_end_of_a_big_file(tmp_path, monkeypatch):
+    from iris import dashboard as d
+
+    monkeypatch.setattr(d, "LOG_TAIL_BYTES", 20)
+    f = tmp_path / "big.log"
+    f.write_bytes(b"first line\n" + b"x" * 100 + b"\nlast \xff line\n")
+    assert d.tail_lines(f) == ["last � line"]  # the cut-off x's are not shown as a line
+
+
+def test_logs_route_is_read_only(server):
+    with urllib.request.urlopen(server + "/api/logs", timeout=5) as r:
+        assert json.loads(r.read())["ok"] is True

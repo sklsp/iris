@@ -385,3 +385,32 @@ def test_a_request_cancelled_from_the_overlay_is_not_spoken(tmp_path, monkeypatc
     assert agents[0].cancel is session.cancelled
     assert agents[0].requests == ["zoek iets lang", "hoe laat is het"]
     assert session.async_said == ["Ready.", "answer:hoe laat is het"]
+
+
+def test_app_subcommand_delegates(monkeypatch):
+    import iris.app
+
+    seen = {}
+    monkeypatch.setattr(iris.app, "main", lambda argv: seen.setdefault("argv", argv) and 0)
+    monkeypatch.setattr(sys, "argv", ["iris", "app", "--background"])
+    with pytest.raises(SystemExit):
+        imain.main()
+    assert seen["argv"] == ["--background"]
+
+
+def test_supervised_voice_mode_waits_on_the_apps_stop_event(tmp_path, monkeypatch):
+    import iris.app
+
+    _install_agent(monkeypatch)
+    monkeypatch.setattr(ivoice, "VoiceSession", lambda: FakeSession(["quit"]))
+    waited = []
+    monkeypatch.setattr(iris.app, "quit_when_set", lambda name: waited.append(name))
+    monkeypatch.setenv("IRIS_STOP_EVENT", "Local\\Iris-Stop-x")
+    monkeypatch.setattr(sys, "argv", ["iris", "--voice", "--supervised", "--journal", str(tmp_path / "j.jsonl")])
+    imain.main()
+    import time
+
+    end = time.perf_counter() + 5
+    while not waited and time.perf_counter() < end:  # the waiter runs on its own thread
+        time.sleep(0.01)
+    assert waited == ["Local\\Iris-Stop-x"]

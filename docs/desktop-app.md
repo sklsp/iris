@@ -47,19 +47,21 @@ flowchart LR
   that one is taken, in a daemon thread of the app. The page token and Origin check stay as they are; the window
   loads `http://127.0.0.1:<port>/`.
 - **Voice loop:** the app starts `python -m iris --voice --supervised` as one child process inside a Windows Job
-  Object with kill-on-close. `--supervised` only adds a thread that treats EOF on stdin as "quit", so the normal
-  shutdown path runs (the session closes the mic, the overlay and the VoxCPM worker). The overlay and speech workers
-  stay children of the voice loop, exactly as in the CLI.
+  Object with kill-on-close. `--supervised` only adds a thread that waits on a named stop event (its name comes in
+  `IRIS_STOP_EVENT`) and then quits the way Ctrl+C does, so the normal shutdown path runs (the session closes the
+  mic, the overlay and the VoxCPM worker). Not stdin: a thread blocked reading a pipe makes every DLL that checks
+  stdin while it loads (numpy's does) wait for that read, which hung the voice loop at start. The child gets no
+  stdin at all. The overlay and speech workers stay children of the voice loop, exactly as in the CLI.
 - **Start/Stop listening** starts or stops that child. Stopping frees the microphone and the GPU memory. A restart
   takes as long as the voice stack takes to load (about half a minute with VoxCPM2).
-- **Clean shutdown:** Quit closes the child's stdin, waits up to 5 seconds, then terminates the job. If the app
+- **Clean shutdown:** Quit sets the stop event, waits up to 5 seconds, then terminates the job. If the app
   itself crashes, the job closes with it and Windows ends every child, so no orphan holds 6 GB of VRAM.
 - **Crash handling:** if the voice child exits on its own, the tray says so with the last log lines; no automatic
   restart loop.
 - **Voice already running in a terminal:** `iris --voice` takes a named mutex `Local\Iris-Voice` but never refuses
   to start; the app checks it and says "voice mode is already running in a terminal" instead of starting a second
   loop on the same microphone.
-- **Logs:** the child's stdout and stderr go to `~/.iris/logs/voice.log` (rotated at 1 MB, one old copy). A new
+- **Logs:** the child's stdout and stderr go to `~/.iris/logs/voice.log` (moved to `voice.log.1` at the next start once it is over 1 MB). A new
   read-only **Logs** tab on the dashboard tails that file, `overlay.log` and the VoxCPM `worker.log`.
 
 ## 3. Packaging: embedded CPython plus Inno Setup

@@ -586,6 +586,35 @@ def eval_history_payload(results_dir=None) -> dict:
 # --- prompt queue ---------------------------------------------------------------
 
 
+LOG_TAIL_BYTES = 64 * 1024   # the end of each log is enough to see what went wrong
+LOG_TAIL_LINES = 200
+
+
+def tail_lines(path: Path, lines: int = LOG_TAIL_LINES) -> list[str]:
+    """The last `lines` lines of a log file; [] when it does not exist."""
+    try:
+        with path.open("rb") as f:
+            start = max(0, f.seek(0, os.SEEK_END) - LOG_TAIL_BYTES)
+            f.seek(start)
+            data = f.read()
+    except OSError:
+        return []
+    out = data.decode("utf-8", "replace").splitlines()
+    return (out[1:] if start else out)[-lines:]  # a tail that starts mid-line drops that piece of a line
+
+
+def logs_payload() -> dict:
+    """The logs of the voice loop the app runs, the overlay and the VoxCPM worker, newest lines last."""
+    from iris import config
+    from iris.voice import VOXCPM_DIR
+
+    home = config.config_path().parent
+    files = (("Voice mode", home / "logs" / "voice.log"), ("Overlay", home / "overlay.log"),
+             ("VoxCPM2 speech", VOXCPM_DIR / "worker.log"))
+    return {"ok": True, "logs": [{"name": name, "path": str(p), "exists": p.exists(), "lines": tail_lines(p)}
+                                 for name, p in files]}
+
+
 SKILL_FILES = ("plan.md", "skill.toml", "skill.py", "test_skill.py", "check.txt")
 
 
@@ -789,6 +818,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(queue_payload())
         elif path == "/api/skills":
             self._json(skills_payload())
+        elif path == "/api/logs":
+            self._json(logs_payload())
         else:
             self._json({"error": "not found"}, code=404)
 
@@ -850,6 +881,9 @@ class Handler(BaseHTTPRequestHandler):
 
 class _Server(ThreadingHTTPServer):
     token: str = ""  # set by make_server; injected into the page and required on every POST
+    # On Windows SO_REUSEADDR lets a second server bind a port that is in use, so two dashboards would share 8765
+    # and split the requests between them; without it the second one gets an error and picks another port.
+    allow_reuse_address = False
 
 
 def make_server(host: str = HOST, port: int = PORT) -> ThreadingHTTPServer:

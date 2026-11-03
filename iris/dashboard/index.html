@@ -279,6 +279,13 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .su-check{display:flex;gap:8px;align-items:baseline}
 .su-mark{font-family:ui-monospace,Consolas,monospace;font-size:11px;width:28px;flex:none}
 .su-mark.ok{color:#3fb950}.su-mark.opt{color:#8a9099}.su-mark.fix{color:#f85149}
+.pk{border:1px solid #23262c;border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:4px}
+.pk-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pk-name{font-weight:600;font-size:12px}
+.pk-meta{color:#8a9099;font-size:11px}
+.pk-lic{color:#d29922;font-size:11px}
+.pk-log{background:#0d0f12;border:1px solid #23262c;border-radius:6px;padding:6px 8px;font-size:11px;max-height:180px;
+  overflow:auto;white-space:pre-wrap;margin:0}
 .update-note{margin-left:12px;font-size:11px;color:#d29922}
 .update-note a{color:#7aa2ff}
 .log-path{color:#565c66;font-size:11px;font-weight:400;margin-left:8px;text-transform:none;letter-spacing:0}
@@ -413,7 +420,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
     <div class="grid">
       <section class="panel wide">
         <h2>Set up Iris<span class="log-path" id="setup-version"></span></h2>
-        <div class="set-intro">Five short steps. Everything stays on this PC: nothing is sent anywhere, and you can
+        <div class="set-intro">Six short steps. Everything stays on this PC: nothing is sent anywhere, and you can
           change every choice later on the Settings tab or in config.toml.</div>
         <div id="setup-body"><div class="empty">checking this PC...</div></div>
       </section>
@@ -1576,7 +1583,11 @@ function renderSetup(d){
         }), msg);
         return r;
       })()),
-    suStep(4, "Voice, speech and browser", d.checks.every(c => c.ok || c.optional),
+    suStep(4, "Optional voice packs", false,
+      el("div", null, "Downloaded only when you press Download, into your .iris folder. Read the license first: "
+        + "the wake word models are for non-commercial use."),
+      (() => { const box = el("div"); box.id = "packs-body"; box.append(el("div", "empty", "checking...")); return box; })()),
+    suStep(5, "Voice, speech and browser", d.checks.every(c => c.ok || c.optional),
       el("div", null, "What iris doctor finds. Lines marked -- are optional; the README and the Settings tab say "
         + "how to add them. FIX lines need attention before Iris can work."),
       ...d.checks.map(c => {
@@ -1585,7 +1596,7 @@ function renderSetup(d){
                    el("span", null, c.line));
         return row;
       })),
-    suStep(5, "Updates", d.done,
+    suStep(6, "Updates", d.done,
       (() => {
         const lab = el("label", "su-srv"); const box = el("input"); box.type = "checkbox"; box.id = "su-update";
         box.checked = d.update_check;
@@ -1602,7 +1613,38 @@ function renderSetup(d){
         return r;
       })()));
 }
-async function loadSetup(){ renderSetup(await j("/api/setup")); }
+async function loadSetup(){ renderSetup(await j("/api/setup")); loadPacks(); }
+let packsTimer = null;
+function renderPacks(d){
+  const box = $("packs-body");
+  if (!box) return;
+  if (!d || !d.ok){ box.replaceChildren(el("div", "empty", "packs unavailable")); return; }
+  const busy = d.job && d.job.state === "running";
+  const cards = d.packs.filter(p => p.available).map(p => {
+    const c = el("div", "pk"); const head = el("div", "pk-head");
+    head.append(el("span", "pk-name", p.name), el("span", "pk-meta", p.size));
+    if (p.installed) head.append(el("span", "set-msg ok", "installed"));
+    else {
+      const b = suButton(busy && d.job.pack === p.id ? "Installing..." : "Download", async () => {
+        const r = await postModel("/api/packs/install", {id: p.id});
+        await loadPacks();
+        if (!r || !r.ok) $("packs-body").prepend(el("div", "set-msg bad", (r && r.error) || "could not start the download"));
+      });
+      b.disabled = busy; head.append(b);
+    }
+    c.append(head, el("div", "pk-meta", p.what), el("div", "pk-lic", "License: " + p.license));
+    return c;
+  });
+  if (d.job){
+    cards.push(el("div", "pk-meta", d.job.pack + ": " + d.job.state));
+    const log = el("pre", "pk-log", d.job.lines.join("\n")); cards.push(log);
+    setTimeout(() => { log.scrollTop = log.scrollHeight; });
+  }
+  box.replaceChildren(...cards);
+  clearTimeout(packsTimer);
+  if (busy) packsTimer = setTimeout(loadPacks, 2000);   // follow a running install
+}
+async function loadPacks(){ renderPacks(await j("/api/packs")); }
 async function loadUpdate(){
   const u = await j("/api/update");
   const n = $("update-note");

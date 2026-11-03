@@ -188,7 +188,7 @@ WRITE_ROUTES = (
     "/api/cline/start",
     "/api/skills/approve", "/api/skills/remove",
     "/api/settings", "/api/app/voice/restart",
-    "/api/setup/server", "/api/setup/mic", "/api/setup/speaker", "/api/setup/done",
+    "/api/setup/server", "/api/setup/mic", "/api/setup/speaker", "/api/setup/done", "/api/packs/install",
 )   # the only POST routes: model control, the prompt queue, Cline, skill review, settings and the app's voice loop
 APP_HOOKS: dict = {}   # set by `iris app`: "restart_voice" -> a callable; empty under `iris dashboard`
 
@@ -847,6 +847,10 @@ class Handler(BaseHTTPRequestHandler):
             from iris import firstrun
 
             self._json(firstrun.payload())
+        elif path == "/api/packs":
+            from iris import packs
+
+            self._json(packs.payload())
         elif path == "/api/update":
             from iris import update
 
@@ -888,6 +892,10 @@ class Handler(BaseHTTPRequestHandler):
                 payload = settings.save(body.get("values") or {})
             elif path == "/api/app/voice/restart":
                 payload = app_voice_restart()
+            elif path == "/api/packs/install":
+                from iris import packs
+
+                payload = packs.start(str(body.get("id") or ""))
             elif path.startswith("/api/setup/"):
                 from iris import firstrun
 

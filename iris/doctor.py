@@ -74,7 +74,7 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
                         "Piper speaks instead"))
         elif engine == "piper":
             missing = [n for n in v.PIPER_VOICES.values() if not (v.PIPER_DIR / f"{n}.onnx").exists()]
-            piper = importlib.util.find_spec("piper") is not None
+            piper = importlib.util.find_spec("piper") is not None or (v.piper_runtime() / "piper").is_dir()
             out.append((piper and not missing, "speech: Piper " + (", ".join(v.PIPER_VOICES.values()) if piper and
                         not missing else ("not installed: pip install -e .[piper]" if not piper else
                                           f"voices missing: python -m piper.download_voices {' '.join(missing)} "

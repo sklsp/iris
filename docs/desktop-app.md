@@ -102,14 +102,18 @@ It builds in GitHub Actions on windows-latest (`installer/build.ps1`, `installer
 `.github/workflows/installer.yml`), where `installer/smoke.ps1` installs it silently, starts the app, checks single
 instance, and uninstalls it again.
 
-**Size, measured on 2026-11-03** (wheels for Python 3.12, win_amd64):
+**Size, measured on 2026-11-03** (wheels for Python 3.12, win_amd64). Planned, then built in CI:
 
 | Part | Installed | In the installer (LZMA2) |
 |---|---|---|
 | core, office, browser, voice (faster-whisper, ctranslate2, onnxruntime, av, numpy, sounddevice), pywebview | 353 MB | 78 MB |
 | scipy and scikit-learn (openwakeword imports them at import time) | 183 MB | about 35 MB (estimate) |
 | CPython 3.12, Tcl/Tk, pip, pytest, Iris itself | about 30 MB | about 10 MB |
-| **Total** | **about 570 MB** | **about 125 MB** |
+| **Planned total** | **about 570 MB** | **about 125 MB** |
+| **Built** (`IrisSetup-0.5.0.exe`, with compiled `.pyc` files) | **610 MB** | **150 MB** |
+
+scikit-learn and pywin32's MAPI modules import `msvcp140.dll` and `vcomp140.dll` without a copy of their own, so the
+installer checks for the Visual C++ Redistributable (section 3).
 
 If the app's default wake word becomes the spoken name "Iris" (see question 4), openwakeword, scipy and scikit-learn
 can move to an optional download and the installer drops to about 90 MB.

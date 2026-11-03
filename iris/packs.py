@@ -210,11 +210,14 @@ def _fetch_uv(job: Job, url: str = UV_URL, sha256: str = UV_SHA256) -> None:
     job.say(f"uv {UV_VERSION} checked and unpacked")
 
 
-def child_env() -> dict:
-    """What every pack command runs with: models under ~/.iris, Piper's own folder on its path, plain output."""
+def child_env(pack_id: str = "") -> dict:
+    """What a pack command runs with: plain output, and for the Piper pack only, Piper's own folder on its path.
+
+    HF_HOME is inherited, not set here: the app puts it under ~/.iris for itself and its children, while under
+    `iris dashboard` the downloads go to the same Hugging Face cache that `iris --voice` reads. Piper's folder holds
+    its own numpy and onnxruntime, so it never goes on the path of the other packs' commands."""
     env = {**os.environ, "PYTHONUTF8": "1", "PYTHONUNBUFFERED": "1", "HF_HUB_DISABLE_PROGRESS_BARS": "1"}
-    env.setdefault("HF_HOME", str(home() / "models"))
-    if piper_runtime().is_dir():
+    if pack_id == "piper" and piper_runtime().is_dir():
         env["PYTHONPATH"] = str(piper_runtime()) + os.pathsep + env.get("PYTHONPATH", "")
     return env
 
@@ -251,7 +254,7 @@ def run(job: Job, popen: Callable = subprocess.Popen) -> None:
                 step(job)
                 continue
             proc = popen(step, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                         env=child_env(), text=True, encoding="utf-8", errors="replace",
+                         env=child_env(job.pack), text=True, encoding="utf-8", errors="replace",
                          creationflags=subprocess.CREATE_NO_WINDOW)
             for line in proc.stdout:
                 if line.strip():

@@ -57,13 +57,14 @@ PIPER_DIR = Path(os.environ.get("IRIS_PIPER_DIR") or (Path.home() / ".iris" / "p
 PIPER_VOICES = {"nl": config.setting("IRIS_PIPER_NL", "piper_nl", "nl_NL-ronnie-medium"),
                 "en": config.setting("IRIS_PIPER_EN", "piper_en", "en_US-joe-medium")}
 
-# VoxCPM2 (tts = "voxcpm"): one natural voice for Dutch and English, also when they mix in one sentence. It needs
-# torch, so it runs in its own Python through iris/voxcpm_worker.py; the README's Speech section says how to set it up.
+
 def piper_runtime() -> Path:
     """Where the app's Piper pack installs Piper (GPL-3.0), so it stays a separate program next to Iris."""
     return config.config_path().parent / "piper" / "runtime"
 
 
+# VoxCPM2 (tts = "voxcpm"): one natural voice for Dutch and English, also when they mix in one sentence. It needs
+# torch, so it runs in its own Python through iris/voxcpm_worker.py; the README's Speech section says how to set it up.
 VOXCPM_DIR = Path(os.environ.get("IRIS_VOXCPM_DIR") or (Path.home() / ".iris" / "voxcpm"))
 VOXCPM_PYTHON = Path(os.environ.get("IRIS_VOXCPM_PYTHON") or (VOXCPM_DIR / "venv" / "Scripts" / "python.exe"))
 # A GPU too slow for real time (an RTX 3060 makes speech at 0.56 times real time) still plays without gaps when enough

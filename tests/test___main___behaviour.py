@@ -337,6 +337,18 @@ def test_startup_on_status_off(tmp_path, monkeypatch, capsys):
     assert startup_main(["sideways"]) == 2
 
 
+def test_shortcut_puts_a_voice_mode_launcher_on_the_desktop(tmp_path, monkeypatch, capsys):
+    import sys
+
+    from iris.__main__ import shortcut_main
+
+    monkeypatch.setenv("IRIS_DESKTOP_DIR", str(tmp_path / "Desktop"))
+    assert shortcut_main([]) == 0
+    text = (tmp_path / "Desktop" / "Iris.cmd").read_text(encoding="utf-8")
+    assert f'"{sys.executable}" -m iris --voice' in text and "title Iris" in text
+    assert "Double-click" in capsys.readouterr().out
+
+
 def test_a_request_cancelled_from_the_overlay_is_not_spoken(tmp_path, monkeypatch):
     """The agent shares the session's cancel flag, and the main loop says nothing for a cancelled request."""
     _install_agent(monkeypatch)

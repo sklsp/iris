@@ -1,3 +1,3 @@
 """Iris: a local voice agent for Windows that asks before it changes anything and builds the skills it is missing."""
 
-__version__ = "0.4.0"  # the one place the version lives; pyproject.toml reads it
+__version__ = "0.5.0"  # the one place the version lives; pyproject.toml reads it

@@ -10,7 +10,9 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
-BASE_URL = os.environ.get("IRIS_LLM_URL", "http://127.0.0.1:1234/v1")
+from iris import config
+
+BASE_URL = config.setting("IRIS_LLM_URL", "llm_url", "http://127.0.0.1:1234/v1")  # read at start
 DEFAULT_MODEL = "qwen3.8-27b"
 
 

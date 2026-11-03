@@ -363,6 +363,7 @@ class App:
         except OSError:  # `iris dashboard` or another program has the port: any free one will do
             self.server = dashboard.make_server(port=0)
         threading.Thread(target=self.server.serve_forever, name="iris-dashboard", daemon=True).start()
+        dashboard.APP_HOOKS["restart_voice"] = self.restart_voice
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}/"
         self.window = self.webview.create_window(TITLE, self.url, width=1280, height=860, min_size=(900, 600),
                                                  hidden=self.background, background_color="#0d0f12")
@@ -380,6 +381,7 @@ class App:
                 self.tray.close()
             self.server.shutdown()
             self.server.server_close()
+            dashboard.APP_HOOKS.pop("restart_voice", None)
         return 0
 
     def _started(self) -> None:
@@ -411,12 +413,13 @@ class App:
             self.window.restore()
 
     def settings(self) -> None:
-        """config.toml in Notepad, written from the starter template when it does not exist yet."""
-        path = config.config_path()
-        if not path.exists():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(config.TEMPLATE.format(name='"the user"', city='# city = "Utrecht"'), encoding="utf-8")
-        subprocess.Popen(["notepad.exe", str(path)])
+        self.open()
+        self.window.evaluate_js("location.hash = 'settings'")
+
+    def restart_voice(self) -> str:
+        """Stop and start voice mode, so settings it reads at start apply (the Settings tab's button)."""
+        self.voice.stop()
+        return self.voice.start()
 
     def toggle_listening(self) -> None:
         if self.voice.running:

@@ -64,17 +64,28 @@ CACHE_SECONDS = 30      # agents and LM Studio can be slow; do not re-query on e
 HISTORY_SECONDS = 300   # the sparklines cover five minutes
 JOURNAL_LIMIT = 50
 
-_LM_BASE = os.environ.get("IRIS_LLM_URL", "http://127.0.0.1:1234/v1")
-if _LM_BASE.endswith("/v1"):
-    _LM_ROOT = _LM_BASE[: -len("/v1")]
-else:
-    _LM_ROOT = _LM_BASE.rstrip("/")
-V0_MODELS_URL = _LM_ROOT + "/api/v0/models"  # per-model state and type (the real list)
-V1_MODELS_URL = _LM_ROOT + "/v1/models"      # fallback: every id, no state information
+V0_MODELS_URL = V1_MODELS_URL = ""
+
+
+def set_lm_base(base: str) -> None:
+    """Point the model lists at an OpenAI-compatible server (llm_url); the Settings tab calls it after a save."""
+    global V0_MODELS_URL, V1_MODELS_URL
+    root = base.rstrip("/")
+    root = root[: -len("/v1")] if root.endswith("/v1") else root
+    V0_MODELS_URL = root + "/api/v0/models"  # per-model state and type (the real list; LM Studio only)
+    V1_MODELS_URL = root + "/v1/models"      # fallback: every id, no state information
+    _cache.pop("lmstudio", None)
+
+
+def _lm_base_from_settings() -> str:
+    from iris import config
+
+    return config.setting("IRIS_LLM_URL", "llm_url", "http://127.0.0.1:1234/v1")
 
 _lock = threading.Lock()
 _cache: dict[str, tuple[float, dict]] = {}   # key -> (fetched_at, payload)
 _history: deque[dict] = deque(maxlen=240)    # system samples for the sparklines
+set_lm_base(_lm_base_from_settings())
 
 
 def journal_path() -> Path:
@@ -176,7 +187,9 @@ WRITE_ROUTES = (
     "/api/queue/add", "/api/queue/delete", "/api/queue/move",
     "/api/cline/start",
     "/api/skills/approve", "/api/skills/remove",
-)   # the only POST routes: model control, the prompt queue, starting a Cline session and reviewing skills
+    "/api/settings", "/api/app/voice/restart",
+)   # the only POST routes: model control, the prompt queue, Cline, skill review, settings and the app's voice loop
+APP_HOOKS: dict = {}   # set by `iris app`: "restart_voice" -> a callable; empty under `iris dashboard`
 
 _model_action_lock = threading.Lock()   # one load or unload at a time, full stop
 _cline_start_lock = threading.Lock()    # one Cline start at a time, full stop
@@ -759,6 +772,14 @@ def cline_start_action(body: dict) -> dict:
     return {"ok": True, "result": result, "queue": queue_payload()["prompts"]}
 
 
+def app_voice_restart() -> dict:
+    """Start voice mode again so new voice settings apply; only inside the desktop app."""
+    hook = APP_HOOKS.get("restart_voice")
+    if hook is None:
+        raise ModelActionError(409, "only the desktop app runs voice mode; restart `iris --voice` yourself")
+    return {"ok": True, "message": hook()}
+
+
 # --- the server -----------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -792,6 +813,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, page, "text/html; charset=utf-8")
         elif path == "/api/iris/model":
             self._json(iris_model_payload())   # readable via GET; writes go through the POST below
+        elif path == "/api/settings":
+            from iris import settings
+
+            self._json(settings.payload())
         elif path in WRITE_ROUTES:
             self._json({"error": "write routes only accept POST"}, code=405)
         elif path == "/api/system":
@@ -820,6 +845,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(skills_payload())
         elif path == "/api/logs":
             self._json(logs_payload())
+        elif path == "/api/app":
+            self._json({"ok": True, "app": bool(APP_HOOKS)})
         else:
             self._json({"error": "not found"}, code=404)
 
@@ -849,6 +876,12 @@ class Handler(BaseHTTPRequestHandler):
                 payload = cline_start_action(body)
             elif path in ("/api/skills/approve", "/api/skills/remove"):
                 payload = skill_action(path.rsplit("/", 1)[1], body)
+            elif path == "/api/settings":
+                from iris import settings
+
+                payload = settings.save(body.get("values") or {})
+            elif path == "/api/app/voice/restart":
+                payload = app_voice_restart()
             else:
                 action = "load" if path.endswith("/load") else "unload"
                 payload = model_action(action, body)

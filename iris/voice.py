@@ -17,22 +17,23 @@ import wave
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from iris import config
 from iris.overlay import Overlay, launch
 
 if TYPE_CHECKING:
     import numpy as np
 
 # None means automatic: large-v3-turbo on the GPU when CUDA works (pip install iris[gpu]), small on the CPU otherwise.
-WHISPER_MODEL = os.environ.get("IRIS_WHISPER")
+WHISPER_MODEL = config.setting("IRIS_WHISPER", "whisper_model") or None
 WHISPER_DEVICE = os.environ.get("IRIS_WHISPER_DEVICE")  # "cpu" or "cuda" to force one
 RATE = 16000
 FRAME = 1280  # 80 ms at 16 kHz, the frame size openWakeWord wants
 
 # IRIS_WAKEWORD picks a built-in openWakeWord name, an .onnx file, or "iris" for NameWake (no model needed).
 # Read at construction time so tests can override it.
-WAKE_THRESHOLD = float(os.environ.get("IRIS_WAKE_THRESHOLD", 0.5))
+WAKE_THRESHOLD = float(config.setting("IRIS_WAKE_THRESHOLD", "wake_threshold", "0.5"))
 # Stop recording after this much continuous silence (IRIS_SILENCE). 1.2 s cut people off when they paused to think.
-SILENCE_SECONDS = float(os.environ.get("IRIS_SILENCE", 1.8))
+SILENCE_SECONDS = float(config.setting("IRIS_SILENCE", "silence", "1.8"))
 SPEECH_TIMEOUT = 60.0  # the longest one answer may take to say before Iris carries on without it
 FOLLOW_UP_SECONDS = 8.0  # after an answer, a question that starts this soon needs no wake word (IRIS_FOLLOW_UP)
 VAD_THRESHOLD = float(os.environ.get("IRIS_VAD_THRESHOLD", 0.01))  # RMS below this counts as silence
@@ -53,8 +54,8 @@ _KOKORO_FILES = {
 # Piper's own command line in a separate process. Get a voice with
 #   python -m piper.download_voices nl_NL-ronnie-medium --data-dir %USERPROFILE%/.iris/piper
 PIPER_DIR = Path(os.environ.get("IRIS_PIPER_DIR") or (Path.home() / ".iris" / "piper"))
-PIPER_VOICES = {"nl": os.environ.get("IRIS_PIPER_NL", "nl_NL-ronnie-medium"),
-                "en": os.environ.get("IRIS_PIPER_EN", "en_US-joe-medium")}
+PIPER_VOICES = {"nl": config.setting("IRIS_PIPER_NL", "piper_nl", "nl_NL-ronnie-medium"),
+                "en": config.setting("IRIS_PIPER_EN", "piper_en", "en_US-joe-medium")}
 
 # VoxCPM2 (tts = "voxcpm"): one natural voice for Dutch and English, also when they mix in one sentence. It needs
 # torch, so it runs in its own Python through iris/voxcpm_worker.py; the README's Speech section says how to set it up.
@@ -116,7 +117,7 @@ class WakeWord:
     switches to onnxruntime automatically when given a .onnx path."""
 
     def __init__(self, name: str | None = None, threshold: float = WAKE_THRESHOLD):
-        self.name = name or os.environ.get("IRIS_WAKEWORD", "hey_jarvis")
+        self.name = name or config.setting("IRIS_WAKEWORD", "wakeword", "hey_jarvis")
         self.threshold = threshold
         self._m = None
 
@@ -193,7 +194,7 @@ def _whisper_model(name: str | None, device: str | None, gpu_default: str = "lar
         _cuda_dlls()
     model = name or (gpu_default if device == "cuda" else cpu_default)
     compute = "float16" if device == "cuda" else "int8"
-    gpu = os.environ.get("IRIS_WHISPER_GPU")
+    gpu = config.setting("IRIS_WHISPER_GPU", "whisper_gpu")
     extra = {"device_index": int(gpu)} if device == "cuda" and gpu else {}
     return WhisperModel(model, device=device, compute_type=compute, **extra)
 
@@ -255,7 +256,7 @@ class NameWake:
 
 def make_wake(name: str | None = None, vad_threshold: float | None = None) -> WakeWord | NameWake:
     """"iris" or "hey_iris" wakes on the name through Whisper; anything else is an openWakeWord model."""
-    name = name or os.environ.get("IRIS_WAKEWORD", "hey_jarvis")
+    name = name or config.setting("IRIS_WAKEWORD", "wakeword", "hey_jarvis")
     return NameWake(threshold=vad_threshold) if name.lower() in ("iris", "hey_iris") else WakeWord(name)
 
 
@@ -420,7 +421,7 @@ class VoiceSession:
         for Iris only reaches her within that short window."""
         import numpy as np
 
-        window = float(os.environ.get("IRIS_FOLLOW_UP", FOLLOW_UP_SECONDS))
+        window = float(config.setting("IRIS_FOLLOW_UP", "follow_up", str(FOLLOW_UP_SECONDS)))
         if window <= 0:
             return None
         print(f"Listening for a follow-up ({window:g} s, no wake word needed)...")
@@ -587,8 +588,6 @@ class VoxProcess:
         python = python or VOXCPM_PYTHON
         if not python.exists():
             raise FileNotFoundError(f"no VoxCPM Python at {python}; see Speech in the README to install it")
-        from iris import config
-
         VOXCPM_DIR.mkdir(parents=True, exist_ok=True)
         # voxcpm_gpu = 1 in config.toml: a faster card that also holds the LLM (it fits with a 32k context on 24 GB)
         gpu = os.environ.get("IRIS_VOXCPM_GPU") or str(config.raw().get("voxcpm_gpu", 0))
@@ -738,8 +737,6 @@ class Speaker:
     in Kokoro mode (which streams)."""
 
     def __init__(self, engine: str | None = None):
-        from iris import config
-
         self.engine = engine or os.environ.get("IRIS_TTS") or config.get("tts", "sapi")
         self._kokoro: Any = None  # kokoro_onnx.Kokoro; loaded lazily (no type stubs)
         self._piper: dict[str, PiperProcess] = {}

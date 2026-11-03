@@ -185,11 +185,9 @@ begin
   RemoveData := False;
   if UninstallSilent() or (DataDir() = '') or not DirExists(DataDir()) then
     Exit;  { a silent uninstall always keeps the data }
-  Form := CreateCustomForm();
+  Form := CreateCustomForm(ScaleX(440), ScaleY(170), False, False);
   try
     Form.Caption := 'Uninstall Iris';
-    Form.ClientWidth := ScaleX(440);
-    Form.ClientHeight := ScaleY(170);
     Form.Position := poScreenCenter;
 
     Info := TNewStaticText.Create(Form);

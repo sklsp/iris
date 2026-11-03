@@ -1,6 +1,6 @@
 # Iris as a desktop app: architecture decision
 
-Status: **proposed**, waiting for approval. Nothing below is built yet.
+Status: **approved** on 2026-11-03, as recommended (see Decisions at the end).
 
 Goal: people install Iris like LM Studio. They download one installer, find Iris in the Start menu, and get an app
 window with a dashboard and settings, a tray icon and a first-run setup, instead of a terminal plus a localhost
@@ -167,14 +167,12 @@ prompts or tools change):
 
 The new code is tested headless: pywebview, the tray and the Job Object sit behind small seams that tests replace.
 
-## Questions for approval
+## Decisions (approved 2026-11-03)
 
-1. **Shell:** pywebview on WebView2 with a WinForms tray (new dependency: `pywebview`, as an `app` extra)?
-2. **Packaging:** embedded CPython plus Inno Setup instead of PyInstaller or Nuitka, with pytest, pip and rcedit (build
-   time only) in the toolchain?
-3. **uv for the VoxCPM2 pack:** download uv (MIT/Apache-2.0, about 15 MB) when the user picks that pack, or bundle it?
-4. **Wake word in the app:** keep "hey jarvis" (openWakeWord, CC BY-NC-SA, downloaded after consent) as the app's
-   default, or make the spoken name "Iris" (Whisper tiny, MIT, more CPU) the default and openWakeWord optional,
-   which makes the installer about 35 MB smaller? The CLI default stays "hey jarvis" either way.
-5. **Update check default:** on (ticked in the wizard) or off?
-6. **Code signing:** ship unsigned with the SmartScreen note for now?
+1. **Shell:** pywebview on WebView2 with a WinForms tray; `pywebview` is a new `app` extra.
+2. **Packaging:** embedded CPython plus Inno Setup; pytest and pip in the bundle, rcedit at build time only.
+3. **uv:** downloaded only when the user picks the VoxCPM2 pack, not bundled.
+4. **Wake word:** "hey jarvis" stays the default in the app too; its openWakeWord models are downloaded only after the
+   wizard shows their CC BY-NC-SA license. "Iris" is offered as the alternative.
+5. **Update check:** on by default, as a visible tick in the first-run wizard and on the settings page.
+6. **Code signing:** unsigned for now, with the SmartScreen note and SHA-256 checksums in the README.

@@ -615,13 +615,15 @@ def tail_lines(path: Path, lines: int = LOG_TAIL_LINES) -> list[str]:
 
 
 def logs_payload() -> dict:
-    """The logs of the voice loop the app runs, the overlay and the VoxCPM worker, newest lines last."""
+    """The logs of the voice loop the app runs, the overlay, the VoxCPM worker, the app itself when it has no console
+    (Iris.exe) and the voice pack downloads, newest lines last."""
     from iris import config
     from iris.voice import VOXCPM_DIR
 
     home = config.config_path().parent
     files = (("Voice mode", home / "logs" / "voice.log"), ("Overlay", home / "overlay.log"),
-             ("VoxCPM2 speech", VOXCPM_DIR / "worker.log"))
+             ("VoxCPM2 speech", VOXCPM_DIR / "worker.log"), ("App", home / "logs" / "app.log"),
+             ("Voice packs", home / "logs" / "packs.log"))
     return {"ok": True, "logs": [{"name": name, "path": str(p), "exists": p.exists(), "lines": tail_lines(p)}
                                  for name, p in files]}
 

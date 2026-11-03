@@ -25,7 +25,7 @@ jobs:
       - name: Install (dev and office extras plus numpy for the audio tests; no microphone, model or tts packages)
         run: pip install -e ".[dev,office]" numpy
       - name: Ruff
-        run: ruff check iris tests
+        run: ruff check iris tests installer
       - name: Mypy
         run: mypy
       - name: Tests with coverage

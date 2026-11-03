@@ -454,7 +454,23 @@ def _set_app_id() -> None:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)  # type: ignore[attr-defined]
 
 
+def log_when_windowless() -> Path | None:
+    """Started as Iris.exe (pythonw) from the Start menu, the app has no console: sys.stdout and sys.stderr are None
+    and an error would vanish. Send them to logs/app.log instead, which the Logs tab shows."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return None
+    path = log_dir() / "app.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and path.stat().st_size > LOG_MAX_BYTES:
+        os.replace(path, path.with_name(path.name + ".1"))
+    stream = path.open("a", encoding="utf-8", errors="replace", buffering=1)
+    sys.stdout = sys.stdout or stream
+    sys.stderr = sys.stderr or stream
+    return path
+
+
 def main(argv: list[str]) -> int:
+    log_when_windowless()
     background = "--background" in argv
     try:
         import webview  # type: ignore[import-not-found]

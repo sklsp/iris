@@ -29,7 +29,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $RceditVersion = "v2.0.0"
-$RceditSha256 = "unpinned"  # pinned from the first CI build; a changed download stops the build
+$RceditSha256 = "3e7801db1a5edbec91b49a24a094aad776cb4515488ea5a4ca2289c400eade2a"  # a changed download stops the build
 $Extras = "voice,office,browser,app"
 
 function Invoke-Checked {

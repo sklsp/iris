@@ -291,6 +291,43 @@ def test_session_speak_async_does_not_block_the_loop():
     assert done == ["the answer"]
 
 
+def test_speech_from_several_threads_never_overlaps():
+    active, peak = [], []
+
+    class Counting:
+        def speak(self, text, stop_event=None):
+            active.append(text)
+            peak.append(len(active))
+            time.sleep(0.05)
+            active.remove(text)
+            return True
+
+    s = VoiceSession(speaker=Counting())
+    s.wake = _FakeWake(False)
+    threads = [threading.Thread(target=s.speak_async, args=(f"timer {i}",)) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    s.wait_for_speech()
+    assert len(peak) == 4 and max(peak) == 1
+
+
+def test_a_timer_speaking_while_iris_listens_takes_no_frames_from_the_recording():
+    class Quick:
+        def speak(self, text, stop_event=None):
+            time.sleep(0.2)
+            return True
+
+    s = VoiceSession(speaker=Quick())
+    s.wake = _FakeWake(True)  # a watcher would stop at the first frame it took
+    for _ in range(5):
+        s._frames.put(np.zeros(FRAME, dtype="float32"))
+    s._listening.set()  # next_request is reading the frames
+    s.speak_async("your timer is done").join()
+    assert s._frames.qsize() == 5 and not s._wake_seen
+
+
 def test_session_barge_in_skips_the_wake_word_for_the_next_request():
     class BlockingSpeaker:
         def speak(self, text, stop_event=None):

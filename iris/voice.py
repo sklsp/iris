@@ -331,6 +331,8 @@ class VoiceSession:
         self._wake_seen = False  # a wake word landed while Iris was talking (barge-in)
         self._answered = False  # Iris spoke since the last request: a follow-up may come without the wake word
         self._stop: threading.Event | None = None  # stops the speech that is playing now
+        self._speak_lock = threading.Lock()  # timers, reminders and the skill watcher speak from their own threads
+        self._listening = threading.Event()  # next_request reads the frames now: a speech must not watch them too
         self.cancelled = threading.Event()  # this request was cancelled; cleared when the next one starts
         self.overlay = Overlay()  # sends nothing until __enter__ starts the overlay (opt-in, see iris.overlay)
 
@@ -395,6 +397,13 @@ class VoiceSession:
     def next_request(self) -> str:
         """Block until the user says the wake word and then an utterance; returns the transcript."""
         self.wait_for_speech()  # never race the wake watcher for frames
+        self._listening.set()
+        try:
+            return self._next_request()
+        finally:
+            self._listening.clear()
+
+    def _next_request(self) -> str:
         self.cancelled.clear()  # a new request; a cancel of the last one is done with
         if self._wake_seen:  # barge-in: the user said the wake word while Iris was talking
             self._wake_seen = False
@@ -409,6 +418,9 @@ class VoiceSession:
         while True:  # phase 1: wait for the wake word
             if self.wake.detect(self._frames.get()):
                 break
+        stop = self._stop  # a timer or reminder that is talking now: the wake word stops it, as during an answer
+        if stop is not None:
+            stop.set()
         self.cancelled.clear()  # a click that came while Iris waited for the wake word cancels nothing
         self.chime()
         return self.next_command()
@@ -506,24 +518,29 @@ class VoiceSession:
 
         A wake word during the speech stops it; the next next_request() then records straight away
         instead of waiting for a new wake word."""
-        self.wait_for_speech()  # one speech at a time
-        self._interrupted = False
-        self._answered = True
-        thread = threading.Thread(target=self._speak_and_watch, args=(text,), daemon=True)
-        self._speech = thread
-        thread.start()
+        with self._speak_lock:  # one speech at a time, whichever thread asks
+            self.wait_for_speech()
+            self._interrupted = False
+            self._answered = True
+            thread = threading.Thread(target=self._speak_and_watch, args=(text,), daemon=True)
+            self._speech = thread
+            thread.start()
         return thread
 
     def _speak_and_watch(self, text: str) -> None:
         self.overlay.send("answer", text)  # before the watcher starts, so an interruption always comes after it
         stop = self._stop = threading.Event()
+        # while next_request listens (a timer speaking from its own thread), it owns the frames and hears the wake word
+        watch = not self._listening.is_set()
         watcher = threading.Thread(target=self._watch_for_wake, args=(stop,), daemon=True)
-        watcher.start()
+        if watch:
+            watcher.start()
         try:
             finished = self.speaker.speak(text, stop_event=stop)
         finally:
             stop.set()  # release the watcher whether or not it was interrupted
-        watcher.join(timeout=1.0)
+        if watch:
+            watcher.join(timeout=1.0)
         self._interrupted = not finished
         if finished:  # not when a wake word or a cancel cut it short: the panel moved on
             self.overlay.send("idle")

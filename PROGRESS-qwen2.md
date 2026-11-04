@@ -8,7 +8,7 @@
 - [x] Q6. Tests for the dashboard's readers of broken files (1931 passed in 63.64s)
 - [x] Q7. Tests for the dashboard's queue, agents and request handler branches (1941 passed in 63.59s)
 - [x] Q8. Tests for the uncovered lines of iris/desktop.py, iris/office.py and iris/packs.py (1947 passed in 64.10s)
-- [ ] Q9. Tests for the uncovered lines of iris/voice.py
+- [x] Q9. Tests for the uncovered lines of iris/voice.py (1961 passed in 66.25s)
 - [ ] Q10. Docstrings in iris/prompt_queue.py
 - [ ] Q11. Docstrings in iris/tools.py functions
 - [ ] Q12. Docstrings in iris/app.py

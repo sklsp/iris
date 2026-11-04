@@ -67,6 +67,33 @@ def setting(env: str, key: str, default: str = "") -> str:
     return str(value).strip() or default
 
 
+def number(env: str, key: str, default: float) -> float:
+    """A numeric setting (environment, then config.toml), or the default when it is not a number: one typo such as
+    silence = "fast" must not stop Iris from starting. bad_numbers() lets iris doctor point at it."""
+    try:
+        value = float(setting(env, key, str(default)))
+    except ValueError:
+        return default
+    return value if value == value and abs(value) != float("inf") else default
+
+
+NUMBERS = (("IRIS_SILENCE", "silence"), ("IRIS_FOLLOW_UP", "follow_up"), ("IRIS_WAKE_THRESHOLD", "wake_threshold"),
+           ("IRIS_WHISPER_GPU", "whisper_gpu"), ("IRIS_VOXCPM_GPU", "voxcpm_gpu"))
+
+
+def bad_numbers() -> list[str]:
+    """The numeric settings whose value is not a number, as "key = value" (from config.toml or the environment)."""
+    out = []
+    for env, key in NUMBERS:
+        value = setting(env, key, "")
+        try:
+            if value:
+                float(value)
+        except ValueError:
+            out.append(f"{key} = {value!r}")
+    return out
+
+
 def load() -> dict:
     """DEFAULTS overlaid with the file's keys; a key with the wrong type keeps its default."""
     out = dict(DEFAULTS)

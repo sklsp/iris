@@ -37,6 +37,10 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
     else:
         out.append((config.config_path().exists(),
                     f"config {config.config_path()} (optional; the defaults are used without it)"))
+    bad = config.bad_numbers()
+    if bad:
+        out.append((False, f"settings that are not numbers, so their defaults are used: {', '.join(bad)}; fix them "
+                           "on the Settings tab or in config.toml"))
     unknown = [p for p in cfg["plugins"] if p not in PLUGINS]
     out.append((not unknown, f"plugins {cfg['plugins'] or 'none'}"
                 + (f"; unknown: {', '.join(unknown)} (known: {', '.join(PLUGINS)})" if unknown else "")))

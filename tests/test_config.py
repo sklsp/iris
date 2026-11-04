@@ -228,3 +228,26 @@ def test_doctor_says_when_config_toml_can_not_be_read(tmp_path, monkeypatch, con
     line = next(line for ok, line in doctor.checks({"reachable": False}) if "config" in line)
     assert line.startswith("broken config: ") and "every setting in it is ignored" in line
     assert not line.startswith(doctor.OPTIONAL)  # shown as FIX, not as an optional "--"
+
+
+def test_a_setting_that_is_not_a_number_never_stops_iris_from_starting(tmp_path):
+    import subprocess
+    import sys
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('silence = "fast"\nwake_threshold = "x"\nfollow_up = "soon"\n', encoding="utf-8")
+    env = {**__import__("os").environ, "IRIS_CONFIG": str(cfg)}
+    r = subprocess.run([sys.executable, "-c", "import iris.voice as v; print(v.SILENCE_SECONDS, v.WAKE_THRESHOLD)"],
+                       env=env, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0 and r.stdout.split() == ["1.8", "0.5"], r.stderr
+
+
+def test_doctor_names_the_settings_that_are_not_numbers(tmp_path, monkeypatch):
+    from iris import doctor
+
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    (tmp_path / "config.toml").write_text('silence = "fast"\nfollow_up = 4\n', encoding="utf-8")
+    assert config.number("IRIS_SILENCE", "silence", 1.8) == 1.8 and config.number("X", "follow_up", 8) == 4
+    assert config.bad_numbers() == ["silence = 'fast'"]
+    line = next(line for ok, line in doctor.checks({"reachable": False}) if "not numbers" in line)
+    assert "silence = 'fast'" in line and "Settings tab" in line

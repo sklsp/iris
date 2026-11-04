@@ -32,9 +32,9 @@ FRAME = 1280  # 80 ms at 16 kHz, the frame size openWakeWord wants
 
 # IRIS_WAKEWORD picks a built-in openWakeWord name, an .onnx file, or "iris" for NameWake (no model needed).
 # Read at construction time so tests can override it.
-WAKE_THRESHOLD = float(config.setting("IRIS_WAKE_THRESHOLD", "wake_threshold", "0.5"))
+WAKE_THRESHOLD = config.number("IRIS_WAKE_THRESHOLD", "wake_threshold", 0.5)
 # Stop recording after this much continuous silence (IRIS_SILENCE). 1.2 s cut people off when they paused to think.
-SILENCE_SECONDS = float(config.setting("IRIS_SILENCE", "silence", "1.8"))
+SILENCE_SECONDS = config.number("IRIS_SILENCE", "silence", 1.8)
 SPEECH_TIMEOUT = 60.0  # the longest one answer may take to say before Iris carries on without it
 FOLLOW_UP_SECONDS = 8.0  # after an answer, a question that starts this soon needs no wake word (IRIS_FOLLOW_UP)
 VAD_THRESHOLD = float(os.environ.get("IRIS_VAD_THRESHOLD", 0.01))  # RMS below this counts as silence
@@ -206,7 +206,7 @@ def _whisper_model(name: str | None, device: str | None, gpu_default: str = "lar
     model = name or (gpu_default if device == "cuda" else cpu_default)
     compute = "float16" if device == "cuda" else "int8"
     gpu = config.setting("IRIS_WHISPER_GPU", "whisper_gpu")
-    extra = {"device_index": int(gpu)} if device == "cuda" and gpu else {}
+    extra = {"device_index": int(gpu)} if device == "cuda" and gpu.isdigit() else {}
     return WhisperModel(model, device=device, compute_type=compute, **extra)
 
 
@@ -446,7 +446,7 @@ class VoiceSession:
         for Iris only reaches her within that short window."""
         import numpy as np
 
-        window = float(config.setting("IRIS_FOLLOW_UP", "follow_up", str(FOLLOW_UP_SECONDS)))
+        window = config.number("IRIS_FOLLOW_UP", "follow_up", FOLLOW_UP_SECONDS)
         if window <= 0:
             return None
         print(f"Listening for a follow-up ({window:g} s, no wake word needed)...")

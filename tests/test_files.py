@@ -580,3 +580,26 @@ def test_a_folder_is_never_copied_or_moved_into_itself(tmp_path, dest):
         assert out.startswith("error: ") and "inside" in out, out
     assert sorted(p.name for p in (tmp_path / "A").iterdir()) == ["Archive", "f.txt"]
     assert list((tmp_path / "A" / "Archive").iterdir()) == []
+
+
+def test_a_folder_and_a_file_each_point_to_the_tool_that_reads_them(tmp_path):
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    assert files.read_file(str(tmp_path)) == (
+        f"error: {tmp_path} is a folder, not a file; list_folder lists what is in it")
+    assert files.list_folder(str(tmp_path / "a.txt")) == (
+        f"error: {tmp_path / 'a.txt'} is a file, not a folder; read_file reads it")
+
+
+def test_one_unreadable_entry_never_hides_the_rest_of_a_folder(tmp_path, monkeypatch):
+    (tmp_path / "good.txt").write_text("x", encoding="utf-8")
+    (tmp_path / "ghost.txt").write_text("x", encoding="utf-8")
+    real = Path.stat
+
+    def stat(self, *a, **kw):
+        if self.name == "ghost.txt":
+            raise OSError(1920, "The file cannot be accessed by the system")  # a OneDrive placeholder gone wrong
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "stat", stat)
+    out = files.list_folder(str(tmp_path))
+    assert "good.txt 0 KB" in out and "ghost.txt (can not be read)" in out

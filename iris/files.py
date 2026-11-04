@@ -75,11 +75,23 @@ def _mtime(p: Path) -> float:
 def list_folder(path: str) -> str:
     """The entries of a folder: folders first with a trailing /, then files with their size in KB."""
     p = Path(path).expanduser()
+    if p.is_file():
+        return f"error: {p} is a file, not a folder; read_file reads it"
     if not p.is_dir():
         return f"error: no such folder: {p}" + _MISSING
-    dirs = sorted(e.name + "/" for e in p.iterdir() if e.is_dir())
-    files_ = [f"{e.name} {e.stat().st_size // 1024} KB"
-              for e in sorted(p.iterdir(), key=lambda e: e.name) if not e.is_dir()]
+    try:
+        entries = sorted(p.iterdir(), key=lambda e: e.name)
+    except PermissionError:
+        return f"error: Windows does not let Iris look inside {p} (access denied)"
+    dirs, files_ = [], []
+    for e in entries:  # one broken link or cloud placeholder must not hide the rest
+        try:
+            if e.is_dir():
+                dirs.append(e.name + "/")
+            else:
+                files_.append(f"{e.name} {e.stat().st_size // 1024} KB")
+        except OSError:
+            files_.append(f"{e.name} (can not be read)")
     lines = dirs + files_
     if len(lines) > 100:
         return "\n".join(lines[:100]) + f"\n... and {len(lines) - 100} more"
@@ -89,6 +101,8 @@ def list_folder(path: str) -> str:
 def read_file(path: str) -> str:
     """A file as text: plain text, .docx/.pptx from their XML or .pdf via pypdf; at most 20000 characters."""
     p = Path(path).expanduser()
+    if p.is_dir():
+        return f"error: {p} is a folder, not a file; list_folder lists what is in it"
     if not p.is_file():
         return f"error: no such file: {p}" + _MISSING
     suffix = p.suffix.lower()

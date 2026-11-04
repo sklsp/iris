@@ -669,3 +669,45 @@ def test_a_stuck_speech_thread_does_not_freeze_the_session(monkeypatch, capsys):
     s.speak("Klikken op het vergrootglas?")
     assert time.monotonic() - t0 < 2 and "speech got stuck" in capsys.readouterr().out
     release.set()
+
+
+def test_the_session_stops_every_speech_worker_when_it_ends(tmp_path):
+    import subprocess
+
+    from iris import voice
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.PIPE)
+    vox = object.__new__(voice.VoxProcess)
+    vox.proc = child  # a worker still loading its model: it does not read stdin yet
+    piper = object.__new__(voice.PiperProcess)
+    piper.proc = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE)
+    piper.dir = tmp_path / "iris-piper-x"
+    piper.dir.mkdir()
+    spk = Speaker(engine="sapi")
+    spk._vox, spk._piper = vox, {"nl": piper}
+    s = VoiceSession(speaker=spk)
+    s.__exit__(None, None, None)
+    assert child.poll() is not None and piper.proc.poll() is not None and not piper.dir.exists()
+    assert spk._vox is None and spk._piper == {}
+
+
+def test_no_microphone_is_one_sentence_and_still_stops_the_workers(monkeypatch):
+    closed = []
+
+    class NoMic:
+        def __init__(self, **kw):
+            raise OSError("Error querying device -1")
+
+    fake_sd = types.ModuleType("sounddevice")
+    fake_sd.InputStream = NoMic
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+
+    class Spk:
+        def close(self):
+            closed.append(True)
+
+    s = VoiceSession(speaker=Spk())
+    with pytest.raises(SystemExit, match="No microphone could be opened .*Windows Sound settings"):
+        s.__enter__()
+    s.__exit__(None, None, None)  # __main__ always calls this in its finally
+    assert closed == [True]

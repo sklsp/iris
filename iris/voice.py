@@ -7,6 +7,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -353,14 +354,22 @@ class VoiceSession:
                 except queue.Full:
                     pass
 
-        self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", blocksize=FRAME, callback=cb)
-        self._stream.__enter__()
+        try:
+            self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", blocksize=FRAME, callback=cb)
+            self._stream.__enter__()
+        except Exception as exc:  # noqa: BLE001 - PortAudioError and friends: one line, not a traceback
+            self._stream = None
+            raise SystemExit(f"No microphone could be opened ({exc}). Plug one in, or pick the default input "
+                             "device in Windows Sound settings, then start voice mode again.") from exc
         self.overlay = launch()
         self.overlay.on_cancel = self.cancel
         return self
 
     def __exit__(self, *exc: object) -> None:
         self.overlay.close()
+        close = getattr(self.speaker, "close", None)
+        if callable(close):
+            close()  # the VoxCPM2 worker and Piper: they hold the GPU and would outlive a voice mode run in a terminal
         if self._stream is not None:
             try:
                 self._stream.__exit__(*exc)
@@ -565,6 +574,23 @@ class VoiceSession:
         return " ".join(s.text.strip() for s in segments).strip()
 
 
+def _stop_process(proc: subprocess.Popen, seconds: float) -> None:
+    """End a speech worker: close its input (it then quits on its own), and terminate or kill it if it does not."""
+    try:
+        if proc.stdin is not None:
+            proc.stdin.close()
+    except OSError:
+        pass
+    try:
+        proc.wait(seconds)
+    except subprocess.TimeoutExpired:
+        proc.terminate()
+        try:
+            proc.wait(seconds)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
 class PiperProcess:
     """One running `python -m piper` for one voice. It loads the model once and writes a WAV file per line of text
     into its own temp folder; wav() waits until that file is complete."""
@@ -577,6 +603,11 @@ class PiperProcess:
         self.proc = subprocess.Popen([sys.executable, "-m", "piper", "-m", str(model), "-d", str(self.dir)],
                                      stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                      text=True, encoding="utf-8", env=env)
+
+    def close(self) -> None:
+        """Stop Piper and remove its temp folder."""
+        _stop_process(self.proc, 2)
+        shutil.rmtree(self.dir, ignore_errors=True)
 
     def wav(self, text: str, timeout: float = 20) -> Path:
         """Send one line of text to Piper and wait for the WAV file it writes, claiming it once complete."""
@@ -636,6 +667,10 @@ class VoxProcess:
         self._frames: queue.Queue = queue.Queue()
         self._behind = 0  # answers cut short whose rest is still coming back
         threading.Thread(target=self._read, daemon=True).start()
+
+    def close(self) -> None:
+        """Stop the worker, so its GPU memory is freed; one that is still loading its model is ended too."""
+        _stop_process(self.proc, 5)
 
     def _read(self) -> None:
         import numpy as np
@@ -790,6 +825,18 @@ class Speaker:
                     self._piper_voice(lang)
                 except FileNotFoundError:
                     pass  # speak() says what is missing when that language is needed
+
+    def close(self) -> None:
+        """Stop every speech worker this speaker started (VoxCPM2, Piper)."""
+        workers: list[PiperProcess | VoxProcess] = [*self._piper.values()]
+        if self._vox is not None:
+            workers.append(self._vox)
+        self._piper, self._vox = {}, None
+        for w in workers:
+            try:
+                w.close()
+            except Exception:  # noqa: BLE001 - stopping one worker must not keep the others running
+                pass
 
     def speak(self, text: str, stop_event: threading.Event | None = None) -> bool:
         """Print the answer and speak it with the best engine available; True unless a wake word cut it short."""

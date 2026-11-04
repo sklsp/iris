@@ -137,6 +137,18 @@ def test_speaker_kokoro_streams_all_chunks_when_not_interrupted(monkeypatch):
     assert len(played) == 5
 
 
+def test_speaker_kokoro_lets_each_chunk_finish_before_the_next(monkeypatch):
+    starts = []
+    fake_sd = types.ModuleType("sounddevice")
+    fake_sd.play = lambda data, sr: starts.append(time.perf_counter())  # returns at once, like the real sd.play
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    spk = Speaker(engine="kokoro")
+    spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(3)])  # 0.1 s each at 24 kHz
+    assert spk.speak("hello", stop_event=threading.Event()) is True
+    gaps = [b - a for a, b in zip(starts, starts[1:], strict=False)]
+    assert len(starts) == 3 and min(gaps) >= 0.09  # a new play never cut the one before it off
+
+
 def test_speaker_kokoro_stops_between_chunks_on_interrupt(monkeypatch):
     played = []
     stop = threading.Event()

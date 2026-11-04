@@ -874,8 +874,15 @@ class Speaker:
                 async for chunk, sr in model.create_stream(text, voice=KOKORO_VOICE):
                     if stop_event is not None and stop_event.is_set():
                         return False
-                    # blocks per chunk: streaming with an interrupt point between chunks
+                    # sd.play returns at once and the next play would cut this chunk off: wait for its end,
+                    # stopping at once for a wake word
                     sd.play(chunk.astype("float32"), sr)
+                    end = time.perf_counter() + len(chunk) / sr
+                    while time.perf_counter() < end:
+                        if stop_event is not None and stop_event.is_set():
+                            getattr(sd, "stop", lambda: None)()
+                            return False
+                        time.sleep(0.02)
                 return True
 
             return asyncio.run(play())

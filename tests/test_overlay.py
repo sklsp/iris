@@ -618,6 +618,7 @@ def test_main_imports_tkinter_and_asks_for_user32_when_given_no_fakes(monkeypatc
 
 def test_running_the_module_as_a_script_exits_with_mains_code(monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, "tkinter", None)  # main() gives up before any window could open
+    monkeypatch.delitem(sys.modules, "iris.overlay")  # run it fresh, as `python -m iris.overlay` does
     with pytest.raises(SystemExit) as exc:
         runpy.run_module("iris.overlay", run_name="__main__")
     assert exc.value.code == 1

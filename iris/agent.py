@@ -61,16 +61,25 @@ def system_prompt(name: str | None = None, today: str | None = None) -> str:
 
 MAX_STEPS = 30  # a web task (research, then a few searches on a site) takes 15 to 25; a step is 2 to 5 s
 MAX_HISTORY_CHARS = 40_000
+MAX_RESULT_CHARS = 24_000  # one tool result: a long window or page must not fill the model's context on its own
 OUT_OF_STEPS = ("You have used all your steps for this request. Do not call tools. Answer now, in the language of the "
                 "request, with what you found so far, and say in one sentence what is still left to do.")
 _ITEM_LINE = re.compile(r"\[\d+\] ")
 _WRAPPER_TAG = re.compile(r"<\s*/?\s*untrusted_data\s*>", re.I)
 
 
+def _cap(result: str) -> str:
+    """At most MAX_RESULT_CHARS of a tool result, with a marker that says how much was left out."""
+    if len(result) <= MAX_RESULT_CHARS:
+        return result
+    return (result[:MAX_RESULT_CHARS] + f"\n[truncated, {len(result) - MAX_RESULT_CHARS} more characters; ask for a "
+            "smaller part if you need the rest]")
+
+
 def _wrap(result: str) -> str:
     """A tool result as untrusted data. A tag inside the result that would close (or reopen) the wrapper is
     defused first, so page or file text can never step outside it and pass as Iris's own words."""
-    inner = _WRAPPER_TAG.sub(lambda m: m[0].replace("<", "&lt;").replace(">", "&gt;"), result)
+    inner = _WRAPPER_TAG.sub(lambda m: m[0].replace("<", "&lt;").replace(">", "&gt;"), _cap(result))
     return f"<untrusted_data>\n{inner}\n</untrusted_data>"
 
 

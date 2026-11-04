@@ -583,3 +583,13 @@ def test_arguments_sent_as_an_object_are_read(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout: io.BytesIO(json.dumps(body).encode()))
     reply = LMStudio(model="m").chat([], [])
     assert reply.calls[0].args == {"verbose": True}
+
+
+def test_a_huge_tool_result_is_cut_with_a_marker_that_says_how_much(tmp_path):
+    from iris.agent import MAX_RESULT_CHARS
+
+    tools = {"status": Tool("status", "", {}, [], SAFE, lambda: "y" * (MAX_RESULT_CHARS + 500))}
+    llm = ScriptedLLM(call("status"), answer("Done."))
+    Agent(llm, lambda q: True, Journal(tmp_path / "j.jsonl"), tools).handle("read it")
+    content = llm.seen[1][-1]["content"]
+    assert "[truncated, 500 more characters" in content and content.split("\n")[1] == "y" * MAX_RESULT_CHARS

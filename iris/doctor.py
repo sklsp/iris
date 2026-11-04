@@ -30,8 +30,13 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
     out.append((sys.platform == "win32", f"platform {sys.platform} (Iris drives Windows through UI Automation)"))
     out.append((importlib.util.find_spec("pywinauto") is not None, "pywinauto installed"))
     cfg = config.load()
-    out.append((config.config_path().exists(),
-                f"config {config.config_path()} (optional; the defaults are used without it)"))
+    problem = config.error()
+    if problem:
+        out.append((False, f"broken config: {config.config_path()} can not be read, so every setting in it is "
+                           f"ignored: {problem}"))
+    else:
+        out.append((config.config_path().exists(),
+                    f"config {config.config_path()} (optional; the defaults are used without it)"))
     unknown = [p for p in cfg["plugins"] if p not in PLUGINS]
     out.append((not unknown, f"plugins {cfg['plugins'] or 'none'}"
                 + (f"; unknown: {', '.join(unknown)} (known: {', '.join(PLUGINS)})" if unknown else "")))

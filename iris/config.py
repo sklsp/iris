@@ -28,11 +28,26 @@ def config_path() -> Path:
 
 
 def raw() -> dict:
-    """The file as parsed; {} when it is missing or broken."""
+    """The file as parsed; {} when it is missing or broken (error() says why). A UTF-8 BOM, which Notepad and
+    PowerShell write, is fine."""
     try:
-        return tomllib.loads(config_path().read_text(encoding="utf-8"))
+        return tomllib.loads(config_path().read_text(encoding="utf-8-sig"))
     except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
         return {}
+
+
+def error() -> str | None:
+    """Why config.toml can not be read, or None when it is fine or simply not there (iris doctor shows this)."""
+    path = config_path()
+    if not path.exists():
+        return None
+    try:
+        tomllib.loads(path.read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError:
+        return "it is not UTF-8 text; save it as UTF-8"
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        return str(exc)
+    return None
 
 
 def get(key: str, default: str = "") -> str:

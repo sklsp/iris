@@ -1,5 +1,7 @@
 """config.toml and the plugin registry: what the user sets decides the name in the prompt and the tools offered."""
 
+import pytest
+
 from iris import __version__, config, registry
 from iris.agent import Agent, Journal, system_prompt
 from iris.tools import TOOLS
@@ -202,3 +204,27 @@ def test_doctor_in_the_installed_app_points_to_the_setup_tab(tmp_path, monkeypat
     assert "voice pack on the Setup tab" in speech
     assert lines("piper")[1] == "speech: Piper not installed: the Piper voices pack on the Setup tab"
     assert "the VoxCPM2 voice pack on the Setup tab" in lines("voxcpm")[1]
+
+
+def test_a_config_with_a_bom_is_read_and_saved(tmp_path, monkeypatch):
+    from iris import settings
+
+    path = tmp_path / "config.toml"
+    monkeypatch.setenv("IRIS_CONFIG", str(path))
+    path.write_bytes(b"\xef\xbb\xbf" + b'name = "Jay"\ncity = "Rotterdam"\n')  # Notepad's "UTF-8 with BOM"
+    assert config.load()["name"] == "Jay" and config.error() is None
+    settings.write({"city": "Utrecht"})
+    assert config.raw() == {"name": "Jay", "city": "Utrecht"} and not path.read_bytes().startswith(b"\xef")
+
+
+@pytest.mark.parametrize("content,why", [(b'name = "Jay', "Unterminated string"),
+                                         (b'name = "caf\xe9"', "not UTF-8")])
+def test_doctor_says_when_config_toml_can_not_be_read(tmp_path, monkeypatch, content, why):
+    from iris import doctor
+
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    (tmp_path / "config.toml").write_bytes(content)
+    assert why in (config.error() or "")
+    line = next(line for ok, line in doctor.checks({"reachable": False}) if "config" in line)
+    assert line.startswith("broken config: ") and "every setting in it is ignored" in line
+    assert not line.startswith(doctor.OPTIONAL)  # shown as FIX, not as an optional "--"

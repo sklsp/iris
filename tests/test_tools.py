@@ -933,6 +933,18 @@ def test_read_only_tools_are_safe():
 
 
 # --- calculate ---------------------------------------------------------------
+def test_calculate_never_shows_a_rounded_or_complex_result_as_exact():
+    assert tools.calculate("(-8)**(1/3)") == "error: no real answer (a negative number to a fractional power)"
+    assert tools.calculate("(-1)**0.5").startswith("error: no real answer")
+    assert tools.calculate("10**100/3") == "10**100/3 = 3.33333333333e+99"
+    assert tools.calculate("4e15/2") == "4e15/2 = 2e+15"
+    assert tools.calculate("10/2") == "10/2 = 5"
+
+
+def test_calculate_too_many_digits_to_print_is_an_error():
+    assert tools.calculate("*".join(["99**100"] * 23)) == "error: number too large"
+
+
 def test_calculate_multiplication():
     assert tools.calculate("17*23") == "17*23 = 391"
 

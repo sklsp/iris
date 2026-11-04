@@ -737,12 +737,18 @@ def calculate(expression: str) -> str:
         return "error: division by zero"
     except OverflowError:
         return "error: number too large"
+    if isinstance(value, complex):  # (-8)**(1/3): Python answers with a complex number, which is not what was asked
+        return "error: no real answer (a negative number to a fractional power)"
     if isinstance(value, float) and not math.isfinite(value):
         return "error: number too large"
     if isinstance(value, float):
-        text = str(int(value)) if value.is_integer() else format(value, ".12g")
+        # a whole float only prints as an integer while every digit is real: 10**100/3 is about 3.33e+99, not exact
+        text = str(int(value)) if value.is_integer() and abs(value) < 1e15 else format(value, ".12g")
     else:
-        text = str(value)
+        try:
+            text = str(value)
+        except ValueError:  # more digits than Python prints (4300)
+            return "error: number too large"
     return f"{expression} = {text}"
 
 

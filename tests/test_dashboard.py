@@ -1528,3 +1528,55 @@ def test_a_rebound_host_name_gets_nothing(server, srv):
         conn.request("GET", "/", headers={"Host": host})
         assert conn.getresponse().status == 200
         conn.close()
+
+
+def _raw_post(srv, path, body: bytes, headers=None):
+    import http.client
+
+    port = srv.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.putrequest("POST", path)
+    for k, v in {"X-Iris-Token": srv.token, "Origin": f"http://127.0.0.1:{port}", **(headers or {})}.items():
+        conn.putheader(k, v)
+    if "Content-Length" not in (headers or {}) and "Transfer-Encoding" not in (headers or {}):
+        conn.putheader("Content-Length", str(len(body)))
+    conn.endheaders(body)
+    r = conn.getresponse()
+    out = r.status, json.loads(r.read().decode("utf-8") or "{}")
+    conn.close()
+    return out
+
+
+@pytest.mark.parametrize("path", ["/api/settings", "/api/skills/approve", "/api/packs/install", "/api/setup/server",
+                                  "/api/queue/add", "/api/models/load"])
+@pytest.mark.parametrize("body", [b"[]", b'"x"', b"5", b"null"])
+def test_a_body_that_is_not_an_object_gets_400_not_a_dropped_connection(srv, path, body):
+    status, data = _raw_post(srv, path, body)
+    assert (status, data["error"]) == (400, "the body must be a JSON object")
+
+
+def test_odd_bodies_get_an_answer(srv):
+    assert _raw_post(srv, "/api/settings", b"[" * 200_000)[0] == 400  # nested too deep for json
+    assert _raw_post(srv, "/api/settings", b"{}", {"Content-Length": "-1"})[0] == 400
+    assert _raw_post(srv, "/api/settings", b"", {"Content-Length": str(2_000_000)})[0] == 413
+    status, data = _raw_post(srv, "/api/setup/done", b"", {"Transfer-Encoding": "chunked"})
+    assert status == 411 and "Content-Length" in data["error"]
+
+
+def test_a_failing_write_answers_500_with_its_reason(srv, monkeypatch):
+    from iris import settings
+
+    def boom(values):
+        raise PermissionError("config.toml is open in another program")
+
+    monkeypatch.setattr(settings, "save", boom)
+    status, data = _raw_post(srv, "/api/settings", b'{"values": {}}')
+    assert status == 500 and data["error"] == "PermissionError: config.toml is open in another program"
+
+
+@pytest.mark.parametrize("value", ["inf", 1e400, "nan"])
+def test_settings_refuse_infinite_numbers(value):
+    from iris import settings
+
+    clean, errors = settings.validate({"voxcpm_gpu": value, "silence": value})
+    assert set(errors) == {"voxcpm_gpu", "silence"}

@@ -61,6 +61,7 @@ from typing import Any
 import psutil
 
 HOST = "127.0.0.1"  # loopback only; never 0.0.0.0
+MAX_BODY = 1_000_000  # bytes a POST body may have: every write takes a few short fields
 PORT = 8765
 CACHE_SECONDS = 30      # agents and LM Studio can be slow; do not re-query on every poll
 HISTORY_SECONDS = 300   # the sparklines cover five minutes
@@ -891,11 +892,26 @@ class Handler(BaseHTTPRequestHandler):
             self._drain_body()
             self._json({"error": "forbidden: wrong token or origin"}, code=403)
             return
+        if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+            self.close_connection = True  # its bytes would otherwise be read as the next request
+            self._json({"error": "send the JSON body with a Content-Length"}, code=411)
+            return
         try:
             length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_BODY:
+            self.close_connection = True
+            self._json({"error": f"the body must be a JSON object of at most {MAX_BODY} bytes"},
+                       code=413 if length > MAX_BODY else 400)
+            return
+        try:
             body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-        except (ValueError, UnicodeDecodeError):
+        except (ValueError, UnicodeDecodeError, RecursionError):
             self._json({"error": "bad JSON body"}, code=400)
+            return
+        if not isinstance(body, dict):
+            self._json({"error": "the body must be a JSON object"}, code=400)
             return
         try:
             if path == "/api/iris/model":
@@ -928,6 +944,9 @@ class Handler(BaseHTTPRequestHandler):
                 payload = model_action(action, body)
         except ModelActionError as exc:
             self._json({"error": exc.message}, code=exc.code)
+            return
+        except Exception as exc:  # noqa: BLE001 - any other failure is an answer too, never a dropped connection
+            self._json({"error": f"{type(exc).__name__}: {exc}"}, code=500)
             return
         self._json(payload)
 

@@ -791,7 +791,7 @@ def timer_set(minutes: float | None = None, label: str = "", message: str = "", 
         return TIMERS_OFF
     if at:
         if minutes is not None:
-            return "error: give minutes or at, not both"
+            return "error: give either minutes (such as 10) or at (such as 15:30), not both"
         try:
             t = TIMERS.add(_seconds_until(at), label, message)
         except ValueError as exc:
@@ -801,7 +801,7 @@ def timer_set(minutes: float | None = None, label: str = "", message: str = "", 
             return f"Timer {t['id']} set for {at} (in {duration}): {label}."
         return f"Timer {t['id']} set for {at} (in {duration})."
     if minutes is None:
-        return "error: give minutes or at"
+        return "error: say how long (minutes, such as 10) or until when (at, such as 15:30)"
     try:
         t = TIMERS.add(float(minutes) * 60, label, message)
     except ValueError as exc:

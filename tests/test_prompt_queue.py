@@ -30,6 +30,13 @@ def test_broken_json_raises_value_error(tmp_path):
         load(p)
 
 
+def test_load_rejects_a_file_whose_shape_is_wrong(tmp_path):
+    p = tmp_path / "q.json"
+    p.write_text('{"prompts": [], "next_id": "one"}', encoding="utf-8")
+    with pytest.raises(ValueError, match=r"^the queue file is broken: "):
+        load(p)
+
+
 def test_queue_path_uses_the_env_var(monkeypatch, tmp_path):
     monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
     assert queue_path() == tmp_path / "q.json"

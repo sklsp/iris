@@ -494,3 +494,31 @@ def test_a_background_tab_that_will_not_close_is_let_go(monkeypatch):
     assert results[0]["title"] == "Sinners (2025)"
 
 
+# --- _format / item / _settle ---------------------------------------------------
+def test_format_says_nothing_visible_when_the_page_has_no_items():
+    out = browser._format({"title": "T", "url": "https://x.example/"})
+    assert out == ("Tab: T (https://x.example/)" + L +
+                   "(no buttons, links or fields visible; scroll, or wait for the page to load)")
+
+
+def test_item_with_a_non_number_returns_an_empty_dict():
+    assert browser.item("third") == {}  # ValueError from int()
+    assert browser.item(None) == {}     # TypeError from int()
+
+
+def test_settle_pauses_then_polls_while_the_page_is_still_loading(monkeypatch):
+    sleeps = []
+    clock = [0.0]
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr(browser.time, "sleep", fake_sleep)
+    monkeypatch.setattr(browser.time, "monotonic", lambda: clock[0])
+    states = iter(["loading", "loading", "complete"])
+    monkeypatch.setattr(browser, "_eval", lambda session, expression, wait=15: next(states))
+    browser._settle("s-1")
+    assert sleeps == [0.4, 0.1, 0.1]
+
+

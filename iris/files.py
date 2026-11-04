@@ -22,7 +22,7 @@ def find_files(name: str, folder: str = "") -> str:
     if folder:
         root0 = Path(folder).expanduser()
         if not root0.is_dir():
-            return f"error: no such folder: {root0}"
+            return f"error: no such folder: {root0}" + _MISSING
         roots = [root0]
     else:
         roots = config.folders()

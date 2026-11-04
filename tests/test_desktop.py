@@ -149,8 +149,17 @@ def test_media_key_covers_all_six_keys(monkeypatch):
 
 def test_media_key_unknown_key_is_an_error(monkeypatch):
     w = _fake_windll(monkeypatch)
-    assert desktop.media_key("stop") == "error: unknown media key"
+    assert desktop.media_key("stop") == ("error: unknown media key; use play_pause, next, previous, volume_up, "
+                                         "volume_down or mute")
     assert w.user32.events == []
+
+
+def test_media_key_error_names_exactly_the_keys_in_the_table():
+    msg = desktop.media_key("stop")  # returns before any windll call
+    assert msg.startswith("error: unknown media key; use ")
+    keys = set(msg.split("; use ", 1)[1].replace(" or ", ", ").split(", "))
+    assert keys == {"play_pause", "next", "previous", "volume_up", "volume_down", "mute"}
+    assert keys == set(desktop._MEDIA_KEYS)
 
 
 def test_media_key_times_out_of_range_is_an_error(monkeypatch):

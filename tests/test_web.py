@@ -348,6 +348,14 @@ def test_read_text_at_max_chars_is_not_truncated():
     assert web.read_text("http://example.com/exact", max_chars=5, get=get) == "abcde"
 
 
+def test_read_text_drops_a_line_that_repeats_the_previous_one():
+    def get(url):
+        return url, "text/html", ("<html><head><title>T</title></head>"
+                                  "<body><p>Same</p><p>Same</p><p>Next</p></body></html>")
+
+    assert web.read_text("http://example.com/dup", get=get) == "Title: T\nSame\nNext"
+
+
 def test_read_text_plain_is_returned_as_is():
     def get(url):
         return url, "text/plain; charset=utf-8", "hello\nworld  twice"

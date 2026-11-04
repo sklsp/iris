@@ -8,8 +8,8 @@ docs/v1-test-plan.md. A resumed session reads this first.
 | Phase | Branch | State |
 |---|---|---|
 | 0 Orientation, backlog | v1 | done (this file) |
-| 1 Annotations, mypy disallow_untyped_defs | v1-p1-annotations | open |
-| 2 Correctness (P0, then P1), upgrade path | v1-p2-bugs | |
+| 1 Annotations, mypy disallow_untyped_defs | v1-p1-annotations | merged |
+| 2 Correctness (P0, then P1), upgrade path | v1-p2-bugs | in progress |
 | 3 Speed (bench first) | v1-p3-speed | |
 | 4 Skills, eval coverage | v1-p4-skills | |
 | 5 Robustness, stability promise, a11y | v1-p5-robust | |
@@ -21,6 +21,8 @@ docs/v1-test-plan.md. A resumed session reads this first.
 ## Merged
 
 (one line per merged PR: "✅ P<n> (#PR, tests N, coverage X%)")
+
+- ✅ P1 (https://github.com/sklsp/iris/pull/44, tests 2020, coverage 99.46%)
 
 ## Starting numbers (main at 2c5ac8f, v0.6.1)
 

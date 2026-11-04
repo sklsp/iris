@@ -711,3 +711,20 @@ def test_no_microphone_is_one_sentence_and_still_stops_the_workers(monkeypatch):
         s.__enter__()
     s.__exit__(None, None, None)  # __main__ always calls this in its finally
     assert closed == [True]
+
+
+def test_a_missing_custom_wake_model_is_an_error_not_a_download_of_every_model(monkeypatch, tmp_path):
+    from iris import voice
+
+    downloads = []
+    fake = types.ModuleType("openwakeword")
+    fake.MODELS = {"hey_jarvis": {"model_path": str(tmp_path / "hey_jarvis.tflite")}}
+    fake.utils = types.SimpleNamespace(download_models=lambda names: downloads.append(names))
+    fake.Model = lambda **kw: object()
+    monkeypatch.setitem(sys.modules, "openwakeword", fake)
+    missing = str(tmp_path / "my_wake.onnx")
+    with pytest.raises(FileNotFoundError, match="no wake word model at .*my_wake.onnx"):
+        voice.WakeWord(missing)._model()
+    assert downloads == []
+    voice.WakeWord("hey_jarvis")._model()
+    assert downloads == [["hey_jarvis"]]  # a built-in name still fetches only itself on first use

@@ -141,9 +141,10 @@ class WakeWord:
             path = openwakeword.MODELS[self.name]["model_path"]
         onnx = path.replace(".tflite", ".onnx")
         if not os.path.exists(onnx):
+            if self.name not in openwakeword.MODELS:  # your own model file: download_models([]) would fetch them all
+                raise FileNotFoundError(f"no wake word model at {onnx}; check wakeword in config.toml")
             print(f"Downloading wake word model {self.name} (first run only)...")
-            names = [self.name] if self.name in openwakeword.MODELS else []
-            openwakeword.utils.download_models(names)
+            openwakeword.utils.download_models([self.name])
         self._m = openwakeword.Model(wakeword_models=[onnx])
         return self._m
 

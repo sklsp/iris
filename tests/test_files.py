@@ -82,6 +82,14 @@ def test_find_files_errors_on_a_missing_folder(tmp_path, monkeypatch):
     assert files.find_files("x", folder=str(tmp_path / "nope")).startswith("error: no such folder")
 
 
+def test_find_files_missing_folder_error_carries_the_same_hint_as_the_other_file_tools(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    missing = str(tmp_path / "nope")
+    hint = ("; it does not exist. Look for it once with find_files, then tell the user what you found "
+            "instead of retrying.")
+    assert files.find_files("x", folder=missing) == f"error: no such folder: {missing}" + hint
+
+
 def test_find_files_stops_after_30_hits_and_lists_newest_first(tmp_path, monkeypatch):
     home = _home(tmp_path, monkeypatch)
     for i in range(40):

@@ -63,7 +63,7 @@ def media_key(key: str, times: int = 1) -> str:
     """Press a media key (play_pause, next, previous, volume_up, volume_down or mute), repeated `times` times."""
     vk = _MEDIA_KEYS.get(key)
     if vk is None:
-        return "error: unknown media key"
+        return "error: unknown media key; use play_pause, next, previous, volume_up, volume_down or mute"
     if not 1 <= times <= 10:
         return "error: times must be between 1 and 10"
     for _ in range(times):

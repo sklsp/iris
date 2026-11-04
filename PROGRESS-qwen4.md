@@ -3,7 +3,7 @@
 - [x] Q3. Tests for the last lines of iris/browser.py and iris/web.py (1977 passed in 64.76s (0:01:04))
 - [x] Q4. Tests for the last lines of app, autopilot, prompt_queue and settings (1983 passed in 66.01s (0:01:06))
 - [x] Q5. Tests for the last lines of iris/overlay.py and iris/doctor.py (1989 passed in 62.94s (0:01:02))
-- [ ] Q6. Media keys: the error lists the keys
+- [x] Q6. Media keys: the error lists the keys (1990 passed in 62.66s (0:01:02))
 - [ ] Q7. Timers: say what minutes and at look like
 - [ ] Q8. find_files: a missing folder gets the same hint as the other file tools
 - [ ] Q9. CHANGELOG for this run

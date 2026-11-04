@@ -4,4 +4,4 @@
 - [x] Q2. A test that every command is in iris --help and the README (2017 passed in 64.76s (0:01:04))
 - [x] Q3. README: the Configuration example shows every setting (2017 passed in 65.33s (0:01:05))
 - [x] Q4. A test that every setting is in the README's Configuration section (2018 passed in 66.82s (0:01:06))
-- [ ] Q5. CHANGELOG for this run
+- [x] Q5. CHANGELOG for this run (2018 passed in 65.98s (0:01:05))

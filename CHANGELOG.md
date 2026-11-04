@@ -12,6 +12,7 @@
 - More errors say what to do: an unknown media key lists the keys, timers say what minutes and at look like, and find_files says a folder does not exist the way the other file tools do.
 - `iris config` also lists the keys in config.toml that are not on the Settings tab (such as cline_cli).
 - The VoxCPM2 worker's protocol is tested in a child process with a fake model, so it runs without a GPU.
+- `iris --help` lists the eval commands, the README's configuration example shows every setting, and tests keep both complete.
 
 ## 0.6.0 (2026-11-03): Iris as a desktop app
 

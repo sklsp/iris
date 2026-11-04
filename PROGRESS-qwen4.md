@@ -1,6 +1,6 @@
 - [x] Q1. Tests for the uncovered lines of iris/skills.py (1969 passed in 66.65s (0:01:06))
 - [x] Q2. Tests for the uncovered lines of iris/tools.py (1973 passed in 64.77s (0:01:04))
-- [ ] Q3. Tests for the last lines of iris/browser.py and iris/web.py
+- [x] Q3. Tests for the last lines of iris/browser.py and iris/web.py (1977 passed in 64.76s (0:01:04))
 - [ ] Q4. Tests for the last lines of app, autopilot, prompt_queue and settings
 - [ ] Q5. Tests for the last lines of iris/overlay.py and iris/doctor.py
 - [ ] Q6. Media keys: the error lists the keys

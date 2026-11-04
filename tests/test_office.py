@@ -75,7 +75,7 @@ def test_make_document_replaces_an_existing_file_and_trashes_the_old_one(tmp_pat
 def test_make_document_without_python_docx_says_install_the_extra(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "docx", None)
     assert office.make_document(str(tmp_path / "x.docx"), "T", "b") == \
-        "error: install the office extra: pip install iris[office]"
+        "error: Word, PowerPoint and Excel files need the office extra: pip install -e .[office] in the Iris folder"
 
 
 # --- make_presentation ---------------------------------------------------------------
@@ -135,7 +135,7 @@ def test_make_presentation_replaces_an_existing_file_and_trashes_the_old_one(tmp
 def test_make_presentation_without_python_pptx_says_install_the_extra(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "pptx", None)
     assert office.make_presentation(str(tmp_path / "x.pptx"), "T", []) == \
-        "error: install the office extra: pip install iris[office]"
+        "error: Word, PowerPoint and Excel files need the office extra: pip install -e .[office] in the Iris folder"
 
 
 # --- make_spreadsheet ----------------------------------------------------------------
@@ -185,7 +185,7 @@ def test_make_spreadsheet_replaces_an_existing_file_and_trashes_the_old_one(tmp_
 def test_make_spreadsheet_without_openpyxl_says_install_the_extra(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "openpyxl", None)
     assert office.make_spreadsheet(str(tmp_path / "x.xlsx"), []) == \
-        "error: install the office extra: pip install iris[office]"
+        "error: Word, PowerPoint and Excel files need the office extra: pip install -e .[office] in the Iris folder"
 
 
 # --- _new_file_tier ---------------------------------------------------------------

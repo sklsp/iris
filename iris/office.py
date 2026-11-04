@@ -6,6 +6,9 @@ from datetime import date
 
 from iris import files
 
+OFFICE_MISSING = ("error: Word, PowerPoint and Excel files need the office extra: pip install -e .[office] "
+                  "in the Iris folder")
+
 
 def _add_rich(paragraph, text: str) -> None:
     """Add text to a paragraph; **bold** parts become bold runs."""
@@ -76,7 +79,7 @@ def make_document(path: str, title: str, content: str) -> str:
     try:
         from docx import Document
     except ImportError:
-        return "error: install the office extra: pip install iris[office]"
+        return OFFICE_MISSING
 
     p = files.resolve_target(path, ".docx")
     doc = Document()  # built first: if this fails, the old file stays where it is
@@ -102,7 +105,7 @@ def make_presentation(path: str, title: str, slides: list) -> str:
     try:
         from pptx import Presentation
     except ImportError:
-        return "error: install the office extra: pip install iris[office]"
+        return OFFICE_MISSING
 
     if len(slides) > 40:
         return f"error: at most 40 slides, got {len(slides)}"
@@ -166,7 +169,7 @@ def make_spreadsheet(path: str, sheets: list) -> str:
         from openpyxl.styles import Font, PatternFill
         from openpyxl.utils import get_column_letter
     except ImportError:
-        return "error: install the office extra: pip install iris[office]"
+        return OFFICE_MISSING
 
     wb = Workbook()  # built first: if this fails, the old file stays where it is
     header_font = Font(bold=True)

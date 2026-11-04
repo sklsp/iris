@@ -407,3 +407,90 @@ def test_a_page_that_never_finishes_loading_is_reported_as_not_read_yet(monkeypa
     expected = f"opened {url} (could not read it yet: still navigating; call browser_read)"
     assert browser.open_page(url, wait=2) == expected
 
+
+def test_a_result_look_that_fails_is_tried_again(monkeypatch):
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(browser.time, "perf_counter", Clock())
+
+    looks = [None,  # the first look raises BrowserError (still navigating)
+             "not json yet",  # the second look is not JSON yet (ValueError)
+             '{"human": false, "results": [{"title": "Sinners (2025)", '
+             '"url": "https://www.imdb.com/title/tt31496718/", "snippet": "A film."}]}']
+
+    def fake_eval(session, expression, wait=15):
+        if not looks:
+            raise AssertionError("looked more times than scripted")
+        look = looks.pop(0)
+        if look is None:
+            raise browser.BrowserError("still navigating")
+        return look
+
+    monkeypatch.setattr(browser, "_eval", fake_eval)
+
+    def fake_call(method, params=None, session=None, wait=15):
+        if method == "Target.createTarget":
+            assert params["background"] is True  # the search runs in a background tab
+            return {"targetId": "T"}
+        if method == "Target.attachToTarget":
+            return {"sessionId": "s-T"}
+        if method == "Target.closeTarget":
+            return {}
+        raise AssertionError(method)
+
+    monkeypatch.setattr(browser, "_call", fake_call)
+    results = browser.search("sinners 2025 film", wait=8)
+    assert results == [{"title": "Sinners (2025)", "url": "https://www.imdb.com/title/tt31496718/",
+                        "snippet": "A film."}]
+
+
+def test_a_human_check_is_not_solved(monkeypatch):
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(browser.time, "perf_counter", Clock())
+
+    def fake_eval(session, expression, wait=15):
+        return '{"human": true, "results": []}'
+
+    monkeypatch.setattr(browser, "_eval", fake_eval)
+    closed = []
+
+    def fake_call(method, params=None, session=None, wait=15):
+        if method == "Target.createTarget":
+            return {"targetId": "T"}
+        if method == "Target.attachToTarget":
+            return {"sessionId": "s-T"}
+        if method == "Target.closeTarget":
+            closed.append(params["targetId"])
+            return {}
+        raise AssertionError(method)
+
+    monkeypatch.setattr(browser, "_call", fake_call)
+    with pytest.raises(browser.BrowserError) as exc:
+        browser.search("anything")
+    assert str(exc.value) == "the search engine asks for a human check; Iris does not solve those"
+    assert closed == ["T"]  # the background tab is still closed
+
+
+def test_a_background_tab_that_will_not_close_is_let_go(monkeypatch):
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(browser.time, "perf_counter", Clock())
+
+    def fake_eval(session, expression, wait=15):
+        return '{"human": false, "results": [{"title": "Sinners (2025)", ' \
+               '"url": "https://www.imdb.com/title/tt31496718/", "snippet": "A film."}]}'
+
+    monkeypatch.setattr(browser, "_eval", fake_eval)
+
+    def fake_call(method, params=None, session=None, wait=15):
+        if method == "Target.createTarget":
+            return {"targetId": "T"}
+        if method == "Target.attachToTarget":
+            return {"sessionId": "s-T"}
+        if method == "Target.closeTarget":
+            raise browser.BrowserError("the tab is already gone")  # and that is ignored
+        raise AssertionError(method)
+
+    monkeypatch.setattr(browser, "_call", fake_call)
+    results = browser.search("sinners 2025 film")
+    assert results[0]["title"] == "Sinners (2025)"
+
+

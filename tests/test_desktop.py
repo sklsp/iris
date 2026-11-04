@@ -529,7 +529,8 @@ def test_look_at_screen_asks_the_model_and_reports_failures(monkeypatch):
     monkeypatch.setattr(desktop.llm, "see", http)
     assert "may not read images" in desktop.look_at_screen("x")
     monkeypatch.setattr(desktop.llm, "see", down)
-    assert desktop.look_at_screen("x") == "error: could not reach the model to look at the screen"
+    assert desktop.look_at_screen("x") == ("error: could not reach the model to look at the screen; "
+                                           "is the model server running?")
     monkeypatch.setattr(desktop, "_capture", lambda area: b"")
     assert desktop.look_at_screen("x") == "error: could not capture the screen"
 

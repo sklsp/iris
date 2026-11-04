@@ -166,7 +166,7 @@ def _ask(png: bytes, ask: Callable[[bytes, str], str], text: str) -> str:
     except urllib.error.HTTPError as exc:
         return f"error: the model could not look at the image ({exc.code}); it may not read images"
     except (urllib.error.URLError, OSError, ValueError, KeyError):
-        return "error: could not reach the model to look at the screen"
+        return "error: could not reach the model to look at the screen; is the model server running?"
 
 
 def look_at_screen(question: str, window: str = "") -> str:

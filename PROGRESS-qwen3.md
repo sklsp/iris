@@ -6,7 +6,7 @@
 - [x] Q4. Office files: the right install command in the error (1963 passed in 65.75s (0:01:05))
 - [x] Q5. PDF files: say how to get pypdf (1963 passed in 65.87s (0:01:05))
 - [x] Q6. ComfyUI not running: say what to do (1963 passed in 64.90s (0:01:04))
-- [ ] Q7. Looking at the screen: say why the model could not be reached
+- [x] Q7. Looking at the screen: say why the model could not be reached (1963 passed in 65.22s (0:01:05))
 - [ ] Q8. The GPU extra's install command in a comment
 - [ ] Q9. Timers outside voice and text mode: say how to use them
 - [ ] Q10. Clipboard errors: say what to try

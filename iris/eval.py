@@ -27,7 +27,7 @@ class Task:
     fixtures: dict[str, str | list[str]] = field(default_factory=dict)
     max_calls: int = 6
     category: str = "other"
-    lang: str = "nl"  # language the answer is expected in ("nl", "en" or "any")
+    lang: str = "nl"  # language the answer is expected in: "nl", "en", "de", "fr", "es" or "any"
     turns: list[str] = field(default_factory=list)  # later requests in the same conversation, after request
     answer_has: list[str] = field(default_factory=list)  # last answer must contain at least one of these
     answer_not: list[str] = field(default_factory=list)  # last answer must contain none of these
@@ -122,7 +122,7 @@ class Result:
     confirm: str = "yes"  # the task's confirm setting ("yes"/"no")
     confirmed_ok: int = 0  # CONFIRM-tier calls that ended ok
     lang: str = "?"  # language of the answer (answer_language), "?" when unsure
-    want_lang: str = "nl"  # the task's expected language ("nl", "en" or "any")
+    want_lang: str = "nl"  # the task's expected language: "nl", "en", "de", "fr", "es" or "any"
     forbid: list[str] = field(default_factory=list)  # the task's forbid list, for refused_attempts
     request: str = ""  # the task's first request, shown in the report's failed-task section
     turns: list[str] = field(default_factory=list)  # later requests of the same conversation
@@ -367,7 +367,7 @@ def _pass_by_id(results) -> dict[str, bool]:
 
 
 def compare(a: dict, b: dict) -> list[str]:
-    """Compare two loaded report JSONs (item 20), per task id."""
+    """Compare two loaded report JSONs, per task id."""
     pa, pb = _pass_by_id(a["results"]), _pass_by_id(b["results"])
     ids = [i for i in pa] + [i for i in pb if i not in pa]
     lines = [f"{sum(pa.values())}/{len(pa)} -> {sum(pb.values())}/{len(pb)} tasks passed"]

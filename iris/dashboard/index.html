@@ -135,7 +135,6 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
      padding:10px 12px;cursor:pointer}
 .tab:hover{color:#c3c7cd}
 .tab.active{color:#e6e6e6;border-bottom-color:#7aa2ff}
-.pane.hidden{display:none}
 
 /* sessions */
 .srow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto auto 58px;gap:8px;align-items:center;
@@ -513,7 +512,6 @@ function drawSpark(cv, values){
   ctx.fill();
 }
 
-const sysHist = {};
 function metricRow(body, key, label, valueText, values){
   const row = el("div", "metric");
   row.appendChild(el("span", "mlabel", label));
@@ -522,7 +520,6 @@ function metricRow(body, key, label, valueText, values){
   cv.className = "spark";
   row.appendChild(cv);
   body.appendChild(row);
-  sysHist[key] = values;
   drawSpark(cv, values);
 }
 

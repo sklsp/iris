@@ -810,6 +810,30 @@ def test_cline_start_starts_the_oldest_prompt_in_the_hub_and_shrinks_the_queue(t
     assert _waiting(path) == ["second prompt"]  # the queue shrank by exactly one
 
 
+@pytest.mark.parametrize("meanwhile", ["move", "delete"])
+def test_cline_start_removes_the_prompt_it_started_even_when_the_queue_changed(tmp_path, monkeypatch, meanwhile):
+    import iris.autopilot as autopilot
+    from iris import prompt_queue
+
+    _clear_cli_env(monkeypatch)
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    started = []
+
+    def slow_start(text, cwd):  # the dashboard changes the queue while Cline starts
+        started.append(text)
+        first, second = prompt_queue.load()["prompts"][:2]
+        if meanwhile == "move":
+            prompt_queue.move(second["id"], -1)
+        else:
+            prompt_queue.remove(first["id"])
+        return "started Cline session abc"
+
+    monkeypatch.setattr(autopilot, "start_in_hub", slow_start)
+    cline_start("cline")
+    assert started == ["first prompt"] and _waiting(path) == ["second prompt"]  # never the one that did not run
+
+
 def test_cline_start_leaves_the_queue_when_the_cli_is_missing(tmp_path, monkeypatch):
     import iris.autopilot as autopilot
 

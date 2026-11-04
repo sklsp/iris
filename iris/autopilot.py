@@ -206,7 +206,12 @@ def cline_start(agent: str, repo: str = "") -> str:
         result = start_in_hub(waiting[0]["text"], cwd)
     except (LookupError, RuntimeError) as exc:
         return f"error: {exc}"  # the session did not start; the queue stays untouched
-    prompt_queue.take(agent)  # only after the hub started the session, so a failure leaves the queue unchanged
+    # only after the hub started the session, so a failure leaves the queue unchanged; by id, because the dashboard
+    # may have moved or deleted prompts while the session started (that can take minutes)
+    try:
+        prompt_queue.remove(waiting[0]["id"])
+    except LookupError:
+        pass  # deleted meanwhile: nothing else is taken in its place
     return result
 
 

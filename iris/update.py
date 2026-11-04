@@ -7,6 +7,7 @@ which is all the dashboard reads.
 
 from __future__ import annotations
 
+import http.client
 import json
 import re
 import time
@@ -50,12 +51,33 @@ def version_tuple(version: str) -> tuple[int, ...]:
     return tuple(int(n) for n in re.findall(r"\d+", version.split("-")[0])[:3])
 
 
+_STAGES = {"dev": 0, "a": 1, "alpha": 1, "b": 2, "beta": 2, "rc": 3, "c": 3, "post": 10}
+
+
+def version_key(version: str) -> tuple[int, ...]:
+    """A key that orders versions the way releases go: 0.7 == 0.7.0 < 1.0.0rc1 < 1.0.0 < 1.0.1; dev, alpha, beta and
+    rc come before the release they lead to, post after it."""
+    text = version.strip().lower().lstrip("v")
+    release = [int(n) for n in re.findall(r"\d+", re.split(r"[^\d.]", text, maxsplit=1)[0])[:3]]
+    release += [0] * (3 - len(release))
+    rest = text.lstrip("0123456789.")  # what follows the release numbers: rc1, -beta.2, .dev3
+    stage = re.search(r"(dev|alpha|beta|post|rc|a|b|c)\.?(\d*)", rest)
+    if stage is None:
+        return (*release, 9, 0)
+    return (*release, _STAGES[stage[1]], int(stage[2] or 0))
+
+
+def newer(latest: str, current: str) -> bool:
+    """Whether release `latest` comes after `current`; a tag without a version number never does."""
+    return bool(version_tuple(latest)) and version_key(latest) > version_key(current)
+
+
 def status() -> dict:
     """What the last check found; no network."""
     s = _state()
     latest = s.get("latest") or ""
     return {"enabled": enabled(), "current": __version__, "latest": latest or None,
-            "newer": bool(latest) and version_tuple(latest) > version_tuple(__version__),
+            "newer": bool(latest) and newer(latest, __version__),
             "url": s.get("url") or RELEASES_URL, "checked_at": s.get("checked_at")}
 
 
@@ -72,12 +94,17 @@ def check(now: float | None = None, fetch: Callable[[], dict] | None = None) -> 
         return status()
     now = time.time() if now is None else now
     s = _state()
-    if s.get("checked_at") is not None and now - float(s["checked_at"]) < CHECK_EVERY_SECONDS:
-        return status()
+    try:
+        if s.get("checked_at") is not None and now - float(s["checked_at"]) < CHECK_EVERY_SECONDS:
+            return status()
+    except (TypeError, ValueError):
+        pass  # a hand-edited or broken update.json: ask again
     try:
         release = (fetch or _fetch)()
-    except (OSError, ValueError):
-        return status()  # offline is normal; try again next start
+    except (OSError, ValueError, http.client.HTTPException):
+        return status()  # offline (or rate-limited: HTTPError is an OSError) is normal; try again next start
+    if not isinstance(release, dict):
+        return status()  # not a release: leave the last answer as it was
     s.update(checked_at=now, latest=str(release.get("tag_name") or ""), url=str(release.get("html_url") or ""))
     _save(s)
     return status()

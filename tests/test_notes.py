@@ -408,14 +408,16 @@ def test_a_reminder_months_ahead_waits_in_steps_and_can_be_cancelled(monkeypatch
     import threading
     import time
 
-    waits, fired = [], []
+    fired = []
     monkeypatch.setattr(reminders._Wait, "STEP", 0.05)
     t = reminders._start_thread(0.12, lambda: fired.append(1))
     t.join(2)
-    assert fired == [1]  # three short steps, then the call: never one wait longer than STEP
-    long = reminders._start_thread(60 * 86_400, lambda: fired.append(2))  # 60 days: over TIMEOUT_MAX on Windows
+    assert fired == [1]  # a few short steps, then the call
+    waits = []
+    long = reminders._Wait(60 * 86_400, lambda: fired.append(2))  # 60 days: over TIMEOUT_MAX on Windows
     real_wait = long.finished.wait
     long.finished.wait = lambda timeout=None: waits.append(timeout) or real_wait(0.01)
+    long.start()
     time.sleep(0.05)
     long.cancel()
     long.join(2)

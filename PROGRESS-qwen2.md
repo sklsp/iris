@@ -5,7 +5,7 @@
 - [x] Q3. Tests for picking a tab and opening a page in the browser (1913 passed in 64.29s)
 - [x] Q4. Tests for the browser search's edge cases (1916 passed in 63.28s)
 - [x] Q5. Tests for the dashboard's model action errors (1921 passed in 62.43s)
-- [ ] Q6. Tests for the dashboard's readers of broken files
+- [x] Q6. Tests for the dashboard's readers of broken files (1931 passed in 63.64s)
 - [ ] Q7. Tests for the dashboard's queue, agents and request handler branches
 - [ ] Q8. Tests for the uncovered lines of iris/desktop.py, iris/office.py and iris/packs.py
 - [ ] Q9. Tests for the uncovered lines of iris/voice.py

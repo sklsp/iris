@@ -614,7 +614,7 @@ shows with its own badge.
 | `IRIS_CONCEPTKIT_DIR` | config `conceptkit_dir`, else `~/conceptkit` | where concept_sites runs conceptkit |
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
 | `IRIS_LMS_BIN` | lms on PATH | where the model control finds the LM Studio CLI |
-| `IRIS_SESSIONS_DB` | `~/.iris/sessions.db` | where the Sessions tab reads its rows from |
+| `IRIS_SESSIONS_DB` | `~/.cline/data/db/sessions.db` | where the Sessions tab reads its rows from |
 | `IRIS_CLAUDE_DIR` | `~/.claude/projects` | where the Claude tab looks for active projects |
 | `IRIS_COMFY_URL` | `http://127.0.0.1:8188` | where comfy_status looks |
 | `IRIS_COMFY_WORKFLOWS` | `~/.iris/workflows` | the folder comfy_workflows lists .json files from |

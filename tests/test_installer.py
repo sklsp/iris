@@ -265,4 +265,4 @@ def test_no_em_dashes_in_the_installer_texts():
     texts = [p for p in INSTALLER.iterdir() if p.suffix in (".py", ".ps1", ".iss", ".md")]
     assert len(texts) >= 7
     for path in [*texts, ROOT / ".github" / "workflows" / "installer.yml"]:
-        assert "—" not in path.read_text(encoding="utf-8"), path
+        assert "\u2014" not in path.read_text(encoding="utf-8"), path

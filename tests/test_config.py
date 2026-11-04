@@ -251,3 +251,34 @@ def test_doctor_names_the_settings_that_are_not_numbers(tmp_path, monkeypatch):
     assert config.bad_numbers() == ["silence = 'fast'"]
     line = next(line for ok, line in doctor.checks({"reachable": False}) if "not numbers" in line)
     assert "silence = 'fast'" in line and "Settings tab" in line
+
+
+def test_doctor_covers_the_fallback_voice_kokoro_the_packs_and_missing_folders(tmp_path, monkeypatch):
+    import importlib.util
+
+    from iris import doctor, packs
+    from iris import voice as v
+
+    monkeypatch.delenv("IRIS_TTS", raising=False)
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    (tmp_path / "config.toml").write_text(f'tts = "kokoro"\nfolders = ["{(tmp_path / "gone").as_posix()}"]\n',
+                                          encoding="utf-8")
+    monkeypatch.setattr(v, "KOKORO_DIR", str(tmp_path))
+    monkeypatch.setattr(v, "KOKORO_MODEL", str(tmp_path / "kokoro.onnx"))
+    monkeypatch.setattr(v, "KOKORO_VOICES", str(tmp_path / "voices.bin"))
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name, *a: None if name == "pyttsx3" else (object() if name != "kokoro_onnx" else
+                                                                        real("json")))
+    monkeypatch.setattr(packs, "packs", lambda: [
+        {"id": "whisper", "available": True, "installed": True},
+        {"id": "piper", "available": True, "installed": False},
+        {"id": "gpu", "available": False, "installed": False}])
+    lines = {line.split(":")[0]: (ok, line) for ok, line in doctor.checks({"reachable": False})}
+    assert lines["speech"][0] is False and "two model files in" in lines["speech"][1]
+    assert lines["no fallback voice"][0] is False and "pyttsx3" in lines["no fallback voice"][1]
+    assert lines["voice packs"] == (False, "voice packs: whisper installed; not yet piper (the Setup tab shows each "
+                                           "with its size and license)")
+    folders = next(line for ok, line in doctor.checks({"reachable": False}) if line.startswith("folders"))
+    assert "gone" in folders and not folders.startswith(doctor.OPTIONAL)  # FIX, not optional
+    assert len(doctor.checks({"reachable": False})) <= 25  # one screen

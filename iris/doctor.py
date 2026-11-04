@@ -41,6 +41,10 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
     if bad:
         out.append((False, f"settings that are not numbers, so their defaults are used: {', '.join(bad)}; fix them "
                            "on the Settings tab or in config.toml"))
+    gone = [f for f in cfg["folders"] if not Path(f).expanduser().is_dir()]
+    if gone:
+        out.append((False, f"folders in config.toml that do not exist: {', '.join(gone)}; fix folders on the Settings "
+                           "tab"))
     unknown = [p for p in cfg["plugins"] if p not in PLUGINS]
     out.append((not unknown, f"plugins {cfg['plugins'] or 'none'}"
                 + (f"; unknown: {', '.join(unknown)} (known: {', '.join(PLUGINS)})" if unknown else "")))
@@ -101,10 +105,19 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
             else:
                 line = f"voices missing: python -m piper.download_voices {' '.join(missing)} --data-dir {v.PIPER_DIR}"
             out.append((piper and not missing, "speech: Piper " + line))
+        elif engine == "kokoro":
+            have = importlib.util.find_spec("kokoro_onnx") is not None and all(
+                os.path.exists(f) for f in (v.KOKORO_MODEL, v.KOKORO_VOICES))
+            out.append((have, "speech: Kokoro" if have else
+                        f"speech: Kokoro needs pip install -e .[tts] and its two model files in {v.KOKORO_DIR}; "
+                        "SAPI speaks instead"))
         else:
             out.append((False, f"speech: {engine}; " + ("a voice pack on the Setup tab (Piper or VoxCPM2)" if app
                                                         else 'tts = "piper" in config.toml')
                         + " for natural Dutch and English voices"))
+        if importlib.util.find_spec("pyttsx3") is None:  # SAPI is what every other voice falls back to
+            out.append((False, "no fallback voice: pyttsx3 (Windows SAPI) is missing; pip install -e .[voice]"))
+        out.append(_packs_line())
     from iris import overlay
 
     if overlay.enabled():
@@ -126,6 +139,19 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
         out.append((have, "shortcut: Iris.cmd on the desktop" if have else
                     "shortcut: none on the desktop; iris shortcut puts one there (optional)"))
     return out
+
+
+def _packs_line() -> tuple[bool, str]:
+    """The optional voice packs (Setup tab): which are there and which this PC could still get."""
+    from iris import packs
+
+    rows = [r for r in packs.packs() if r["available"]]
+    have = [r["id"] for r in rows if r["installed"]]
+    missing = [r["id"] for r in rows if not r["installed"]]
+    if not missing:
+        return True, f"voice packs: {', '.join(have) or 'none needed'}"
+    return False, (f"voice packs: {', '.join(have) or 'none'} installed; not yet {', '.join(missing)} (the Setup tab "
+                   "shows each with its size and license)")
 
 
 def main() -> int:

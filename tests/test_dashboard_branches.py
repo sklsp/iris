@@ -1,7 +1,10 @@
 """Branches of iris/dashboard/__init__.py that tests/test_dashboard.py does not reach."""
 import json
 import sqlite3
+import threading
 import time
+import types
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -163,3 +166,112 @@ def test_an_unreadable_skill_manifest_is_skipped(tmp_path, monkeypatch):
     (root / "broken" / "meta.json").write_text("{torn", encoding="utf-8")
     monkeypatch.setattr(skills, "skills_dir", lambda: root)
     assert d.skills_payload() == {"ok": True, "skills": []}
+
+
+# --- queue and agent actions -----------------------------------------------------
+
+
+def test_queue_action_rejects_a_body_that_is_not_an_object():
+    with pytest.raises(d.ModelActionError) as exc:
+        d.queue_action("add", "nope")
+    assert exc.value.code == 400
+    assert exc.value.message == "the body must be a JSON object"
+
+
+def test_cline_start_rejects_a_body_that_is_not_an_object():
+    with pytest.raises(d.ModelActionError) as exc:
+        d.cline_start_action("nope")
+    assert exc.value.code == 400
+    assert exc.value.message == "the body must be a JSON object"
+
+
+def test_a_broken_queue_file_comes_back_as_a_500(monkeypatch):
+    from iris import prompt_queue
+
+    def fake_add(agent, text):
+        raise ValueError("the queue file is broken")
+
+    monkeypatch.setattr(prompt_queue, "add", fake_add)
+    with pytest.raises(d.ModelActionError) as exc:
+        d.queue_action("add", {"agent": "a", "text": "t"})
+    assert exc.value.code == 500
+    assert exc.value.message == "the queue file is broken"
+
+
+# --- draining a request body -----------------------------------------------------
+
+
+def test_draining_a_body_with_a_non_numeric_content_length_returns_quietly():
+    h = object.__new__(d.Handler)
+    h.headers = {"Content-Length": "not-a-number"}
+    h._drain_body()  # int() raises ValueError; the body is left alone and no error escapes
+
+
+def test_draining_a_body_that_reads_empty_breaks_the_loop():
+    h = object.__new__(d.Handler)
+    h.headers = {"Content-Length": "10"}
+    h.rfile = types.SimpleNamespace(read=lambda n: b"")
+    h._drain_body()  # the first read gives no bytes; the loop breaks instead of spinning
+
+
+def test_draining_a_body_whose_read_raises_never_escapes():
+    def broken_read(n):
+        raise OSError("the socket died")
+
+    h = object.__new__(d.Handler)
+    h.headers = {"Content-Length": "10"}
+    h.rfile = types.SimpleNamespace(read=broken_read)
+    h._drain_body()  # the exception is swallowed; a lying Content-Length must never kill the handler
+
+
+# --- GET routes ------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def srv():
+    s = d.make_server(d.HOST, 0)  # port 0: the OS picks a free one
+    t = threading.Thread(target=s.serve_forever, daemon=True)
+    t.start()
+    yield s
+    s.shutdown()
+    s.server_close()
+
+
+@pytest.fixture
+def server(srv):
+    return f"http://{d.HOST}:{srv.server_address[1]}"
+
+
+def get_json(url):
+    with urllib.request.urlopen(url, timeout=5) as r:
+        return r.status, json.loads(r.read().decode("utf-8"))
+
+
+def test_the_system_route_serves_the_fake_payload(server, monkeypatch):
+    monkeypatch.setattr(d, "system_payload", lambda: {"fake": "system"})
+    status, body = get_json(server + "/api/system")
+    assert status == 200
+    assert body == {"fake": "system"}
+
+
+def test_the_agents_route_serves_the_fake_payload(server, monkeypatch):
+    monkeypatch.setattr(d, "_cache", {})  # a fresh cache so the fake is really called
+    monkeypatch.setattr(d, "agents_payload", lambda: {"fake": "agents"})
+    status, body = get_json(server + "/api/agents")
+    assert status == 200
+    assert body == {"fake": "agents"}
+
+
+def test_the_lmstudio_route_serves_the_fake_payload(server, monkeypatch):
+    monkeypatch.setattr(d, "_cache", {})
+    monkeypatch.setattr(d, "lmstudio_payload", lambda: {"fake": "lmstudio"})
+    status, body = get_json(server + "/api/lmstudio")
+    assert status == 200
+    assert body == {"fake": "lmstudio"}
+
+
+def test_the_journal_route_serves_the_fake_payload(server, monkeypatch):
+    monkeypatch.setattr(d, "journal_payload", lambda: {"fake": "journal"})
+    status, body = get_json(server + "/api/journal")
+    assert status == 200
+    assert body == {"fake": "journal"}

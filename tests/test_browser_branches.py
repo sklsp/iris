@@ -276,3 +276,134 @@ def test_a_script_that_throws_on_the_page_says_what_it_threw(monkeypatch):
     with pytest.raises(browser.BrowserError) as exc:
         browser._eval("s-A", "window.__iris = els")
     assert str(exc.value) == "the page refused the script: Uncaught TypeError: els is not defined"
+
+
+class Clock:  # a perf_counter that advances one second per call, so wait loops end fast
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        t = self.t
+        self.t += 1.0
+        return t
+
+
+L = chr(10)  # a line break, for building page text without escape sequences
+
+
+def test_no_open_tab_says_so(monkeypatch):
+    def fake_call(method, params=None, session=None, wait=15):
+        return {"targetInfos": [{"targetId": "D", "type": "page", "title": "DevTools", "url": "devtools://x"},
+                                {"targetId": "W", "type": "service_worker", "title": "", "url": ""}]}
+
+    monkeypatch.setattr(browser, "_call", fake_call)
+    with pytest.raises(browser.BrowserError, match="the browser has no open tab"):
+        browser._tab()
+
+
+def test_a_named_tab_that_does_not_answer_raises(monkeypatch):
+    def fake_call(method, params=None, session=None, wait=15):
+        if method == "Target.getTargets":
+            return {"targetInfos": [{"targetId": "A", "type": "page", "title": "Netflix",
+                                     "url": "https://www.netflix.com/"}]}
+        if method == "Target.attachToTarget":
+            return {"sessionId": "s-A"}
+        raise browser.BrowserError("the browser did not answer Runtime.evaluate within 2 s")
+
+    monkeypatch.setattr(browser, "_call", fake_call)
+    with pytest.raises(browser.BrowserError, match="did not answer"):
+        browser._tab("Netflix")
+
+
+def test_a_frozen_background_tab_is_skipped_and_its_session_dropped(monkeypatch):
+    def fake_call(method, params=None, session=None, wait=15):
+        if method == "Target.getTargets":
+            return {"targetInfos": [{"targetId": "B", "type": "page", "title": "Frozen",
+                                     "url": "https://frozen.example/"},
+                                    {"targetId": "A", "type": "page", "title": "Netflix",
+                                     "url": "https://www.netflix.com/"}]}
+        if method == "Target.attachToTarget":
+            return {"sessionId": "s-" + params["targetId"]}
+        if session == "s-B":
+            raise browser.BrowserError("the browser did not answer Runtime.evaluate within 2 s")
+        return {"result": {"value": 2}}
+
+    monkeypatch.setattr(browser, "_call", fake_call)
+    assert browser._tab() == "s-A"
+    assert browser._sessions == {"A": "s-A"}  # the frozen tab's session is dropped
+
+
+def test_a_reused_tab_is_attached_and_waited_for(monkeypatch):
+    url = "https://www.netflix.com/search?q=sinners"
+    old = "https://www.netflix.com/browse"
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(browser.time, "perf_counter", Clock())
+
+    evals = [old,            # location.href before navigating
+             "loading",      # readyState: not complete yet
+             "complete", old,  # still the old page
+             "complete", url,  # on the new page now, but the read fails once
+             "complete", url]  # and this time it reads
+
+    def fake_eval(session, expression, wait=15):
+        if expression == "location.href":
+            return evals.pop(0)
+        if "readyState" in expression:
+            return evals.pop(0)
+        raise AssertionError(expression)
+
+    monkeypatch.setattr(browser, "_eval", fake_eval)
+    reads = []
+
+    def fake_read(session):
+        reads.append(session)
+        if len(reads) == 1:
+            raise browser.BrowserError("still navigating")
+        return ("Tab: Netflix (https://www.netflix.com/search?q=sinners)" + L +
+                '[1] link "a"' + L + '[2] link "b"' + L + '[3] link "c"')
+
+    monkeypatch.setattr(browser, "_read", fake_read)
+
+    def fake_call(method, params=None, session=None, wait=15):
+        if method == "Target.getTargets":
+            return {"targetInfos": [{"targetId": "S", "type": "page", "title": "Netflix", "url": old}]}
+        if method == "Target.attachToTarget":
+            assert params["targetId"] == "S"  # the reused tab lost its session and gets attached again
+            return {"sessionId": "s-S"}
+        return {}
+
+    monkeypatch.setattr(browser, "_call", fake_call)
+    browser._opened["www.netflix.com"] = "S"
+    out = browser.open_page(url, wait=8)
+    assert out.startswith("opened https://www.netflix.com/search?q=sinners" + L + L)
+    assert '[3] link "c"' in out
+
+
+def test_a_page_that_never_finishes_loading_is_reported_as_not_read_yet(monkeypatch):
+    url = "https://slow.example/page"
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(browser.time, "perf_counter", Clock())
+
+    def fake_eval(session, expression, wait=15):
+        if "readyState" in expression:
+            return "loading"  # never complete
+        raise AssertionError(expression)
+
+    monkeypatch.setattr(browser, "_eval", fake_eval)
+
+    def fake_read(session):
+        raise browser.BrowserError("still navigating")  # the one last read fails too
+
+    monkeypatch.setattr(browser, "_read", fake_read)
+
+    def fake_call(method, params=None, session=None, wait=15):
+        if method == "Target.createTarget":
+            return {"targetId": "N"}
+        if method == "Target.attachToTarget":
+            return {"sessionId": "s-N"}
+        raise AssertionError(method)
+
+    monkeypatch.setattr(browser, "_call", fake_call)
+    expected = f"opened {url} (could not read it yet: still navigating; call browser_read)"
+    assert browser.open_page(url, wait=2) == expected
+

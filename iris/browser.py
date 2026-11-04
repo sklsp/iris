@@ -19,6 +19,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -129,7 +130,8 @@ def _connect() -> Connection:
     return _conn
 
 
-def watch(announce=None, every: float = 5, ask_after: float = 3, stop: threading.Event | None = None):
+def watch(announce: Callable[[str], object] | None = None, every: float = 5, ask_after: float = 3,
+          stop: threading.Event | None = None) -> threading.Thread:
     """Voice mode: connect in the background as soon as the browser is open and allows remote control, so its Allow
     question comes when Iris or the browser starts instead of halfway through a request, and connect again after the
     browser restarts. One click per Iris run while the browser stays open. `announce` says the question is waiting."""

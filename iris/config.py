@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 
 DEFAULTS: dict = {"name": "the user", "plugins": [], "builder": [], "folders": []}
@@ -86,7 +87,7 @@ name = {name}
 """
 
 
-def init_main(ask=input) -> int:
+def init_main(ask: Callable[[str], str] = input) -> int:
     """`iris init`: ask two questions and write a starter config.toml; never overwrites one."""
     path = config_path()
     if path.exists():

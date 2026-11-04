@@ -53,6 +53,13 @@ def test_write_refuses_a_file_it_could_not_read_back(tmp_path):
     assert path.read_text(encoding="utf-8") == "name = \n"
 
 
+def test_write_refuses_a_value_that_does_not_round_trip(tmp_path):
+    path = tmp_path / "config.toml"
+    with pytest.raises(ValueError, match="did not round-trip"):
+        settings.write({"name": (1, 2)}, path)  # TOML has no tuples: [1, 2] comes back as a list
+    assert not path.exists()  # the file is never written when the check fails
+
+
 def test_validate_types_ranges_and_choices(tmp_path):
     clean, errors = settings.validate({
         "name": " Sam ", "silence": "2", "follow_up": 0, "whisper_gpu": 1, "overlay": True, "tts": "piper",
@@ -69,6 +76,12 @@ def test_validate_types_ranges_and_choices(tmp_path):
                            "llm_url", "name", "builder", "colour", "browser_profile"}
     assert errors["wake_threshold"] == "must be a number"
     assert errors["builder"] == "not a setting the app can change"
+
+
+def test_validate_rejects_a_list_value_with_non_text_items(tmp_path):
+    clean, errors = settings.validate({"folders": [str(tmp_path), 2]})
+    assert errors == {"folders": "must be a list of text"}
+    assert clean == {}
 
 
 def test_a_hand_edited_choice_or_own_wake_model_may_stay(tmp_path):

@@ -11,6 +11,7 @@ import pytest
 
 from iris.autopilot import (
     _count_started,
+    _started_at_epoch,
     cline_cli,
     cline_command,
     cline_cwd,
@@ -295,6 +296,15 @@ def test_cline_sessions_passes_the_exact_argv_and_kwargs(monkeypatch):
         "stdin": subprocess.DEVNULL,
         "check": False,
     }
+
+
+def test_started_at_epoch_of_a_non_string_is_none():
+    assert _started_at_epoch(None) is None
+    assert _started_at_epoch(1_700_000_000) is None
+
+
+def test_started_at_epoch_of_an_unparseable_timestamp_is_none():
+    assert _started_at_epoch("not a timestamp") is None
 
 
 HUB_NOW = 1_750_000_000.0

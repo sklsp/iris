@@ -69,6 +69,37 @@ def test_show_running_finds_nothing_for_an_unknown_title():
     assert app.show_running(f"Iris-test-{uuid.uuid4().hex}") is False
 
 
+def test_show_running_restores_and_focuses_the_matching_window(monkeypatch):
+    shown = []
+    focused = []
+
+    class FakeUser32:
+        def GetWindowTextW(self, hwnd, buf, _n):
+            buf.value = "Iris" if hwnd == 1 else "Not Iris"
+
+        def GetClassNameW(self, hwnd, buf, _n):
+            buf.value = "WindowsForms10.Window.8dc" if hwnd == 1 else "ConsoleWindowClass"
+
+        def EnumWindows(self, callback, _lparam):
+            for hwnd in (1, 2):
+                if not callback(hwnd, 0):
+                    break
+
+        def ShowWindow(self, hwnd, how):
+            shown.append((hwnd, how))
+
+        def SetForegroundWindow(self, hwnd):
+            focused.append(hwnd)
+
+    fake = FakeUser32()
+    monkeypatch.setattr(app.ctypes, "WinDLL", lambda name, use_last_error=False: fake)
+    monkeypatch.setattr(app.ctypes, "WINFUNCTYPE", lambda *args: (lambda fn: fn))
+    monkeypatch.setattr(app.ctypes, "create_unicode_buffer", lambda n: SimpleNamespace(value=""))
+    assert app.show_running("Iris") is True
+    assert shown == [(1, 9)]
+    assert focused == [1]
+
+
 def test_app_id_groups_the_window_under_iris():
     app._set_app_id()  # only labels this test process for the taskbar
     buf = ctypes.c_wchar_p()

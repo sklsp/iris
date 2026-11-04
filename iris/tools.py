@@ -978,7 +978,8 @@ TOOLS = {t.name: t for t in [
     Tool("press_keys", "Press keyboard shortcuts in a window. pywinauto syntax: ^s = Ctrl+S, {TAB}, {ENTER}. "
           "Never used to send messages or emails.",
          {"window": S, "keys": S}, ["window", "keys"], CONFIRM, press_keys, _press_keys_tier),
-    Tool("focus_window", "Bring the window whose title contains `title` to the front and give it focus.",
+    Tool("focus_window", "Bring the window whose title contains `title` to the front and give it focus. The"
+                         " browser_* tools work on the page directly and need no focus first.",
          {"title": S}, ["title"], SAFE, focus_window),
     Tool("scroll", "Scroll up or down inside a desktop app's window (mouse wheel at its center). For a web page in"
                    " Brave, Chrome or Edge, use browser_scroll instead.",
@@ -1008,8 +1009,9 @@ TOOLS = {t.name: t for t in [
          " is visible then, numbered again.",
          {"direction": {"type": "string", "enum": ["down", "up"]}, "tab": S}, [], SAFE, browser_scroll),
     Tool("web_search",
-         "Search the web (DuckDuckGo) and list titles, links and snippets. "
-         "Then use web_read on the best link to read it.",
+         "Search the web for a general question (in the user's browser, else DuckDuckGo) and list titles, links"
+         " and snippets; then use web_read on the best link to read it. To search inside one site (YouTube,"
+         " Netflix), use open_url with that site's search URL instead.",
          {"query": S}, ["query"], SAFE, web_search),
     Tool("web_read", "Read the text of a web page (http or https links only).",
          {"url": S}, ["url"], SAFE, web_read),

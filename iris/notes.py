@@ -80,7 +80,7 @@ def note_remove(query: str) -> str:
             if first_idx < 0:
                 first_idx = i
     if not hits:
-        return f'error: no notes containing "{query}"'
+        return f'error: no notes containing "{query}"; notes_read shows them'
     if len(hits) > 1:
         shown = "\n".join(f"- {dt:%Y-%m-%d %H:%M} {text[:80]}" for dt, text in hits)
         return f'error: {len(hits)} notes contain "{query}"; say which one:\n{shown}'

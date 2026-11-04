@@ -5,6 +5,8 @@
 - `iris config` prints every setting, its value and whether it comes from config.toml, the default or an environment variable.
 - `iris doctor` checks that tkinter is there when the overlay is on, and says whether the desktop shortcut exists.
 - More tests for reminders, timers, the update check, weather, notes, files, agents, the first-run tests, the agent loop and the command line.
+- More tests for the browser connection, tabs and search, the dashboard's error paths and routes, voice, desktop, office and voice packs: coverage 96% to 98.5%.
+- Every public function has a one-line docstring.
 
 ## 0.6.0 (2026-11-03): Iris as a desktop app
 

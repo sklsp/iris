@@ -46,10 +46,13 @@ import json
 import os
 import secrets
 import shutil
+import socket
 import sqlite3
 import subprocess
 import threading
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from collections import deque
 from collections.abc import Callable
@@ -155,15 +158,39 @@ def _fetch_json(url: str) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _probe(url: str, timeout: float = 0.5) -> bool:
+    """True when url's port on this PC takes no connection. On Windows a refused connection to a closed local port
+    takes seconds (it retries), so a short probe first keeps doctor and the dashboard quick when the server is off."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.hostname not in ("127.0.0.1", "localhost", "::1"):
+        return False  # another machine: let the real request say
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    try:
+        socket.create_connection((parts.hostname, port), timeout=timeout).close()
+    except OSError:
+        return True
+    return False
+
+
+_nothing_listens = _probe  # tests replace this name; they call _probe itself when they test it
+
+
 def lmstudio_payload() -> dict:
     """Every model LM Studio knows. The v0 API says which one is loaded and what kind it
     is; the OpenAI-style /v1 list only gives ids, so a fallback answer carries no state."""
+    if _nothing_listens(V0_MODELS_URL):
+        return {"reachable": False}
     try:
         data = _fetch_json(V0_MODELS_URL)
         models = [{"id": str(m.get("id", "")), "state": m.get("state"), "type": m.get("type")}
                   for m in data.get("data", [])]
         return {"reachable": True, "states_known": True, "models": models}
-    except Exception:  # noqa: BLE001 - no v0 endpoint (older LM Studio): try the plain list
+    except urllib.error.HTTPError:
+        pass  # the server answered without a v0 API (Ollama, llama.cpp, older LM Studio): try the plain list
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, OSError):  # nothing answered at all: the plain list would fail the same way
+            return {"reachable": False}
+    except Exception:  # noqa: BLE001 - bad JSON and the like: try the plain list
         pass
     try:
         data = _fetch_json(V1_MODELS_URL)

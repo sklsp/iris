@@ -66,6 +66,7 @@ def fake(monkeypatch):
     monkeypatch.setattr(browser, "_settle", lambda session: None)
     browser._sessions.clear()
     browser._last.clear()
+    browser._last_tab.clear()
     browser._opened.clear()
     return b
 
@@ -124,6 +125,28 @@ def test_click_presses_the_mouse_on_the_element_and_returns_the_new_page(fake):
     assert [m["type"] for m in mouse] == ["mouseMoved", "mousePressed", "mouseReleased"]
     assert (mouse[1]["x"], mouse[1]["y"]) == (100.0, 200.0)
     assert out.startswith('clicked [2] button "Zoeken"') and "[1] link" in out
+
+
+def test_a_quote_in_a_label_never_hides_the_rest_of_it_from_the_tier(fake):
+    from iris.policy import NEVER, _browser_click_tier
+
+    fake.snap = {**SNAP, "items": [{"role": "button", "name": 'Next" Pay now', "value": None, "type": ""}]}
+    browser.browser_read()
+    assert browser.item(1)["name"] == 'Next" Pay now'
+    assert _browser_click_tier({"index": 1}) == NEVER
+    browser.remember('Tab: x (https://shop.example/)\n[1] button "Next" Pay now"\n[2] textbox "Name" = "a "b""')
+    assert browser.item(1)["name"] == 'Next" Pay now' and browser.item(2)["name"] == "Name"
+
+
+def test_numbers_belong_to_the_tab_they_were_read_in(fake):
+    browser.browser_read("youtube")  # Iris read tab B
+    with pytest.raises(browser.BrowserError, match="not the one Iris read last; call browser_read first"):
+        browser.browser_click(2)  # but tab A is in front now: its item 2 is not what the tier and question said
+    with pytest.raises(browser.BrowserError, match="not the one Iris read last"):
+        browser.browser_type(3, "x")
+    assert not [c for c in fake.calls if c[0] == "Input.dispatchMouseEvent"]
+    browser.browser_read()
+    assert browser.browser_click(2).startswith('clicked [2] button "Zoeken"')
 
 
 def test_click_refuses_a_stale_or_covered_item(fake):

@@ -344,3 +344,11 @@ def test_the_users_own_tab_of_a_site_is_never_taken_over(fake, monkeypatch):
     tools.open_url("https://www.netflix.com/search?q=horror")  # tab A is the user's own Netflix tab
     assert not [c for c in fake.calls if c[0] == "Page.navigate"]
     assert browser._opened == {"www.netflix.com": "S"}
+
+
+def test_a_page_with_more_than_fits_says_so(fake):
+    fake.snap = {**SNAP, "more": True, "text": "Populair", "text_more": 4210}
+    out = browser.browser_read()
+    assert f"[truncated after {browser.MAX_ITEMS} controls; scroll to reach the rest]" in out
+    assert out.endswith("Page text: Populair [truncated, 4210 more characters]")
+    assert "truncated" not in browser._format(SNAP)  # a page that fits says nothing extra

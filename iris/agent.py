@@ -61,16 +61,25 @@ def system_prompt(name: str | None = None, today: str | None = None) -> str:
 
 MAX_STEPS = 30  # a web task (research, then a few searches on a site) takes 15 to 25; a step is 2 to 5 s
 MAX_HISTORY_CHARS = 40_000
+MAX_RESULT_CHARS = 24_000  # one tool result: a long window or page must not fill the model's context on its own
 OUT_OF_STEPS = ("You have used all your steps for this request. Do not call tools. Answer now, in the language of the "
                 "request, with what you found so far, and say in one sentence what is still left to do.")
 _ITEM_LINE = re.compile(r"\[\d+\] ")
 _WRAPPER_TAG = re.compile(r"<\s*/?\s*untrusted_data\s*>", re.I)
 
 
+def _cap(result: str) -> str:
+    """At most MAX_RESULT_CHARS of a tool result, with a marker that says how much was left out."""
+    if len(result) <= MAX_RESULT_CHARS:
+        return result
+    return (result[:MAX_RESULT_CHARS] + f"\n[truncated, {len(result) - MAX_RESULT_CHARS} more characters; ask for a "
+            "smaller part if you need the rest]")
+
+
 def _wrap(result: str) -> str:
     """A tool result as untrusted data. A tag inside the result that would close (or reopen) the wrapper is
     defused first, so page or file text can never step outside it and pass as Iris's own words."""
-    inner = _WRAPPER_TAG.sub(lambda m: m[0].replace("<", "&lt;").replace(">", "&gt;"), result)
+    inner = _WRAPPER_TAG.sub(lambda m: m[0].replace("<", "&lt;").replace(">", "&gt;"), _cap(result))
     return f"<untrusted_data>\n{inner}\n</untrusted_data>"
 
 
@@ -164,11 +173,13 @@ class Agent:
         self.tools = tools() if callable(tools) else tools
         self.messages: list[dict] = [{"role": "system", "content": system_prompt(today=self.today)}]
         self.cancel = threading.Event()  # set from another thread (the overlay's cancel button) to stop this request
+        self._sizes: dict[int, tuple[str, int]] = {}  # id(message) -> (its content, its JSON size), for _trim
 
     def handle(self, request: str) -> str:
         """Run a request through model and tools until it is answered, refused or cancelled; returns what Iris says."""
         if callable(self._tools):
             self.tools = self._tools()
+        self._sizes.pop(id(self.messages[0]), None)
         self.messages[0] = {"role": "system", "content": system_prompt(today=self.today)}
         self.messages.append({"role": "user", "content": request})
         self._lang = _lang(request)  # confirm questions follow the language of the latest request
@@ -211,7 +222,7 @@ class Agent:
         if self.cancel.is_set():
             return self._cancelled()
         self.journal.log(event="gave_up", steps=MAX_STEPS)
-        text = self._out_of_steps()
+        text = self._out_of_steps(schemas)
         self._trim()
         return text or _sorry("steps", request)
 
@@ -223,11 +234,13 @@ class Agent:
         self._trim()
         return ""
 
-    def _out_of_steps(self) -> str:
-        """One last call without tools, so the user hears what was found instead of nothing."""
+    def _out_of_steps(self, schemas: list[dict]) -> str:
+        """One last call that asks for an answer without tools, so the user hears what was found instead of nothing.
+        The same tool list goes along: the server keeps the whole conversation so far cached (its start holds the
+        tools), and this call comes after the most steps, when that cache is largest."""
         self.messages.append({"role": "user", "content": OUT_OF_STEPS})
         try:
-            reply = self.llm.chat(self.messages, [])
+            reply = self.llm.chat(self.messages, schemas)
         except _LLM_ERRORS as exc:
             self.journal.log(event="llm_error", error=_llm_error(exc))
             reply = None
@@ -238,18 +251,38 @@ class Agent:
         self.journal.log(event="answer", text=reply.text)
         return reply.text
 
+    def _size(self, m: dict) -> int:
+        """A message's JSON size, measured once per content (older browser pages are shortened in place)."""
+        content = m.get("content") or ""
+        known = self._sizes.get(id(m))
+        if known is None or known[0] is not content:
+            known = (content, len(json.dumps(m, ensure_ascii=False)))
+            self._sizes[id(m)] = known
+        return known[1]
+
     def _trim(self) -> None:
-        """Drop the oldest whole turns until history fits in MAX_HISTORY_CHARS.
+        """Drop the oldest whole turns once history passes MAX_HISTORY_CHARS, down to three quarters of it.
 
         The system message is never dropped and the current turn (the last user message onward)
         is kept even when it alone exceeds budget; only whole turns go, so a tool result always
-        keeps its assistant tool_calls message."""
-        while True:
+        keeps its assistant tool_calls message. Trimming with room to spare changes the start of the
+        conversation (which the model server caches) once every few requests instead of on every one,
+        and the journal says when it happened."""
+        size = sum(self._size(m) for m in self.messages)
+        if size <= MAX_HISTORY_CHARS:
+            return
+        dropped = 0
+        while size > MAX_HISTORY_CHARS * 3 // 4:
             starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
-            size = sum(len(json.dumps(m, ensure_ascii=False)) for m in self.messages)
-            if len(starts) <= 1 or size <= MAX_HISTORY_CHARS:
-                return
+            if len(starts) <= 1:
+                break
+            for m in self.messages[starts[0]:starts[1]]:
+                size -= self._size(m)
+                self._sizes.pop(id(m), None)
             del self.messages[starts[0]:starts[1]]
+            dropped += 1
+        if dropped:
+            self.journal.log(event="trimmed", turns=dropped, chars=size)
 
     def _run(self, call: ToolCall) -> str:
         tool = self.tools.get(call.name)

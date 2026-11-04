@@ -123,6 +123,19 @@ def test_out_of_steps_answers_with_what_was_found(tmp_path):
     assert [e["event"] for e in journal(tmp_path)][-2:] == ["gave_up", "answer"]
 
 
+def test_the_last_call_keeps_the_tool_list_so_the_cached_prompt_is_reused(tmp_path):
+    tool_lists = []
+
+    class Recording(ScriptedLLM):
+        def chat(self, messages, tools):
+            tool_lists.append(json.dumps(tools))
+            return super().chat(messages, tools)
+
+    llm = Recording(*[call("status") for _ in range(MAX_STEPS)], answer("Found two."))
+    assert agent(tmp_path, llm, []).handle("search") == "Found two."
+    assert len(tool_lists) == MAX_STEPS + 1 and len(set(tool_lists)) == 1  # byte for byte the same on every call
+
+
 def test_older_browser_views_keep_their_text_but_lose_their_numbers(tmp_path):
     page = ('clicked [2] link "Top 250"\n\nTab: IMDb (https://www.imdb.com/)\n[1] link "Home"\n[2] link "Psycho 8.5"\n'
             "Page text: Psycho 8.5 Alien 8.5")
@@ -213,6 +226,20 @@ def test_history_is_bounded_to_max_chars(tmp_path):
     assert len(ran) == 30
     assert a.messages[0] == {"role": "system", "content": system_prompt()}
     assert a.messages[1]["role"] == "user"
+
+
+def test_trimming_leaves_room_and_says_so_in_the_journal(tmp_path):
+    big = Tool("big", "", {}, [], SAFE, lambda **kw: "x" * 5000)
+    replies = []
+    for i in range(30):
+        replies += [call("big"), answer(f"turn {i} done")]
+    a = Agent(ScriptedLLM(*replies), lambda q: True, Journal(tmp_path / "j.jsonl"), {"big": big})
+    for i in range(30):
+        a.handle(f"do thing {i}")
+    trims = [e for e in journal(tmp_path) if e["event"] == "trimmed"]
+    assert trims and all(e["turns"] >= 1 and e["chars"] <= MAX_HISTORY_CHARS * 3 // 4 for e in trims)
+    assert len(trims) < 30 // 2  # a trim makes room for a few turns, so the cached start changes now and then
+    assert len(a._sizes) <= len(a.messages) + 1  # no size kept for a message that is gone
 
 
 def test_short_session_keeps_every_turn(tmp_path):
@@ -569,3 +596,30 @@ def test_arguments_sent_as_an_object_are_read(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout: io.BytesIO(json.dumps(body).encode()))
     reply = LMStudio(model="m").chat([], [])
     assert reply.calls[0].args == {"verbose": True}
+
+
+def test_a_huge_tool_result_is_cut_with_a_marker_that_says_how_much(tmp_path):
+    from iris.agent import MAX_RESULT_CHARS
+
+    tools = {"status": Tool("status", "", {}, [], SAFE, lambda: "y" * (MAX_RESULT_CHARS + 500))}
+    llm = ScriptedLLM(call("status"), answer("Done."))
+    Agent(llm, lambda q: True, Journal(tmp_path / "j.jsonl"), tools).handle("read it")
+    content = llm.seen[1][-1]["content"]
+    assert "[truncated, 500 more characters" in content and content.split("\n")[1] == "y" * MAX_RESULT_CHARS
+
+
+def test_the_prompt_prefix_is_byte_stable_between_requests_and_runs(tmp_path):
+    """The system prompt and the tool list come before the conversation: when they are the same bytes on every
+    request, the model server reuses its cached prompt. Nothing volatile (times, counters, order) may be in them."""
+    seen = []
+
+    class Recording:
+        def chat(self, messages, tools):
+            seen.append(json.dumps(messages[0]) + json.dumps(tools))
+            return answer("ok.")
+
+    for _ in range(2):  # two runs of Iris on the same day
+        a = Agent(Recording(), lambda q: True, Journal(tmp_path / "j.jsonl"), today="Sunday 01 November 2026")
+        a.handle("one")
+        a.handle("two")
+    assert len(seen) == 4 and len(set(seen)) == 1

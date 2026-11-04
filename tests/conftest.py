@@ -27,6 +27,9 @@ def _journal_in_tmp(tmp_path, monkeypatch):
     import iris.web  # nor DNS: every name resolves to a public documentation address unless a test says otherwise
 
     monkeypatch.setattr(iris.web, "_resolve", lambda host: ["93.184.215.14"])
+    import iris.dashboard  # nor a probe of this PC's ports: tests that fake urlopen expect it to be asked
+
+    monkeypatch.setattr(iris.dashboard, "_nothing_listens", lambda url, timeout=0.5: False)
     import iris.update
 
     def offline():

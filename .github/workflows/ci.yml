@@ -25,8 +25,12 @@ jobs:
       - name: Install (dev and office extras plus numpy for the audio tests; no microphone, model or tts packages)
         run: pip install -e ".[dev,office]" numpy
       - name: Ruff
-        run: ruff check iris tests installer
+        run: ruff check iris tests installer tools
       - name: Mypy
         run: mypy
       - name: Tests with coverage
         run: pytest -q --cov=iris --cov-report=term
+      - name: Benchmark (no model; numbers for the log, never a gate)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: python tools/bench.py

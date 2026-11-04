@@ -362,6 +362,28 @@ def test_api_lmstudio_unreachable_reports_false(monkeypatch):
     assert lmstudio_payload() == {"reachable": False}
 
 
+def test_a_closed_local_port_is_seen_at_once_and_the_plain_list_is_not_tried(monkeypatch):
+    import socket
+
+    listener = socket.socket()  # the real probe, on loopback only
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    open_port = listener.getsockname()[1]
+    assert d._probe(f"http://127.0.0.1:{open_port}/api/v0/models") is False
+    listener.close()
+    assert d._probe(f"http://127.0.0.1:{open_port}/api/v0/models") is True
+    assert d._probe("http://192.0.2.10:1234/v1") is False  # another machine: the real request decides
+
+    asked = []
+
+    def refused(url, timeout=None):
+        asked.append(url)
+        raise d.urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+
+    monkeypatch.setattr(d.urllib.request, "urlopen", refused)
+    assert lmstudio_payload() == {"reachable": False} and len(asked) == 1  # down: no second wait for /v1/models
+
+
 def test_api_lmstudio_lists_models_with_state_and_type(monkeypatch):
     class FakeResp:
         def __init__(self, body):
@@ -1580,3 +1602,13 @@ def test_settings_refuse_infinite_numbers(value):
 
     clean, errors = settings.validate({"voxcpm_gpu": value, "silence": value})
     assert set(errors) == {"voxcpm_gpu", "silence"}
+
+
+def test_the_page_with_its_token_is_never_cached(server):
+    status, headers, body = get(server + "/")
+    assert status == 200 and headers.get("Cache-Control") == "no-store"
+
+
+def test_the_page_pauses_its_polling_while_hidden():
+    page = d._page_template().decode("utf-8")
+    assert "if (document.hidden || ticking) return;" in page and '"visibilitychange"' in page

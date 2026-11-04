@@ -228,10 +228,11 @@ const sel = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[ro
   '[role=menuitem],[role=option],[role=checkbox],[role=radio],[role=switch],[role=combobox],[role=searchbox],' +
   '[role=textbox],[contenteditable=""],[contenteditable=true],[onclick],[tabindex]:not([tabindex="-1"])';
 const seen = new Set(), items = [], els = [];
+let more = false;
 const vw = innerWidth, vh = innerHeight;
 const clean = s => (s || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
 for (const el of document.querySelectorAll(sel)) {
-  if (els.length >= MAX_ITEMS) break;
+  if (els.length >= MAX_ITEMS) { more = true; break; }
   const r = el.getBoundingClientRect();
   if (r.width < 2 || r.height < 2 || r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) continue;
   const cs = getComputedStyle(el);
@@ -263,8 +264,9 @@ for (const el of document.querySelectorAll(sel)) {
   items.push({role, name, value, type});
 }
 window.__iris = els;
-const text = document.body ? (document.body.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, MAX_TEXT) : '';
-return JSON.stringify({title: document.title, url: location.href, items, text});
+const all = document.body ? (document.body.innerText || '').replace(/\\s+/g, ' ').trim() : '';
+const text = all.slice(0, MAX_TEXT), text_more = all.length - text.length;
+return JSON.stringify({title: document.title, url: location.href, items, more, text, text_more});
 })()""".replace("MAX_ITEMS", str(MAX_ITEMS)).replace("MAX_TEXT", str(MAX_TEXT))
 
 
@@ -275,10 +277,13 @@ def _format(snap: dict) -> str:
         if it.get("value") is not None:
             line += f' = "{it["value"]}"' if it["value"] else " (empty)"
         lines.append(line)
+    if snap.get("more"):
+        lines.append(f"[truncated after {MAX_ITEMS} controls; scroll to reach the rest]")
     if not snap.get("items"):
         lines.append("(no buttons, links or fields visible; scroll, or wait for the page to load)")
     if snap.get("text"):
-        lines.append("Page text: " + snap["text"])
+        lines.append("Page text: " + snap["text"]
+                     + (f" [truncated, {snap['text_more']} more characters]" if snap.get("text_more") else ""))
     return "\n".join(lines)
 
 

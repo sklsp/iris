@@ -75,6 +75,7 @@ class Journal:
         self.path = path
 
     def log(self, **entry) -> None:
+        """Append one event as a timestamped JSON line to the journal file the dashboard reads."""
         entry["t"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         self.path.parent.mkdir(parents=True, exist_ok=True)  # a fresh PC has no ~/.iris yet
         with self.path.open("a", encoding="utf-8") as f:
@@ -127,6 +128,7 @@ class Agent:
         self.cancel = threading.Event()  # set from another thread (the overlay's cancel button) to stop this request
 
     def handle(self, request: str) -> str:
+        """Run a request through model and tools until it is answered, refused or cancelled; returns what Iris says."""
         if callable(self._tools):
             self.tools = self._tools()
         self.messages[0] = {"role": "system", "content": system_prompt(today=self.today)}

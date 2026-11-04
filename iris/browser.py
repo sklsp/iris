@@ -84,6 +84,7 @@ class Connection:
         self._lock = threading.Lock()  # the watcher's check and a request can send at the same moment
 
     def send(self, method: str, params: dict | None = None, session: str | None = None, wait: float = 15) -> dict:
+        """Send one DevTools command and wait for the reply with its id, skipping events in between."""
         with self._lock:
             self._id += 1
             msg: dict[str, Any] = {"id": self._id, "method": method, "params": params or {}}
@@ -431,10 +432,12 @@ _SENDS_ON_ENTER = re.compile(r"(mail\.google|outlook\.(live|office)|web\.whatsap
 
 
 def sends_on_enter(index: int) -> bool:
+    """Whether the page of item `index` is one where pressing Enter sends what was typed (mail or chat)."""
     return bool(_SENDS_ON_ENTER.search(item(index).get("url", "")))
 
 
 def host(index: int) -> str:
+    """The site name of item `index`, for confirm questions; 'the browser' when it has no url."""
     return urlparse(item(index).get("url", "")).hostname or "the browser"
 
 

@@ -14,4 +14,4 @@
 - [x] Q12. Docstrings in iris/app.py (1961 passed in 65.97s)
 - [x] Q13. Docstrings in iris/overlay.py (1961 passed in 65.59s)
 - [x] Q14. Docstrings in iris/voice.py and iris/web.py (1961 passed in 64.94s)
-- [ ] Q15. Docstrings in the remaining modules
+- [x] Q15. Docstrings in the remaining modules (1961 passed in 65.40s)

@@ -23,14 +23,17 @@ SPEAKER_TEXT = "Hello, I am Iris. If you can hear this, your speakers work."
 
 
 def marker_path() -> Path:
+    """Where the setup-done marker lives, next to config.toml."""
     return config.config_path().parent / "setup.json"
 
 
 def done() -> bool:
+    """Whether the first-run wizard has been finished once; the app opens it until then."""
     return marker_path().exists()
 
 
 def mark_done() -> None:
+    """Write the marker with the version and time, so the app stops opening the wizard."""
     path = marker_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"version": __version__, "at": datetime.now().isoformat(timespec="seconds")}),
@@ -133,6 +136,7 @@ def checks() -> list[dict]:
 
 
 def payload() -> dict:
+    """Everything the Setup tab shows in one go: servers to pick from, doctor's checks and the update-check choice."""
     from iris import update
 
     return {"ok": True, "done": done(), "version": __version__, "servers": servers(), "checks": checks(),

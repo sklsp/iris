@@ -120,6 +120,7 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
 
 
 def main() -> int:
+    """Print every check marked ok, -- or FIX; nonzero exit when a required one fails."""
     results = checks()
     for ok, line in results:
         mark = "ok " if ok else ("-- " if line.startswith(OPTIONAL) else "FIX")

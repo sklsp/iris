@@ -48,6 +48,7 @@ class RepoStatus:
 
     @property
     def exists(self) -> bool:
+        """Whether git could be read for this repo; when it could not, `error` says why."""
         return not self.error
 
     def spoken(self) -> str:

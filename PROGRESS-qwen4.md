@@ -1,0 +1,9 @@
+- [x] Q1. Tests for the uncovered lines of iris/skills.py (1969 passed in 66.65s (0:01:06))
+- [ ] Q2. Tests for the uncovered lines of iris/tools.py
+- [ ] Q3. Tests for the last lines of iris/browser.py and iris/web.py
+- [ ] Q4. Tests for the last lines of app, autopilot, prompt_queue and settings
+- [ ] Q5. Tests for the last lines of iris/overlay.py and iris/doctor.py
+- [ ] Q6. Media keys: the error lists the keys
+- [ ] Q7. Timers: say what minutes and at look like
+- [ ] Q8. find_files: a missing folder gets the same hint as the other file tools
+- [ ] Q9. CHANGELOG for this run

@@ -1,7 +1,7 @@
 # Iris night run qwen8
 
 - [x] Q1. Annotations in iris/voice.py (2020 passed in 76.01s (0:01:16))
-- [ ] Q2. Annotations in iris/dashboard/__init__.py
+- [x] Q2. Annotations in iris/dashboard/__init__.py (2020 passed in 66.03s (0:01:06))
 - [ ] Q3. Annotations in iris/prompt_queue.py
 - [ ] Q4. Annotations in iris/tools.py
 - [ ] Q5. Annotations in iris/office.py and iris/autopilot.py

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Type annotations on every function outside policy, registry and eval, and mypy now requires them there.
+
 ## 0.6.1 (2026-11-04): clearer errors, `iris config` and more tests
 
 - 0.6.0 was not published as a release, so this is the first release with the installer and the desktop app:

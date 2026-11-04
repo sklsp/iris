@@ -118,6 +118,7 @@ From source, for development and for the command line.
    ```bash
    .venv\Scripts\iris init          # optional: your name and city in ~/.iris/config.toml
    .venv\Scripts\iris doctor        # says what is missing and how to fix it
+   .venv\Scripts\iris config        # every setting, its value and where it comes from
    .venv\Scripts\iris               # type requests
    .venv\Scripts\iris --voice       # say "hey jarvis", then your request
    .venv\Scripts\iris dashboard     # status, activity, eval and skill review at http://127.0.0.1:8765

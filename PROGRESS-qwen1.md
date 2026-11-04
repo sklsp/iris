@@ -11,4 +11,4 @@
 - [x] Q9. iris doctor: the overlay check (1885 passed in 62.92s)
 - [x] Q10. iris doctor: the desktop shortcut check (1887 passed in 62.70s)
 - [x] Q11. iris config: every effective setting and where it comes from (1890 passed in 63.12s)
-- [ ] Q12. README and CHANGELOG for this run
+- [x] Q12. README and CHANGELOG for this run (1890 passed in 63.85s)

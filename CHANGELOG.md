@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `iris config` prints every setting, its value and whether it comes from config.toml, the default or an environment variable.
+- `iris doctor` checks that tkinter is there when the overlay is on, and says whether the desktop shortcut exists.
+- More tests for reminders, timers, the update check, weather, notes, files, agents, the first-run tests, the agent loop and the command line.
+
 ## 0.6.0 (2026-11-03): Iris as a desktop app
 
 - **Installer.** `IrisSetup-0.6.0.exe` (about 150 MB) installs Iris for your account, without administrator rights,

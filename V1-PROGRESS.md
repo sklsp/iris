@@ -9,8 +9,8 @@ docs/v1-test-plan.md. A resumed session reads this first.
 |---|---|---|
 | 0 Orientation, backlog | v1 | done (this file) |
 | 1 Annotations, mypy disallow_untyped_defs | v1-p1-annotations | merged |
-| 2 Correctness (P0, then P1), upgrade path | v1-p2-bugs | in progress |
-| 3 Speed (bench first) | v1-p3-speed | |
+| 2 Correctness (P0, then P1), upgrade path | v1-p2-bugs | merged |
+| 3 Speed (bench first) | v1-p3-speed | open (#46) |
 | 4 Skills, eval coverage | v1-p4-skills | |
 | 5 Robustness, stability promise, a11y | v1-p5-robust | |
 | 6 Code quality (dead code, ruff rules) | v1-p6-quality | |
@@ -23,6 +23,7 @@ docs/v1-test-plan.md. A resumed session reads this first.
 (one line per merged PR: "✅ P<n> (#PR, tests N, coverage X%)")
 
 - ✅ P1 (https://github.com/sklsp/iris/pull/44, tests 2020, coverage 99.46%)
+- ✅ P2 (https://github.com/sklsp/iris/pull/45, tests 2157, coverage 99.25%): 34 commits; backlog items 1-10, 12-16, 18-20, 22, 24, 25, 30-38, 44, 46-48, 50, 54, 68 done
 
 ## Starting numbers (main at 2c5ac8f, v0.6.1)
 
@@ -190,6 +191,15 @@ policy.py, tier_lock.json or one of Jay's open decisions: they are not done, the
 - policy.py:97 open_url is safe for local addresses (http://127.0.0.1:8765/api/journal) and for any query string.
 - Open decisions: hard_no_tools, timer_at, save_as, sites_no_deploy, cline_not_done, hard_email_send.
 
+## Benchmark (tools/bench.py on windows-latest)
+
+Baseline at 3b32128, before phase 3 (CI run of https://github.com/sklsp/iris/pull/47): --help 0.302 s, doctor
+4.491 s (no model server), one agent turn 5.12 ms, dashboard first answer 0.645 s, GET / 0.97 ms, prompt 57 tools,
+21807 characters (about 5451 tokens).
+
 ## Open questions for Jay
 
-(filled during the run)
+- lmstudio_load refuses on a PC without nvidia-smi ('no GPU has 8000 MiB free; unload a model first'); test_load_without_any_gpu_returns_the_literal_error pins it. Options: keep (plugin is for an NVIDIA setup) or let LM Studio decide when there is no GPU to measure. Recommendation: let LM Studio decide, with an AMD/CPU note.
+- A journal write that fails after a tool ran (file locked, disk full) is reported to the model as a tool error, so it may run the tool again (agent.py _run). Options: (a) return the tool's real result and say aloud that the journal could not be written; (b) stop the turn when the journal can not be written (nothing runs unlogged). Recommendation: (b), it keeps PLAN.md principle 4.
+- Cline from npm is cline.cmd on Windows: `subprocess.run(["cline", ...])` does not find it (doctor does, with shutil.which), so autopilot and the skill builder fail with "Cline CLI not found" on a default npm install. Not fixed on purpose: running a .cmd with the prompt as an argument goes through cmd.exe parsing, so a prompt with & or " could run commands (the BatBadBut class). Options: (a) document that cline_cli in config.toml must point at the real node entry (node.exe plus cline's script); (b) resolve cline.cmd to the node script it wraps and run node directly; (c) pass the prompt through a file instead of argv. Recommendation: (c) if the Cline CLI accepts a prompt file, else (a).
+- Delete the branch v1-bench-base (and the merged v1-p* branches if you like): this session's git proxy does not allow branch deletion.

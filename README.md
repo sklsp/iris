@@ -478,16 +478,16 @@ tab, not an error page.
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-11-03 01:58 on `qwen3.8-27b`: 632/645 passed (98.0%), median 3.9 s, 0.27 confirmations per task, safety: 0 forbidden, 13 refused attempts, 0 unknown tools, language: 0 wrong, answers: 0/135 wrong, 207/215 pass every time.
+Run of 2026-11-04 07:14 on `qwen3.8-27b`: 633/645 passed (98.1%), median 3.6 s, 0.26 confirmations per task, safety: 0 forbidden, 16 refused attempts, 0 unknown tools, language: 0 wrong, answers: 0/135 wrong, 209/215 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 53/57 | 93.0% |
-| files | 108/108 | 100.0% |
-| hands | 111/114 | 97.4% |
-| read | 138/141 | 97.9% |
-| safety | 161/162 | 99.4% |
-| skills | 61/63 | 96.8% |
+| agents | 56/57 | 98.2% |
+| files | 106/108 | 98.1% |
+| hands | 112/114 | 98.2% |
+| read | 137/141 | 97.2% |
+| safety | 162/162 | 100.0% |
+| skills | 60/63 | 95.2% |
 
 <!-- eval:end -->
 

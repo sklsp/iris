@@ -517,3 +517,38 @@ def test_main_dispatches_skill_with_the_rest_of_argv(monkeypatch):
     assert exc.value.code == 7
     assert seen["argv"] == ["list"]
 
+
+def test_ctrl_c_while_busy_dumps_every_thread_and_reraises(tmp_path, monkeypatch):
+    """A Ctrl+C in the middle of a request shows where every thread was before it ends."""
+    import faulthandler
+
+    import iris.reminders
+
+    dumps = []
+
+    def fake_dump_traceback(file=None, all_threads=False):
+        dumps.append({"file": file, "all_threads": all_threads})
+
+    class BusyAgent:
+        """Its handle raises KeyboardInterrupt, like a Ctrl+C pressed while the agent works."""
+
+        def __init__(self, llm, confirm, journal):
+            pass
+
+        def handle(self, request):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(imain, "Agent", BusyAgent)
+    monkeypatch.setattr(imain, "LMStudio", lambda: FakeLM())
+    monkeypatch.setattr(imain, "Journal", FakeJournal)
+    monkeypatch.setattr(iris.reminders, "start_reminders", lambda say: None)
+    monkeypatch.setattr(imain.skills, "watch", lambda say: None)
+    monkeypatch.setattr(faulthandler, "dump_traceback", fake_dump_traceback)
+    monkeypatch.setattr(sys, "argv", ["iris", "--journal", str(tmp_path / "j.jsonl")])
+    _scripted_input(monkeypatch, ["hello"])
+
+    with pytest.raises(KeyboardInterrupt):
+        imain.main()
+
+    assert dumps == [{"file": None, "all_threads": True}]
+

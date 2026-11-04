@@ -1157,3 +1157,18 @@ def test_restore_brings_back_the_last_trashed_not_the_newest_file(home):
         os.utime(f, (2_000_000_000 if "last-week" in f.name else 1_900_000_000,) * 2)
     tools.restore_trash()
     assert old.exists() and not new.exists()
+
+
+def test_every_tool_accepts_the_parameters_its_schema_offers():
+    """The model calls a tool with the names in its schema; a function whose parameter is named differently (rid
+    for id) fails on every real call, which the eval's dry tools never see."""
+    import inspect
+
+    for tool in tools.TOOLS.values():
+        sig = inspect.signature(tool.fn)
+        sample = {p: 1 for p in tool.params}
+        try:
+            sig.bind(**{p: sample[p] for p in tool.required})
+            sig.bind(**sample)
+        except TypeError as exc:
+            raise AssertionError(f"{tool.name}: {exc}") from None

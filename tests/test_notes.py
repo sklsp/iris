@@ -298,6 +298,10 @@ def test_reminder_cancel_unknown_id_is_an_error_and_keeps_the_file(reminders_fil
         {"id": 1, "due": "2026-10-31T18:00", "text": "call mom"}]
 
 
+def test_reminder_cancel_with_nothing_saved_names_reminder_list(reminders_file):
+    assert reminders.reminder_cancel(99) == "error: no reminder with id 99; reminder_list shows the ids"
+
+
 # --- start_reminders ---------------------------------------------------------------
 
 

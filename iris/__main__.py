@@ -165,7 +165,9 @@ def main() -> None:
     ap.add_argument("--version", action="version", version=f"iris {__version__}")
     ap.add_argument("--voice", action="store_true")
     ap.add_argument("--push-to-talk", action="store_true")
-    ap.add_argument("--journal", default=str(Path.home() / ".iris" / "journal.jsonl"))
+    from iris.dashboard import journal_path  # IRIS_JOURNAL, the same file the dashboard reads
+
+    ap.add_argument("--journal", default=str(journal_path()))
     ap.add_argument("--supervised", action="store_true", help=argparse.SUPPRESS)  # started by `iris app`
     a = ap.parse_args()
     Path(a.journal).parent.mkdir(parents=True, exist_ok=True)

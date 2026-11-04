@@ -662,7 +662,7 @@ def logs_payload() -> dict:
     home = config.config_path().parent
     files = (("Voice mode", home / "logs" / "voice.log"), ("Overlay", home / "overlay.log"),
              ("VoxCPM2 speech", VOXCPM_DIR / "worker.log"), ("App", home / "logs" / "app.log"),
-             ("Voice packs", home / "logs" / "packs.log"))
+             ("Voice packs", home / "logs" / "packs.log"), ("Crashes", home / "logs" / "crash.log"))
     return {"ok": True, "logs": [{"name": name, "path": str(p), "exists": p.exists(), "lines": tail_lines(p)}
                                  for name, p in files]}
 

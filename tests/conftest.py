@@ -1,5 +1,7 @@
 import pytest
 
+collect_ignore_glob = ["fixtures/*"]  # data in old formats, such as a skill with its own test_skill.py
+
 
 @pytest.fixture(autouse=True)
 def _journal_in_tmp(tmp_path, monkeypatch):

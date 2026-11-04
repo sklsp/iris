@@ -14,8 +14,9 @@ import tempfile
 import threading
 import time
 import wave
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any
 
 from iris import config
 from iris.overlay import Overlay, launch
@@ -129,7 +130,7 @@ class WakeWord:
         self.threshold = threshold
         self._m = None
 
-    def _model(self):
+    def _model(self) -> Any:
         if self._m is not None:
             return self._m
         import openwakeword
@@ -218,8 +219,8 @@ class NameWake:
 
     NAME = re.compile(r"\b(iris|irıs|iriss)\b", re.I)
 
-    def __init__(self, transcribe=None, threshold: float | None = None, max_seconds: float = 3.0,
-                 silence_seconds: float = 0.4):
+    def __init__(self, transcribe: Callable[[np.ndarray], str] | None = None, threshold: float | None = None,
+                 max_seconds: float = 3.0, silence_seconds: float = 0.4):
         self.transcribe = transcribe or self._tiny
         self._whisper: Any = None
         self.threshold = VAD_THRESHOLD if threshold is None else float(threshold)
@@ -274,7 +275,7 @@ def make_wake(name: str | None = None, vad_threshold: float | None = None) -> Wa
 class Voice:
     """Push-to-talk mode: press Enter to stop recording."""
 
-    def __init__(self):
+    def __init__(self) -> None:
 
         self.model = _whisper_model(WHISPER_MODEL, WHISPER_DEVICE)
 
@@ -285,12 +286,12 @@ class Voice:
 
         chunks, stop = [], threading.Event()
 
-        def cb(indata, frames, t, status):
+        def cb(indata: np.ndarray, frames: int, t: Any, status: Any) -> None:
             chunks.append(indata.copy())
 
         print(prompt)
 
-        def _stop_on_enter():
+        def _stop_on_enter() -> None:
             input()
             stop.set()
 
@@ -333,10 +334,10 @@ class VoiceSession:
         self.cancelled = threading.Event()  # this request was cancelled; cleared when the next one starts
         self.overlay = Overlay()  # sends nothing until __enter__ starts the overlay (opt-in, see iris.overlay)
 
-    def __enter__(self):
+    def __enter__(self) -> VoiceSession:
         import sounddevice as sd
 
-        def cb(indata, frames, t, status):
+        def cb(indata: np.ndarray, frames: int, t: Any, status: Any) -> None:
             frame = indata[:, 0].copy()
             try:
                 self._frames.put_nowait(frame)
@@ -356,7 +357,7 @@ class VoiceSession:
         self.overlay.on_cancel = self.cancel
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, *exc: object) -> None:
         self.overlay.close()
         if self._stream is not None:
             try:
@@ -634,7 +635,7 @@ class VoxProcess:
             self._frames.put(EOFError)
             self.ready.set()  # so a waiting stream() sees the stop at once
 
-    def _next(self, timeout: float):
+    def _next(self, timeout: float) -> Any:
         try:
             item = self._frames.get(timeout=timeout)
         except queue.Empty:
@@ -644,7 +645,7 @@ class VoxProcess:
             raise RuntimeError(f"VoxCPM stopped; see {VOXCPM_DIR / 'worker.log'}")
         return item
 
-    def stream(self, text: str, timeout: float = 30):
+    def stream(self, text: str, timeout: float = 30) -> Iterator[np.ndarray]:
         """Send the text to the worker and yield its audio chunks as they are made, until the answer is done."""
         if not self.ready.wait(self.startup):
             raise TimeoutError("VoxCPM did not start")
@@ -662,7 +663,7 @@ class VoxProcess:
             raise RuntimeError(f"VoxCPM failed on this answer; see {VOXCPM_DIR / 'worker.log'}")
 
 
-def _exact(f, n: int) -> bytes:
+def _exact(f: IO[bytes], n: int) -> bytes:
     data = b""
     while len(data) < n:
         part = f.read(n - len(data))
@@ -681,7 +682,8 @@ def _lead_needed(expected: float, speed: float, margin: float = VOXCPM_MARGIN) -
     return expected * (1 - speed) * margin
 
 
-def _play_stream(chunks, rate: int, expected: float, stop_event: threading.Event | None, slack: float = 3.0) -> bool:
+def _play_stream(chunks: Iterable[np.ndarray], rate: int, expected: float, stop_event: threading.Event | None,
+                 slack: float = 3.0) -> bool:
     """Play streamed float32 audio of about `expected` seconds once enough is made that the rest arrives in time (see
     _lead_needed). If it still runs dry, it pauses until REBUFFER_SECONDS are ready instead of stuttering. Like
     _play_wav it stops for a wake word and never hangs on a stalled sound device."""
@@ -692,7 +694,7 @@ def _play_stream(chunks, rate: int, expected: float, stop_event: threading.Event
     left = np.zeros(0, dtype="float32")
     waiting, finished = False, threading.Event()
 
-    def feed(outdata, frames, _time, _status):
+    def feed(outdata: np.ndarray, frames: int, _time: Any, _status: Any) -> None:
         nonlocal left, waiting
         while not pending.empty():
             left = np.concatenate([left, pending.get_nowait()])
@@ -710,7 +712,7 @@ def _play_stream(chunks, rate: int, expected: float, stop_event: threading.Event
     def stopped() -> bool:
         return stop_event is not None and stop_event.is_set()
 
-    def start():
+    def start() -> Any:
         s = sd.OutputStream(samplerate=rate, channels=1, dtype="float32", callback=feed)
         s.start()
         return s
@@ -832,7 +834,7 @@ class Speaker:
             self.engine = "piper"
             return self._speak_piper(text, stop_event)
 
-    def _kokoro_model(self):
+    def _kokoro_model(self) -> Any:
         if self._kokoro is None:
             from kokoro_onnx import Kokoro
 
@@ -849,7 +851,7 @@ class Speaker:
         try:
             model = self._kokoro_model()
 
-            async def play():
+            async def play() -> bool:
                 import sounddevice as sd
 
                 async for chunk, sr in model.create_stream(text, voice=KOKORO_VOICE):

@@ -53,7 +53,7 @@ def cline_command(text: str, cwd: str) -> list[str]:
     return [cline_cli(), "-z", "-c", cwd, "-P", cline_provider(), "-m", cline_model(), text]
 
 
-def cline_sessions(run=subprocess.run) -> list[dict] | None:
+def cline_sessions(run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> list[dict] | None:
     """The last ten Cline sessions as dicts, from `history --json`; None when they cannot be read.
 
     Non-dict items in the JSON are skipped; a missing CLI, a timeout, bad JSON or a non-list result all give None."""
@@ -113,7 +113,7 @@ def _count_started(text: str, t0: float, sessions_list: list[dict]) -> int:
     return sum(1 for s in sessions_list if _matches(text, t0, s))
 
 
-def _dispatch(text: str, cwd: str, run=subprocess.run) -> str:
+def _dispatch(text: str, cwd: str, run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> str:
     """Run the Cline CLI command once and return its stderr, "" on timeout; FileNotFoundError raises LookupError."""
     try:
         result = run(
@@ -132,7 +132,8 @@ def _dispatch(text: str, cwd: str, run=subprocess.run) -> str:
     return result.stderr or ""
 
 
-def _poll(text: str, t0: float, sessions, sleep=time.sleep, polls: int = 5) -> tuple[str | None, bool]:
+def _poll(text: str, t0: float, sessions: Callable[[], list[dict] | None], sleep: Callable[[float], None] = time.sleep,
+          polls: int = 5) -> tuple[str | None, bool]:
     """Check the history up to `polls` times, 3 seconds apart.
 
     Returns (the matching session id or None, whether at least one read succeeded)."""
@@ -151,8 +152,9 @@ def _poll(text: str, t0: float, sessions, sleep=time.sleep, polls: int = 5) -> t
 
 
 def start_in_hub(
-    text: str, cwd: str, run=subprocess.run, sessions=None, now=None, sleep=time.sleep, polls: int = 5
-) -> str:
+    text: str, cwd: str, run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    sessions: Callable[[], list[dict] | None] | None = None, now: Callable[[], float] | None = None,
+    sleep: Callable[[float], None] = time.sleep, polls: int = 5) -> str:
     """Start a Cline session in the background hub and prove it started from the history.
 
     A timeout of the CLI call is not an error by itself (the session may still have started). FileNotFoundError

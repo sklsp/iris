@@ -17,7 +17,7 @@ def queue_path() -> Path:
     return Path(os.environ.get("IRIS_QUEUE") or (Path.home() / ".iris" / "queue.json"))
 
 
-def load(path=None) -> dict:
+def load(path: Path | None = None) -> dict:
     """Read the saved queue; no file means an empty one, but a broken file raises so nothing waiting in it is lost."""
     p = Path(path) if path else queue_path()
     if not p.exists():
@@ -34,7 +34,7 @@ def load(path=None) -> dict:
     return data
 
 
-def save(data: dict, path=None) -> None:
+def save(data: dict, path: Path | None = None) -> None:
     """Write the queue atomically through a temp file so a crash never leaves a half-written queue.json behind."""
     p = Path(path) if path else queue_path()
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -43,7 +43,7 @@ def save(data: dict, path=None) -> None:
     os.replace(tmp, p)
 
 
-def add(agent: str, text: str, now: str = "", path=None) -> int:
+def add(agent: str, text: str, now: str = "", path: Path | None = None) -> int:
     """Put a prompt at the end of the queue and return its id."""
     agent = agent.strip()
     text = text.strip()
@@ -59,7 +59,7 @@ def add(agent: str, text: str, now: str = "", path=None) -> int:
     return prompt_id
 
 
-def pending(agent: str = "", path=None) -> list[dict]:
+def pending(agent: str = "", path: Path | None = None) -> list[dict]:
     """The prompts still waiting, optionally only those for one agent."""
     prompts = load(path)["prompts"]
     if agent:
@@ -68,7 +68,7 @@ def pending(agent: str = "", path=None) -> list[dict]:
     return prompts
 
 
-def take(agent: str, path=None) -> dict:
+def take(agent: str, path: Path | None = None) -> dict:
     """Remove and return the oldest prompt waiting for an agent, so Iris never hands one out twice."""
     data = load(path)
     a = agent.strip().lower()
@@ -80,7 +80,7 @@ def take(agent: str, path=None) -> dict:
     raise LookupError(f"no prompts waiting for {agent.strip()}")
 
 
-def remove(prompt_id: int, path=None) -> dict:
+def remove(prompt_id: int, path: Path | None = None) -> dict:
     """Drop one prompt by id and return it."""
     data = load(path)
     for i, p in enumerate(data["prompts"]):
@@ -91,7 +91,7 @@ def remove(prompt_id: int, path=None) -> dict:
     raise LookupError(f"no prompt with id {prompt_id}")
 
 
-def move(prompt_id: int, step: int, path=None) -> None:
+def move(prompt_id: int, step: int, path: Path | None = None) -> None:
     """Swap a prompt with its neighbor to reorder the queue; step is -1 or 1."""
     if step not in (-1, 1):
         raise ValueError("step must be -1 or 1")
@@ -106,7 +106,7 @@ def move(prompt_id: int, step: int, path=None) -> None:
     raise LookupError(f"no prompt with id {prompt_id}")
 
 
-def listing(agent: str = "", path=None) -> str:
+def listing(agent: str = "", path: Path | None = None) -> str:
     """The waiting prompts as text for the user, with long ones cut off at 80 characters."""
     prompts = pending(agent, path)
     if not prompts:
@@ -121,7 +121,7 @@ def listing(agent: str = "", path=None) -> str:
     return "\n".join(lines)
 
 
-def summary(path=None) -> str:
+def summary(path: Path | None = None) -> str:
     """A short count of what is waiting per agent, empty when the queue is empty."""
     prompts = load(path)["prompts"]
     if not prompts:

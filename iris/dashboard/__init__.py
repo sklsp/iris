@@ -52,9 +52,11 @@ import threading
 import time
 import urllib.request
 from collections import deque
+from collections.abc import Callable
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 import psutil
 
@@ -200,7 +202,7 @@ _cline_start_lock = threading.Lock()    # one Cline start at a time, full stop
 class ModelActionError(Exception):
     """A model action that cannot run; carries the HTTP code and a plain message."""
 
-    def __init__(self, code: int, message: str):
+    def __init__(self, code: int, message: str) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
@@ -303,7 +305,7 @@ def set_iris_model(body: dict) -> dict:
     return iris_model_payload()
 
 
-def _authorized(self) -> bool:
+def _authorized(self: Any) -> bool:
     """A POST is allowed only with the right token AND a matching Origin or Referer."""
     token = self.headers.get("X-Iris-Token")
     if not token or not secrets.compare_digest(token, self.server.token):
@@ -328,7 +330,7 @@ def _page_template() -> bytes:
     return _PAGE_TEMPLATE
 
 
-def _activity_entry(e) -> dict:
+def _activity_entry(e: dict) -> dict:
     """A journal line shaped for the Activity tab; a model failure shows like an errored call of 'model'."""
     if e.get("event") == "llm_error":
         return {"event": "tool", "tool": "model", "tier": "?", "outcome": "error",
@@ -389,7 +391,7 @@ SESSIONS_DB = Path(os.environ.get("IRIS_SESSIONS_DB") or (Path.home() / ".cline"
 STALE_STATUS = "ended (no exit recorded)"   # ended_at is NULL but the pid is gone
 
 
-def _parse_ts(value) -> float | None:
+def _parse_ts(value: object) -> float | None:
     """An ISO-8601 timestamp to epoch seconds; None when missing or unparseable."""
     if value is None:
         return None
@@ -508,7 +510,7 @@ def claude_projects(projects_dir: Path | str | None = None, now: float | None = 
     return sorted(out, key=lambda r: r["age_seconds"])
 
 
-def _cached(key: str, fn) -> dict:
+def _cached(key: str, fn: Callable[[], Any]) -> dict:
     now = time.time()
     with _lock:
         hit = _cache.get(key)
@@ -550,7 +552,7 @@ def _wrong_answers(results: object) -> list[dict]:
     return out
 
 
-def eval_payload(results_dir=None) -> dict:
+def eval_payload(results_dir: str | None = None) -> dict:
     """The newest full eval report from results_dir / IRIS_EVAL_DIR, plus how many runs exist.
 
     The newest file is decided by name alone: the stamps sort by time. Partial (filtered)
@@ -583,7 +585,7 @@ def eval_payload(results_dir=None) -> dict:
     return {"latest": latest, "runs": len(files)}
 
 
-def eval_history_payload(results_dir=None) -> dict:
+def eval_history_payload(results_dir: str | None = None) -> dict:
     """The trend over the newest saved runs from results_dir / IRIS_EVAL_DIR (read only)."""
     if results_dir is None:
         results_dir = os.environ.get("IRIS_EVAL_DIR") or str(Path(__file__).resolve().parents[2] / "eval" / "results")
@@ -806,7 +808,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:  # noqa: BLE001 - a lying Content-Length must never kill the handler
             pass
 
-    def do_GET(self):  # GET stays read-only; the write routes refuse it with a 405
+    def do_GET(self) -> None:  # GET stays read-only; the write routes refuse it with a 405
         """Serve the dashboard page and its read-only /api routes; a write route answers 405 until it gets a POST."""
         path = self.path.split("?", 1)[0]
         if path == "/":
@@ -864,7 +866,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._json({"error": "not found"}, code=404)
 
-    def do_POST(self):  # the write routes and nothing else
+    def do_POST(self) -> None:  # the write routes and nothing else
         """The only door to changes: check the token, then run the named write action with its JSON body."""
         path = self.path.split("?", 1)[0]
         if path not in WRITE_ROUTES:
@@ -915,7 +917,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._json(payload)
 
-    def _method_not_allowed(self):  # PUT, DELETE, PATCH, OPTIONS and HEAD alike
+    def _method_not_allowed(self) -> None:  # PUT, DELETE, PATCH, OPTIONS and HEAD alike
         self._drain_body()
         self._json({"error": "read only: use GET, or POST on a write route"}, code=405)
 
@@ -933,7 +935,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def log_message(self, fmt: str, *args) -> None:  # keep the console quiet while it runs
+    def log_message(self, fmt: str, *args: object) -> None:  # keep the console quiet while it runs
         """No per-request logging; a running dashboard must not fill the console."""
         pass
 

@@ -31,5 +31,6 @@ jobs:
       - name: Tests with coverage
         run: pytest -q --cov=iris --cov-report=term
       - name: Benchmark (no model; numbers for the log, never a gate)
+        if: ${{ !cancelled() }}
         continue-on-error: true
         run: python tools/bench.py

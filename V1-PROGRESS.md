@@ -11,12 +11,12 @@ docs/v1-test-plan.md. A resumed session reads this first.
 | 1 Annotations, mypy disallow_untyped_defs | v1-p1-annotations | merged |
 | 2 Correctness (P0, then P1), upgrade path | v1-p2-bugs | merged |
 | 3 Speed (bench first) | v1-p3-speed | merged |
-| 4 Skills, eval coverage | v1-p4-skills | in progress |
-| 5 Robustness, stability promise, a11y | v1-p5-robust | |
-| 6 Code quality (dead code, ruff rules) | v1-p6-quality | |
-| 7 Docs | v1-p7-docs | |
-| 8 CI and release plumbing | v1-p8-release | |
-| 9 Test plan, final PR | v1-p9-plan | |
+| 4 Skills, eval coverage | v1-p4-skills | merged |
+| 5 Robustness, stability promise, a11y | v1-p5-robust | open (#49) |
+| 6 Code quality (dead code, ruff rules) | v1-p6-quality | open (#50) |
+| 7 Docs | v1-p7-docs | open (#51) |
+| 8 CI and release plumbing | v1-p8-release | open (#52) |
+| 9 Test plan, final PR | v1-p9-plan | open (#53) |
 
 ## Merged
 
@@ -25,6 +25,7 @@ docs/v1-test-plan.md. A resumed session reads this first.
 - ✅ P1 (https://github.com/sklsp/iris/pull/44, tests 2020, coverage 99.46%)
 - ✅ P2 (https://github.com/sklsp/iris/pull/45, tests 2157, coverage 99.25%): 34 commits; backlog items 1-10, 12-16, 18-20, 22, 24, 25, 30-38, 44, 46-48, 50, 54, 68 done
 - ✅ P3 (https://github.com/sklsp/iris/pull/46, tests 2165, coverage 99.20%): bench; doctor 4.49 to 0.83 s, turn 5.12 to 1.68 ms on windows-latest; items 56, 58-61, 63, 64 done
+- ✅ P4 (https://github.com/sklsp/iris/pull/48, tests 2167, coverage 99.20%): flaky-task descriptions, actionable errors, 21 new DE/FR/ES tasks (236); items 66, 67 done
 
 ## Starting numbers (main at 2c5ac8f, v0.6.1)
 

@@ -12,7 +12,10 @@ import ipaddress
 import re
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from html.parser import HTMLParser
+from http.client import HTTPMessage
+from typing import IO
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -56,7 +59,9 @@ class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
     127.0.0.1 must not reach this PC's own services. ponytail: a public name that resolves to a local IP
     (DNS rebinding) still passes; check the resolved address if that ever matters."""
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    def redirect_request(
+        self, req: urllib.request.Request, fp: IO[bytes], code: int, msg: str, headers: HTTPMessage, newurl: str,
+    ) -> urllib.request.Request | None:
         """Only http and https redirects to a non-local address are followed; anything else raises."""
         target = urllib.parse.urlsplit(newurl)
         if target.scheme not in ("http", "https"):
@@ -91,7 +96,7 @@ def _charset_from_header(content_type_header: str) -> str | None:
 
 
 # --- search --------------------------------------------------------------------
-def search(query: str, max_results: int = 5, get=http_get) -> list[dict]:
+def search(query: str, max_results: int = 5, get: Callable[[str], tuple[str, str, str]] = http_get) -> list[dict]:
     """Search DuckDuckGo (html endpoint) and return up to max_results dicts with title, url and snippet."""
     page_url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote_plus(query)
     _, _, html_text = get(page_url)
@@ -239,7 +244,7 @@ class _TextExtractor(HTMLParser):
             self.lines.append(line)
 
 
-def read_text(url: str, max_chars: int = 6000, get=http_get) -> str:
+def read_text(url: str, max_chars: int = 6000, get: Callable[[str], tuple[str, str, str]] = http_get) -> str:
     """Fetch a page and return its readable text.
 
     The title comes first as "Title: ...", then headings (h1 to h4), paragraphs, list items, table cells and pre

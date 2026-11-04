@@ -10,8 +10,10 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from iris import config
+from iris.llm import LMStudio, ToolCall
 from iris.notes import find_notes
 from iris.registry import active_tools
 from iris.tools import CONFIRM, NEVER, SAFE, Tool
@@ -74,7 +76,7 @@ class Journal:
     def __init__(self, path: Path):
         self.path = path
 
-    def log(self, **entry) -> None:
+    def log(self, **entry: Any) -> None:
         """Append one event as a timestamped JSON line to the journal file the dashboard reads."""
         entry["t"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         self.path.parent.mkdir(parents=True, exist_ok=True)  # a fresh PC has no ~/.iris yet
@@ -116,7 +118,7 @@ def _sorry(key: str, request: str) -> str:
 
 
 class Agent:
-    def __init__(self, llm, confirm: Callable[[str], bool], journal: Journal,
+    def __init__(self, llm: LMStudio, confirm: Callable[[str], bool], journal: Journal,
                  tools: dict[str, Tool] | Callable[[], dict[str, Tool]] = active_tools, today: str | None = None):
         # a callable is asked again on every request, so a newly enabled plugin or approved skill needs no restart
         self.llm, self.confirm, self.journal, self._tools = llm, confirm, journal, tools
@@ -212,7 +214,7 @@ class Agent:
                 return
             del self.messages[starts[0]:starts[1]]
 
-    def _run(self, call) -> str:
+    def _run(self, call: ToolCall) -> str:
         tool = self.tools.get(call.name)
         if tool is None:
             self.journal.log(event="tool", tool=call.name, args=call.args, tier="unknown", outcome="unknown")
@@ -221,7 +223,7 @@ class Agent:
         sensitive = False
         if important_only():
             tier, sensitive = _important_tier(call.name, call.args, tier)
-        entry = {"event": "tool", "tool": call.name, "args": call.args, "tier": tier}
+        entry: dict[str, object] = {"event": "tool", "tool": call.name, "args": call.args, "tier": tier}
         if sensitive:
             entry["sensitive"] = True
         if tier == NEVER:

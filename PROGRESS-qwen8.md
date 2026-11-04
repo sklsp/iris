@@ -3,7 +3,7 @@
 - [x] Q1. Annotations in iris/voice.py (2020 passed in 76.01s (0:01:16))
 - [x] Q2. Annotations in iris/dashboard/__init__.py (2020 passed in 66.03s (0:01:06))
 - [x] Q3. Annotations in iris/prompt_queue.py (2020 passed in 66.43s (0:01:06))
-- [ ] Q4. Annotations in iris/tools.py
+- [x] Q4. Annotations in iris/tools.py (2020 passed in 65.32s (0:01:05))
 - [ ] Q5. Annotations in iris/office.py and iris/autopilot.py
 - [ ] Q6. Annotations in iris/web.py and iris/agent.py
 - [ ] Q7. Annotations in iris/browser.py, iris/app.py, iris/overlay.py and iris/config.py

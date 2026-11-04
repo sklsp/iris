@@ -19,6 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from iris import config
 from iris.browser import browser_click, browser_read, browser_scroll, browser_type
@@ -339,7 +340,7 @@ def journal_today(today: str = "") -> str:
 
 
 # --- windows (UI Automation) --------------------------------------------------
-def _desktop():
+def _desktop() -> Any:
     from pywinauto import Desktop
 
     return Desktop(backend="uia")
@@ -358,7 +359,7 @@ def list_windows() -> str:
     return "\n".join(titles) or "(no windows)"
 
 
-def _window(title: str):
+def _window(title: str) -> Any:
     t = title.lower()
     wins = [w for w in _windows() if t in w.window_text().lower()]
     if not wins:
@@ -385,7 +386,7 @@ def read_window(title: str) -> str:
     return "\n".join(out)
 
 
-def _value(c) -> str:
+def _value(c: Any) -> str:
     try:
         return c.iface_value.CurrentValue or ""
     except Exception:  # noqa: BLE001 - controls without the Value pattern
@@ -395,7 +396,7 @@ def _value(c) -> str:
             return ""
 
 
-def _control(w, name: str):
+def _control(w: Any, name: str) -> Any:
     n = name.lower()
     cands = [c for c in w.descendants() if c.window_text().strip()]
     exact = [c for c in cands if c.window_text().strip().lower() == n]
@@ -516,7 +517,7 @@ def web_read(url: str) -> str:
 
     seen: dict[str, str] = {}
 
-    def get(u):
+    def get(u: str) -> tuple[str, str, str]:
         result = _web.http_get(u)
         seen["final"] = result[0]
         return result
@@ -665,7 +666,7 @@ class _CalcError(ValueError):
         self.message = message
 
 
-def _calc_eval(node) -> int | float:
+def _calc_eval(node: ast.AST) -> int | float:
     """The value of one allowed node: numbers and + - * / // % ** with unary signs. Raises _CalcError otherwise."""
     if isinstance(node, ast.Expression):
         return _calc_eval(node.body)

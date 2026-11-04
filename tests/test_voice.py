@@ -728,3 +728,13 @@ def test_a_missing_custom_wake_model_is_an_error_not_a_download_of_every_model(m
     assert downloads == []
     voice.WakeWord("hey_jarvis")._model()
     assert downloads == [["hey_jarvis"]]  # a built-in name still fetches only itself on first use
+
+
+def test_a_microphone_that_stops_sending_ends_voice_mode_with_one_sentence(monkeypatch):
+    s = VoiceSession(speaker=Speaker(engine="sapi"))
+    monkeypatch.setattr(VoiceSession, "MIC_SILENT_SECONDS", 0.3)
+    s.wake = _FakeWake(False)
+    t0 = time.perf_counter()
+    with pytest.raises(SystemExit, match="The microphone stopped sending sound"):
+        s.next_request()
+    assert time.perf_counter() - t0 < 3

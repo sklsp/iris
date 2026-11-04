@@ -377,6 +377,21 @@ class VoiceSession:
             except Exception:  # noqa: BLE001 - closing the mic must never mask a real error
                 pass
 
+    MIC_SILENT_SECONDS = 10.0  # no frame at all for this long: the microphone stopped (unplugged, taken away)
+
+    def _frame(self) -> np.ndarray:
+        """The next 80 ms of sound. Waits in short steps, so Ctrl+C and the app's stop get in, and ends voice mode with
+        one sentence when the microphone sends nothing at all any more."""
+        waited = 0.0
+        while True:
+            try:
+                return self._frames.get(timeout=0.25)
+            except queue.Empty:
+                waited += 0.25
+                if waited >= self.MIC_SILENT_SECONDS:
+                    raise SystemExit("The microphone stopped sending sound (unplugged, or taken by another app). "
+                                     "Plug it back in, then start voice mode again.") from None
+
     def _drain(self) -> None:
         while True:
             try:
@@ -426,7 +441,7 @@ class VoiceSession:
                 return text
         print("Say the wake word...")
         while True:  # phase 1: wait for the wake word
-            if self.wake.detect(self._frames.get()):
+            if self.wake.detect(self._frame()):
                 break
         stop = self._stop  # a timer or reminder that is talking now: the wake word stops it, as during an answer
         if stop is not None:
@@ -498,7 +513,7 @@ class VoiceSession:
             det.feed(frame)
         t0 = time.time()
         while True:
-            frame = self._frames.get()  # every 80 ms, so a cancel ends the recording at once
+            frame = self._frame()  # every 80 ms, so a cancel ends the recording at once
             if self.cancelled.is_set():
                 return ""  # the overlay already went idle; nothing to transcribe
             chunks.append(frame)

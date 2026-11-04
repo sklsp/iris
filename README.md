@@ -126,6 +126,27 @@ From source, for development and for the command line.
    .venv\Scripts\iris app           # the desktop app (install the .[app] extra): dashboard window, tray, voice mode
    ```
 
+## Upgrading from 0.x
+
+Install 1.0 over your 0.x (run the new IrisSetup, or `git pull` and `pip install -e .` again). Everything in
+`~/.iris` carries over as it is: `config.toml`, notes, reminders, the prompt queue, the journal, the model choice,
+approved skills, voice packs and logs. Data written by 0.4, 0.5 and 0.6.1 is tested to read in 1.0
+(`tests/test_upgrade.py`); no file changes format, so there is nothing to migrate.
+
+What you may notice:
+
+- A skill that was built but not yet approved needs `capability_check` (or the Skills tab's check) once more
+  before you can approve it: approving now needs a check Iris ran itself. Approved skills stay approved.
+- A `config.toml` saved with a BOM (Notepad's "UTF-8 with BOM") is read now; before, all of it was ignored.
+  `iris doctor` says when the file can not be read or a number setting is not a number.
+- The dashboard answers only at http://127.0.0.1 or http://localhost (with its port), not at another name for this
+  PC.
+- An error nobody caught is written to `~/.iris/logs/crash.log`, and the Logs tab shows it.
+- Tool results and errors read differently in places (they say what to do next); the eval measures that.
+
+To go back, install the 0.6.1 IrisSetup from the releases page (or `git checkout v0.6.1` and `pip install -e .`).
+Your data stays; 0.6.1 ignores the `trust.json` that 1.0 adds next to your skills.
+
 ## Configuration
 
 Everything is optional. `~/.iris/config.toml` (or the file `IRIS_CONFIG` names; `iris init` writes a starter one) is

@@ -1382,17 +1382,27 @@ async function skillAction(action, name, question){
   else { await loadSkills(); if (d && d.error) $("skills-body").prepend(el("div", "sk-prob", d.error)); }
 }
 
+let ticking = false;
 async function tick(){
-  const results = await Promise.all(Object.keys(RENDERERS).map(u => j(u)));
-  Object.keys(RENDERERS).forEach((u, i) => RENDERERS[u](results[i]));
-  const dot = $("pulse");
-  const bad = results.some(r => !r || "error" in r);
-  dot.classList.toggle("err", bad);
-  $("updated").textContent = "updated " + new Date().toTimeString().slice(0, 8) + (bad ? " (some feeds down)" : "");
+  // nothing to show while the window is hidden (the app in the tray, a background tab), and never two at once:
+  // a slow LM Studio must not pile up requests
+  if (document.hidden || ticking) return;
+  ticking = true;
+  try {
+    const results = await Promise.all(Object.keys(RENDERERS).map(u => j(u)));
+    Object.keys(RENDERERS).forEach((u, i) => RENDERERS[u](results[i]));
+    const dot = $("pulse");
+    const bad = results.some(r => !r || "error" in r);
+    dot.classList.toggle("err", bad);
+    $("updated").textContent = "updated " + new Date().toTimeString().slice(0, 8) + (bad ? " (some feeds down)" : "");
+  } finally {
+    ticking = false;
+  }
 }
 
 tick();
 setInterval(tick, 3000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });  // fresh at once on return
 
 // --- tabs ------------------------------------------------------------------------
 // --- settings: every config.toml option, saved through the token-protected POST route ----

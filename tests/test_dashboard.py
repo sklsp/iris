@@ -1602,3 +1602,13 @@ def test_settings_refuse_infinite_numbers(value):
 
     clean, errors = settings.validate({"voxcpm_gpu": value, "silence": value})
     assert set(errors) == {"voxcpm_gpu", "silence"}
+
+
+def test_the_page_with_its_token_is_never_cached(server):
+    status, headers, body = get(server + "/")
+    assert status == 200 and headers.get("Cache-Control") == "no-store"
+
+
+def test_the_page_pauses_its_polling_while_hidden():
+    page = d._page_template().decode("utf-8")
+    assert "if (document.hidden || ticking) return;" in page and '"visibilitychange"' in page

@@ -852,7 +852,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/":
             token = getattr(self.server, "token", "")
             page = _page_template().replace(b"__IRIS_TOKEN__", token.encode())
-            self._send(200, page, "text/html; charset=utf-8")
+            self._send(200, page, "text/html; charset=utf-8", cache=False)  # its token is new on every start
         elif path == "/api/iris/model":
             self._json(iris_model_payload())   # readable via GET; writes go through the POST below
         elif path == "/api/settings":
@@ -986,10 +986,12 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, payload: dict, code: int = 200) -> None:
         self._send(code, json.dumps(payload), "application/json")
 
-    def _send(self, code: int, body: str | bytes, ctype: str) -> None:
+    def _send(self, code: int, body: str | bytes, ctype: str, cache: bool = True) -> None:
         data = body.encode("utf-8") if isinstance(body, str) else body
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        if not cache:
+            self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         # no CORS headers on purpose: other websites must not be able to read this
         self.end_headers()

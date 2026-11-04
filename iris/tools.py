@@ -986,7 +986,8 @@ TOOLS = {t.name: t for t in [
          {"window": S, "direction": {"type": "string", "enum": ["up", "down"]},
           "amount": {"type": "integer"}}, ["window", "direction"], SAFE, scroll),
     Tool("open_url",
-         "Open an http or https URL in a new browser tab. The result already lists the page's numbered buttons, links"
+         "Open an http or https URL in the browser (in the tab Iris opened for that site before, else a new tab)."
+         " The result already lists the page's numbered buttons, links"
          " and fields (as browser_read does), so click or type on them next without reading first. To search a site,"
          " open its search URL directly, e.g. https://www.youtube.com/results?search_query=lofi+music or"
          " https://www.netflix.com/search?q=horror. file:, javascript: and data: are refused.",

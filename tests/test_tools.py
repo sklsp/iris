@@ -423,7 +423,7 @@ def test_comfy_queue_bad_name_never_touches_disk_or_network(tmp_path, monkeypatc
 
 def test_comfy_queue_missing_workflow(tmp_path, monkeypatch):
     _queue_folder(tmp_path, monkeypatch)
-    assert tools.comfy_queue("nope") == "error: no saved workflow named nope"
+    assert tools.comfy_queue("nope") == "error: no saved workflow named nope; comfy_workflows lists them"
 
 
 def test_comfy_queue_when_not_running(tmp_path, monkeypatch):

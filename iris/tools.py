@@ -208,7 +208,7 @@ def comfy_queue(workflow: str) -> str:
     folder = Path(os.environ.get("IRIS_COMFY_WORKFLOWS", "~/.iris/workflows")).expanduser()
     path = folder / f"{workflow}.json"
     if not path.is_file():
-        return f"error: no saved workflow named {workflow}"
+        return f"error: no saved workflow named {workflow}; comfy_workflows lists them"
     try:
         prompt = json.loads(path.read_text(encoding="utf-8"))
     except ValueError:

@@ -44,6 +44,7 @@ def pieces(text: str, longest: int = PIECE) -> list[str]:
 
 
 def main(voice: str) -> None:
+    """Load the model once, then speak each JSON line read from stdin, writing its audio chunks to stdout."""
     out = os.fdopen(os.dup(1), "wb")  # the protocol; anything the libraries print goes to stderr instead
     os.dup2(2, 1)
     sys.stdout = sys.stderr

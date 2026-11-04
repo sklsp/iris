@@ -301,6 +301,23 @@ def test_a_csv_path_writes_csv_and_escapes_formulas(tmp_path):
     assert p.read_text(encoding="utf-8-sig").splitlines() == ["a,b", "'=1+1,3"]
 
 
+def test_replacing_an_existing_csv_trashes_the_old_one(tmp_path, monkeypatch):
+    trash = tmp_path / "trash"
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(trash))
+    p = tmp_path / "t.csv"
+    p.write_text("old", encoding="utf-8")
+    assert office.make_spreadsheet(str(p), [{"name": "A", "rows": [["a", "b"]]}]) == f"made {p} (1 rows)"
+    trashed = [x for x in trash.iterdir() if not x.name.endswith(".json")]
+    assert len(trashed) == 1 and trashed[0].name.endswith("t.csv")
+
+
+def test_a_line_that_is_only_bold_makes_one_bold_run(tmp_path):
+    p = tmp_path / "t.docx"
+    assert office.make_document(str(p), "T", "**bold**") == f"made {p} (1 paragraphs)"
+    para = Document(str(p)).paragraphs[1]  # [0] is the title heading
+    assert [(r.text, r.bold) for r in para.runs] == [("bold", True)]
+
+
 def test_office_tiers_look_at_the_file_with_its_suffix(tmp_path, monkeypatch):
     home = _home(tmp_path, monkeypatch)
     iris_dir = home / "Documents" / "Iris"

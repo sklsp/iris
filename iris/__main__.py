@@ -76,6 +76,7 @@ def shortcut_main(argv: list[str]) -> int:
 
 
 def skill_main(argv: list[str]) -> int:
+    """`iris skill`: list the built skills, zip one to share or import a shared one for review."""
     ap = argparse.ArgumentParser(prog="iris skill")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list")
@@ -105,6 +106,8 @@ def skill_main(argv: list[str]) -> int:
 
 
 def main() -> None:
+    """Dispatch a subcommand such as dashboard or doctor; without one, run the request loop in text, push-to-talk
+    or wake-word mode."""
     if len(sys.argv) > 1 and sys.argv[1] == "eval":
         from iris.eval import main as eval_main
 

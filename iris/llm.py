@@ -76,6 +76,7 @@ class LMStudio:
         return self.model if self.model is not None else effective_model()
 
     def chat(self, messages: list[dict], tools: list[dict]) -> Reply:
+        """One round trip with the model; its text and any tool calls come back as a Reply."""
         # Qwen reasons before it acts: 1500 to 2500 tokens on an open request, so 4096 cut some replies off.
         body = {"model": self._model(), "messages": messages, "tools": tools, "temperature": 0.3, "max_tokens": 8192}
         req = urllib.request.Request(self.url, json.dumps(body).encode(), {"Content-Type": "application/json"})

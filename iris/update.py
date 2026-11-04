@@ -22,10 +22,12 @@ CHECK_EVERY_SECONDS = 24 * 3600
 
 
 def state_path() -> Path:
+    """Where the last check's answer lives, next to config.toml; it is all the dashboard reads."""
     return config.config_path().parent / "update.json"
 
 
 def enabled() -> bool:
+    """Whether update checks are on; only an explicit false in config.toml turns them off."""
     return config.raw().get("update_check", True) is not False
 
 

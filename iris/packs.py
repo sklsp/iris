@@ -32,14 +32,17 @@ FEATURE_MODELS = ("melspectrogram.onnx", "embedding_model.onnx")  # openWakeWord
 
 
 def home() -> Path:
+    """The folder every pack installs into, next to config.toml, so it survives upgrades."""
     return config.config_path().parent
 
 
 def gpu_dir() -> Path:
+    """The folder the gpu pack installs its NVIDIA libraries into."""
     return home() / "gpu"
 
 
 def piper_runtime() -> Path:
+    """The Piper runtime folder, asked of iris.voice so both look at the same place."""
     from iris.voice import piper_runtime
 
     return piper_runtime()
@@ -233,11 +236,13 @@ class Job:
         self.log.parent.mkdir(parents=True, exist_ok=True)
 
     def say(self, line: str) -> None:
+        """One output line for the Setup tab and the packs.log on disk."""
         self.lines.append(line)
         with self.log.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
 
     def as_dict(self) -> dict:
+        """What the dashboard shows about this install: pack, state and its last lines."""
         return {"pack": self.pack, "state": self.state, "lines": list(self.lines)}
 
 
@@ -282,4 +287,5 @@ def start(pack_id: str, runner: Callable[[Job], None] = run) -> dict:
 
 
 def payload() -> dict:
+    """The Setup tab's view of the voice packs and the one running install."""
     return {"ok": True, "packs": packs(), "job": _job.as_dict() if _job is not None else None}

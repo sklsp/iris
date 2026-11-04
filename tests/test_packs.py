@@ -163,6 +163,21 @@ def test_installed_checks(tmp_path, monkeypatch):
     assert packs._gpu_installed() is True
 
 
+def test_whisper_is_installed_when_every_model_downloads(monkeypatch):
+    import types
+
+    calls = []
+    utils = types.ModuleType("faster_whisper.utils")
+    utils.download_model = lambda name, local_files_only=False: calls.append(name)
+    parent = types.ModuleType("faster_whisper")
+    parent.utils = utils
+    monkeypatch.setitem(sys.modules, "faster_whisper", parent)
+    monkeypatch.setitem(sys.modules, "faster_whisper.utils", utils)
+    monkeypatch.setattr(voice, "WHISPER_MODEL", "small")  # a fixed name: no GPU probe, one model to check
+    assert packs._whisper_installed() is True
+    assert calls[0] == "small"
+
+
 def test_wake_files_name_the_model_and_its_feature_models(monkeypatch):
     import types
 

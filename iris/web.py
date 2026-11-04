@@ -57,6 +57,7 @@ class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
     (DNS rebinding) still passes; check the resolved address if that ever matters."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        """Only http and https redirects to a non-local address are followed; anything else raises."""
         target = urllib.parse.urlsplit(newurl)
         if target.scheme not in ("http", "https"):
             raise ValueError("only http and https links")
@@ -143,6 +144,7 @@ class _ResultParser(HTMLParser):
         self._snippet_tag: str | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Start collecting a result's title link or its snippet; an ad clears the pending result."""
         classes = _attr_classes(attrs)
         href = dict(attrs).get("href") or ""
         if "result__a" in classes and self._title_tag is None:
@@ -156,6 +158,7 @@ class _ResultParser(HTMLParser):
             self._snippet_tag = tag
 
     def handle_endtag(self, tag: str) -> None:
+        """A closed title link becomes a result; a closed snippet ends its collection."""
         if tag == self._title_tag:
             result = {"title": _collapse("".join(self._title_parts)), "url": _unwrap_href(self._title_href),
                       "snippet": ""}
@@ -166,6 +169,7 @@ class _ResultParser(HTMLParser):
             self._snippet_tag = None
 
     def handle_data(self, data: str) -> None:
+        """Text inside the title link goes to its parts; text inside a snippet goes to the pending result."""
         if self._title_tag is not None:
             self._title_parts.append(data)
         elif self._snippet_tag is not None and self._pending is not None:
@@ -191,6 +195,7 @@ class _TextExtractor(HTMLParser):
         self._block_parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Start skipping at a skip tag, or start collecting the title or a block of text."""
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
             return
@@ -205,6 +210,7 @@ class _TextExtractor(HTMLParser):
             self._block_parts = []
 
     def handle_endtag(self, tag: str) -> None:
+        """Leave a skip tag, or finish the title or the current block of text."""
         if tag in _SKIP_TAGS and self._skip_depth:
             self._skip_depth -= 1
             return
@@ -217,6 +223,7 @@ class _TextExtractor(HTMLParser):
             self._flush_block()
 
     def handle_data(self, data: str) -> None:
+        """Text goes to the title or the current block, unless we are inside a skipped tag."""
         if self._skip_depth:
             return
         if self._in_title:

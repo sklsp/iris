@@ -88,6 +88,7 @@ _NO = re.compile(r"\b(no|nee|niet|stop|cancel|nein|nicht|non|pas|annuler|abbrech
 
 
 def is_yes(text: str | None) -> bool:
+    """Whether a spoken answer counts as yes: any no-word wins over a yes-word."""
     if text is None:
         return False  # no answer at all is a "no"
     return bool(_YES.search(text)) and not _NO.search(text)
@@ -105,6 +106,7 @@ class SilenceDetector:
         self._voiced_seen = False
 
     def feed(self, frame: np.ndarray) -> bool:
+        """Feed one frame of audio; True once some speech has been followed by the full silence run."""
         import numpy as np
 
         rms = float(np.sqrt(np.mean(frame.astype("float64") ** 2))) if len(frame) else 0.0
@@ -144,6 +146,7 @@ class WakeWord:
         return self._m
 
     def detect(self, frame: np.ndarray) -> bool:
+        """Whether this frame contains the wake word; a hit resets the model so one shout does not fire twice."""
         import numpy as np
 
         if frame.dtype != np.int16:  # openWakeWord wants 16-bit PCM; float samples in [-1, 1] score as silence
@@ -228,6 +231,7 @@ class NameWake:
         self._long = False
 
     def detect(self, frame: np.ndarray) -> bool:
+        """Whether the user just said Iris's name: record until silence, transcribe, and look for it."""
         import numpy as np
 
         if self._long:  # the rest of a long sentence: wait for its silence, then listen again
@@ -275,6 +279,7 @@ class Voice:
         self.model = _whisper_model(WHISPER_MODEL, WHISPER_DEVICE)
 
     def listen(self, prompt: str = "Listening... press Enter when done.") -> str:
+        """Record until Enter is pressed and return what Whisper heard, or an empty string if nothing was."""
         import numpy as np
         import sounddevice as sd
 
@@ -556,6 +561,7 @@ class PiperProcess:
                                      text=True, encoding="utf-8", env=env)
 
     def wav(self, text: str, timeout: float = 20) -> Path:
+        """Send one line of text to Piper and wait for the WAV file it writes, claiming it once complete."""
         before = set(self.dir.glob("*.wav"))
         assert self.proc.stdin is not None
         self.proc.stdin.write(" ".join(text.split()) + "\n")  # one line is one WAV; Piper splits the sentences
@@ -639,6 +645,7 @@ class VoxProcess:
         return item
 
     def stream(self, text: str, timeout: float = 30):
+        """Send the text to the worker and yield its audio chunks as they are made, until the answer is done."""
         if not self.ready.wait(self.startup):
             raise TimeoutError("VoxCPM did not start")
         while self._behind:  # the rest of an answer that a wake word cut short
@@ -766,6 +773,7 @@ class Speaker:
                     pass  # speak() says what is missing when that language is needed
 
     def speak(self, text: str, stop_event: threading.Event | None = None) -> bool:
+        """Print the answer and speak it with the best engine available; True unless a wake word cut it short."""
         print(f"Iris: {text}")
         if self.engine == "voxcpm" and self._vox is not None:
             return self._speak_voxcpm(self._vox, text, stop_event)

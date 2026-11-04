@@ -92,9 +92,11 @@ class Tool:
     pure: bool = False  # only computes, touches nothing on the PC; the eval runs it for real
 
     def tier_of(self, args: dict) -> str:
+        """The risk tier for these arguments; argument-dependent tools can escalate above their base tier."""
         return self.tier_for(args) if self.tier_for else self.tier
 
     def schema(self) -> dict:
+        """The JSON function-calling entry for the model, with the tier in front of the description."""
         return {"type": "function", "function": {
             "name": self.name, "description": f"[{self.tier}] {self.description}",
             "parameters": {"type": "object", "properties": self.params, "required": self.required}}}
@@ -125,6 +127,7 @@ def system_data() -> dict:
 
 
 def system_status() -> str:
+    """CPU and RAM usage as text, with each GPU's load, VRAM and temperature on its own line."""
     d = system_data()
     lines = [f"CPU {d['cpu_percent']:.0f}%, RAM {d['ram_used_gb']:.1f}/{d['ram_total_gb']:.1f} GB"]
     for g in d["gpus"]:
@@ -350,6 +353,7 @@ def _windows() -> list:
 
 
 def list_windows() -> str:
+    """The titles of the open top-level windows, one per line; Iris's own overlay is not a window to list."""
     titles = [w.window_text() for w in _windows() if w.window_text().strip()]
     return "\n".join(titles) or "(no windows)"
 
@@ -365,6 +369,7 @@ def _window(title: str):
 
 
 def read_window(title: str) -> str:
+    """A window's title and its controls with their text, capped at MAX_CONTROLS so one answer stays readable."""
     w = _window(title)
     out = [f"Window: {w.window_text()}"]
     for c in w.descendants():
@@ -401,6 +406,7 @@ def _control(w, name: str):
 
 
 def click(window: str, control: str) -> str:
+    """Click a control in a window by name, using Invoke when the control supports it and a real click otherwise."""
     c = _control(_window(window), control)
     try:
         c.invoke()
@@ -414,6 +420,7 @@ def _escape_keys(text: str) -> str:
 
 
 def type_text(window: str, text: str, into: str = "", replace: bool = False) -> str:
+    """Type text into a window or one named control inside it; replace=true clears the target first."""
     w = _window(window)
     w.set_focus()
     target = _control(w, into) if into else w
@@ -424,6 +431,7 @@ def type_text(window: str, text: str, into: str = "", replace: bool = False) -> 
 
 
 def open_app(name: str) -> str:
+    """Start an app by name: the Start menu shortcut when there is one, else ShellExecute for PATH names and URIs."""
     match = start_menu_match(name, _start_menu_folders())
     if match is not None:
         os.startfile(str(match))  # the Start menu shortcut for this name
@@ -434,6 +442,7 @@ def open_app(name: str) -> str:
 
 # --- hands --------------------------------------------------------------------
 def press_keys(window: str, keys: str) -> str:
+    """Send a pywinauto key sequence (^s = Ctrl+S) to a window after focusing it."""
     w = _window(window)
     w.set_focus()
     w.type_keys(keys)  # pywinauto syntax: ^s = Ctrl+S, {TAB}, {ENTER}
@@ -441,6 +450,7 @@ def press_keys(window: str, keys: str) -> str:
 
 
 def focus_window(title: str) -> str:
+    """Bring a window to the front so later clicks and typing land in it."""
     w = _window(title)
     w.set_focus()
     return f"focused {w.window_text()!r}"
@@ -454,6 +464,7 @@ def _scroll_at(x: int, y: int, delta: int) -> None:
 
 
 def scroll(window: str, direction: str, amount: int = 3) -> str:
+    """Scroll a window up or down with the mouse wheel, centered on it; amount is how many notches."""
     if direction not in ("up", "down"):
         raise ValueError("direction must be 'up' or 'down'")
     w = _window(window)
@@ -464,6 +475,7 @@ def scroll(window: str, direction: str, amount: int = 3) -> str:
 
 
 def open_url(url: str) -> str:
+    """Open an http(s) link in the user's browser and return its controls right away; anything else is refused."""
     from urllib.parse import urlparse
 
     from iris import browser
@@ -518,6 +530,7 @@ def web_read(url: str) -> str:
 
 # --- files --------------------------------------------------------------------
 def trash_file(path: str) -> str:
+    """Move a file or folder to Iris's trash, remembering its original path so restore_trash can put it back."""
     p = Path(path).expanduser().resolve()
     if not p.exists():
         raise LookupError(f"no such file or folder: {p}")
@@ -532,6 +545,7 @@ def trash_file(path: str) -> str:
 
 
 def restore_trash(name: str = "") -> str:
+    """Put the most recently trashed item back where it came from; name filters by filename substring."""
     d = _trash_dir()
     items = [x for x in d.iterdir() if not x.name.endswith(".json")]
     # most recently trashed first: the .json written at trash time says when, the file's own mtime (kept by the
@@ -834,6 +848,7 @@ def request_capability(request: str, tool_name: str, tier: str, plan: str) -> st
 
 
 def capability_list() -> str:
+    """The skills Iris is building or has built, each with its tier, status and what was asked for."""
     from iris import skills
 
     return skills.listing()
@@ -864,6 +879,7 @@ def capability_check(tool_name: str) -> str:
 
 
 def capability_approve(tool_name: str) -> str:
+    """Approve a ready skill so Iris may use it from the next request on; only a ready skill can be approved."""
     from iris import skills
 
     try:
@@ -873,6 +889,7 @@ def capability_approve(tool_name: str) -> str:
 
 
 def capability_remove(tool_name: str) -> str:
+    """Remove a skill Iris built: its folder goes to Iris's trash and its approval is dropped."""
     from iris import skills
 
     try:

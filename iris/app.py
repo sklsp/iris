@@ -73,6 +73,7 @@ def take_mutex(name: str) -> int | None:
 
 
 def mutex_exists(name: str) -> bool:
+    """Whether another process is holding the named mutex, without taking it."""
     k = _kernel32()
     handle = k.OpenMutexW(0x00100000, False, name)  # SYNCHRONIZE
     if handle:
@@ -149,13 +150,16 @@ class Job:
         self._k.SetInformationJobObject(self.handle, 9, ctypes.byref(limits), ctypes.sizeof(limits))  # Extended
 
     def add(self, proc: subprocess.Popen) -> None:
+        """Put a process in the job so it dies with it; safe because the child starts no processes of its own yet."""
         # ponytail: the child runs a moment before it joins; it starts no process of its own that early
         self._k.AssignProcessToJobObject(self.handle, int(proc._handle))  # type: ignore[attr-defined]
 
     def kill(self) -> None:
+        """End every process in the job at once."""
         self._k.TerminateJobObject(self.handle, 1)
 
     def close(self) -> None:
+        """Close the job's handle; with KILL_ON_JOB_CLOSE set, that ends whatever is still in it."""
         self._k.CloseHandle(self.handle)
 
 
@@ -168,9 +172,11 @@ class StopEvent:
         self.handle = self._k.CreateEventW(None, True, False, self.name)  # manual reset, not set
 
     def set(self) -> None:
+        """Signal the supervised voice loop to quit cleanly."""
         self._k.SetEvent(self.handle)
 
     def close(self) -> None:
+        """Close the event's handle."""
         self._k.CloseHandle(self.handle)
 
 
@@ -195,10 +201,12 @@ class VoiceLoop:
 
     @property
     def log_path(self) -> Path:
+        """Where the voice loop writes its output: logs/voice.log next to config.toml."""
         return log_dir() / "voice.log"
 
     @property
     def running(self) -> bool:
+        """Whether the voice loop is started."""
         return self.proc is not None
 
     def start(self) -> str:
@@ -226,6 +234,7 @@ class VoiceLoop:
             return "Iris is listening."
 
     def stop(self, seconds: float = STOP_SECONDS) -> None:
+        """Ask the voice loop to stop and wait up to seconds for it; kill it if it does not go."""
         with self._lock:
             proc, event, watcher = self.proc, self._event, self._watcher
             self._stopping = True
@@ -289,6 +298,7 @@ class Tray:
         self.ready = threading.Event()
 
     def start(self) -> None:
+        """Start the tray's own STA thread and wait up to ten seconds for it to show the icon."""
         t = self.f.Thread(self.f.ThreadStart(self._run))
         t.SetApartmentState(self.f.ApartmentState.STA)
         t.IsBackground = True
@@ -334,6 +344,7 @@ class Tray:
             self.icon.ShowBalloonTip(5000, TITLE, text[:250], self.f.ToolTipIcon.Info)
 
     def close(self) -> None:
+        """Ask the tray's message loop to exit, on its own thread."""
         if self.menu is not None:
             self.menu.BeginInvoke(self.f.Action(self.f.Application.ExitThread))
 
@@ -356,6 +367,7 @@ class App:
         self._minimized = False
 
     def run(self) -> int:
+        """Start the dashboard server, the window and voice mode; stop everything on Quit (closing only hides it)."""
         from iris import dashboard
 
         # models the app downloads (Whisper, VoxCPM2) live under ~/.iris, so uninstall can remove them on request
@@ -420,11 +432,13 @@ class App:
             self.tray.notify(f"Voice mode stopped (exit code {code}). See the Logs tab.\n{last_lines}")
 
     def open(self) -> None:
+        """Show the window again, restoring it if it was minimized."""
         self.window.show()
         if self._minimized:
             self.window.restore()
 
     def settings(self) -> None:
+        """Open the window on its Settings tab."""
         self.open()
         self.window.evaluate_js("location.hash = 'settings'")
 
@@ -434,6 +448,7 @@ class App:
         return self.voice.start()
 
     def toggle_listening(self) -> None:
+        """Start or stop listening from the tray, and say what happened in a balloon."""
         if self.voice.running:
             self.voice.stop()
             if self.tray is not None:
@@ -444,6 +459,7 @@ class App:
                 self.tray.notify(message)
 
     def quit(self) -> None:
+        """Stop the voice loop and destroy the window, which ends run() and closes the tray and server."""
         self._quitting = True
         self.voice.stop()
         self.window.destroy()  # webview.start returns; run() closes the tray and the server
@@ -470,6 +486,7 @@ def log_when_windowless() -> Path | None:
 
 
 def main(argv: list[str]) -> int:
+    """Start the app: log to a file when there is no console, and bring an already running Iris forward instead."""
     log_when_windowless()
     background = "--background" in argv
     try:

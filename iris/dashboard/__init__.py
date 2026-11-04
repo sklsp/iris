@@ -89,6 +89,7 @@ set_lm_base(_lm_base_from_settings())
 
 
 def journal_path() -> Path:
+    """Where the journal file lives; IRIS_JOURNAL overrides it (tests)."""
     return Path(os.environ.get("IRIS_JOURNAL") or (Path.home() / ".iris" / "journal.jsonl"))
 
 
@@ -806,6 +807,7 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def do_GET(self):  # GET stays read-only; the write routes refuse it with a 405
+        """Serve the dashboard page and its read-only /api routes; a write route answers 405 until it gets a POST."""
         path = self.path.split("?", 1)[0]
         if path == "/":
             token = getattr(self.server, "token", "")
@@ -863,6 +865,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, code=404)
 
     def do_POST(self):  # the write routes and nothing else
+        """The only door to changes: check the token, then run the named write action with its JSON body."""
         path = self.path.split("?", 1)[0]
         if path not in WRITE_ROUTES:
             self._drain_body()
@@ -931,6 +934,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def log_message(self, fmt: str, *args) -> None:  # keep the console quiet while it runs
+        """No per-request logging; a running dashboard must not fill the console."""
         pass
 
 
@@ -949,6 +953,7 @@ def make_server(host: str = HOST, port: int = PORT) -> ThreadingHTTPServer:
 
 
 def default_port() -> int:
+    """The port to serve on: IRIS_DASHBOARD_PORT when it is set and numeric, else the built-in one."""
     try:
         return int(os.environ.get("IRIS_DASHBOARD_PORT") or PORT)
     except ValueError:
@@ -956,6 +961,7 @@ def default_port() -> int:
 
 
 def serve(host: str = HOST, port: int | None = None) -> None:
+    """Run the dashboard server until Ctrl+C; when the port is taken it exits saying how to pick another."""
     if port is None:
         port = default_port()
     try:

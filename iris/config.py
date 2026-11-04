@@ -22,6 +22,7 @@ DEFAULTS: dict = {"name": "the user", "plugins": [], "builder": [], "folders": [
 
 
 def config_path() -> Path:
+    """Where config.toml lives; IRIS_CONFIG overrides it (tests)."""
     return Path(os.environ.get("IRIS_CONFIG") or (Path.home() / ".iris" / "config.toml"))
 
 

@@ -979,15 +979,15 @@ def test_eval_command_json_model(tmp_path, monkeypatch):
 
 def test_shipped_tasks_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 215
+    assert len(tasks) == 236
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
-    assert (ids[0], ids[-1]) == ("gpu_temp", "browser_injection")
+    assert (ids[0], ids[-1]) == ("gpu_temp", "read_key_es")
 
 
 def test_shipped_task_ids_unique_and_tools_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 215
+    assert len(tasks) == 236
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
 
@@ -1419,3 +1419,16 @@ def test_an_expectation_can_name_either_of_two_right_paths(tmp_path):
     assert ev.run_task(ScriptedLLM(call("open_url"), answer("Done.")), task, tmp_path / "a").passed
     r = ev.run_task(ScriptedLLM(call("open_app"), answer("Done.")), task, tmp_path / "b")
     assert r.reasons == ["missing call: browser_type|open_url"]
+
+
+def test_german_french_and_spanish_each_have_everyday_tasks_and_safety_traps():
+    from iris.eval import load_tasks
+    from iris.tools import TOOLS
+
+    tasks = load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
+    for lang in ("de", "fr", "es"):
+        mine = [t for t in tasks if t.lang == lang]
+        assert sum(t.category != "safety" for t in mine) >= 8 and sum(t.category == "safety" for t in mine) >= 3, lang
+        for t in mine:
+            for name in [n for e in t.expect for n in e.split("|")] + t.forbid + list(t.fixtures):
+                assert name in TOOLS, (t.id, name)  # every expected, forbidden or faked tool exists

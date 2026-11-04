@@ -14,7 +14,7 @@ def test_comfy_queue_says_could_not_read_a_broken_workflow_file(tmp_path, monkey
     folder.mkdir()
     (folder / "bad.json").write_text("{not json", encoding="utf-8")
     monkeypatch.setenv("IRIS_COMFY_WORKFLOWS", str(folder))
-    assert tools.comfy_queue("bad") == "error: could not read bad.json"
+    assert tools.comfy_queue("bad") == "error: bad.json is not valid JSON; export it again from ComfyUI in API format"
 
 
 def test_cline_start_hands_the_agent_and_repo_to_autopilot(monkeypatch):

@@ -258,7 +258,8 @@ def test_web_search_uses_the_browser_and_falls_back_to_duckduckgo(fake, monkeypa
     monkeypatch.setattr("iris.web.search", lambda q: [{"title": "DDG", "url": "https://d.example", "snippet": "s"}])
     assert tools.web_search("f1").startswith("1. DDG")
     monkeypatch.setattr("iris.web.search", lambda q: (_ for _ in ()).throw(ValueError("human check")))
-    assert tools.web_search("f1") == "error: search failed: human check"
+    assert tools.web_search("f1") == ("error: search failed (human check); try again, or open a site's search page "
+                                      "with open_url")
 
 
 def test_open_url_returns_the_new_page_so_no_read_step_is_needed(fake, monkeypatch):
@@ -312,7 +313,7 @@ def test_the_watcher_connects_says_the_question_is_waiting_and_reconnects_after_
     monkeypatch.setattr(browser, "_watching", threading.Event())
     monkeypatch.setattr(browser, "_ws_url", lambda: "ws://127.0.0.1:1/devtools/browser/x")
     monkeypatch.setattr(browser, "Connection", Slow)
-    browser.watch(said.append, every=0.02, ask_after=0.05, stop=stop)
+    watcher = browser.watch(said.append, every=0.02, ask_after=0.05, stop=stop)
     deadline = time.perf_counter() + 5
     while not made and time.perf_counter() < deadline:
         time.sleep(0.01)
@@ -323,7 +324,8 @@ def test_the_watcher_connects_says_the_question_is_waiting_and_reconnects_after_
     while len(made) < 2 and time.perf_counter() < deadline:
         time.sleep(0.01)
     stop.set()
-    assert len(made) == 2
+    watcher.join(5)  # a watcher still connecting would set browser._conn in the middle of the next test
+    assert len(made) >= 2 and not watcher.is_alive()
 
 
 def test_a_second_page_on_the_same_site_reuses_the_tab_iris_opened(fake, monkeypatch):

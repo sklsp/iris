@@ -164,11 +164,13 @@ class Agent:
         self.tools = tools() if callable(tools) else tools
         self.messages: list[dict] = [{"role": "system", "content": system_prompt(today=self.today)}]
         self.cancel = threading.Event()  # set from another thread (the overlay's cancel button) to stop this request
+        self._sizes: dict[int, tuple[str, int]] = {}  # id(message) -> (its content, its JSON size), for _trim
 
     def handle(self, request: str) -> str:
         """Run a request through model and tools until it is answered, refused or cancelled; returns what Iris says."""
         if callable(self._tools):
             self.tools = self._tools()
+        self._sizes.pop(id(self.messages[0]), None)
         self.messages[0] = {"role": "system", "content": system_prompt(today=self.today)}
         self.messages.append({"role": "user", "content": request})
         self._lang = _lang(request)  # confirm questions follow the language of the latest request
@@ -238,18 +240,38 @@ class Agent:
         self.journal.log(event="answer", text=reply.text)
         return reply.text
 
+    def _size(self, m: dict) -> int:
+        """A message's JSON size, measured once per content (older browser pages are shortened in place)."""
+        content = m.get("content") or ""
+        known = self._sizes.get(id(m))
+        if known is None or known[0] is not content:
+            known = (content, len(json.dumps(m, ensure_ascii=False)))
+            self._sizes[id(m)] = known
+        return known[1]
+
     def _trim(self) -> None:
-        """Drop the oldest whole turns until history fits in MAX_HISTORY_CHARS.
+        """Drop the oldest whole turns once history passes MAX_HISTORY_CHARS, down to three quarters of it.
 
         The system message is never dropped and the current turn (the last user message onward)
         is kept even when it alone exceeds budget; only whole turns go, so a tool result always
-        keeps its assistant tool_calls message."""
-        while True:
+        keeps its assistant tool_calls message. Trimming with room to spare changes the start of the
+        conversation (which the model server caches) once every few requests instead of on every one,
+        and the journal says when it happened."""
+        size = sum(self._size(m) for m in self.messages)
+        if size <= MAX_HISTORY_CHARS:
+            return
+        dropped = 0
+        while size > MAX_HISTORY_CHARS * 3 // 4:
             starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
-            size = sum(len(json.dumps(m, ensure_ascii=False)) for m in self.messages)
-            if len(starts) <= 1 or size <= MAX_HISTORY_CHARS:
-                return
+            if len(starts) <= 1:
+                break
+            for m in self.messages[starts[0]:starts[1]]:
+                size -= self._size(m)
+                self._sizes.pop(id(m), None)
             del self.messages[starts[0]:starts[1]]
+            dropped += 1
+        if dropped:
+            self.journal.log(event="trimmed", turns=dropped, chars=size)
 
     def _run(self, call: ToolCall) -> str:
         tool = self.tools.get(call.name)

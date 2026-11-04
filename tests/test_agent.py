@@ -215,6 +215,20 @@ def test_history_is_bounded_to_max_chars(tmp_path):
     assert a.messages[1]["role"] == "user"
 
 
+def test_trimming_leaves_room_and_says_so_in_the_journal(tmp_path):
+    big = Tool("big", "", {}, [], SAFE, lambda **kw: "x" * 5000)
+    replies = []
+    for i in range(30):
+        replies += [call("big"), answer(f"turn {i} done")]
+    a = Agent(ScriptedLLM(*replies), lambda q: True, Journal(tmp_path / "j.jsonl"), {"big": big})
+    for i in range(30):
+        a.handle(f"do thing {i}")
+    trims = [e for e in journal(tmp_path) if e["event"] == "trimmed"]
+    assert trims and all(e["turns"] >= 1 and e["chars"] <= MAX_HISTORY_CHARS * 3 // 4 for e in trims)
+    assert len(trims) < 30 // 2  # a trim makes room for a few turns, so the cached start changes now and then
+    assert len(a._sizes) <= len(a.messages) + 1  # no size kept for a message that is gone
+
+
 def test_short_session_keeps_every_turn(tmp_path):
     ran = []
     llm = ScriptedLLM(call("status"), answer("one."), call("status"), answer("two."),

@@ -305,6 +305,14 @@ def set_iris_model(body: dict) -> dict:
     return iris_model_payload()
 
 
+def _host_ok(self: Any) -> bool:
+    """The page must have been asked for by its loopback name. A site that rebinds its own name to 127.0.0.1 would
+    otherwise read every GET route (the page with its token, the journal, the settings) as a same-origin page."""
+    host = (self.headers.get("Host") or "").strip().lower()
+    port = str(self.server.server_address[1])
+    return not host or host in (f"127.0.0.1:{port}", f"localhost:{port}", "127.0.0.1", "localhost")
+
+
 def _authorized(self: Any) -> bool:
     """A POST is allowed only with the right token AND a matching Origin or Referer."""
     token = self.headers.get("X-Iris-Token")
@@ -811,7 +819,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # GET stays read-only; the write routes refuse it with a 405
         """Serve the dashboard page and its read-only /api routes; a write route answers 405 until it gets a POST."""
         path = self.path.split("?", 1)[0]
-        if path == "/":
+        if not _host_ok(self):
+            self._json({"error": "open the dashboard at http://127.0.0.1 or http://localhost"}, code=421)
+        elif path == "/":
             token = getattr(self.server, "token", "")
             page = _page_template().replace(b"__IRIS_TOKEN__", token.encode())
             self._send(200, page, "text/html; charset=utf-8")
@@ -869,6 +879,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # the write routes and nothing else
         """The only door to changes: check the token, then run the named write action with its JSON body."""
         path = self.path.split("?", 1)[0]
+        if not _host_ok(self):
+            self._drain_body()
+            self._json({"error": "open the dashboard at http://127.0.0.1 or http://localhost"}, code=421)
+            return
         if path not in WRITE_ROUTES:
             self._drain_body()
             self._json({"error": "read only: this route does not accept POST"}, code=405)

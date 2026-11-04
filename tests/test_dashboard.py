@@ -1506,3 +1506,25 @@ def test_tail_lines_reads_only_the_end_of_a_big_file(tmp_path, monkeypatch):
 def test_logs_route_is_read_only(server):
     with urllib.request.urlopen(server + "/api/logs", timeout=5) as r:
         assert json.loads(r.read())["ok"] is True
+
+
+def test_a_rebound_host_name_gets_nothing(server, srv):
+    """DNS rebinding: a site that points its own name at 127.0.0.1 sends its name as Host. It must not read the page
+    (with its token) or any route, and writes stay refused too."""
+    import http.client
+
+    port = int(server.rsplit(":", 1)[1])
+    for method, path in (("GET", "/"), ("GET", "/api/journal"), ("GET", "/api/settings"), ("POST", "/api/settings")):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request(method, path, body="{}" if method == "POST" else None,
+                     headers={"Host": f"evil.example:{port}", "X-Iris-Token": srv.token,
+                              "Origin": f"http://127.0.0.1:{port}"})
+        r = conn.getresponse()
+        body = r.read().decode("utf-8")
+        conn.close()
+        assert r.status == 421 and srv.token not in body, (method, path)
+    for host in (f"127.0.0.1:{port}", f"localhost:{port}", f"LOCALHOST:{port}"):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/", headers={"Host": host})
+        assert conn.getresponse().status == 200
+        conn.close()

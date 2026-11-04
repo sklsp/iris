@@ -402,3 +402,21 @@ def test_reminders_with_a_bom_or_a_utc_offset_are_read(reminders_file):
     reminders_file.write_bytes(b'\xef\xbb\xbf[{"id": 1, "due": "2026-11-02T10:00+00:00", "text": "dentist"}]')
     (row,) = reminders._read()
     assert row["text"] == "dentist" and datetime.fromisoformat(row["due"]).tzinfo is None
+
+
+def test_a_reminder_months_ahead_waits_in_steps_and_can_be_cancelled(monkeypatch):
+    import threading
+    import time
+
+    waits, fired = [], []
+    monkeypatch.setattr(reminders._Wait, "STEP", 0.05)
+    t = reminders._start_thread(0.12, lambda: fired.append(1))
+    t.join(2)
+    assert fired == [1]  # three short steps, then the call: never one wait longer than STEP
+    long = reminders._start_thread(60 * 86_400, lambda: fired.append(2))  # 60 days: over TIMEOUT_MAX on Windows
+    real_wait = long.finished.wait
+    long.finished.wait = lambda timeout=None: waits.append(timeout) or real_wait(0.01)
+    time.sleep(0.05)
+    long.cancel()
+    long.join(2)
+    assert not long.is_alive() and fired == [1] and waits and max(waits) <= 0.05 <= threading.TIMEOUT_MAX

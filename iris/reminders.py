@@ -13,6 +13,7 @@ import json
 import os
 import re
 import threading
+import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -35,10 +36,30 @@ def _wall_now() -> datetime:
     return datetime.now()
 
 
-def _start_thread(seconds: float, fn: Callable[[], None]) -> threading.Timer:
+class _Wait(threading.Timer):
+    """A Timer that waits in steps of a day: one wait longer than threading.TIMEOUT_MAX (about 49.7 days on Windows)
+    raises OverflowError, and a reminder may be a year away. cancel() stops it, as for any Timer."""
+
+    STEP = 86_400.0
+
+    def __init__(self, seconds: float, fn: Callable[[], None]) -> None:
+        super().__init__(max(0.0, seconds), fn)
+        self.daemon = True
+        self.deadline = time.monotonic() + max(0.0, seconds)
+
+    def run(self) -> None:
+        while not self.finished.is_set():
+            left = self.deadline - time.monotonic()
+            if left <= 0:
+                self.function(*self.args, **self.kwargs)
+                break
+            self.finished.wait(min(left, self.STEP))
+        self.finished.set()
+
+
+def _start_thread(seconds: float, fn: Callable[[], None]) -> _Wait:
     """The default scheduler: a daemon thread that calls `fn` after `seconds`."""
-    timer = threading.Timer(max(0.0, seconds), fn)
-    timer.daemon = True
+    timer = _Wait(seconds, fn)
     timer.start()
     return timer
 

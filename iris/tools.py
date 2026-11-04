@@ -980,7 +980,8 @@ TOOLS = {t.name: t for t in [
          {"window": S, "keys": S}, ["window", "keys"], CONFIRM, press_keys, _press_keys_tier),
     Tool("focus_window", "Bring the window whose title contains `title` to the front and give it focus.",
          {"title": S}, ["title"], SAFE, focus_window),
-    Tool("scroll", "Scroll up or down inside a window (mouse wheel at its center).",
+    Tool("scroll", "Scroll up or down inside a desktop app's window (mouse wheel at its center). For a web page in"
+                   " Brave, Chrome or Edge, use browser_scroll instead.",
          {"window": S, "direction": {"type": "string", "enum": ["up", "down"]},
           "amount": {"type": "integer"}}, ["window", "direction"], SAFE, scroll),
     Tool("open_url",
@@ -1003,7 +1004,8 @@ TOOLS = {t.name: t for t in [
          {"index": {"type": "integer"}, "text": S, "enter": {"type": "boolean"}, "tab": S}, ["index", "text"],
          CONFIRM, browser_type, _browser_type_tier),
     Tool("browser_scroll",
-         "Scroll the web page down or up by most of a screen; returns what is visible then, numbered again.",
+         "Scroll the web page in the browser (Brave, Chrome or Edge) down or up by most of a screen; returns what"
+         " is visible then, numbered again.",
          {"direction": {"type": "string", "enum": ["down", "up"]}, "tab": S}, [], SAFE, browser_scroll),
     Tool("web_search",
          "Search the web (DuckDuckGo) and list titles, links and snippets. "

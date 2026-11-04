@@ -9,6 +9,7 @@
 - Every public function has a one-line docstring.
 - Clearer errors: the office extra and pypdf say how to install them, a stopped ComfyUI, an unreachable model server, a busy clipboard and timers outside voice or text mode say what to do.
 - The README's environment table lists every variable Iris reads, and a test keeps it that way.
+- More errors say what to do: an unknown media key lists the keys, timers say what minutes and at look like, and find_files says a folder does not exist the way the other file tools do.
 
 ## 0.6.0 (2026-11-03): Iris as a desktop app
 

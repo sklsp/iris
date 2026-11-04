@@ -126,11 +126,22 @@ def effective() -> list[tuple[str, str, str]]:
     return rows
 
 
+def extras() -> list[tuple[str, str]]:
+    """Keys in config.toml that are not on the Settings tab, sorted, with their TOML value."""
+    data = config.raw()
+    return [(k, toml_value(data[k])) for k in sorted(data) if k not in BY_KEY]
+
+
 def config_main(argv: list[str]) -> int:
     """`iris config`: every setting, its value and where it comes from (file, default or environment)."""
     print(f"config file: {config.config_path()}")
     for key, value, source in effective():
         print(f"{key} = {value}  ({source})")
+    extra = extras()
+    if extra:
+        print("extra keys in config.toml (not on the Settings tab):")
+        for key, value in extra:
+            print(f"{key} = {value}")
     return 0
 
 

@@ -213,3 +213,28 @@ def test_config_main_prints_the_file_and_every_row(tmp_path, monkeypatch, capsys
     out = capsys.readouterr().out.splitlines()
     assert out[0] == f"config file: {tmp_path / 'iris-config.toml'}"
     assert 'city = "Rotterdam"  (config.toml)' in out
+
+
+def test_extras_lists_the_keys_that_are_not_on_the_tab(tmp_path):
+    (tmp_path / "iris-config.toml").write_text(
+        'city = "Rotterdam"\ncline_cli = "W:/Cline/cline-cli.exe"\n', encoding="utf-8")
+
+    assert settings.extras() == [("cline_cli", '"W:/Cline/cline-cli.exe"')]
+
+
+def test_config_main_prints_the_extra_keys(tmp_path, capsys):
+    (tmp_path / "iris-config.toml").write_text(
+        'city = "Rotterdam"\ncline_cli = "W:/Cline/cline-cli.exe"\n', encoding="utf-8")
+
+    assert settings.config_main([]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert "extra keys in config.toml (not on the Settings tab):" in out
+    assert 'cline_cli = "W:/Cline/cline-cli.exe"' in out
+
+
+def test_config_main_prints_no_header_when_there_are_no_extras(tmp_path, capsys):
+    (tmp_path / "iris-config.toml").write_text('city = "Rotterdam"\n', encoding="utf-8")
+
+    assert settings.config_main([]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert not any("extra keys in config.toml" in line for line in out)

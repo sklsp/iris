@@ -8,6 +8,6 @@
 - [x] Q6. ComfyUI not running: say what to do (1963 passed in 64.90s (0:01:04))
 - [x] Q7. Looking at the screen: say why the model could not be reached (1963 passed in 65.22s (0:01:05))
 - [x] Q8. The GPU extra's install command in a comment (1963 passed in 64.68s (0:01:04))
-- [ ] Q9. Timers outside voice and text mode: say how to use them
+- [x] Q9. Timers outside voice and text mode: say how to use them (1963 passed in 66.92s (0:01:06))
 - [ ] Q10. Clipboard errors: say what to try
 - [ ] Q11. CHANGELOG for this run

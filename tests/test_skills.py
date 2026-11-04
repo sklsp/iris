@@ -389,3 +389,25 @@ def test_the_watcher_survives_a_build_whose_meta_json_breaks_during_the_check():
     stop.set()
     t.join(2)
     assert said and "could not check the new skill say_hello" in said[0] and not t.is_alive()
+
+
+def test_a_skill_that_prints_any_unicode_runs_and_is_checked():
+    py = "def run(who):\n    return f'hallo {who} \u2192 22\u00b0C \U0001f600'\n"
+    test = "import skill\n\n\ndef test_it():\n    print('\u2192')\n    assert '\u2192' in skill.run(who='x')\n"
+    _built(py=py, test=test)
+    assert skills.check("say_hello")["status"] == "ready"
+    assert skills.run_skill("say_hello", {"who": "Mark"}) == "hallo Mark \u2192 22\u00b0C \U0001f600"
+
+
+def test_skills_run_in_utf8_mode():
+    seen = []
+
+    def run(argv, **kw):
+        seen.append((argv, kw))
+        return subprocess.CompletedProcess(argv, 0, "ok", "")
+
+    _built()
+    skills.run_skill("say_hello", {}, run=run)
+    skills.check("say_hello", run=run)
+    for argv, kw in seen:
+        assert argv[1:4] == ["-I", "-X", "utf8"] and kw["encoding"] == "utf-8" and kw["errors"] == "replace"

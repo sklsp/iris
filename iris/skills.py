@@ -264,8 +264,10 @@ def check(name: str, run: Callable[..., subprocess.CompletedProcess[str]] = subp
     output = ""
     if not problems:
         try:
-            r = run([sys.executable, "-I", "-m", "pytest", "-q", "-p", "no:cacheprovider", "test_skill.py"],
-                    cwd=folder, capture_output=True, text=True, timeout=TEST_TIMEOUT)
+            # -X utf8: under -I a child ignores PYTHONUTF8, and Windows pipes would use the code page
+            r = run([sys.executable, "-I", "-X", "utf8", "-m", "pytest", "-q", "-p", "no:cacheprovider",
+                     "test_skill.py"], cwd=folder, capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=TEST_TIMEOUT)
             output = (r.stdout + r.stderr).strip()
             if r.returncode != 0:
                 last = [line for line in output.splitlines() if line.strip()]
@@ -384,8 +386,8 @@ def import_skill(path: Path, tier: str = CONFIRM, taken: Collection[str] = (),
 def run_skill(name: str, args: dict, run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> str:
     folder = _folder(name)
     try:
-        r = run([sys.executable, "-I", "-c", _HOST, str(folder / "skill.py")], input=json.dumps(args),
-                cwd=folder, capture_output=True, text=True, timeout=RUN_TIMEOUT)
+        r = run([sys.executable, "-I", "-X", "utf8", "-c", _HOST, str(folder / "skill.py")], input=json.dumps(args),
+                cwd=folder, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=RUN_TIMEOUT)
     except subprocess.TimeoutExpired:
         return f"error: {name} took longer than {RUN_TIMEOUT} seconds"
     if r.returncode != 0:

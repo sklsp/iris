@@ -22,6 +22,9 @@ def _journal_in_tmp(tmp_path, monkeypatch):
     import threading
 
     monkeypatch.setattr(iris.browser, "_watching", threading.Event())  # a voice-mode test may have started watch()
+    import iris.web  # nor DNS: every name resolves to a public documentation address unless a test says otherwise
+
+    monkeypatch.setattr(iris.web, "_resolve", lambda host: ["93.184.215.14"])
     import iris.update
 
     def offline():

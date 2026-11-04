@@ -380,3 +380,25 @@ def test_rewrites_never_leave_a_temp_file_behind(tmp_path, monkeypatch):
     assert sorted(p.name for p in tmp_path.iterdir()) == ["notes.md", "reminders.json"]
     assert "loodgieter" in (tmp_path / "notes.md").read_text(encoding="utf-8")
     assert reminders._read()[0]["text"] == "bellen"
+
+
+def test_a_bad_line_or_a_non_utf8_notes_file_never_breaks_the_note_tools(notes_file):
+    notes_file.write_bytes(b"- 2026-13-01 10:00 a month that does not exist\n- 2026-10-30 08:00 caf\xe9 met Mark\n"
+                           b"- 2026-10-31 09:00 milk\n")
+    assert notes.find_notes("milk") == ["milk"]
+    assert notes.find_notes("caf") == ["caf\ufffd met Mark"]
+    assert "milk" in notes.notes_read()
+
+
+def test_an_unreadable_reminders_file_is_kept_aside_not_overwritten(reminders_file, monkeypatch):
+    monkeypatch.setattr(reminders, "_wall_now", lambda: datetime(2026, 10, 31, 9, 0))
+    reminders_file.write_bytes(b'\xef\xbb\xbf[{"id": 1, "due": "2026-11-02T10:00", "text": "dentist"}')  # cut off
+    assert reminders.reminder_set("18:00", "tax").startswith("reminder set")
+    kept = [p for p in reminders_file.parent.iterdir() if p.name.startswith("reminders.json.unreadable-")]
+    assert len(kept) == 1 and b"dentist" in kept[0].read_bytes()
+
+
+def test_reminders_with_a_bom_or_a_utc_offset_are_read(reminders_file):
+    reminders_file.write_bytes(b'\xef\xbb\xbf[{"id": 1, "due": "2026-11-02T10:00+00:00", "text": "dentist"}]')
+    (row,) = reminders._read()
+    assert row["text"] == "dentist" and datetime.fromisoformat(row["due"]).tzinfo is None

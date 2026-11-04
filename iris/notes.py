@@ -20,10 +20,15 @@ def _read(path: Path | None = None) -> list[tuple[datetime, str]]:
     if not p.exists():
         return []
     notes: list[tuple[datetime, str]] = []
-    for line in p.read_text(encoding="utf-8").splitlines():
+    # a hand edit in another encoding (an ANSI "café") or a date that does not exist must not break every note tool
+    for line in p.read_bytes().decode("utf-8", errors="replace").splitlines():
         m = LINE.match(line)
-        if m:
+        if not m:
+            continue
+        try:
             notes.append((datetime.strptime(m.group(1), "%Y-%m-%d %H:%M"), m.group(2)))
+        except ValueError:
+            continue
     return notes
 
 

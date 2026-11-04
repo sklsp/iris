@@ -62,8 +62,8 @@ def _read(path: Path | None = None) -> list[dict]:
     if not p.exists():
         return []
     try:
-        rows = json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+        rows = json.loads(p.read_text(encoding="utf-8-sig"))
+    except (ValueError, OSError):  # broken JSON or not UTF-8; _write keeps such a file aside before replacing it
         return []
     out: list[dict] = []
     for row in rows if isinstance(rows, list) else []:
@@ -71,16 +71,32 @@ def _read(path: Path | None = None) -> list[dict]:
                 and isinstance(row.get("due"), str) and isinstance(row.get("text"), str)):
             continue
         try:
-            datetime.fromisoformat(row["due"])
+            due = datetime.fromisoformat(row["due"])
         except ValueError:
             continue  # a reminder whose time cannot be read is left alone, never fatal
+        if due.tzinfo is not None:  # a hand-edited time with an offset: local wall time, like every other row
+            row = {**row, "due": due.astimezone().replace(tzinfo=None).isoformat(timespec="minutes")}
         out.append(row)
     return out
+
+
+def _keep_unreadable(p: Path) -> None:
+    """A reminders.json Iris can not read is moved aside before a new list replaces it, so its reminders are never
+    lost: reminders.json.unreadable-<time> holds the old file for the user to look at."""
+    if not p.exists():
+        return
+    try:
+        if isinstance(json.loads(p.read_text(encoding="utf-8-sig")), list):
+            return
+    except (ValueError, OSError):
+        pass
+    os.replace(p, p.with_name(f"{p.name}.unreadable-{datetime.now():%Y%m%d-%H%M%S}"))
 
 
 def _write(path: Path | None, rows: list[dict]) -> None:
     p = path or _path()
     p.parent.mkdir(parents=True, exist_ok=True)  # a fresh PC has no ~/.iris yet
+    _keep_unreadable(p)
     tmp = p.with_name(p.name + ".tmp")  # write aside, then swap: a crash mid-write never empties the list
     tmp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, p)

@@ -1054,11 +1054,11 @@ def test_timer_set_refuses_bad_at_formats(fake_timers, monkeypatch):
 
 
 def test_timer_set_refuses_both_minutes_and_at(fake_timers):
-    assert tools.timer_set(10, at="15:00") == "error: give minutes or at, not both"
+    assert tools.timer_set(10, at="15:00") == "error: give either minutes (such as 10) or at (such as 15:30), not both"
 
 
 def test_timer_set_refuses_neither_minutes_nor_at(fake_timers):
-    assert tools.timer_set() == "error: give minutes or at"
+    assert tools.timer_set() == "error: say how long (minutes, such as 10) or until when (at, such as 15:30)"
 
 
 def test_timer_set_registers_a_scheduled_thread(fake_timers):

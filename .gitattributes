@@ -1,0 +1,2 @@
+# old-format data for the upgrade tests: byte for byte as each release wrote it (an approval is a hash of the bytes)
+tests/fixtures/upgrade/** -text

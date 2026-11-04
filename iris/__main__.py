@@ -7,6 +7,7 @@ python -m iris app             the desktop app: the dashboard in a window, a tra
 python -m iris autopilot       wait for a run in --repo to finish, then ask before starting the next queued prompt
 python -m iris init            write a starter ~/.iris/config.toml (asks your name and city)
 python -m iris doctor          check the setup (LM Studio, model, config, plugins, voice) and say what to fix
+python -m iris config          print every setting, its value and where it comes from (file, default, environment)
 python -m iris startup on      start voice mode at login in a minimized console (off, status)
 python -m iris shortcut        put an Iris.cmd on the desktop that starts voice mode with a double-click
 python -m iris skill list      the skills Iris built; `skill export NAME` zips an approved one to share,
@@ -140,6 +141,10 @@ def main() -> None:
         from iris.doctor import main as doctor_main
 
         raise SystemExit(doctor_main())
+    if len(sys.argv) > 1 and sys.argv[1] == "config":
+        from iris.settings import config_main
+
+        raise SystemExit(config_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "startup":
         raise SystemExit(startup_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "shortcut":

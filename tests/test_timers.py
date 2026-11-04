@@ -1,10 +1,11 @@
 """Tests for the timer module; a fake clock and a fake scheduler fire timers by hand, no real threads."""
 
+import threading
 from collections.abc import Callable
 
 import pytest
 
-from iris.timers import MAX_SECONDS, Timers
+from iris.timers import MAX_SECONDS, Timers, _start_thread
 
 
 class _Handle:
@@ -163,3 +164,14 @@ def test_add_refuses_a_message_longer_than_200_characters_but_allows_exactly_200
     with pytest.raises(ValueError, match="message too long"):
         timers.add(60, "pasta", "x" * 201)
     assert timers.add(60, "pasta", "y" * 200)["id"] == 1  # exactly 200 is allowed
+
+
+# --- the default scheduler ------------------------------------------------------
+
+
+def test_start_thread_runs_the_callback_on_a_daemon_timer():
+    fired = threading.Event()
+    timer = _start_thread(0.0, fired.set)
+    assert isinstance(timer, threading.Timer)
+    assert timer.daemon is True  # a leftover timer must not hold the process open
+    assert fired.wait(timeout=2.0)  # the callback ran on its own thread within 2 s

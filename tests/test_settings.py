@@ -174,3 +174,29 @@ def test_voice_restart_route_only_works_inside_the_app(server, monkeypatch):
         409, {"error": "only the desktop app runs voice mode; restart `iris --voice` yourself"})
     monkeypatch.setitem(dashboard.APP_HOOKS, "restart_voice", lambda: "Iris is listening.")
     assert _post(base, "/api/app/voice/restart", {}, s.token) == (200, {"ok": True, "message": "Iris is listening."})
+
+
+def _tts_only_in_the_environment(tmp_path, monkeypatch):
+    """config.toml with just city; IRIS_TTS set and every other FIELDS env name unset."""
+    (tmp_path / "iris-config.toml").write_text('city = "Rotterdam"\n', encoding="utf-8")
+    monkeypatch.setenv("IRIS_TTS", "piper")
+    for f in settings.FIELDS:
+        if f.get("env") and f["env"] != "IRIS_TTS":
+            monkeypatch.delenv(f["env"], raising=False)
+
+
+def test_effective_reports_every_setting_with_its_source(tmp_path, monkeypatch):
+    _tts_only_in_the_environment(tmp_path, monkeypatch)
+    rows = settings.effective()
+    assert len(rows) == len(settings.FIELDS)
+    assert ("city", '"Rotterdam"', "config.toml") in rows
+    assert ("tts", "piper", "environment IRIS_TTS") in rows
+    assert ("name", '"the user"', "default") in rows
+
+
+def test_config_main_prints_the_file_and_every_row(tmp_path, monkeypatch, capsys):
+    _tts_only_in_the_environment(tmp_path, monkeypatch)
+    assert settings.config_main([]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == f"config file: {tmp_path / 'iris-config.toml'}"
+    assert 'city = "Rotterdam"  (config.toml)' in out

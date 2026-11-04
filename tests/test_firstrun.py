@@ -99,6 +99,28 @@ def test_mic_test_reports_a_device_error_and_missing_voice_parts(monkeypatch):
     assert "not installed" in firstrun.mic_test()["message"]
 
 
+def test_mic_test_uses_sounddevice_when_no_recorder_is_given(monkeypatch):
+    """The default recorder records MIC_SECONDS of mono float32 at 16 kHz through sounddevice."""
+    import sys
+
+    asked = {}
+
+    class _FakeSD:
+        def rec(self, frames, samplerate, channels, dtype):
+            asked.update(frames=frames, samplerate=samplerate, channels=channels, dtype=dtype)
+            return np.zeros(frames, dtype="float32")
+
+        def wait(self):
+            pass
+
+    monkeypatch.setitem(sys.modules, "sounddevice", _FakeSD())
+    r = firstrun.mic_test()
+    assert asked == {"frames": int(firstrun.MIC_SECONDS * 16000), "samplerate": 16000,
+                     "channels": 1, "dtype": "float32"}
+    assert r == {"ok": False, "level": 0, "message": "Almost nothing came in. Check the microphone in Windows "
+                                                     "Sound settings (the default input device and its level)."}
+
+
 def test_speaker_test():
     said = []
     assert firstrun.speaker_test(said.append)["ok"] and said == [firstrun.SPEAKER_TEXT]
@@ -107,6 +129,25 @@ def test_speaker_test():
         raise RuntimeError("no audio device")
 
     assert firstrun.speaker_test(broken) == {"ok": False, "message": "Could not play sound: no audio device"}
+
+
+def test_speaker_test_uses_the_windows_voice_when_no_say_is_given(monkeypatch):
+    """The default speaker speaks SPEAKER_TEXT through the sapi engine."""
+    from iris import voice
+
+    calls = []
+
+    class _FakeSpeaker:
+        def __init__(self, engine):
+            self.engine = engine
+
+        def speak(self, text):
+            calls.append((self.engine, text))
+
+    monkeypatch.setattr(voice, "Speaker", _FakeSpeaker)
+    r = firstrun.speaker_test()
+    assert calls == [("sapi", firstrun.SPEAKER_TEXT)]
+    assert r == {"ok": True, "message": "Played. If you heard nothing, check the default output device in Windows."}
 
 
 def test_payload_and_checks(monkeypatch):

@@ -414,3 +414,106 @@ def test_supervised_voice_mode_waits_on_the_apps_stop_event(tmp_path, monkeypatc
     while not waited and time.perf_counter() < end:  # the waiter runs on its own thread
         time.sleep(0.01)
     assert waited == ["Local\\Iris-Stop-x"]
+
+
+def test_main_dispatches_init_and_propagates_the_exit_code(monkeypatch):
+    seen = {}
+
+    def fake_init_main(*args):
+        seen["args"] = args
+        return 7
+
+    monkeypatch.setattr("iris.config.init_main", fake_init_main)
+    monkeypatch.setattr(sys, "argv", ["iris", "init"])
+
+    with pytest.raises(SystemExit) as exc:
+        imain.main()
+
+    assert exc.value.code == 7
+    assert seen["args"] == ()
+
+
+def test_main_dispatches_doctor_and_propagates_the_exit_code(monkeypatch):
+    seen = {}
+
+    def fake_doctor_main(*args):
+        seen["args"] = args
+        return 7
+
+    monkeypatch.setattr("iris.doctor.main", fake_doctor_main)
+    monkeypatch.setattr(sys, "argv", ["iris", "doctor"])
+
+    with pytest.raises(SystemExit) as exc:
+        imain.main()
+
+    assert exc.value.code == 7
+    assert seen["args"] == ()
+
+
+def test_main_dispatches_config_with_the_rest_of_argv(monkeypatch):
+    seen = {}
+
+    def fake_config_main(argv):
+        seen["argv"] = argv
+        return 7
+
+    monkeypatch.setattr("iris.settings.config_main", fake_config_main)
+    monkeypatch.setattr(sys, "argv", ["iris", "config"])
+
+    with pytest.raises(SystemExit) as exc:
+        imain.main()
+
+    assert exc.value.code == 7
+    assert seen["argv"] == []
+
+
+def test_main_dispatches_startup_with_the_rest_of_argv(monkeypatch):
+    seen = {}
+
+    def fake_startup_main(argv):
+        seen["argv"] = argv
+        return 7
+
+    monkeypatch.setattr(imain, "startup_main", fake_startup_main)
+    monkeypatch.setattr(sys, "argv", ["iris", "startup", "status"])
+
+    with pytest.raises(SystemExit) as exc:
+        imain.main()
+
+    assert exc.value.code == 7
+    assert seen["argv"] == ["status"]
+
+
+def test_main_dispatches_shortcut_with_the_rest_of_argv(monkeypatch):
+    seen = {}
+
+    def fake_shortcut_main(argv):
+        seen["argv"] = argv
+        return 7
+
+    monkeypatch.setattr(imain, "shortcut_main", fake_shortcut_main)
+    monkeypatch.setattr(sys, "argv", ["iris", "shortcut"])
+
+    with pytest.raises(SystemExit) as exc:
+        imain.main()
+
+    assert exc.value.code == 7
+    assert seen["argv"] == []
+
+
+def test_main_dispatches_skill_with_the_rest_of_argv(monkeypatch):
+    seen = {}
+
+    def fake_skill_main(argv):
+        seen["argv"] = argv
+        return 7
+
+    monkeypatch.setattr(imain, "skill_main", fake_skill_main)
+    monkeypatch.setattr(sys, "argv", ["iris", "skill", "list"])
+
+    with pytest.raises(SystemExit) as exc:
+        imain.main()
+
+    assert exc.value.code == 7
+    assert seen["argv"] == ["list"]
+

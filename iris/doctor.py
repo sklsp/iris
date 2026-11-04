@@ -12,7 +12,7 @@ from iris import config
 from iris.registry import PLUGINS
 
 # Iris runs without these; everything else must pass
-OPTIONAL = ("voice", "config", "skill builder", "vision", "hearing", "speech", "browser")
+OPTIONAL = ("voice", "config", "skill builder", "vision", "hearing", "speech", "browser", "overlay", "shortcut")
 
 
 def bundled() -> bool:
@@ -96,6 +96,13 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
             out.append((False, f"speech: {engine}; " + ("a voice pack on the Setup tab (Piper or VoxCPM2)" if app
                                                         else 'tts = "piper" in config.toml')
                         + " for natural Dutch and English voices"))
+    from iris import overlay
+
+    if overlay.enabled():
+        have_tk = importlib.util.find_spec("tkinter") is not None
+        out.append((have_tk, "overlay: on, tkinter found" if have_tk else
+                    "overlay: on, but tkinter is missing: reinstall Python with the tcl/tk option ticked,"
+                    " or set overlay = false"))
     from iris import browser
 
     ws = importlib.util.find_spec("websocket") is not None
@@ -103,6 +110,12 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
     out.append((ws and port is not None, "browser: " + (f"remote control allowed ({port.parent.name})" if ws and port
                 else "pip install -e .[browser]" if not ws else
                 "open brave://inspect/#remote-debugging and tick 'Allow remote debugging' for fast web pages")))
+    if not bundled():  # the installer makes its own Start menu and desktop shortcuts
+        from iris.__main__ import desktop_dir
+
+        have = (desktop_dir() / "Iris.cmd").exists()
+        out.append((have, "shortcut: Iris.cmd on the desktop" if have else
+                    "shortcut: none on the desktop; iris shortcut puts one there (optional)"))
     return out
 
 

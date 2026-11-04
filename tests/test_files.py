@@ -1,9 +1,11 @@
 """Tests for iris.files: finding, listing, reading, writing, moving and copying files, plus their tiers."""
 
 import os
+import sys
 import time
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -101,6 +103,32 @@ def test_find_files_stops_after_scanning_20000_entries(tmp_path, monkeypatch):
 
     monkeypatch.setattr(files.os, "walk", walk)
     assert files.find_files("zzz") == "No files named zzz found.\n[stopped after scanning 20000 entries]"
+
+
+def test_find_files_skips_configured_folders_that_are_not_directories(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    work = tmp_path / "work"
+    (work / "deep").mkdir(parents=True)
+    (work / "deep" / "budget.xlsx").write_bytes(b"x")
+    stray = tmp_path / "stray.txt"  # a file listed as a folder must be skipped, not crash the search
+    stray.write_text("x", encoding="utf-8")
+    _cfg(tmp_path, monkeypatch, f'folders = ["{stray.as_posix()}", "{work.as_posix()}"]\n')
+    assert str(work / "deep" / "budget.xlsx") in files.find_files("budget").splitlines()
+
+
+def test_in_trash_is_false_when_resolving_fails(tmp_path, monkeypatch):
+    def broken(self):
+        raise OSError("access denied")
+
+    monkeypatch.setattr(Path, "resolve", broken)
+    assert files._in_trash(tmp_path / "x") is False
+
+
+def test_mtime_is_zero_when_stat_fails(tmp_path):
+    p = tmp_path / "gone.txt"
+    p.write_text("x", encoding="utf-8")
+    p.unlink()  # stat now raises FileNotFoundError, an OSError
+    assert files._mtime(p) == 0.0
 
 
 # --- list_folder -----------------------------------------------------------------
@@ -210,6 +238,37 @@ def test_read_file_reads_pdf_with_pypdf(tmp_path):
         assert files.read_file(str(p)) == "error: install pypdf to read PDF files"
     else:
         assert files.read_file(str(p)) == "hello pdf world"
+
+
+def test_read_file_reports_a_reader_failure(tmp_path, monkeypatch):
+    p = tmp_path / "doc.pdf"
+    _make_pdf(p)
+
+    def broken(path):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(files, "_pdf_text", broken)
+    assert files.read_file(str(p)) == "error: could not read doc.pdf: boom"
+
+
+def test_pdf_text_joins_the_pages_of_a_reader(tmp_path, monkeypatch):
+    """The reader lines run with a stand-in pypdf, so they are covered even when pypdf is missing."""
+
+    class _Page:
+        def __init__(self, text):
+            self._text = text
+
+        def extract_text(self):
+            return self._text
+
+    class _Reader:
+        def __init__(self, path):
+            self.pages = [_Page("first page"), _Page(None)]  # a blank page extracts to None
+
+    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=_Reader))
+    p = tmp_path / "doc.pdf"
+    p.write_bytes(b"%PDF-1.4 not really")
+    assert files._pdf_text(p) == "first page\n"
 
 
 # --- tiers -----------------------------------------------------------------------
@@ -339,6 +398,11 @@ def test_copy_file_never_overwrites(tmp_path):
     d.write_text("old", encoding="utf-8")
     assert files.copy_file(str(s), str(d)) == f"error: {d} already exists; never overwrites"
     assert s.exists() and d.read_text(encoding="utf-8") == "old"
+
+
+def test_copy_file_says_so_when_the_source_is_missing(tmp_path):
+    out = files.copy_file(str(tmp_path / "nope.txt"), str(tmp_path / "d"))
+    assert out.startswith("error: no such file or folder:")
 
 
 # --- tiers for the new tools ----------------------------------------------------------

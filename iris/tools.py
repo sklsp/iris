@@ -406,9 +406,18 @@ def _control(w: Any, name: str) -> Any:
     return hits[0]
 
 
+def _named_in_full(given: str, found: Any) -> None:
+    """The tier was judged on the name the model gave, but a control matches by part of its name too: when the control
+    found has a send/pay/password/delete word that the given name lacks, stop, so the tier sees the full name."""
+    full = found.window_text().strip()
+    if _NEVER_WORDS.search(full) and not _NEVER_WORDS.search(given):
+        raise LookupError(f"{given!r} matches the control {full!r}; use its full name")
+
+
 def click(window: str, control: str) -> str:
     """Click a control in a window by name, using Invoke when the control supports it and a real click otherwise."""
     c = _control(_window(window), control)
+    _named_in_full(control, c)
     try:
         c.invoke()
     except Exception:  # noqa: BLE001 - not every control supports Invoke; fall back to a real click
@@ -425,6 +434,8 @@ def type_text(window: str, text: str, into: str = "", replace: bool = False) -> 
     w = _window(window)
     w.set_focus()
     target = _control(w, into) if into else w
+    if into:
+        _named_in_full(into, target)
     if replace:
         target.type_keys("^a{BACKSPACE}")
     target.type_keys(_escape_keys(text), with_spaces=True, with_newlines=True, pause=0.01)
@@ -540,15 +551,21 @@ def trash_file(path: str) -> str:
     while dest.exists():
         dest = _trash_dir() / f"{time.strftime('%Y%m%d-%H%M%S')}_{n}_{p.name}"
         n += 1
-    shutil.move(str(p), str(dest))
-    (dest.parent / (dest.name + ".json")).write_text(json.dumps({"original": str(p)}), encoding="utf-8")
+    record = dest.parent / (dest.name + ".json")  # written first: an item in the trash always knows its way back
+    record.write_text(json.dumps({"original": str(p)}), encoding="utf-8")
+    try:
+        shutil.move(str(p), str(dest))
+    except BaseException:
+        record.unlink(missing_ok=True)
+        raise
     return f"moved {p} to the trash; say 'restore' and I'll put it back"
 
 
 def restore_trash(name: str = "") -> str:
     """Put the most recently trashed item back where it came from; name filters by filename substring."""
     d = _trash_dir()
-    items = [x for x in d.iterdir() if not x.name.endswith(".json")]
+    # an item is whatever has its record next to it, so a trashed .json file is an item too
+    items = [x for x in d.iterdir() if (d / (x.name + ".json")).is_file()]
     # most recently trashed first: the .json written at trash time says when, the file's own mtime (kept by the
     # move) does not
     items.sort(key=lambda x: _mtime(d / (x.name + ".json")), reverse=True)
@@ -720,12 +737,18 @@ def calculate(expression: str) -> str:
         return "error: division by zero"
     except OverflowError:
         return "error: number too large"
+    if isinstance(value, complex):  # (-8)**(1/3): Python answers with a complex number, which is not what was asked
+        return "error: no real answer (a negative number to a fractional power)"
     if isinstance(value, float) and not math.isfinite(value):
         return "error: number too large"
     if isinstance(value, float):
-        text = str(int(value)) if value.is_integer() else format(value, ".12g")
+        # a whole float only prints as an integer while every digit is real: 10**100/3 is about 3.33e+99, not exact
+        text = str(int(value)) if value.is_integer() and abs(value) < 1e15 else format(value, ".12g")
     else:
-        text = str(value)
+        try:
+            text = str(value)
+        except ValueError:  # more digits than Python prints (4300)
+            return "error: number too large"
     return f"{expression} = {text}"
 
 

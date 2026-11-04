@@ -327,6 +327,18 @@ def test_click_falls_back_to_real_click_when_invoke_fails(monkeypatch):
     assert stubborn.invoke_calls == 1 and stubborn.click_input_calls == 1
 
 
+def test_a_partial_name_never_clicks_or_types_into_a_send_pay_or_password_control(monkeypatch):
+    send = FakeControl(text="Send", kind="Button")
+    field = FakeControl(text="Wachtwoord", kind="Edit")
+    _install_desktop(monkeypatch, FakeDesktop([FakeWindow("Mail", [send, field])]))
+    with pytest.raises(LookupError, match="'Sen' matches the control 'Send'; use its full name"):
+        tools.click("mail", "Sen")  # judged as a confirm click on "Sen", but it would press Send
+    with pytest.raises(LookupError, match="use its full name"):
+        tools.type_text("mail", "x", into="Wacht")
+    assert send.invoke_calls == 0 and send.click_input_calls == 0 and field.keys == []
+    assert tools.click("mail", "Send") == "clicked Button 'Send'"  # named in full, the tier saw it (and said NEVER)
+
+
 def test_type_text_escapes_and_targets_named_field(monkeypatch):
     field = FakeControl(text="Name", kind="Edit")
     win = FakeWindow("Notepad", [field])

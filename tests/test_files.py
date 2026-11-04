@@ -321,6 +321,15 @@ def test_write_file_refuses_to_overwrite_without_saying_so(tmp_path):
     assert p.read_text(encoding="utf-8") == "old"
 
 
+def test_write_file_never_replaces_a_folder(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(tmp_path / "trash"))
+    folder = tmp_path / "Projects"
+    (folder / "keep").mkdir(parents=True)
+    out = files.write_file(str(folder), "x", overwrite=True)
+    assert out.startswith(f"error: {folder} is a folder; give a file name inside it")
+    assert (folder / "keep").is_dir() and not (tmp_path / "trash").exists()
+
+
 def test_write_file_overwrite_puts_the_old_file_in_the_trash(tmp_path, monkeypatch):
     trash = tmp_path / "trash"
     monkeypatch.setenv("IRIS_TRASH_DIR", str(trash))
@@ -560,3 +569,46 @@ def test_no_file_tool_may_change_iris_own_code_or_state(tmp_path, monkeypatch):
         assert tools.TOOLS["copy_file"].tier_of({"source": "a", "destination": str(p)}) == tools.NEVER, p
         assert tools.TOOLS["move_file"].tier_of({"source": str(p), "destination": str(home / "x")}) == tools.NEVER
     assert tools.TOOLS["write_file"].tier_of({"path": str(home / "Documents" / "a.txt")}) == tools.CONFIRM
+
+
+@pytest.mark.parametrize("dest", ["A/Archive", "A/backup/", "A"])
+def test_a_folder_is_never_copied_or_moved_into_itself(tmp_path, dest):
+    (tmp_path / "A" / "Archive").mkdir(parents=True)
+    (tmp_path / "A" / "f.txt").write_text("x", encoding="utf-8")
+    for fn in (files.copy_file, files.move_file):
+        out = fn(str(tmp_path / "A"), str(tmp_path / dest))
+        assert out.startswith("error: ") and "inside" in out, out
+    assert sorted(p.name for p in (tmp_path / "A").iterdir()) == ["Archive", "f.txt"]
+    assert list((tmp_path / "A" / "Archive").iterdir()) == []
+
+
+def test_a_folder_and_a_file_each_point_to_the_tool_that_reads_them(tmp_path):
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    assert files.read_file(str(tmp_path)) == (
+        f"error: {tmp_path} is a folder, not a file; list_folder lists what is in it")
+    assert files.list_folder(str(tmp_path / "a.txt")) == (
+        f"error: {tmp_path / 'a.txt'} is a file, not a folder; read_file reads it")
+
+
+def test_one_unreadable_entry_never_hides_the_rest_of_a_folder(tmp_path, monkeypatch):
+    (tmp_path / "good.txt").write_text("x", encoding="utf-8")
+    (tmp_path / "ghost.txt").write_text("x", encoding="utf-8")
+    real = Path.stat
+
+    def stat(self, *a, **kw):
+        if self.name == "ghost.txt":
+            raise OSError(1920, "The file cannot be accessed by the system")  # a OneDrive placeholder gone wrong
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "stat", stat)
+    out = files.list_folder(str(tmp_path))
+    assert "good.txt 0 KB" in out and "ghost.txt (can not be read)" in out
+
+
+@pytest.mark.parametrize("name,data", [("out.txt", "dir > out.txt\ncafé".encode("utf-16")),
+                                       ("out.log", "\ufeffdir > out.txt\ncafé".encode("utf-16-be")),
+                                       ("notes.md", "\ufeffdir > out.txt\ncafé".encode("utf-8")),
+                                       ("data.cfg", "dir > out.txt\ncafé".encode("utf-16"))])
+def test_utf16_and_utf8_bom_files_read_as_text(tmp_path, name, data):
+    (tmp_path / name).write_bytes(data)
+    assert files.read_file(str(tmp_path / name)) == "dir > out.txt\ncafé"

@@ -1431,6 +1431,7 @@ def _ready_skill(name="say_hello"):
     (folder / "skill.toml").write_text('description = "Greets."\n[params.who]\ntype = "string"\n', encoding="utf-8")
     (folder / "skill.py").write_text("def run(who):\n    return 'hi ' + who\n", encoding="utf-8")
     skills._save_meta(name, {**skills.meta(name), "status": "ready"})
+    skills._save_trust(name, checked=skills._digest(name, "confirm"))  # what a passing check() records
 
 
 def test_the_skills_page_shows_the_code_and_approves_only_with_the_token(server, srv):
@@ -1505,3 +1506,77 @@ def test_tail_lines_reads_only_the_end_of_a_big_file(tmp_path, monkeypatch):
 def test_logs_route_is_read_only(server):
     with urllib.request.urlopen(server + "/api/logs", timeout=5) as r:
         assert json.loads(r.read())["ok"] is True
+
+
+def test_a_rebound_host_name_gets_nothing(server, srv):
+    """DNS rebinding: a site that points its own name at 127.0.0.1 sends its name as Host. It must not read the page
+    (with its token) or any route, and writes stay refused too."""
+    import http.client
+
+    port = int(server.rsplit(":", 1)[1])
+    for method, path in (("GET", "/"), ("GET", "/api/journal"), ("GET", "/api/settings"), ("POST", "/api/settings")):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request(method, path, body="{}" if method == "POST" else None,
+                     headers={"Host": f"evil.example:{port}", "X-Iris-Token": srv.token,
+                              "Origin": f"http://127.0.0.1:{port}"})
+        r = conn.getresponse()
+        body = r.read().decode("utf-8")
+        conn.close()
+        assert r.status == 421 and srv.token not in body, (method, path)
+    for host in (f"127.0.0.1:{port}", f"localhost:{port}", f"LOCALHOST:{port}"):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/", headers={"Host": host})
+        assert conn.getresponse().status == 200
+        conn.close()
+
+
+def _raw_post(srv, path, body: bytes, headers=None):
+    import http.client
+
+    port = srv.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.putrequest("POST", path)
+    for k, v in {"X-Iris-Token": srv.token, "Origin": f"http://127.0.0.1:{port}", **(headers or {})}.items():
+        conn.putheader(k, v)
+    if "Content-Length" not in (headers or {}) and "Transfer-Encoding" not in (headers or {}):
+        conn.putheader("Content-Length", str(len(body)))
+    conn.endheaders(body)
+    r = conn.getresponse()
+    out = r.status, json.loads(r.read().decode("utf-8") or "{}")
+    conn.close()
+    return out
+
+
+@pytest.mark.parametrize("path", ["/api/settings", "/api/skills/approve", "/api/packs/install", "/api/setup/server",
+                                  "/api/queue/add", "/api/models/load"])
+@pytest.mark.parametrize("body", [b"[]", b'"x"', b"5", b"null"])
+def test_a_body_that_is_not_an_object_gets_400_not_a_dropped_connection(srv, path, body):
+    status, data = _raw_post(srv, path, body)
+    assert (status, data["error"]) == (400, "the body must be a JSON object")
+
+
+def test_odd_bodies_get_an_answer(srv):
+    assert _raw_post(srv, "/api/settings", b"[" * 200_000)[0] == 400  # nested too deep for json
+    assert _raw_post(srv, "/api/settings", b"{}", {"Content-Length": "-1"})[0] == 400
+    assert _raw_post(srv, "/api/settings", b"", {"Content-Length": str(2_000_000)})[0] == 413
+    status, data = _raw_post(srv, "/api/setup/done", b"", {"Transfer-Encoding": "chunked"})
+    assert status == 411 and "Content-Length" in data["error"]
+
+
+def test_a_failing_write_answers_500_with_its_reason(srv, monkeypatch):
+    from iris import settings
+
+    def boom(values):
+        raise PermissionError("config.toml is open in another program")
+
+    monkeypatch.setattr(settings, "save", boom)
+    status, data = _raw_post(srv, "/api/settings", b'{"values": {}}')
+    assert status == 500 and data["error"] == "PermissionError: config.toml is open in another program"
+
+
+@pytest.mark.parametrize("value", ["inf", 1e400, "nan"])
+def test_settings_refuse_infinite_numbers(value):
+    from iris import settings
+
+    clean, errors = settings.validate({"voxcpm_gpu": value, "silence": value})
+    assert set(errors) == {"voxcpm_gpu", "silence"}

@@ -166,6 +166,8 @@ def validate(values: dict) -> tuple[dict, dict]:
                 clean[key] = value
             elif kind in ("number", "int", "gpu"):
                 number = float(value)
+                if number != number or abs(number) == float("inf"):  # nan, inf: int() of them raises OverflowError
+                    raise ValueError("must be a number")
                 if kind in ("int", "gpu"):
                     if number != int(number) or number < 0:
                         raise ValueError("must be a whole number, 0 or more")
@@ -223,7 +225,7 @@ def write(updates: dict, path: Path | None = None) -> None:
     """Set (or with None, remove) top-level keys in config.toml. Comment lines, other keys and [tables] stay as they
     are; a replaced key loses a comment on its own line. Written aside, checked, then swapped in."""
     path = path or config.config_path()
-    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    text = path.read_text(encoding="utf-8-sig") if path.exists() else ""  # a BOM is dropped on save
     lines = text.splitlines()
     for key, value in updates.items():
         end_of_top = next((i for i, line in enumerate(lines) if line.lstrip().startswith("[")), len(lines))

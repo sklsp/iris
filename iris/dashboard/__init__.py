@@ -61,6 +61,7 @@ from typing import Any
 import psutil
 
 HOST = "127.0.0.1"  # loopback only; never 0.0.0.0
+MAX_BODY = 1_000_000  # bytes a POST body may have: every write takes a few short fields
 PORT = 8765
 CACHE_SECONDS = 30      # agents and LM Studio can be slow; do not re-query on every poll
 HISTORY_SECONDS = 300   # the sparklines cover five minutes
@@ -303,6 +304,14 @@ def set_iris_model(body: dict) -> dict:
     os.replace(tmp, path)
     _log_model_event("select", model, "ok")
     return iris_model_payload()
+
+
+def _host_ok(self: Any) -> bool:
+    """The page must have been asked for by its loopback name. A site that rebinds its own name to 127.0.0.1 would
+    otherwise read every GET route (the page with its token, the journal, the settings) as a same-origin page."""
+    host = (self.headers.get("Host") or "").strip().lower()
+    port = str(self.server.server_address[1])
+    return not host or host in (f"127.0.0.1:{port}", f"localhost:{port}", "127.0.0.1", "localhost")
 
 
 def _authorized(self: Any) -> bool:
@@ -811,7 +820,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # GET stays read-only; the write routes refuse it with a 405
         """Serve the dashboard page and its read-only /api routes; a write route answers 405 until it gets a POST."""
         path = self.path.split("?", 1)[0]
-        if path == "/":
+        if not _host_ok(self):
+            self._json({"error": "open the dashboard at http://127.0.0.1 or http://localhost"}, code=421)
+        elif path == "/":
             token = getattr(self.server, "token", "")
             page = _page_template().replace(b"__IRIS_TOKEN__", token.encode())
             self._send(200, page, "text/html; charset=utf-8")
@@ -869,6 +880,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # the write routes and nothing else
         """The only door to changes: check the token, then run the named write action with its JSON body."""
         path = self.path.split("?", 1)[0]
+        if not _host_ok(self):
+            self._drain_body()
+            self._json({"error": "open the dashboard at http://127.0.0.1 or http://localhost"}, code=421)
+            return
         if path not in WRITE_ROUTES:
             self._drain_body()
             self._json({"error": "read only: this route does not accept POST"}, code=405)
@@ -877,11 +892,26 @@ class Handler(BaseHTTPRequestHandler):
             self._drain_body()
             self._json({"error": "forbidden: wrong token or origin"}, code=403)
             return
+        if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+            self.close_connection = True  # its bytes would otherwise be read as the next request
+            self._json({"error": "send the JSON body with a Content-Length"}, code=411)
+            return
         try:
             length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_BODY:
+            self.close_connection = True
+            self._json({"error": f"the body must be a JSON object of at most {MAX_BODY} bytes"},
+                       code=413 if length > MAX_BODY else 400)
+            return
+        try:
             body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-        except (ValueError, UnicodeDecodeError):
+        except (ValueError, UnicodeDecodeError, RecursionError):
             self._json({"error": "bad JSON body"}, code=400)
+            return
+        if not isinstance(body, dict):
+            self._json({"error": "the body must be a JSON object"}, code=400)
             return
         try:
             if path == "/api/iris/model":
@@ -914,6 +944,9 @@ class Handler(BaseHTTPRequestHandler):
                 payload = model_action(action, body)
         except ModelActionError as exc:
             self._json({"error": exc.message}, code=exc.code)
+            return
+        except Exception as exc:  # noqa: BLE001 - any other failure is an answer too, never a dropped connection
+            self._json({"error": f"{type(exc).__name__}: {exc}"}, code=500)
             return
         self._json(payload)
 

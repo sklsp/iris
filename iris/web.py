@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import socket
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
@@ -56,8 +57,7 @@ def http_get(url: str, timeout: float = 15, max_bytes: int = 2_000_000) -> tuple
 
 class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
     """Follow a redirect only to another http(s) address that is not local: a public page that redirects to
-    127.0.0.1 must not reach this PC's own services. ponytail: a public name that resolves to a local IP
-    (DNS rebinding) still passes; check the resolved address if that ever matters."""
+    127.0.0.1 must not reach this PC's own services."""
 
     def redirect_request(
         self, req: urllib.request.Request, fp: IO[bytes], code: int, msg: str, headers: HTTPMessage, newurl: str,
@@ -73,15 +73,32 @@ class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(_CheckedRedirects)
 
 
+def _resolve(host: str) -> list[str]:
+    """Every address the system resolver gives for host, as urlopen will look it up."""
+    return [str(info[4][0]) for info in socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)]
+
+
+def _local(address: str) -> bool:
+    ip = ipaddress.ip_address(address.split("%", 1)[0])  # an IPv6 zone (fe80::1%3) is not part of the address
+    return not ip.is_global or ip.is_multicast
+
+
 def _refuse_local_host(host: str) -> None:
-    """Raise ValueError for localhost and IP literals that point at this machine or its network."""
+    """Raise ValueError for a host that points at this machine or a network that is not the public internet:
+    localhost, IP literals, and names (also old forms like 127.1 or 2130706433) whose addresses are not public.
+    ponytail: urlopen resolves the name again, so a name whose DNS answer changes in between still passes."""
+    host = host.rstrip(".")
     if host == "localhost" or host.endswith(".localhost"):
         raise ValueError("refusing a local address")
     try:
-        ip = ipaddress.ip_address(host)
+        addresses = [str(ipaddress.ip_address(host.strip("[]")))]  # an IP literal: no lookup
     except ValueError:
-        return  # not an IP literal; name resolution happens in urlopen, outside this check
-    if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_unspecified:
+        addresses = []
+    try:
+        addresses = addresses or _resolve(host)
+    except OSError:
+        return  # the name does not resolve: urlopen fails on it with its own error
+    if any(_local(a) for a in addresses):
         raise ValueError("refusing a local address")
 
 

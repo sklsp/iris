@@ -269,3 +269,38 @@ def test_setup_routes_dispatch_each_step(monkeypatch):
     finally:
         s.shutdown()
         s.server_close()
+
+
+@pytest.mark.parametrize("latest,current,expected", [
+    ("v1.0.0", "0.6.1", True), ("1.0.0", "1.0.0rc1", True), ("1.0.0rc1", "0.6.1", True),
+    ("1.0.0rc2", "1.0.0rc1", True), ("1.0.0", "1.0.0", False), ("1.0.0rc1", "1.0.0", False),
+    ("0.7", "0.7.0", False), ("0.7.1", "0.7", True), ("1.0.0.post1", "1.0.0", True), ("1.0.0", "1.0.0.dev3", True),
+    ("v1.0.0-beta.2", "1.0.0b1", True), ("nightly", "0.6.1", False), ("0.6.0", "0.6.1", False)])
+def test_newer_orders_versions_the_way_releases_go(latest, current, expected):
+    assert update.newer(latest, current) is expected
+
+
+@pytest.mark.parametrize("answer", [[], "not json", 42])
+def test_a_release_answer_that_is_not_an_object_changes_nothing(tmp_path, monkeypatch, answer):
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    assert update.check(now=1000.0, fetch=lambda: answer)["latest"] is None
+
+
+@pytest.mark.parametrize("exc", [__import__("http.client").client.IncompleteRead(b"{", 50),
+                                 __import__("urllib.error").error.HTTPError(update.LATEST_URL, 403, "rate limited",
+                                                                             None, None)])
+def test_a_cut_off_or_rate_limited_answer_is_like_offline(tmp_path, monkeypatch, exc):
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+
+    def fail():
+        raise exc
+
+    assert update.check(now=1000.0, fetch=fail)["latest"] is None
+
+
+def test_a_broken_update_json_is_asked_again(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    update.state_path().parent.mkdir(parents=True, exist_ok=True)
+    update.state_path().write_text('{"checked_at": "yesterday"}', encoding="utf-8")
+    st = update.check(now=1000.0, fetch=lambda: {"tag_name": "v9.0.0", "html_url": "https://x"})
+    assert st["latest"] == "v9.0.0" and st["newer"] is True

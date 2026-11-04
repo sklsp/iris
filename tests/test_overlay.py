@@ -569,6 +569,22 @@ def test_panel_without_win32_uses_tk_to_show_and_hide():
     root.withdraw.assert_called()
 
 
+def test_a_frame_that_fails_never_stops_the_panel_from_seeing_iris_go(capsys):
+    tk, clock = _fake_tk(), Clock()
+    events: queue.Queue = queue.Queue()
+    p = Panel(tk, events, clock=clock)
+    root = tk.Tk.return_value
+    p.layout = lambda: (_ for _ in ()).throw(RuntimeError("bad font"))  # one frame breaks while drawing
+    events.put({"event": "listening"})
+    root.after.reset_mock()
+    p.step()
+    root.after.assert_called_once()  # the next frame is still scheduled
+    assert "bad font" in capsys.readouterr().err
+    events.put(None)  # Iris closed the pipe
+    p.step()
+    root.destroy.assert_called_once()
+
+
 def test_panel_replaces_characters_an_old_tk_cannot_draw():
     tk = _fake_tk()
     canvas = tk.Canvas.return_value

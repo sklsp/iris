@@ -552,3 +552,12 @@ def test_ctrl_c_while_busy_dumps_every_thread_and_reraises(tmp_path, monkeypatch
 
     assert dumps == [{"file": None, "all_threads": True}]
 
+
+
+def test_the_journal_defaults_to_iris_journal_like_the_dashboard(monkeypatch, tmp_path):
+    holder = _install_agent(monkeypatch)
+    _scripted_input(monkeypatch, [])
+    monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "elsewhere.jsonl"))
+    monkeypatch.setattr(sys, "argv", ["iris"])
+    imain.main()
+    assert holder["agent"].journal.path == tmp_path / "elsewhere.jsonl" == idash.journal_path()

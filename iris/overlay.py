@@ -506,7 +506,19 @@ class Panel:
         self.root.mainloop()
 
     def step(self) -> None:
-        """One frame: take the new events, draw, fade or hide. Stops the process when Iris closes the pipe."""
+        """One frame: take the new events, draw, fade or hide. Stops the process when Iris closes the pipe. A frame
+        that fails is logged and the next one still comes, so the panel always sees Iris close the pipe."""
+        try:
+            if self._frame():
+                return
+        except Exception:  # noqa: BLE001 - one bad frame must not stop the loop: it would outlive Iris on screen
+            import traceback
+
+            traceback.print_exc()  # overlay.log
+        self.root.after(self.POLL_MS, self.step)
+
+    def _frame(self) -> bool:
+        """Draw one frame; True when Iris closed the pipe and the panel is gone."""
         now, changed = self.clock(), False
         while True:
             try:
@@ -515,7 +527,7 @@ class Panel:
                 break
             if event is None:
                 self.root.destroy()
-                return
+                return True
             self.view.apply(event, now)
             changed = True
         self.view.tick(now)
@@ -529,7 +541,7 @@ class Panel:
                 self._show()
         elif self.shown:
             self._hide()
-        self.root.after(self.POLL_MS, self.step)
+        return False
 
     def layout(self) -> None:
         """Write the two lines, size the panel to them, lay its glow and outline round it and put it bottom-center

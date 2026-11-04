@@ -1,0 +1,3 @@
+{"event": "request", "text": "hoe laat is het", "t": "2026-10-31T09:00:00"}
+{"event": "tool", "tool": "clock", "args": {}, "tier": "safe", "outcome": "ok", "result": "09:00", "t": "2026-10-31T09:00:01"}
+{"event": "answer", "text": "Het is negen uur.", "t": "2026-10-31T09:00:02"}

@@ -1,0 +1,6 @@
+name = "Jay"
+city = "Rotterdam"
+confirm = "important"
+tts = "piper"
+overlay = true
+plugins = ["lmstudio", "agents"]

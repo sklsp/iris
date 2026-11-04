@@ -109,6 +109,7 @@ class Connection:
 _conn: Connection | None = None
 _sessions: dict[str, str] = {}  # targetId -> sessionId, so a tab is attached once
 _last: dict[int, dict] = {}  # number -> item of the last list Iris read, for tiers and confirm questions
+_last_tab: list[str] = []  # the DevTools session of the tab that list came from; empty when it came from text
 _watching = threading.Event()  # voice mode: watch() connects, so a request never waits on the browser's question
 WATCH_WAIT = 5.0  # seconds a request waits for watch() to have the connection
 ASKS = "Brave asks whether Iris may control it. Click Allow in Brave."
@@ -284,11 +285,12 @@ def _format(snap: dict) -> str:
 def remember(text: str) -> None:
     """Keep the numbered items of a list Iris read, so tiers and questions know what number 3 is."""
     _last.clear()
+    _last_tab.clear()
     url = ""
     for line in text.splitlines():
         if line.startswith("Tab: ") and line.endswith(")") and " (" in line:
             url = line[line.rindex(" (") + 2:-1]
-        m = re.match(r'\[(\d+)\] (\S+) "(.*?)"', line)
+        m = re.match(r'\[(\d+)\] (\S+) "(.*?)"(?: = ".*"| \(empty\))?$', line)
         if m:
             _last[int(m[1])] = {"role": m[2], "name": m[3], "url": url,
                                 "type": "password" if "password" in m[3].lower() else ""}
@@ -306,9 +308,19 @@ def _read(session: str) -> str:
     snap = json.loads(_eval(session, _SNAPSHOT))
     text = _format(snap)
     remember(text)
-    for i, it in enumerate(snap.get("items", []), 1):  # the real type, which the text leaves out
-        _last[i]["type"] = it.get("type", "")
+    for i, it in enumerate(snap.get("items", []), 1):  # the page's own name and type, which the text can not hold
+        _last.setdefault(i, {"role": it.get("role", ""), "url": snap.get("url", "")})
+        _last[i].update(name=it.get("name", ""), type=it.get("type", ""))
+    _last_tab.append(session)
     return text
+
+
+def _same_tab(session: str) -> None:
+    """Numbers belong to the tab they were read in: the tier and the question describe that tab's item, so a click
+    in another tab is refused instead of hitting whatever that tab has under the same number."""
+    if _last_tab and _last_tab[0] != session:
+        raise BrowserError("the tab in front is not the one Iris read last; call browser_read first, then use its "
+                           "numbers")
 
 
 def _settle(session: str) -> None:
@@ -394,6 +406,7 @@ def open_page(url: str, wait: float = 4) -> str:
 def browser_click(index: int, tab: str = "") -> str:
     """Click item `index` from the last browser_read and return the page as it is now."""
     session = _tab(tab)
+    _same_tab(session)
     what = item(index)
     _mouse_click(session, *_point(session, index))
     _settle(session)
@@ -403,6 +416,7 @@ def browser_click(index: int, tab: str = "") -> str:
 def browser_type(index: int, text: str, enter: bool = False, tab: str = "") -> str:
     """Replace the text in field `index` with `text`; enter=True presses Enter after (to search). Returns the page."""
     session = _tab(tab)
+    _same_tab(session)
     _mouse_click(session, *_point(session, index))
     _eval(session, """(() => { const el = (window.__iris || [])[INDEX]; if (!el) return;
       el.focus(); if (el.select) el.select(); else document.execCommand('selectAll'); })()"""
@@ -501,6 +515,6 @@ def search(query: str, max_results: int = 5, wait: float = 8) -> list[dict]:
             _call("Target.closeTarget", {"targetId": tid})
         except BrowserError:
             pass
-    if found.get("human"):
+    if found.get("human") and not found.get("results"):  # results that merely mention a captcha are results
         raise BrowserError("the search engine asks for a human check; Iris does not solve those")
     return found.get("results") or []

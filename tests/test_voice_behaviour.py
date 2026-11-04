@@ -82,10 +82,10 @@ def test_wake_word_model_unknown_missing_path_downloads_nothing(tmp_path, monkey
     _fake_openwakeword(monkeypatch, {}, downloads)
 
     w = WakeWord(name=str(tmp_path / "missing.onnx"))
-    m = w._model()
+    with pytest.raises(FileNotFoundError, match="no wake word model at"):
+        w._model()
 
-    assert m.wakeword_models == [str(tmp_path / "missing.onnx")]
-    assert downloads == [[]]  # not a built-in name, so the downloader gets no names
+    assert downloads == []  # download_models([]) would fetch every official model
 
 
 def test_wake_word_model_is_loaded_once(tmp_path, monkeypatch):

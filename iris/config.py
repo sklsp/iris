@@ -28,11 +28,26 @@ def config_path() -> Path:
 
 
 def raw() -> dict:
-    """The file as parsed; {} when it is missing or broken."""
+    """The file as parsed; {} when it is missing or broken (error() says why). A UTF-8 BOM, which Notepad and
+    PowerShell write, is fine."""
     try:
-        return tomllib.loads(config_path().read_text(encoding="utf-8"))
+        return tomllib.loads(config_path().read_text(encoding="utf-8-sig"))
     except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
         return {}
+
+
+def error() -> str | None:
+    """Why config.toml can not be read, or None when it is fine or simply not there (iris doctor shows this)."""
+    path = config_path()
+    if not path.exists():
+        return None
+    try:
+        tomllib.loads(path.read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError:
+        return "it is not UTF-8 text; save it as UTF-8"
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        return str(exc)
+    return None
 
 
 def get(key: str, default: str = "") -> str:
@@ -50,6 +65,33 @@ def setting(env: str, key: str, default: str = "") -> str:
     if isinstance(value, bool) or not isinstance(value, str | int | float):
         return default
     return str(value).strip() or default
+
+
+def number(env: str, key: str, default: float) -> float:
+    """A numeric setting (environment, then config.toml), or the default when it is not a number: one typo such as
+    silence = "fast" must not stop Iris from starting. bad_numbers() lets iris doctor point at it."""
+    try:
+        value = float(setting(env, key, str(default)))
+    except ValueError:
+        return default
+    return value if value == value and abs(value) != float("inf") else default
+
+
+NUMBERS = (("IRIS_SILENCE", "silence"), ("IRIS_FOLLOW_UP", "follow_up"), ("IRIS_WAKE_THRESHOLD", "wake_threshold"),
+           ("IRIS_WHISPER_GPU", "whisper_gpu"), ("IRIS_VOXCPM_GPU", "voxcpm_gpu"))
+
+
+def bad_numbers() -> list[str]:
+    """The numeric settings whose value is not a number, as "key = value" (from config.toml or the environment)."""
+    out = []
+    for env, key in NUMBERS:
+        value = setting(env, key, "")
+        try:
+            if value:
+                float(value)
+        except ValueError:
+            out.append(f"{key} = {value!r}")
+    return out
 
 
 def load() -> dict:

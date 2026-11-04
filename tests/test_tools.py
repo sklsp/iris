@@ -139,6 +139,43 @@ def test_trash_then_restore_roundtrip(home):
     assert list((home / "trash").iterdir()) == []
 
 
+def test_a_trashed_json_file_can_be_restored(home):
+    f = home / "data.json"
+    f.write_text('{"a": 1}')
+    tools.trash_file(str(f))
+    assert tools.restore_trash("data").startswith("restored") and f.read_text() == '{"a": 1}'
+    assert list((home / "trash").iterdir()) == []
+
+
+def test_an_item_never_lands_in_the_trash_without_its_record(home, monkeypatch):
+    f = home / "report.txt"
+    f.write_text("hello")
+    real = Path.write_text
+
+    def full_disk(self, *a, **kw):
+        if self.name.endswith(".json"):
+            raise OSError(28, "No space left on device")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "write_text", full_disk)
+    with pytest.raises(OSError):
+        tools.trash_file(str(f))
+    assert f.read_text() == "hello"  # still in place: no trash item that restore_trash could not put back
+
+
+def test_a_failed_move_leaves_no_record_behind(home, monkeypatch):
+    f = home / "report.txt"
+    f.write_text("hello")
+
+    def stuck(src, dst):
+        raise PermissionError("the file is open in another program")
+
+    monkeypatch.setattr(tools.shutil, "move", stuck)
+    with pytest.raises(PermissionError):
+        tools.trash_file(str(f))
+    assert f.exists() and list((home / "trash").iterdir()) == []
+
+
 def test_restore_by_name_filter(home):
     (home / "a.txt").write_text("a")
     (home / "b.txt").write_text("b")
@@ -896,6 +933,18 @@ def test_read_only_tools_are_safe():
 
 
 # --- calculate ---------------------------------------------------------------
+def test_calculate_never_shows_a_rounded_or_complex_result_as_exact():
+    assert tools.calculate("(-8)**(1/3)") == "error: no real answer (a negative number to a fractional power)"
+    assert tools.calculate("(-1)**0.5").startswith("error: no real answer")
+    assert tools.calculate("10**100/3") == "10**100/3 = 3.33333333333e+99"
+    assert tools.calculate("4e15/2") == "4e15/2 = 2e+15"
+    assert tools.calculate("10/2") == "10/2 = 5"
+
+
+def test_calculate_too_many_digits_to_print_is_an_error():
+    assert tools.calculate("*".join(["99**100"] * 23)) == "error: number too large"
+
+
 def test_calculate_multiplication():
     assert tools.calculate("17*23") == "17*23 = 391"
 
@@ -1157,3 +1206,18 @@ def test_restore_brings_back_the_last_trashed_not_the_newest_file(home):
         os.utime(f, (2_000_000_000 if "last-week" in f.name else 1_900_000_000,) * 2)
     tools.restore_trash()
     assert old.exists() and not new.exists()
+
+
+def test_every_tool_accepts_the_parameters_its_schema_offers():
+    """The model calls a tool with the names in its schema; a function whose parameter is named differently (rid
+    for id) fails on every real call, which the eval's dry tools never see."""
+    import inspect
+
+    for tool in tools.TOOLS.values():
+        sig = inspect.signature(tool.fn)
+        sample = {p: 1 for p in tool.params}
+        try:
+            sig.bind(**{p: sample[p] for p in tool.required})
+            sig.bind(**sample)
+        except TypeError as exc:
+            raise AssertionError(f"{tool.name}: {exc}") from None

@@ -1,0 +1,17 @@
+{
+  "next_id": 3,
+  "prompts": [
+    {
+      "id": 1,
+      "agent": "iris",
+      "text": "fix the tests",
+      "added": "2026-10-30 10:00"
+    },
+    {
+      "id": 2,
+      "agent": "iris",
+      "text": "update the README",
+      "added": "2026-10-31 11:00"
+    }
+  ]
+}

@@ -88,10 +88,11 @@ class LMStudio:
             raise ValueError("the model ran out of tokens while thinking")
         calls = []
         for c in msg.get("tool_calls") or []:
-            try:
-                args = json.loads(c["function"].get("arguments") or "{}")
-            except json.JSONDecodeError:
-                args = {"_unparsed": c["function"].get("arguments")}
+            raw_args = c["function"].get("arguments") or "{}"
+            try:  # some servers send the arguments as an object instead of a JSON string
+                args = raw_args if isinstance(raw_args, dict) else json.loads(raw_args)
+            except (json.JSONDecodeError, TypeError):
+                args = {"_unparsed": raw_args}
             calls.append(ToolCall(c.get("id", ""), c["function"]["name"], args))
         raw = {"role": "assistant", "content": msg.get("content") or ""}
         if msg.get("tool_calls"):

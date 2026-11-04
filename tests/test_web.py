@@ -147,6 +147,10 @@ def test_non_http_schemes_refused(url):
         "http://10.0.0.5/",
         "http://169.254.16.4/",
         "https://[::1]/",
+        "http://localhost./",
+        "http://100.64.0.1/",
+        "http://[ff02::1]/",
+        "http://0.0.0.0:8765/",
     ],
 )
 def test_local_hosts_refused(url):
@@ -401,3 +405,22 @@ def test_web_read_is_a_safe_tool():
     assert tool.tier == SAFE
     assert tool.required == ["url"]
 
+
+
+@pytest.mark.parametrize("host,address", [("127.1", "127.0.0.1"), ("2130706433", "127.0.0.1"),
+                                          ("0x7f000001", "127.0.0.1"), ("0", "0.0.0.0"),
+                                          ("rebind.example", "192.168.1.1"), ("v6.example", "fe80::1%3")])
+def test_a_name_or_old_form_that_resolves_locally_is_refused(monkeypatch, fake_urlopen, host, address):
+    monkeypatch.setattr(web, "_resolve", lambda h: ["93.184.215.14", address] if h == host else [])
+    with pytest.raises(ValueError, match="refusing a local address"):
+        web.http_get(f"http://{host}:8765/api/journal")
+    assert fake_urlopen.calls == []
+
+
+def test_a_name_that_does_not_resolve_is_left_to_urlopen(monkeypatch, fake_urlopen):
+    def nothing(host):
+        raise OSError("no such name")
+
+    monkeypatch.setattr(web, "_resolve", nothing)
+    web.http_get("https://example.com/")
+    assert len(fake_urlopen.calls) == 1

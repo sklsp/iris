@@ -1514,6 +1514,7 @@ def test_logs_payload_tails_each_log(tmp_path, monkeypatch):
     assert by_name["VoxCPM2 speech"]["path"] == str(tmp_path / "voxcpm" / "worker.log")
     assert by_name["App"]["path"] == str(config.config_path().parent / "logs" / "app.log")
     assert by_name["Voice packs"]["path"] == str(config.config_path().parent / "logs" / "packs.log")
+    assert by_name["Crashes"]["path"] == str(config.config_path().parent / "logs" / "crash.log")
 
 
 def test_tail_lines_reads_only_the_end_of_a_big_file(tmp_path, monkeypatch):

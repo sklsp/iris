@@ -94,6 +94,28 @@ def bad_numbers() -> list[str]:
     return out
 
 
+CRASH_LOG_MAX_BYTES = 1_000_000  # crash.log moves to crash.log.1 once it is this big
+
+
+def log_crash(where: str, exc: BaseException) -> Path:
+    """Append the traceback of an error nobody caught to logs/crash.log next to config.toml (the Logs tab shows it),
+    and return its path for the one sentence that tells the user where to look."""
+    import traceback
+    from datetime import datetime
+
+    path = config_path().parent / "logs" / "crash.log"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists() and path.stat().st_size > CRASH_LOG_MAX_BYTES:
+            os.replace(path, path.with_name(path.name + ".1"))
+        with path.open("a", encoding="utf-8", errors="replace") as f:
+            f.write(f"--- {datetime.now():%Y-%m-%d %H:%M:%S} {where}\n")
+            f.write("".join(traceback.format_exception(exc)))
+    except OSError:
+        pass  # a crash log that can not be written must not hide the crash itself
+    return path
+
+
 def load() -> dict:
     """DEFAULTS overlaid with the file's keys; a key with the wrong type keeps its default."""
     out = dict(DEFAULTS)

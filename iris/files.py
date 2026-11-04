@@ -195,8 +195,8 @@ def _destination(destination: str, source: Path) -> Path:
     return d
 
 
-def move_file(source: str, destination: str) -> str:
-    """Move a file or folder. Never overwrites; an existing destination is an error unless it's a folder."""
+def _source_and_target(source: str, destination: str) -> tuple[Path, Path] | str:
+    """The expanded source and computed destination, or an error string when either check fails."""
     s = Path(source).expanduser()
     if not s.exists():
         return f"error: no such file or folder: {s}"
@@ -204,19 +204,25 @@ def move_file(source: str, destination: str) -> str:
     if d.exists():
         return f"error: {d} already exists; never overwrites"
     d.parent.mkdir(parents=True, exist_ok=True)
+    return s, d
+
+
+def move_file(source: str, destination: str) -> str:
+    """Move a file or folder. Never overwrites; an existing destination is an error unless it's a folder."""
+    st = _source_and_target(source, destination)
+    if isinstance(st, str):
+        return st
+    s, d = st
     shutil.move(str(s), str(d))
     return f"moved {s} to {d}"
 
 
 def copy_file(source: str, destination: str) -> str:
     """Copy a file or folder (folders with all their contents). Never overwrites."""
-    s = Path(source).expanduser()
-    if not s.exists():
-        return f"error: no such file or folder: {s}"
-    d = _destination(destination, s)
-    if d.exists():
-        return f"error: {d} already exists; never overwrites"
-    d.parent.mkdir(parents=True, exist_ok=True)
+    st = _source_and_target(source, destination)
+    if isinstance(st, str):
+        return st
+    s, d = st
     if s.is_dir():
         shutil.copytree(s, d)
     else:

@@ -275,3 +275,46 @@ def test_the_journal_route_serves_the_fake_payload(server, monkeypatch):
     status, body = get_json(server + "/api/journal")
     assert status == 200
     assert body == {"fake": "journal"}
+
+
+# --- serve() and default_port ----------------------------------------------------
+
+
+class _FakeServer:
+    """A stand-in for make_server's result whose serve_forever stops with Ctrl+C."""
+
+    def __init__(self):
+        self.server_address = ("127.0.0.1", 8765)
+        self.closed = 0
+
+    def serve_forever(self):
+        raise KeyboardInterrupt
+
+    def server_close(self):
+        self.closed += 1
+
+
+def test_serve_on_a_taken_port_exits_with_how_to_pick_another(monkeypatch):
+    def taken(host, port):
+        raise OSError("address already in use")
+
+    monkeypatch.setattr(d, "make_server", taken)
+    with pytest.raises(SystemExit) as exc:
+        d.serve()
+    assert str(exc.value).startswith("cannot bind 127.0.0.1:")
+    assert "python -m iris dashboard --port 8766" in str(exc.value)
+
+
+def test_serve_stops_on_ctrl_c_and_closes_the_server_once(monkeypatch, capsys):
+    fake = _FakeServer()
+    monkeypatch.setattr(d, "make_server", lambda host, port: fake)
+
+    d.serve()  # returns after the KeyboardInterrupt from serve_forever
+
+    assert "Iris dashboard: http://127.0.0.1:8765" in capsys.readouterr().out
+    assert fake.closed == 1
+
+
+def test_default_port_falls_back_to_the_builtin_one_when_the_env_is_not_a_number(monkeypatch):
+    monkeypatch.setenv("IRIS_DASHBOARD_PORT", "abc")
+    assert d.default_port() == 8765

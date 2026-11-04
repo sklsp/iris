@@ -359,3 +359,33 @@ def test_an_approval_written_during_the_build_is_dropped_and_blocks_the_skill():
 def test_a_recheck_after_the_users_approval_keeps_it():
     _approved()
     assert skills.check("say_hello")["status"] == "ready" and skills._approved_ok("say_hello")
+
+
+@pytest.mark.parametrize("broken", ["{}", "not json", '{"name": "say_hello"}', "[]"])
+def test_a_broken_meta_json_never_takes_down_the_other_tools(broken):
+    folder = _built()
+    skills.check("say_hello")
+    skills.approve("say_hello")
+    (folder / "meta.json").write_text(broken, encoding="utf-8")
+    tools_now = registry.active_tools()  # every request builds this: it must not raise
+    assert "calculate" in tools_now
+    assert "say_hello" in skills.listing()
+    assert skills.finished_builds() == []
+
+
+def test_the_watcher_survives_a_build_whose_meta_json_breaks_during_the_check():
+    folder = _built()
+    said, stop = [], threading.Event()
+
+    def check_breaks(name):
+        (folder / "meta.json").write_text("{", encoding="utf-8")
+        raise RuntimeError("tests crashed")
+
+    t = skills.watch(said.append, interval=0.05, stop=stop, check_fn=check_breaks)
+    for _ in range(40):
+        if said:
+            break
+        threading.Event().wait(0.05)
+    stop.set()
+    t.join(2)
+    assert said and "could not check the new skill say_hello" in said[0] and not t.is_alive()

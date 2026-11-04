@@ -171,9 +171,13 @@ def listing() -> str:
     d = skills_dir()
     rows = []
     for m in sorted(d.glob("*/meta.json")) if d.is_dir() else []:
-        data = json.loads(m.read_text(encoding="utf-8"))
-        status = "approved" if _approved_ok(data["name"]) else data["status"]
-        rows.append(f"{data['name']} ({agreed_tier(data['name'])}): {status}, asked: {str(data['request'])[:60]}")
+        name = m.parent.name
+        try:
+            data = json.loads(m.read_text(encoding="utf-8"))
+            status = "approved" if _approved_ok(name) else str(data.get("status", "?"))
+            rows.append(f"{name} ({agreed_tier(name)}): {status}, asked: {str(data.get('request', ''))[:60]}")
+        except (OSError, ValueError, AttributeError):
+            rows.append(f"{name}: meta.json can not be read; remove the skill and plan it again")
     return "\n".join(rows) or "No skills yet."
 
 
@@ -410,8 +414,14 @@ def approved_tools(taken: set[str]) -> list[dict]:
 
 def finished_builds() -> list[str]:
     d = skills_dir()
-    return [m.parent.name for m in sorted(d.glob("*/meta.json")) if d.is_dir()
-            and (m.parent / "DONE").exists() and meta(m.parent.name)["status"] == "building"]
+    out = []
+    for m in sorted(d.glob("*/meta.json")) if d.is_dir() else []:
+        try:
+            if (m.parent / "DONE").exists() and meta(m.parent.name).get("status") == "building":
+                out.append(m.parent.name)
+        except (OSError, ValueError, AttributeError):  # a broken meta.json is that skill's problem, not the watcher's
+            continue
+    return out
 
 
 def watch(announce: Callable[[str], object], interval: float = 30, stop: threading.Event | None = None,
@@ -425,7 +435,10 @@ def watch(announce: Callable[[str], object], interval: float = 30, stop: threadi
                 try:
                     result = check_fn(name)
                 except Exception as exc:  # noqa: BLE001 - one bad build must never stop the watcher
-                    _save_meta(name, {**meta(name), "status": "blocked", "problems": [f"check failed: {exc}"]})
+                    try:
+                        _save_meta(name, {**meta(name), "status": "blocked", "problems": [f"check failed: {exc}"]})
+                    except (OSError, ValueError, TypeError):
+                        pass  # meta.json itself is broken; the announcement still says so
                     announce(f"I could not check the new skill {name}: {exc}")
                     continue
                 if result["status"] == "ready":

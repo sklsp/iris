@@ -3,6 +3,8 @@ urlopen, and Connection.__init__ with no websocket module or a fake one. No real
 
 import json
 import sys
+import threading
+import time
 import types
 import urllib.error
 
@@ -128,3 +130,149 @@ def test_the_connection_passes_the_handshake_as_timeout_and_sets_fifteen_seconds
     assert conn.ws.timeouts == [15]
     assert conn._id == 0
     assert conn._slow == (TimeoutError, WebSocketTimeoutException)
+
+
+class ScriptedWs:  # answers recv() with prepared replies, one per call
+    def __init__(self, replies):
+        self.replies = list(replies)
+
+    def send(self, text):
+        pass
+
+    def settimeout(self, seconds):
+        pass
+
+    def recv(self):
+        return self.replies.pop(0)
+
+
+def _connection(monkeypatch, ws):
+    """A real browser.Connection whose websocket is the scripted `ws`."""
+    mod = types.ModuleType("websocket")
+    mod.create_connection = lambda url, timeout=None, suppress_origin=False: ws
+
+    class WebSocketTimeoutException(Exception):
+        pass
+
+    mod.WebSocketTimeoutException = WebSocketTimeoutException
+    monkeypatch.setitem(sys.modules, "websocket", mod)
+    return browser.Connection("ws://127.0.0.1:9/devtools/browser/x")
+
+
+def test_a_reply_with_an_error_says_which_command_failed_and_why(monkeypatch):
+    ws = ScriptedWs([json.dumps({"id": 1, "error": {"message": "no such tab"}})])
+    conn = _connection(monkeypatch, ws)
+    with pytest.raises(browser.BrowserError) as exc:
+        conn.send("Target.activate")
+    assert str(exc.value) == "Target.activate failed: no such tab"
+
+
+def test_events_and_replies_for_other_ids_are_skipped_until_the_own_answer(monkeypatch):
+    ws = ScriptedWs([json.dumps({"method": "Page.loadEventFired"}),
+                     json.dumps({"id": 9, "result": {"other": True}}),
+                     json.dumps({"id": 1, "result": {"ok": True}})])
+    conn = _connection(monkeypatch, ws)
+    assert conn.send("Runtime.evaluate") == {"ok": True}
+
+
+def test_a_request_waits_for_the_watcher_to_connect_and_gets_its_connection(monkeypatch):
+    monkeypatch.setattr(browser, "WATCH_WAIT", 0.5)
+    browser._watching.set()
+    fake = object()
+
+    def connect_later():
+        time.sleep(0.1)
+        browser._conn = fake
+
+    thread = threading.Thread(target=connect_later)
+    thread.start()
+    try:
+        assert browser._connect() is fake
+    finally:
+        thread.join()
+
+
+def test_a_request_without_the_watcher_connects_itself_and_clears_stale_sessions(monkeypatch):
+    made = []
+
+    class FakeConn:
+        def __init__(self, url, handshake=60):
+            made.append(url)
+
+    monkeypatch.setattr(browser, "_ws_url", lambda: "ws://127.0.0.1:9/devtools/browser/x")
+    monkeypatch.setattr(browser, "Connection", FakeConn)
+    browser._sessions["A"] = "s-A"  # stale sessions from a previous connection
+    conn = browser._connect()
+    assert isinstance(conn, FakeConn) and made == ["ws://127.0.0.1:9/devtools/browser/x"]
+    assert browser._sessions == {}
+
+
+def test_the_watcher_keeps_its_pause_when_a_check_says_busy(monkeypatch):
+    pauses = []
+    stop = threading.Event()
+
+    def fake_sleep(seconds):
+        pauses.append(seconds)
+        if len(pauses) >= 2:
+            stop.set()
+
+    monkeypatch.setattr(browser.time, "sleep", fake_sleep)
+
+    class BusyConn:
+        def send(self, method, params=None, session=None, wait=15):
+            raise browser.BrowserError("the browser did not answer Browser.getVersion within 5 s")
+
+    monkeypatch.setattr(browser, "_conn", BusyConn())
+    thread = browser.watch(every=7, stop=stop)
+    thread.join(timeout=5)
+    assert pauses == [7, 7]  # a busy tab is looked at again soon, the pause does not grow
+
+
+def test_the_watcher_doubles_its_pause_to_thirty_seconds_after_a_broken_connect(monkeypatch):
+    pauses = []
+    stop = threading.Event()
+
+    def fake_sleep(seconds):
+        pauses.append(seconds)
+        if len(pauses) >= 2:
+            stop.set()
+
+    monkeypatch.setattr(browser.time, "sleep", fake_sleep)
+    monkeypatch.setattr(browser, "_ws_url", lambda: "ws://127.0.0.1:9/devtools/browser/x")
+
+    def broken_connect(url, handshake=60):
+        raise OSError("socket broken")  # the question was refused or left open
+
+    monkeypatch.setattr(browser, "Connection", broken_connect)
+    thread = browser.watch(every=5, stop=stop)
+    thread.join(timeout=5)
+    assert pauses == [30, 60]  # max(5*2, 30), then doubled again while the connect keeps failing
+
+
+def test_a_dropped_socket_connects_once_more_and_retries_the_command(monkeypatch):
+    conns = []
+
+    class FlakyConn:
+        def __init__(self, url, handshake=60):
+            self.dead = len(conns) == 0  # the first connection is already dropped
+            conns.append(self)
+
+        def send(self, method, params=None, session=None, wait=15):
+            if self.dead:
+                raise OSError("socket closed")
+            return {"ok": True}
+
+    monkeypatch.setattr(browser, "_ws_url", lambda: "ws://127.0.0.1:9/devtools/browser/x")
+    monkeypatch.setattr(browser, "Connection", FlakyConn)
+    assert browser._call("Target.getTargets") == {"ok": True}
+    assert len(conns) == 2
+
+
+def test_a_script_that_throws_on_the_page_says_what_it_threw(monkeypatch):
+    def fake_call(method, params=None, session=None, wait=15):
+        return {"exceptionDetails": {"text": "Uncaught TypeError: els is not defined"}}
+
+    monkeypatch.setattr(browser, "_call", fake_call)
+    with pytest.raises(browser.BrowserError) as exc:
+        browser._eval("s-A", "window.__iris = els")
+    assert str(exc.value) == "the page refused the script: Uncaught TypeError: els is not defined"

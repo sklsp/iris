@@ -1,7 +1,7 @@
 # Progress: night run qwen2
 
 - [x] Q1. Tests for the browser's connection setup (1900 passed in 64.49s)
-- [ ] Q2. Tests for sending, connecting and the watcher in the browser
+- [x] Q2. Tests for sending, connecting and the watcher in the browser (1908 passed in 62.92s)
 - [ ] Q3. Tests for picking a tab and opening a page in the browser
 - [ ] Q4. Tests for the browser search's edge cases
 - [ ] Q5. Tests for the dashboard's model action errors

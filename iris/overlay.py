@@ -77,9 +77,11 @@ class View:
 
     @property
     def visible(self) -> bool:
+        """Whether the panel is up at all."""
         return self.mode != "hidden"
 
     def apply(self, event: dict, now: float) -> None:
+        """Fold one event into the view: a new request clears the old one, and idle starts the fade-out clock."""
         kind, text = event.get("event"), str(event.get("text") or "")
         if kind in ("listening", "interrupted"):  # a new request starts: the old one goes
             self.mode, self.prompt, self.answer = "listening", "", ""
@@ -98,6 +100,7 @@ class View:
         self.hide_at = None
 
     def tick(self, now: float) -> None:
+        """A done panel hides itself once its clock runs out."""
         if self.hide_at is not None and now >= self.hide_at:
             self.mode, self.prompt, self.answer, self.hide_at = "hidden", "", "", None
 
@@ -144,6 +147,7 @@ class Overlay:
                 threading.Thread(target=self._read, args=(proc.stdout,), daemon=True, name="overlay-read").start()
 
     def send(self, event: str, text: str = "") -> None:
+        """Queue an event for the overlay process; it returns at once, so a slow or dead panel never blocks Iris."""
         if self._proc is None:
             return
         try:  # JSON's ASCII escapes: no console code page can garble Dutch or an emoji on the way
@@ -292,10 +296,12 @@ class Win32:
         previous = set_proc(self.hwnd, self.GWLP_WNDPROC, ctypes.cast(self._wndproc, ctypes.c_void_p).value)
 
     def show(self) -> None:
+        """Show the layered window and let it draw again."""
         self.user32.ShowWindow(self.hwnd, self.SW_SHOWNOACTIVATE)
         self.user32.SetWindowPos(self.hwnd, self.HWND_TOPMOST, 0, 0, 0, 0, self.SWP_FLAGS)
 
     def hide(self) -> None:
+        """Hide the layered window without destroying it."""
         self.user32.ShowWindow(self.hwnd, self.SW_HIDE)
 
     def work_area(self) -> tuple[int, int, int, int] | None:
@@ -356,10 +362,12 @@ class Tint:
     since: float = 0.0
 
     def toward(self, colour: str, now: float) -> None:
+        """Aim the fade at a new colour, restarting it from wherever the colour is now."""
         if colour != self.target:  # from wherever it is now: a change in the middle of a fade does not jump either
             self.start, self.target, self.since = self.at(now), colour, now
 
     def at(self, now: float) -> str:
+        """The colour at a moment: the old one, eased toward the new by how far along the fade is."""
         return blend(self.start, self.target, ease((now - self.since) / COLOUR_FADE))
 
 
@@ -493,6 +501,7 @@ class Panel:
                 user32.SetForegroundWindow(before)
 
     def run(self) -> None:
+        """The panel's loop: one frame per tick, until Iris closes the pipe or the window is closed."""
         self.root.after(self.POLL_MS, self.step)
         self.root.mainloop()
 
@@ -589,6 +598,7 @@ class Panel:
         return blend(BG, WHITE, 0.07), blend(BG, WHITE, 0.2), MUTED
 
     def draw_button(self) -> None:
+        """Draw the round cancel button with its X, mirroring the indicator on the other side."""
         c, s = self.canvas, self.scale
         (cx, cy), r, a = self.button_centre(), BUTTON_RADIUS * s, BUTTON_CROSS * s
         fill, ring, cross = self.button_look()
@@ -599,6 +609,7 @@ class Panel:
                           tags=("cancel", "cancel_x"))
 
     def set_hover(self, on: bool) -> None:
+        """Whether the mouse is over the cancel button: recolour it and swap in the hand cursor."""
         if on == self.hover:
             return
         self.hover = on
@@ -648,6 +659,7 @@ class Panel:
             self.canvas.itemconfigure(item, **look)
 
     def draw_dots(self, now: float) -> None:
+        """Redraw the indicator dots for this frame: bars while speaking, circles otherwise."""
         c, s = self.canvas, self.scale
         c.delete("dots")
         cx, cy = self.anchor
@@ -660,6 +672,7 @@ class Panel:
                 c.create_oval(x - r * s, y - r * s, x + r * s, y + r * s, fill=colour, width=0, tags="dots")
 
     def set_alpha(self, alpha: float) -> None:
+        """Set the window's transparency, only when it changes: every call repaints the layered window."""
         alpha = round(alpha, 2)
         if alpha != self._alpha:  # only on a change: every call repaints the layered window
             self._alpha = alpha

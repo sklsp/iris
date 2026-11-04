@@ -190,7 +190,7 @@ def test_release_notes_main_prints_them(tmp_path, capsys, monkeypatch):
 
 def test_the_real_changelog_has_a_section_for_this_version():
     section = release_notes.changelog_section((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), __version__)
-    assert section.startswith("- ") and release_notes.version() == __version__
+    assert "\n- " in "\n" + section and release_notes.version() == __version__  # bullets, maybe under ### groups
 
 
 # --- sitecustomize.py: the user's own site-packages stay out of the bundle -------------------------------------------

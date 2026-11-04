@@ -2,7 +2,62 @@
 
 ## Unreleased
 
+## 1.0.0 (release date): steady, safer and measured
+
+### Quality
+
 - Type annotations on every function outside policy, registry and eval, and mypy now requires them there.
+- A stability promise: the commands and flags, the config.toml keys, the files in ~/.iris and the dashboard's routes stay within 1.x, and a test fails when one goes missing.
+- Data from 0.4.0, 0.5.0 and 0.6.1 is tested to read in 1.0; nothing needs migrating.
+- A skill builder that rewrites meta.json can no longer lower the tier you agreed to, or skip the check before you approve.
+- A browser click is judged by the whole label (a quote in it no longer hides "Pay") and only works on the tab Iris read.
+- click and type_text stop when a partial name matches a send, pay or password control, so the tier sees the full name.
+- Text in a tool result can no longer close its untrusted-data wrapper.
+- The dashboard only answers at 127.0.0.1 or localhost, so a site that points its own name at your PC can not read it.
+- The web fetch refuses every address that is not public, also old forms such as 127.1.
+- Clearer muted text, a visible keyboard focus, and labelled tabs and fields on the dashboard.
+
+
+### Speed
+
+- `tools/bench.py` measures start time, the cost of one turn without the model, the dashboard and the prompt size; CI runs it.
+- iris doctor without a running model server takes under a second on Windows instead of four and a half.
+- One agent turn costs about a third of what it did outside the model, and long sessions trim their history with room to spare, so the model server's cache is reused more often.
+- One tool result is at most 24000 characters, with a marker that says how much was left out; browser pages say when they were cut.
+- The dashboard does not poll while its window is hidden.
+
+
+### Skills
+
+- reminder_cancel works (it failed on every real call).
+- Tool errors say what to do next.
+- scroll, browser_scroll, web_search, focus_window and open_url say better when to use them.
+- 21 new eval tasks: German, French and Spanish now have eight everyday tasks and three safety traps each (236 in all).
+
+
+### Reliability
+
+- An error nobody caught goes to ~/.iris/logs/crash.log, and Iris says where in one sentence; a failing background task is logged and voice mode goes on.
+- One bad tool call, a broken answer from the model server or a broken skill file ends one step, not the session; a refused request (often a conversation grown too long) is said as such.
+- Voice mode stops the VoxCPM2 and Piper workers when it ends (the GPU is freed), says so when there is no microphone or it was unplugged instead of hanging, and plays one speech at a time.
+- Kokoro no longer cuts each sentence off with the next one.
+- A missing custom wake word model no longer downloads every openWakeWord model.
+- A config.toml saved with a BOM is read; a setting that is not a number falls back to its default, and iris doctor names it.
+- iris doctor also checks the fallback voice, Kokoro, the voice packs and folders that do not exist.
+- Notes and reminders survive a hand edit, and an unreadable reminders file is kept aside instead of overwritten; reminders months ahead fire.
+- The trash restores .json files, write_file never replaces a folder, and copy_file never copies a folder into itself.
+- calculate never shows a complex or rounded result as exact.
+- Every dashboard request gets an answer, whatever its body.
+- The update check orders 1.0.0rc1 before 1.0.0 and survives odd answers.
+- Autopilot removes the prompt it started, not whichever was oldest by then.
+- read_file reads UTF-16 files, and a folder listing survives one unreadable entry.
+
+
+### Docs
+
+- README: Upgrading from 0.x, and Stability.
+- SECURITY.md: the new protections with their tests, the gaps that need a policy change, and the supported versions.
+- CONTRIBUTING.md: the gates, the benchmark, and the `[model]` prefix for commits that change what the model sees.
 
 ## 0.6.1 (2026-11-04): clearer errors, `iris config` and more tests
 

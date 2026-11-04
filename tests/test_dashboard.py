@@ -1613,3 +1613,14 @@ def test_the_page_with_its_token_is_never_cached(server):
 def test_the_page_pauses_its_polling_while_hidden():
     page = d._page_template().decode("utf-8")
     assert "if (document.hidden || ticking) return;" in page and '"visibilitychange"' in page
+
+
+def test_the_page_meets_the_basic_accessibility_rules():
+    """Muted text and field borders pass contrast (4.5:1 and 3:1 on the panels), keyboard focus is visible, the tabs
+    say which one is open, and the fields without a visible label have one for screen readers."""
+    page = d._page_template().decode("utf-8")
+    assert "#565c66" not in page  # 2.6:1 on the panels; #80868f is 4.6:1 and more
+    assert ":focus-visible{outline:2px solid #7aa2ff" in page and "outline:none" not in page
+    assert page.count('role="tab"') == 11 and 'role="tablist"' in page and "aria-selected" in page
+    for label in ('aria-label="Agent"', 'aria-label="Prompt to queue"', '"Model server"', 'id="updated" aria-live'):
+        assert label in page

@@ -96,3 +96,19 @@ def test_important_mode_checks_browser_fields_for_credentials(tmp_path, monkeypa
     assert asked == ["Type 'hello' into 'Search box' on example.com?"
                      " This is a sensitive action: say yes only if you are sure."]
     assert ran == [("browser_type", {"index": 2, "text": "hello"})]
+
+
+def test_important_mode_never_types_into_a_password_field(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_CONFIRM", "important")
+    monkeypatch.setattr(browser_mod, "item", lambda index: {"type": "password", "name": "Wachtwoord"})
+    monkeypatch.setattr(browser_mod, "host", lambda index: "example.com")
+    asked, ran = ask(tmp_path, "browser_type", {"index": 2, "text": "hunter2"}, tier=NEVER)
+    assert asked == []
+    assert ran == []
+
+
+def test_important_mode_never_types_into_a_login_window(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_CONFIRM", "important")
+    asked, ran = ask(tmp_path, "type_text", {"into": "Sign in - Bank", "text": "hunter2"}, tier=NEVER)
+    assert asked == []
+    assert ran == []

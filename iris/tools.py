@@ -605,7 +605,7 @@ def queue_remove(id: int) -> str:
     try:
         p = _remove(id)
     except LookupError:
-        return f"error: no prompt with id {id}"
+        return f"error: no prompt with id {id}; queue_list shows the ids"
     text = str(p.get("text", ""))
     if len(text) > 80:
         text = text[:77] + "..."
@@ -623,7 +623,7 @@ def queue_move(id: int, direction: str) -> str:
     try:
         _move(id, -1 if d == "up" else 1)
     except LookupError:
-        return f"error: no prompt with id {id}"
+        return f"error: no prompt with id {id}; queue_list shows the ids"
     return f"Moved prompt {id} {d}.\n{_listing()}"
 
 

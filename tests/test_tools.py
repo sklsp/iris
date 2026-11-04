@@ -805,7 +805,7 @@ def test_queue_remove_cuts_long_text_to_80_chars(tmp_path, monkeypatch):
 
 def test_queue_remove_unknown_id_gives_error_text(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_QUEUE", str(tmp_path / "q.json"))
-    assert tools.queue_remove(99) == "error: no prompt with id 99"
+    assert tools.queue_remove(99) == "error: no prompt with id 99; queue_list shows the ids"
 
 
 def test_queue_remove_is_registered_with_confirm():
@@ -858,7 +858,7 @@ def test_queue_move_unknown_id_gives_error_text(tmp_path, monkeypatch):
     path = tmp_path / "q.json"
     monkeypatch.setenv("IRIS_QUEUE", str(path))
     _add("Iris", "Een prompt.")
-    assert tools.queue_move(99, "up") == "error: no prompt with id 99"
+    assert tools.queue_move(99, "up") == "error: no prompt with id 99; queue_list shows the ids"
 
 
 def test_queue_move_is_registered_with_confirm():

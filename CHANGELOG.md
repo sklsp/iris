@@ -7,6 +7,8 @@
 - More tests for reminders, timers, the update check, weather, notes, files, agents, the first-run tests, the agent loop and the command line.
 - More tests for the browser connection, tabs and search, the dashboard's error paths and routes, voice, desktop, office and voice packs: coverage 96% to 98.5%.
 - Every public function has a one-line docstring.
+- Clearer errors: the office extra and pypdf say how to install them, a stopped ComfyUI, an unreachable model server, a busy clipboard and timers outside voice or text mode say what to do.
+- The README's environment table lists every variable Iris reads, and a test keeps it that way.
 
 ## 0.6.0 (2026-11-03): Iris as a desktop app
 

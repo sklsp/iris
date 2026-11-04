@@ -10,4 +10,4 @@
 - [x] Q8. The GPU extra's install command in a comment (1963 passed in 64.68s (0:01:04))
 - [x] Q9. Timers outside voice and text mode: say how to use them (1963 passed in 66.92s (0:01:06))
 - [x] Q10. Clipboard errors: say what to try (1963 passed in 67.15s (0:01:07))
-- [ ] Q11. CHANGELOG for this run
+- [x] Q11. CHANGELOG for this run (1963 passed in 70.14s (0:01:10))

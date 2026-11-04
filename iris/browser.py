@@ -515,6 +515,6 @@ def search(query: str, max_results: int = 5, wait: float = 8) -> list[dict]:
             _call("Target.closeTarget", {"targetId": tid})
         except BrowserError:
             pass
-    if found.get("human"):
+    if found.get("human") and not found.get("results"):  # results that merely mention a captcha are results
         raise BrowserError("the search engine asks for a human check; Iris does not solve those")
     return found.get("results") or []

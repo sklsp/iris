@@ -240,6 +240,13 @@ def test_search_stops_at_a_human_check_and_still_closes_the_tab(fake, monkeypatc
     assert ("Target.closeTarget", {"targetId": "S"}, None) in fake.calls
 
 
+def test_results_that_mention_a_captcha_are_still_results(fake, monkeypatch):
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    fake.search = {"human": True, "results": [{"title": "Why reCAPTCHA fails", "url": "https://x.example/captcha",
+                                               "snippet": "When the captcha says you are not a robot..."}]}
+    assert browser.search("why does recaptcha fail")[0]["title"] == "Why reCAPTCHA fails"
+
+
 def test_web_search_uses_the_browser_and_falls_back_to_duckduckgo(fake, monkeypatch):
     monkeypatch.setattr(browser.time, "sleep", lambda s: None)
     assert "1. Uitslag GP Mexico\n   https://f1.example/mexico\n   Verstappen won." in tools.web_search("f1")

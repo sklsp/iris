@@ -139,6 +139,43 @@ def test_trash_then_restore_roundtrip(home):
     assert list((home / "trash").iterdir()) == []
 
 
+def test_a_trashed_json_file_can_be_restored(home):
+    f = home / "data.json"
+    f.write_text('{"a": 1}')
+    tools.trash_file(str(f))
+    assert tools.restore_trash("data").startswith("restored") and f.read_text() == '{"a": 1}'
+    assert list((home / "trash").iterdir()) == []
+
+
+def test_an_item_never_lands_in_the_trash_without_its_record(home, monkeypatch):
+    f = home / "report.txt"
+    f.write_text("hello")
+    real = Path.write_text
+
+    def full_disk(self, *a, **kw):
+        if self.name.endswith(".json"):
+            raise OSError(28, "No space left on device")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "write_text", full_disk)
+    with pytest.raises(OSError):
+        tools.trash_file(str(f))
+    assert f.read_text() == "hello"  # still in place: no trash item that restore_trash could not put back
+
+
+def test_a_failed_move_leaves_no_record_behind(home, monkeypatch):
+    f = home / "report.txt"
+    f.write_text("hello")
+
+    def stuck(src, dst):
+        raise PermissionError("the file is open in another program")
+
+    monkeypatch.setattr(tools.shutil, "move", stuck)
+    with pytest.raises(PermissionError):
+        tools.trash_file(str(f))
+    assert f.exists() and list((home / "trash").iterdir()) == []
+
+
 def test_restore_by_name_filter(home):
     (home / "a.txt").write_text("a")
     (home / "b.txt").write_text("b")

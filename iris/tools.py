@@ -551,15 +551,21 @@ def trash_file(path: str) -> str:
     while dest.exists():
         dest = _trash_dir() / f"{time.strftime('%Y%m%d-%H%M%S')}_{n}_{p.name}"
         n += 1
-    shutil.move(str(p), str(dest))
-    (dest.parent / (dest.name + ".json")).write_text(json.dumps({"original": str(p)}), encoding="utf-8")
+    record = dest.parent / (dest.name + ".json")  # written first: an item in the trash always knows its way back
+    record.write_text(json.dumps({"original": str(p)}), encoding="utf-8")
+    try:
+        shutil.move(str(p), str(dest))
+    except BaseException:
+        record.unlink(missing_ok=True)
+        raise
     return f"moved {p} to the trash; say 'restore' and I'll put it back"
 
 
 def restore_trash(name: str = "") -> str:
     """Put the most recently trashed item back where it came from; name filters by filename substring."""
     d = _trash_dir()
-    items = [x for x in d.iterdir() if not x.name.endswith(".json")]
+    # an item is whatever has its record next to it, so a trashed .json file is an item too
+    items = [x for x in d.iterdir() if (d / (x.name + ".json")).is_file()]
     # most recently trashed first: the .json written at trash time says when, the file's own mtime (kept by the
     # move) does not
     items.sort(key=lambda x: _mtime(d / (x.name + ".json")), reverse=True)

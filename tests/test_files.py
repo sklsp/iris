@@ -603,3 +603,12 @@ def test_one_unreadable_entry_never_hides_the_rest_of_a_folder(tmp_path, monkeyp
     monkeypatch.setattr(Path, "stat", stat)
     out = files.list_folder(str(tmp_path))
     assert "good.txt 0 KB" in out and "ghost.txt (can not be read)" in out
+
+
+@pytest.mark.parametrize("name,data", [("out.txt", "dir > out.txt\ncafé".encode("utf-16")),
+                                       ("out.log", "\ufeffdir > out.txt\ncafé".encode("utf-16-be")),
+                                       ("notes.md", "\ufeffdir > out.txt\ncafé".encode("utf-8")),
+                                       ("data.cfg", "dir > out.txt\ncafé".encode("utf-16"))])
+def test_utf16_and_utf8_bom_files_read_as_text(tmp_path, name, data):
+    (tmp_path / name).write_bytes(data)
+    assert files.read_file(str(tmp_path / name)) == "dir > out.txt\ncafé"

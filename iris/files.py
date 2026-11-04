@@ -113,6 +113,10 @@ def read_file(path: str) -> str:
             text = _office_text(p, suffix)
         else:
             raw = p.read_bytes()
+            if raw.startswith((b"\xff\xfe", b"\xfe\xff")):  # UTF-16 with its BOM: what PowerShell 5's > writes
+                raw = raw.decode("utf-16", "replace").encode("utf-8")
+            elif raw.startswith(b"\xef\xbb\xbf"):
+                raw = raw[3:]
             if suffix in _TEXT_SUFFIXES:
                 text = raw.decode("utf-8", "replace")
             else:

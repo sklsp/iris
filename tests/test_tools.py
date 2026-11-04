@@ -437,7 +437,7 @@ def test_comfy_queue_when_not_running(tmp_path, monkeypatch):
         raise urllib.error.URLError("refused")
 
     monkeypatch.setattr(urllib.request, "urlopen", fake)
-    assert tools.comfy_queue("anime") == "error: ComfyUI is not running"
+    assert tools.comfy_queue("anime") == "error: ComfyUI is not running; start ComfyUI, then ask again"
 
 
 def test_comfy_queue_without_gpu_room_does_not_post(tmp_path, monkeypatch):

@@ -224,7 +224,7 @@ def comfy_queue(workflow: str) -> str:
         with urllib.request.urlopen(req, timeout=10) as r:
             out = json.loads(r.read().decode())
     except (OSError, ValueError):
-        return "error: ComfyUI is not running"
+        return "error: ComfyUI is not running; start ComfyUI, then ask again"
     return f"queued {workflow} as {out.get('prompt_id', '?')}"
 
 

@@ -5,6 +5,7 @@ import io
 import json
 import math
 import queue
+import runpy
 import subprocess
 import sys
 import threading
@@ -475,6 +476,11 @@ def test_user32_is_there_only_on_windows():
     assert (overlay._user32() is None) == (sys.platform != "win32")
 
 
+def test_user32_is_none_when_windll_is_missing(monkeypatch):
+    monkeypatch.setattr("ctypes.windll", None)  # not Windows
+    assert overlay._user32() is None
+
+
 def _fake_tk():
     tk = mock.MagicMock()
     tk.TclError = RuntimeError
@@ -592,6 +598,29 @@ def test_main_runs_the_panel_until_stdin_ends():
 def test_main_says_so_without_tkinter(monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, "tkinter", None)
     assert overlay.main(io.StringIO("")) == 1
+    assert "no tkinter" in capsys.readouterr().err
+
+
+def test_main_imports_tkinter_and_asks_for_user32_when_given_no_fakes(monkeypatch):
+    seen = {}
+
+    def panel(tk, events, user32=None, out=None):
+        seen["tk"], seen["user32"] = tk, user32
+        return types.SimpleNamespace(run=lambda: None)
+
+    monkeypatch.setattr(overlay, "Panel", panel)  # the Panel is a fake, so no window opens
+    fake_tk = types.ModuleType("tkinter")
+    monkeypatch.setitem(sys.modules, "tkinter", fake_tk)
+    assert overlay.main(io.StringIO("")) == 0
+    assert seen["tk"] is fake_tk
+    assert (seen["user32"] is None) == (sys.platform != "win32")
+
+
+def test_running_the_module_as_a_script_exits_with_mains_code(monkeypatch, capsys):
+    monkeypatch.setitem(sys.modules, "tkinter", None)  # main() gives up before any window could open
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_module("iris.overlay", run_name="__main__")
+    assert exc.value.code == 1
     assert "no tkinter" in capsys.readouterr().err
 
 
@@ -937,6 +966,15 @@ def test_a_cancel_from_a_real_overlay_process_reaches_the_voice_loop():
 def test_cancel_lines_without_a_callback_go_nowhere():
     proc = types.SimpleNamespace(stdin=io.StringIO(), stdout=io.StringIO(CANCEL))
     Overlay(proc)  # type: ignore[arg-type]  # nothing to call: read and ignored
+
+
+def test_reading_cancel_lines_survives_a_broken_pipe():
+    class Broken:
+        def __iter__(self):
+            raise OSError("pipe gone")
+
+    o = Overlay()
+    o._read(Broken())  # type: ignore[arg-type]  # the pipe broke; nothing to do
 
 
 def test_launch_gives_the_overlay_a_pipe_back(tmp_path, monkeypatch):

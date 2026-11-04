@@ -1,4 +1,4 @@
-"""Tests for iris/doctor.py: the overlay check in checks() and main() marking a missing tkinter optional.
+"""Tests for iris/doctor.py: the overlay and Piper speech checks, and main() marking a missing tkinter as optional.
 
 The autouse conftest fixture points IRIS_CONFIG at a tmp config, and payload={"reachable": False} keeps
 checks() from asking any model server."""
@@ -71,3 +71,39 @@ def test_the_installed_app_has_no_shortcut_check(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor, "bundled", lambda: True)
     rows = doctor.checks(payload={"reachable": False})
     assert not any(line.startswith("shortcut") for _, line in rows)
+
+def test_piper_with_all_its_voices_lists_them(tmp_path, monkeypatch):
+    import iris.voice as v
+
+    voices = {"nl": "nl_test-a", "en": "en_test-b"}
+    pdir = tmp_path / "voices"
+    pdir.mkdir()
+    for name in voices.values():
+        (pdir / f"{name}.onnx").touch()
+    runtime = tmp_path / "runtime"
+    (runtime / "piper").mkdir(parents=True)  # the app's Piper pack: no pip install needed
+    monkeypatch.setattr(v, "PIPER_VOICES", voices)
+    monkeypatch.setattr(v, "PIPER_DIR", pdir)
+    monkeypatch.setattr(v, "piper_runtime", lambda: runtime)
+    monkeypatch.setenv("IRIS_TTS", "piper")
+    rows = doctor.checks(payload={"reachable": False})
+    assert (True, "speech: Piper nl_test-a, en_test-b") in rows
+
+
+def test_piper_not_installed_says_what_to_install(tmp_path, monkeypatch):
+    import iris.voice as v
+
+    real_find_spec = importlib.util.find_spec
+
+    def no_piper(name, *args, **kwargs):
+        if name == "piper":
+            return None
+        return real_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", no_piper)
+    monkeypatch.setattr(v, "PIPER_DIR", tmp_path / "voices")  # no .onnx files there; that is not this line
+    monkeypatch.setattr(v, "piper_runtime", lambda: tmp_path / "nope")  # no app Piper pack either
+    monkeypatch.setattr(doctor, "bundled", lambda: False)  # not the installed app
+    monkeypatch.setenv("IRIS_TTS", "piper")
+    rows = doctor.checks(payload={"reachable": False})
+    assert (False, "speech: Piper not installed: pip install -e .[piper]") in rows

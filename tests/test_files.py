@@ -387,6 +387,11 @@ def test_move_file_says_so_when_the_source_is_missing(tmp_path):
     assert out.startswith("error: no such file or folder:")
 
 
+def test_move_file_error_names_the_missing_source_in_full(tmp_path):
+    out = files.move_file(str(tmp_path / "nope.txt"), str(tmp_path / "d"))
+    assert out == f"error: no such file or folder: {tmp_path / 'nope.txt'}"
+
+
 def test_copy_file_copies_a_folder_with_its_contents(tmp_path):
     s = tmp_path / "proj"
     (s / "deep").mkdir(parents=True)
@@ -411,6 +416,11 @@ def test_copy_file_never_overwrites(tmp_path):
 def test_copy_file_says_so_when_the_source_is_missing(tmp_path):
     out = files.copy_file(str(tmp_path / "nope.txt"), str(tmp_path / "d"))
     assert out.startswith("error: no such file or folder:")
+
+
+def test_copy_file_error_names_the_missing_source_in_full(tmp_path):
+    out = files.copy_file(str(tmp_path / "nope.txt"), str(tmp_path / "d"))
+    assert out == f"error: no such file or folder: {tmp_path / 'nope.txt'}"
 
 
 # --- tiers for the new tools ----------------------------------------------------------

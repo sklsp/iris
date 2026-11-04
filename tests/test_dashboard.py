@@ -1431,6 +1431,7 @@ def _ready_skill(name="say_hello"):
     (folder / "skill.toml").write_text('description = "Greets."\n[params.who]\ntype = "string"\n', encoding="utf-8")
     (folder / "skill.py").write_text("def run(who):\n    return 'hi ' + who\n", encoding="utf-8")
     skills._save_meta(name, {**skills.meta(name), "status": "ready"})
+    skills._save_trust(name, checked=skills._digest(name, "confirm"))  # what a passing check() records
 
 
 def test_the_skills_page_shows_the_code_and_approves_only_with_the_token(server, srv):

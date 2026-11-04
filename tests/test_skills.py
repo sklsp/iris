@@ -125,7 +125,7 @@ def test_only_approved_unchanged_skills_are_offered_and_they_run_out_of_process(
     assert "say_hello" not in registry.active_tools()  # changed after approval: never loaded again
 
 
-def test_the_tier_is_the_planned_one_and_changing_it_voids_the_approval():
+def test_the_tier_is_the_planned_one_and_changing_it_never_lowers_it():
     folder = _built(tier="confirm")
     skills.check("say_hello")
     skills.approve("say_hello")
@@ -133,7 +133,43 @@ def test_the_tier_is_the_planned_one_and_changing_it_voids_the_approval():
     meta = json.loads((folder / "meta.json").read_text(encoding="utf-8"))
     meta["tier"] = "safe"
     (folder / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
-    assert "say_hello" not in registry.active_tools()
+    assert registry.active_tools()["say_hello"].tier == "confirm"  # meta.json is the builder's; the plan's tier holds
+    trust = json.loads((skills.skills_dir() / "trust.json").read_text(encoding="utf-8"))
+    trust["tiers"]["say_hello"] = "safe"
+    (skills.skills_dir() / "trust.json").write_text(json.dumps(trust), encoding="utf-8")
+    assert "say_hello" not in registry.active_tools()  # the agreed tier changed after approval: the approval is void
+
+
+def test_a_builder_that_rewrites_meta_json_can_not_lower_the_tier_or_skip_the_check():
+    folder = _planned(tier="confirm")
+    skills.start_build("say_hello", start=lambda prompt, cwd: "started fake")
+    for f, text in (("skill.toml", SKILL_TOML), ("skill.py", SKILL_PY), ("test_skill.py", TEST_PY), ("DONE", "")):
+        (folder / f).write_text(text, encoding="utf-8")
+    meta = json.loads((folder / "meta.json").read_text(encoding="utf-8"))
+    (folder / "meta.json").write_text(json.dumps({**meta, "tier": "safe", "status": "ready"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="never checked it; check it again"):
+        skills.approve("say_hello")  # status says ready, but Iris never ran the guard and the tests
+    (folder / "meta.json").write_text(json.dumps({**meta, "tier": "safe", "status": "building"}), encoding="utf-8")
+    r = skills.check("say_hello")
+    assert r["status"] == "blocked" and "only the plan sets the tier" in r["problems"][0]
+    assert skills.meta("say_hello")["tier"] == "confirm"
+    assert skills.check("say_hello")["status"] == "ready"
+    skills.approve("say_hello")
+    assert registry.active_tools()["say_hello"].tier == "confirm"
+
+
+def test_approve_needs_the_files_iris_checked():
+    folder = _built()
+    skills.check("say_hello")
+    (folder / "skill.py").write_text(SKILL_PY.replace("hello", "hi"), encoding="utf-8")
+    with pytest.raises(ValueError, match="changed after its last check"):
+        skills.approve("say_hello")
+
+
+def test_a_skill_from_before_1_0_keeps_its_approval(home):
+    _approved()
+    (skills.skills_dir() / "trust.json").unlink()  # 0.6.1 had no trust.json
+    assert skills._approved_ok("say_hello") and registry.active_tools()["say_hello"].tier == "safe"
 
 
 def test_a_skill_named_like_a_core_tool_is_never_offered(home):

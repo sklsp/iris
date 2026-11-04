@@ -97,9 +97,13 @@ Nothing is pinned as a known bug. The limits below are accepted tradeoffs and op
   127.0.0.1. Untick it in the browser's inspect page to take it back.
 - **A confirm prompt relies on the user listening.** The question is spoken once; silence counts as "no", but a misheard or half-heard "yes" approves with no second check.
 - **The builder has your rights too.** The coding agent that builds a skill (Cline in yolo mode, or your
-  `builder`) can do whatever your account can while it works. The plan tells it to stay in the skill's folder and
-  Iris catches a self-written approval, but a builder that also rewrote the skill's meta.json, or Iris itself,
-  would not be stopped. Use a builder you trust.
+  `builder`) can do whatever your account can while it works. The plan tells it to stay in the skill's folder.
+  Iris catches a self-written approval, and a meta.json the builder rewrote can neither lower the tier (the tier
+  the user agreed to lives in `trust.json`, outside the skill's folder) nor skip the check (approving needs the
+  digest of a check Iris ran itself); proven by
+  `test_a_builder_that_rewrites_meta_json_can_not_lower_the_tier_or_skip_the_check`. A builder that also rewrote
+  Iris's own files outside its folder (`approved.json`, `trust.json`, or Iris itself) would not be stopped. Use a
+  builder you trust.
 - **An approved skill has your rights.** Out of process means it can not change Iris, not that it is sandboxed: an
   approved skill can do whatever your user account can. The text guard only catches code that reaches into Iris
   itself; reading the code on the Skills tab before approving is the real gate.

@@ -71,6 +71,14 @@ def test_clipboard_read_timeout_is_an_error(monkeypatch):
     assert desktop.clipboard_read() == "error: reading the clipboard timed out"
 
 
+def test_clipboard_read_os_error_is_an_error(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("no powershell here")
+
+    monkeypatch.setattr(desktop.subprocess, "run", boom)
+    assert desktop.clipboard_read() == "error: could not read the clipboard"
+
+
 # --- clipboard_write -----------------------------------------------------------------
 
 def test_clipboard_write_passes_the_text_through_the_environment(monkeypatch):
@@ -92,6 +100,22 @@ def test_clipboard_write_passes_the_text_through_the_environment(monkeypatch):
 def test_clipboard_write_failure_is_an_error(monkeypatch):
     monkeypatch.setattr(desktop.subprocess, "run",
                         lambda *a, **k: subprocess.CompletedProcess(None, 1, stdout="", stderr="x"))
+    assert desktop.clipboard_write("t") == "error: could not write the clipboard"
+
+
+def test_clipboard_write_timeout_is_an_error(monkeypatch):
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired("powershell", 10)
+
+    monkeypatch.setattr(desktop.subprocess, "run", boom)
+    assert desktop.clipboard_write("t") == "error: writing to the clipboard timed out"
+
+
+def test_clipboard_write_os_error_is_an_error(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("no powershell here")
+
+    monkeypatch.setattr(desktop.subprocess, "run", boom)
     assert desktop.clipboard_write("t") == "error: could not write the clipboard"
 
 

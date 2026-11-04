@@ -7,6 +7,9 @@ python -m iris app             the desktop app: the dashboard in a window, a tra
 python -m iris autopilot       wait for a run in --repo to finish, then ask before starting the next queued prompt
 python -m iris init            write a starter ~/.iris/config.toml (asks your name and city)
 python -m iris doctor          check the setup (LM Studio, model, config, plugins, voice) and say what to fix
+python -m iris eval            run the eval tasks against the model (--repeat N, --only ID, --category NAME;
+                               eval publish puts the latest score in the README, eval history shows the trend)
+python -m iris eval-compare A B  what changed between two eval reports (eval/results/*.json)
 python -m iris config          print every setting, its value and where it comes from (file, default, environment)
 python -m iris startup on      start voice mode at login in a minimized console (off, status)
 python -m iris shortcut        put an Iris.cmd on the desktop that starts voice mode with a double-click

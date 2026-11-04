@@ -367,7 +367,7 @@ class App:
         self._minimized = False
 
     def run(self) -> int:
-        """Start the dashboard server, the window and voice mode, then stop everything when the window closes."""
+        """Start the dashboard server, the window and voice mode; stop everything on Quit (closing only hides it)."""
         from iris import dashboard
 
         # models the app downloads (Whisper, VoxCPM2) live under ~/.iris, so uninstall can remove them on request

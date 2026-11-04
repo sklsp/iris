@@ -165,6 +165,8 @@ def resolve_target(path: str, suffix: str = "") -> Path:
 def write_file(path: str, text: str, overwrite: bool = False) -> str:
     """Write UTF-8 text to a file. Overwriting sends the old file to Iris's trash first, so it can be restored."""
     p = resolve_target(path)
+    if p.is_dir():  # overwrite would send the whole folder to the trash and put one file in its place
+        return f"error: {p} is a folder; give a file name inside it, like {p / 'notes.txt'}"
     if p.exists():
         if not overwrite:
             return f"error: {p} exists; say overwrite to replace it"

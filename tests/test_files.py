@@ -321,6 +321,15 @@ def test_write_file_refuses_to_overwrite_without_saying_so(tmp_path):
     assert p.read_text(encoding="utf-8") == "old"
 
 
+def test_write_file_never_replaces_a_folder(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_TRASH_DIR", str(tmp_path / "trash"))
+    folder = tmp_path / "Projects"
+    (folder / "keep").mkdir(parents=True)
+    out = files.write_file(str(folder), "x", overwrite=True)
+    assert out.startswith(f"error: {folder} is a folder; give a file name inside it")
+    assert (folder / "keep").is_dir() and not (tmp_path / "trash").exists()
+
+
 def test_write_file_overwrite_puts_the_old_file_in_the_trash(tmp_path, monkeypatch):
     trash = tmp_path / "trash"
     monkeypatch.setenv("IRIS_TRASH_DIR", str(trash))

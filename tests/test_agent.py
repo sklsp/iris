@@ -266,9 +266,28 @@ def test_llm_error_after_a_tool_call_removes_the_whole_turn(tmp_path):
     llm = RaisingLLM(call("status"), http_400)
     a = agent(tmp_path, llm, ran)
     before = [dict(m) for m in a.messages]
-    assert a.handle("check") == "I can't reach the model in LM Studio right now. Try again in a moment."
+    assert a.handle("check").startswith("The model server turned this request down; the journal says why.")
     assert a.messages == before
     assert len(ran) == 1
+
+
+def test_a_refusal_from_the_server_is_journaled_with_its_reason(tmp_path):
+    import io
+
+    body = io.BytesIO(b'{"error": "context length 65536 exceeded"}')
+    llm = RaisingLLM(urllib.error.HTTPError("http://127.0.0.1:1234", 400, "Bad Request", None, body))
+    a = agent(tmp_path, llm, [])
+    a.handle("check")
+    error = [e for e in journal(tmp_path) if e["event"] == "llm_error"][0]["error"]
+    assert "400" in error and "context length 65536 exceeded" in error
+
+
+@pytest.mark.parametrize("exc", [__import__("http.client").client.IncompleteRead(b"{", 100),
+                                 TypeError("'NoneType' object is not subscriptable")])
+def test_a_broken_answer_from_the_server_ends_the_turn_not_the_session(tmp_path, exc):
+    a = agent(tmp_path, RaisingLLM(exc, answer("back.")), [])
+    assert a.handle("hello") == "I can't reach the model in LM Studio right now. Try again in a moment."
+    assert a.handle("again") == "back."
 
 
 def test_runtime_error_from_chat_is_not_caught(tmp_path):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import inspect
 import json
 import os
@@ -94,6 +95,23 @@ class Journal:
 
 # What Iris says when the model can not answer, in English or Dutch (the languages the eval tests most).
 # What Iris says when the model can not answer, per language: en, nl, de, fr, es.
+# what a model call can raise: the server is down or answers badly (OSError, HTTPException such as IncompleteRead),
+# or its JSON lacks what a reply needs (KeyError, IndexError, TypeError, ValueError)
+_LLM_ERRORS = (OSError, http.client.HTTPException, KeyError, IndexError, TypeError, ValueError)
+
+
+def _llm_error(exc: BaseException) -> str:
+    """The error for the journal, with the server's own reason when it answered with an HTTP error."""
+    text = repr(exc)
+    read = getattr(exc, "read", None)
+    if callable(read):
+        try:
+            text += " " + read().decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001 - the body is a bonus, the status is already in text
+            pass
+    return text[:500]
+
+
 _SORRY = {
     "slow": ("That took me too long to think through. Try asking it in a shorter way.",
              "Daar moest ik te lang over nadenken. Vraag het iets korter.",
@@ -105,6 +123,16 @@ _SORRY = {
              "Ich erreiche das Modell in LM Studio gerade nicht. Versuch es gleich noch einmal.",
              "Je n'arrive pas à joindre le modèle dans LM Studio. Réessaie dans un instant.",
              "No puedo conectar con el modelo en LM Studio. Inténtalo de nuevo en un momento."),
+    "refused": ("The model server turned this request down; the journal says why. Often the conversation got too "
+                "long: say it again in fewer words.",
+                "De modelserver weigerde dit verzoek; het journaal zegt waarom. Vaak werd het gesprek te lang: zeg "
+                "het nog eens korter.",
+                "Der Modellserver hat diese Anfrage abgelehnt; das Journal sagt warum. Oft wurde das Gespräch zu "
+                "lang: sag es noch einmal kürzer.",
+                "Le serveur du modèle a refusé cette demande ; le journal dit pourquoi. Souvent la conversation est "
+                "devenue trop longue : redis-le plus brièvement.",
+                "El servidor del modelo rechazó esta petición; el diario dice por qué. A menudo la conversación se "
+                "hizo demasiado larga: dilo otra vez más corto."),
     "steps": ("I stopped: this took too many steps.", "Ik ben gestopt: dit kostte te veel stappen.",
               "Ich habe aufgehört: das hat zu viele Schritte gebraucht.",
               "Je me suis arrêtée : cela demandait trop d'étapes.",
@@ -155,13 +183,15 @@ class Agent:
                 return self._cancelled()
             try:
                 reply = self.llm.chat(self.messages, schemas)
-            except (OSError, KeyError, IndexError, ValueError) as exc:
+            except _LLM_ERRORS as exc:
                 # LM Studio is down or full: end this turn only and keep the voice loop alive
-                self.journal.log(event="llm_error", error=repr(exc)[:500])
+                self.journal.log(event="llm_error", error=_llm_error(exc))
                 starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
                 del self.messages[starts[-1]:]
                 if "ran out of tokens" in str(exc):  # LM Studio answered, the model just thought too long
                     return _sorry("slow", request)
+                if 400 <= int(getattr(exc, "code", 0) or 0) < 500:  # it answered, and refused (context too long)
+                    return _sorry("refused", request)
                 return _sorry("down", request)
             if self.cancel.is_set():  # cancelled while the model was thinking: its reply is dropped
                 return self._cancelled()
@@ -198,8 +228,8 @@ class Agent:
         self.messages.append({"role": "user", "content": OUT_OF_STEPS})
         try:
             reply = self.llm.chat(self.messages, [])
-        except (OSError, KeyError, IndexError, ValueError) as exc:
-            self.journal.log(event="llm_error", error=repr(exc)[:500])
+        except _LLM_ERRORS as exc:
+            self.journal.log(event="llm_error", error=_llm_error(exc))
             reply = None
         self.messages.pop()  # the user never said it
         if reply is None or reply.calls or not reply.text.strip():

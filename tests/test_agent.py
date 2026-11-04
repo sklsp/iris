@@ -606,3 +606,20 @@ def test_a_huge_tool_result_is_cut_with_a_marker_that_says_how_much(tmp_path):
     Agent(llm, lambda q: True, Journal(tmp_path / "j.jsonl"), tools).handle("read it")
     content = llm.seen[1][-1]["content"]
     assert "[truncated, 500 more characters" in content and content.split("\n")[1] == "y" * MAX_RESULT_CHARS
+
+
+def test_the_prompt_prefix_is_byte_stable_between_requests_and_runs(tmp_path):
+    """The system prompt and the tool list come before the conversation: when they are the same bytes on every
+    request, the model server reuses its cached prompt. Nothing volatile (times, counters, order) may be in them."""
+    seen = []
+
+    class Recording:
+        def chat(self, messages, tools):
+            seen.append(json.dumps(messages[0]) + json.dumps(tools))
+            return answer("ok.")
+
+    for _ in range(2):  # two runs of Iris on the same day
+        a = Agent(Recording(), lambda q: True, Journal(tmp_path / "j.jsonl"), today="Sunday 01 November 2026")
+        a.handle("one")
+        a.handle("two")
+    assert len(seen) == 4 and len(set(seen)) == 1

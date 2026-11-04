@@ -111,6 +111,29 @@ def payload() -> dict:
             "read_only": {k: data[k] for k in READ_ONLY if k in data}}
 
 
+def effective() -> list[tuple[str, str, str]]:
+    """One row per setting in FIELDS order: the key, its value now and where it comes from."""
+    data = config.raw()
+    rows = []
+    for f in FIELDS:
+        env = f.get("env")
+        if env and os.environ.get(env, "").strip():
+            rows.append((f["key"], os.environ[env].strip(), f"environment {env}"))
+        elif f["key"] in data:
+            rows.append((f["key"], toml_value(data[f["key"]]), "config.toml"))
+        else:
+            rows.append((f["key"], toml_value(f["default"]), "default"))
+    return rows
+
+
+def config_main(argv: list[str]) -> int:
+    """`iris config`: every setting, its value and where it comes from (file, default or environment)."""
+    print(f"config file: {config.config_path()}")
+    for key, value, source in effective():
+        print(f"{key} = {value}  ({source})")
+    return 0
+
+
 def validate(values: dict) -> tuple[dict, dict]:
     """(clean values, errors by key). A value of None or "" for an optional key removes it from the file."""
     from iris.registry import PLUGINS

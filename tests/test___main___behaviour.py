@@ -450,6 +450,23 @@ def test_main_dispatches_doctor_and_propagates_the_exit_code(monkeypatch):
     assert seen["args"] == ()
 
 
+def test_main_dispatches_config_with_the_rest_of_argv(monkeypatch):
+    seen = {}
+
+    def fake_config_main(argv):
+        seen["argv"] = argv
+        return 7
+
+    monkeypatch.setattr("iris.settings.config_main", fake_config_main)
+    monkeypatch.setattr(sys, "argv", ["iris", "config"])
+
+    with pytest.raises(SystemExit) as exc:
+        imain.main()
+
+    assert exc.value.code == 7
+    assert seen["argv"] == []
+
+
 def test_main_dispatches_startup_with_the_rest_of_argv(monkeypatch):
     seen = {}
 

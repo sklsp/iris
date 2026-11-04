@@ -10,5 +10,5 @@
 - [x] Q8. Tests for the command dispatch in iris/__main__.py (1881 passed in 61.63s)
 - [x] Q9. iris doctor: the overlay check (1885 passed in 62.92s)
 - [x] Q10. iris doctor: the desktop shortcut check (1887 passed in 62.70s)
-- [ ] Q11. iris config: every effective setting and where it comes from
+- [x] Q11. iris config: every effective setting and where it comes from (1890 passed in 63.12s)
 - [ ] Q12. README and CHANGELOG for this run

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.6.1 (2026-11-04): clearer errors, `iris config` and more tests
+
+- 0.6.0 was not published as a release, so this is the first release with the installer and the desktop app:
+  the 0.6.0 notes say what they do.
 - `iris config` prints every setting, its value and whether it comes from config.toml, the default or an environment variable.
 - `iris doctor` checks that tkinter is there when the overlay is on, and says whether the desktop shortcut exists.
 - More tests for reminders, timers, the update check, weather, notes, files, agents, the first-run tests, the agent loop and the command line.

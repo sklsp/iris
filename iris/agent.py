@@ -226,7 +226,17 @@ class Agent:
         if tool is None:
             self.journal.log(event="tool", tool=call.name, args=call.args, tier="unknown", outcome="unknown")
             return f"error: unknown tool {call.name!r}"
-        tier = tool.tier_of(call.args)
+        if not isinstance(call.args, dict) or "_unparsed" in call.args:
+            self.journal.log(event="tool", tool=call.name, args=repr(call.args)[:500], tier="unknown",
+                             outcome="error", error_kind="bad_args")
+            return ("error: the arguments were not a JSON object; call the tool again with its parameters by name, "
+                    'like {"window": "Notepad"}')
+        try:
+            tier = tool.tier_of(call.args)
+        except Exception as exc:  # noqa: BLE001 - arguments the tier rules can not read (path=""): never run it
+            self.journal.log(event="tool", tool=call.name, args=call.args, tier="unknown", outcome="error",
+                             error=repr(exc), error_kind="bad_args")
+            return f"error: {exc}"
         sensitive = False
         if important_only():
             tier, sensitive = _important_tier(call.name, call.args, tier)
@@ -241,7 +251,10 @@ class Agent:
             if key is not None and key in self._granted:
                 entry["granted"] = True  # covered by the yes for this window earlier in this request
             else:
-                question = _describe(call.name, call.args, self._lang)
+                try:
+                    question = _describe(call.name, call.args, self._lang)
+                except Exception:  # noqa: BLE001 - a question that can not be put plainly is still asked
+                    question = f"Run {call.name} with {call.args}?"
                 if sensitive:
                     question += _sensitive_note(self._lang)
                 elif key is not None:

@@ -497,3 +497,56 @@ def test_a_cancel_on_the_last_step_does_not_ask_for_a_summary(tmp_path):
     events = [e["event"] for e in journal(tmp_path)]
     assert "cancelled" in events and "gave_up" not in events
     assert len(llm.seen) == MAX_STEPS  # no extra call for an out-of-steps answer
+
+
+def _raw_call(name, args):
+    c = ToolCall(f"id-{name}", name, args)
+    return Reply("", [c], {"role": "assistant", "content": "", "tool_calls": [
+        {"id": c.id, "type": "function", "function": {"name": name, "arguments": "x"}}]})
+
+
+@pytest.mark.parametrize("args", [None, [1, 2], "Notepad", {"_unparsed": "{window: Notepad"}])
+def test_arguments_that_are_not_an_object_go_back_to_the_model(tmp_path, args):
+    ran = []
+    llm = ScriptedLLM(_raw_call("click", args), answer("Sorry."))
+    assert agent(tmp_path, llm, ran).handle("click bold") == "Sorry."
+    assert ran == [] and "not a JSON object" in llm.seen[1][-1]["content"]
+    assert journal(tmp_path)[1]["error_kind"] == "bad_args"
+
+
+def test_a_tier_rule_that_can_not_read_the_arguments_never_runs_the_tool(tmp_path):
+    def picky(args):
+        raise ValueError("path is empty")
+
+    ran = []
+    tools = {"make_document": Tool("make_document", "", {}, [], CONFIRM, lambda **kw: ran.append(kw) or "made",
+                                   picky)}
+    llm = ScriptedLLM(call("make_document", path=""), answer("Which name?"))
+    a = Agent(llm, lambda q: True, Journal(tmp_path / "j.jsonl"), tools)
+    assert a.handle("make a document") == "Which name?"
+    assert ran == [] and "error: path is empty" in llm.seen[1][-1]["content"]
+
+
+def test_a_question_that_can_not_be_described_is_still_asked(tmp_path, monkeypatch):
+    import iris.agent
+
+    def broken(*a, **kw):
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(iris.agent, "_describe", broken)
+    ran, asked = [], []
+    llm = ScriptedLLM(call("click", window="Notepad", control="Bold"), answer("Done."))
+    assert agent(tmp_path, llm, ran, confirm=lambda q: asked.append(q) or True).handle("bold") == "Done."
+    assert asked[0].startswith("Run click with") and ran
+
+
+def test_arguments_sent_as_an_object_are_read(monkeypatch):
+    import io
+
+    from iris.llm import LMStudio
+
+    body = {"choices": [{"finish_reason": "tool_calls", "message": {"content": "", "tool_calls": [
+        {"id": "1", "function": {"name": "status", "arguments": {"verbose": True}}}]}}]}
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout: io.BytesIO(json.dumps(body).encode()))
+    reply = LMStudio(model="m").chat([], [])
+    assert reply.calls[0].args == {"verbose": True}

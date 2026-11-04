@@ -1,16 +1,24 @@
 """Office files for the user: Word .docx from a title and simple markdown, PowerPoint .pptx from slides,
 and spreadsheet .xlsx from named worksheets of rows."""
 
+from __future__ import annotations
+
 import re
 from datetime import date
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from iris import files
+
+if TYPE_CHECKING:
+    from docx.document import Document
+    from docx.text.paragraph import Paragraph
 
 OFFICE_MISSING = ("error: Word, PowerPoint and Excel files need the office extra: pip install -e .[office] "
                   "in the Iris folder")
 
 
-def _add_rich(paragraph, text: str) -> None:
+def _add_rich(paragraph: Paragraph, text: str) -> None:
     """Add text to a paragraph; **bold** parts become bold runs."""
     for part in re.split(r"(\*\*.+?\*\*)", text):
         if not part:
@@ -22,7 +30,7 @@ def _add_rich(paragraph, text: str) -> None:
             paragraph.add_run(part)
 
 
-def _add_content(doc, content: str) -> int:
+def _add_content(doc: Document, content: str) -> int:
     """Add the simple-markdown content; returns how many paragraphs it made.
 
     "# ", "## " and "### " become headings 1 to 3, "- " or "* " bullets, a number with ". " a numbered item,
@@ -141,7 +149,7 @@ MAX_ROWS = 5000
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 
 
-def _cell(value):
+def _cell(value: Any) -> bool | int | float | str | None:
     """Numbers and booleans stay as they are; everything else is text. Text never becomes a formula, because the
     content can come from a web page (an "=HYPERLINK(...)" or DDE trick must stay a plain string)."""
     if isinstance(value, (bool, int, float)) or value is None:
@@ -199,7 +207,7 @@ def make_spreadsheet(path: str, sheets: list) -> str:
     return f"made {p} ({len(sheets)} sheets)"
 
 
-def _write_csv(p, sheets: list) -> str:
+def _write_csv(p: Path, sheets: list) -> str:
     """The first sheet as CSV; text that starts like a formula gets a leading apostrophe so Excel shows it as text."""
     import csv
 

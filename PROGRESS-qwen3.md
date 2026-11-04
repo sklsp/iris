@@ -4,7 +4,7 @@
 - [x] Q2. A test that every environment variable Iris reads is in the README (1963 passed in 63.76s (0:01:03))
 - [x] Q3. README: the environment table's defaults match the code (1963 passed in 64.98s (0:01:04))
 - [x] Q4. Office files: the right install command in the error (1963 passed in 65.75s (0:01:05))
-- [ ] Q5. PDF files: say how to get pypdf
+- [x] Q5. PDF files: say how to get pypdf (1963 passed in 65.87s (0:01:05))
 - [ ] Q6. ComfyUI not running: say what to do
 - [ ] Q7. Looking at the screen: say why the model could not be reached
 - [ ] Q8. The GPU extra's install command in a comment

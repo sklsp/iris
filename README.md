@@ -634,6 +634,21 @@ shows with its own badge.
 | `IRIS_SETTINGS` | `~/.iris/settings.json` | the model chosen on the dashboard |
 | `IRIS_START_MENU` | the two Windows Start menu folders | where open_app looks for shortcuts, ';' separated |
 
+## Stability
+
+From 1.0 on, these stay as they are within a major version:
+
+- the commands and flags: `iris`, `--voice`, `--push-to-talk`, `--journal`, `--version`, and `iris app`,
+  `autopilot`, `config`, `dashboard`, `doctor`, `eval`, `eval-compare`, `init`, `shortcut`, `skill`, `startup`;
+- the keys of `config.toml` and what they mean (see [Configuration](#configuration));
+- the files Iris keeps in `~/.iris`: `config.toml`, `journal.jsonl`, `notes.md`, `reminders.json`, `queue.json`,
+  `settings.json`, `setup.json`, `update.json` and the `skills`, `trash` and `logs` folders;
+- the dashboard's URL routes (`/` and `/api/...`).
+
+New ones can come in any minor version. Removing or renaming one needs a major version (2.0), and gets a warning
+for at least one minor version first. `tests/test_stability.py` fails when one goes missing by accident. Tool names,
+descriptions and the system prompt are not part of this promise: they follow what the eval measures.
+
 ## Limits
 
 - Windows only: the hands are Windows UI Automation. Apps that expose no accessibility tree (some games and canvas

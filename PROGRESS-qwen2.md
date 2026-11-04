@@ -11,7 +11,7 @@
 - [x] Q9. Tests for the uncovered lines of iris/voice.py (1961 passed in 66.25s)
 - [x] Q10. Docstrings in iris/prompt_queue.py (1961 passed in 64.88s)
 - [x] Q11. Docstrings in iris/tools.py functions (1961 passed in 63.65s)
-- [ ] Q12. Docstrings in iris/app.py
+- [x] Q12. Docstrings in iris/app.py (1961 passed in 65.97s)
 - [ ] Q13. Docstrings in iris/overlay.py
 - [ ] Q14. Docstrings in iris/voice.py and iris/web.py
 - [ ] Q15. Docstrings in the remaining modules

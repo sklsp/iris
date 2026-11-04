@@ -439,4 +439,4 @@ def test_concept_sites_reports_timeout(tmp_path, monkeypatch):
 
     monkeypatch.setattr(tools.subprocess, "run", boom)
     monkeypatch.setenv("IRIS_CONCEPTKIT_DIR", str(tmp_path))
-    assert tools.concept_sites() == "conceptkit took too long"
+    assert tools.concept_sites() == "error: conceptkit took longer than 2 minutes; try again later"

@@ -268,7 +268,8 @@ def test_web_search_tool_error_text(monkeypatch, exc):
         raise exc
 
     monkeypatch.setattr(web, "search", boom)
-    assert tools.web_search("test query") == f"error: search failed: {exc}"
+    assert tools.web_search("test query") == (f"error: search failed ({exc}); try again, or open a site's search "
+                                              "page with open_url")
 
 
 def test_web_search_is_a_safe_tool():

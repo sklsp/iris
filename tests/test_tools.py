@@ -455,7 +455,8 @@ def test_comfy_queue_bad_name_never_touches_disk_or_network(tmp_path, monkeypatc
     monkeypatch.setattr(urllib.request, "urlopen", fake)
     # no workflows folder exists at all: a bad name must fail before any disk access
     for name in ("../evil", "a b", "a/b", "a.b", ""):
-        assert tools.comfy_queue(name) == "error: bad workflow name"
+        assert tools.comfy_queue(name) == ("error: a workflow name has only letters, digits, - and _; "
+                                           "comfy_workflows lists them")
 
 
 def test_comfy_queue_missing_workflow(tmp_path, monkeypatch):
@@ -494,7 +495,8 @@ def test_comfy_queue_without_gpu_room_does_not_post(tmp_path, monkeypatch):
 
     monkeypatch.setattr(tools, "system_data", lambda: tight)
     monkeypatch.setattr(urllib.request, "urlopen", fake)
-    assert tools.comfy_queue("anime") == "error: the GPU is busy or hot; try again later"
+    assert tools.comfy_queue("anime") == ("error: no GPU is free for it (only 3576 MiB free; 84 C, too hot); "
+                                          "try again later")
     assert calls == []
 
 
@@ -511,7 +513,8 @@ def test_comfy_queue_without_any_gpu_does_not_post(tmp_path, monkeypatch):
     monkeypatch.setattr(tools, "system_data", lambda: {"cpu_percent": 5.0, "ram_used_gb": 8.0,
                                                        "ram_total_gb": 32.0, "gpus": []})
     monkeypatch.setattr(urllib.request, "urlopen", fake)
-    assert tools.comfy_queue("anime") == "error: the GPU is busy or hot; try again later"
+    assert tools.comfy_queue("anime") == ("error: no NVIDIA GPU found (nvidia-smi listed none); ComfyUI workflows "
+                                          "need one")
     assert calls == []
 
 
@@ -548,7 +551,8 @@ def test_lmstudio_models_states_unknown(monkeypatch):
 
 def test_lmstudio_models_not_reachable(monkeypatch):
     monkeypatch.setattr("iris.dashboard.lmstudio_payload", lambda: {"reachable": False})
-    assert tools.lmstudio_models() == "LM Studio is not reachable."
+    assert tools.lmstudio_models() == ("LM Studio is not reachable; start LM Studio and its local server, then ask "
+                                       "again.")
 
 
 # --- lmstudio_load -------------------------------------------------------------
@@ -689,7 +693,8 @@ def test_followups_none_due(leadscan):
 
 def test_followups_without_crm(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_LEADSCAN_DIR", str(tmp_path))
-    assert tools.followups() == "No leadscan CRM found."
+    assert tools.followups() == (f"No leadscan CRM found at {tmp_path / 'out' / 'pipeline.csv'}; set leadscan_dir "
+                                 "in config.toml to its folder.")
 
 
 
@@ -1221,3 +1226,17 @@ def test_every_tool_accepts_the_parameters_its_schema_offers():
             sig.bind(**sample)
         except TypeError as exc:
             raise AssertionError(f"{tool.name}: {exc}") from None
+
+
+def test_comfy_queue_tells_a_refused_workflow_from_a_stopped_comfyui(tmp_path, monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    _queue_folder(tmp_path, monkeypatch)
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())
+
+    def refused(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 400, "Bad Request", None, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", refused)
+    assert tools.comfy_queue("anime") == "error: ComfyUI refused anime (HTTP 400); open it in ComfyUI to see why"

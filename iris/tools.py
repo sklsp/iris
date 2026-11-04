@@ -202,10 +202,11 @@ def comfy_workflows() -> str:
 
 def comfy_queue(workflow: str) -> str:
     """Queue a saved ComfyUI workflow (API format) by name. Ask first: it uses the GPU for a while."""
+    import urllib.error
     import urllib.request
 
     if not re.fullmatch(r"[A-Za-z0-9_-]+", workflow):
-        return "error: bad workflow name"
+        return "error: a workflow name has only letters, digits, - and _; comfy_workflows lists them"
     folder = Path(os.environ.get("IRIS_COMFY_WORKFLOWS", "~/.iris/workflows")).expanduser()
     path = folder / f"{workflow}.json"
     if not path.is_file():
@@ -213,10 +214,12 @@ def comfy_queue(workflow: str) -> str:
     try:
         prompt = json.loads(path.read_text(encoding="utf-8"))
     except ValueError:
-        return f"error: could not read {workflow}.json"
-    guards = gpu_guard(system_data(), 8000)  # the same check as item 7; nvidia-smi runs once
+        return f"error: {workflow}.json is not valid JSON; export it again from ComfyUI in API format"
+    guards = gpu_guard(system_data(), 8000)  # the same check as gpu_check; nvidia-smi runs once
+    if not guards:
+        return "error: no NVIDIA GPU found (nvidia-smi listed none); ComfyUI workflows need one"
     if not any(g["ok"] for g in guards):
-        return "error: the GPU is busy or hot; try again later"
+        return f"error: no GPU is free for it ({'; '.join(g['reason'] for g in guards)}); try again later"
     base = os.environ.get("IRIS_COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
     req = urllib.request.Request(
         base + "/prompt", data=json.dumps({"prompt": prompt}).encode(),
@@ -224,6 +227,8 @@ def comfy_queue(workflow: str) -> str:
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
             out = json.loads(r.read().decode())
+    except urllib.error.HTTPError as exc:  # ComfyUI runs, and turned the workflow down
+        return f"error: ComfyUI refused {workflow} (HTTP {exc.code}); open it in ComfyUI to see why"
     except (OSError, ValueError):
         return "error: ComfyUI is not running; start ComfyUI, then ask again"
     return f"queued {workflow} as {out.get('prompt_id', '?')}"
@@ -235,7 +240,7 @@ def lmstudio_models() -> str:
 
     p = lmstudio_payload()
     if not p.get("reachable"):
-        return "LM Studio is not reachable."
+        return "LM Studio is not reachable; start LM Studio and its local server, then ask again."
     n = len(p["models"])
     if p.get("states_known"):
         loaded = [m["id"] for m in p["models"] if m.get("state") == "loaded"]
@@ -278,7 +283,7 @@ def followups(today: str = "") -> str:
     folder = Path(os.environ.get("IRIS_LEADSCAN_DIR") or config.get("leadscan_dir", str(Path.home() / "leadscan")))
     file = folder / "out" / "pipeline.csv"
     if not file.exists():
-        return "No leadscan CRM found."
+        return f"No leadscan CRM found at {file}; set leadscan_dir in config.toml to its folder."
     day = today or date.today().isoformat()
     done = {"klant", "geen interesse", "niet benaderen"}
     due = []
@@ -402,7 +407,7 @@ def _control(w: Any, name: str) -> Any:
     exact = [c for c in cands if c.window_text().strip().lower() == n]
     hits = exact or [c for c in cands if n in c.window_text().lower()]
     if not hits:
-        raise LookupError(f"no control named {name!r} in {w.window_text()!r}")
+        raise LookupError(f"no control named {name!r} in {w.window_text()!r}; read_window lists its controls")
     return hits[0]
 
 
@@ -515,7 +520,7 @@ def web_search(query: str) -> str:
         try:
             results = search(query)
         except (OSError, ValueError) as e:
-            return f"error: search failed: {e}"
+            return f"error: search failed ({e}); try again, or open a site's search page with open_url"
     if not results:
         return f"No results for '{query}'."
     blocks = [f"{n}. {r['title']}\n   {r['url']}\n   {r['snippet']}" for n, r in enumerate(results, 1)]
@@ -576,7 +581,8 @@ def restore_trash(name: str = "") -> str:
     meta = json.loads((d / (item.name + ".json")).read_text(encoding="utf-8"))
     original = Path(meta["original"])
     if original.exists():
-        raise FileExistsError(f"{original} already exists; restore it from the trash manually")
+        raise FileExistsError(f"{original} already exists; move that one away first, or take {item} from the "
+                              "trash yourself")
     original.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(item), str(original))
     (d / (item.name + ".json")).unlink()
@@ -670,7 +676,7 @@ def concept_sites() -> str:
             [str(python), "-m", "conceptkit", "check", "--all"], cwd=root, capture_output=True,
             text=True, encoding="utf-8", timeout=120)
     except subprocess.TimeoutExpired:
-        return "conceptkit took too long"
+        return "error: conceptkit took longer than 2 minutes; try again later"
     return ("Sites:\n" + listed.stdout.strip() + "\n\nChecks:\n" + checked.stdout.strip())
 
 

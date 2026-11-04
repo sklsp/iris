@@ -258,7 +258,8 @@ def test_web_search_uses_the_browser_and_falls_back_to_duckduckgo(fake, monkeypa
     monkeypatch.setattr("iris.web.search", lambda q: [{"title": "DDG", "url": "https://d.example", "snippet": "s"}])
     assert tools.web_search("f1").startswith("1. DDG")
     monkeypatch.setattr("iris.web.search", lambda q: (_ for _ in ()).throw(ValueError("human check")))
-    assert tools.web_search("f1") == "error: search failed: human check"
+    assert tools.web_search("f1") == ("error: search failed (human check); try again, or open a site's search page "
+                                      "with open_url")
 
 
 def test_open_url_returns_the_new_page_so_no_read_step_is_needed(fake, monkeypatch):

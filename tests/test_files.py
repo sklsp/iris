@@ -569,3 +569,14 @@ def test_no_file_tool_may_change_iris_own_code_or_state(tmp_path, monkeypatch):
         assert tools.TOOLS["copy_file"].tier_of({"source": "a", "destination": str(p)}) == tools.NEVER, p
         assert tools.TOOLS["move_file"].tier_of({"source": str(p), "destination": str(home / "x")}) == tools.NEVER
     assert tools.TOOLS["write_file"].tier_of({"path": str(home / "Documents" / "a.txt")}) == tools.CONFIRM
+
+
+@pytest.mark.parametrize("dest", ["A/Archive", "A/backup/", "A"])
+def test_a_folder_is_never_copied_or_moved_into_itself(tmp_path, dest):
+    (tmp_path / "A" / "Archive").mkdir(parents=True)
+    (tmp_path / "A" / "f.txt").write_text("x", encoding="utf-8")
+    for fn in (files.copy_file, files.move_file):
+        out = fn(str(tmp_path / "A"), str(tmp_path / dest))
+        assert out.startswith("error: ") and "inside" in out, out
+    assert sorted(p.name for p in (tmp_path / "A").iterdir()) == ["Archive", "f.txt"]
+    assert list((tmp_path / "A" / "Archive").iterdir()) == []

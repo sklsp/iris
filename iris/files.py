@@ -203,6 +203,8 @@ def _source_and_target(source: str, destination: str) -> tuple[Path, Path] | str
     if not s.exists():
         return f"error: no such file or folder: {s}"
     d = _destination(destination, s)
+    if s.is_dir() and d.resolve().is_relative_to(s.resolve()):  # copytree would copy its own copy without end
+        return f"error: {d} is inside {s}; pick a destination outside the folder"
     if d.exists():
         return f"error: {d} already exists; never overwrites"
     d.parent.mkdir(parents=True, exist_ok=True)

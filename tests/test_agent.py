@@ -123,6 +123,19 @@ def test_out_of_steps_answers_with_what_was_found(tmp_path):
     assert [e["event"] for e in journal(tmp_path)][-2:] == ["gave_up", "answer"]
 
 
+def test_the_last_call_keeps_the_tool_list_so_the_cached_prompt_is_reused(tmp_path):
+    tool_lists = []
+
+    class Recording(ScriptedLLM):
+        def chat(self, messages, tools):
+            tool_lists.append(json.dumps(tools))
+            return super().chat(messages, tools)
+
+    llm = Recording(*[call("status") for _ in range(MAX_STEPS)], answer("Found two."))
+    assert agent(tmp_path, llm, []).handle("search") == "Found two."
+    assert len(tool_lists) == MAX_STEPS + 1 and len(set(tool_lists)) == 1  # byte for byte the same on every call
+
+
 def test_older_browser_views_keep_their_text_but_lose_their_numbers(tmp_path):
     page = ('clicked [2] link "Top 250"\n\nTab: IMDb (https://www.imdb.com/)\n[1] link "Home"\n[2] link "Psycho 8.5"\n'
             "Page text: Psycho 8.5 Alien 8.5")

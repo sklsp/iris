@@ -222,7 +222,7 @@ class Agent:
         if self.cancel.is_set():
             return self._cancelled()
         self.journal.log(event="gave_up", steps=MAX_STEPS)
-        text = self._out_of_steps()
+        text = self._out_of_steps(schemas)
         self._trim()
         return text or _sorry("steps", request)
 
@@ -234,11 +234,13 @@ class Agent:
         self._trim()
         return ""
 
-    def _out_of_steps(self) -> str:
-        """One last call without tools, so the user hears what was found instead of nothing."""
+    def _out_of_steps(self, schemas: list[dict]) -> str:
+        """One last call that asks for an answer without tools, so the user hears what was found instead of nothing.
+        The same tool list goes along: the server keeps the whole conversation so far cached (its start holds the
+        tools), and this call comes after the most steps, when that cache is largest."""
         self.messages.append({"role": "user", "content": OUT_OF_STEPS})
         try:
-            reply = self.llm.chat(self.messages, [])
+            reply = self.llm.chat(self.messages, schemas)
         except _LLM_ERRORS as exc:
             self.journal.log(event="llm_error", error=_llm_error(exc))
             reply = None

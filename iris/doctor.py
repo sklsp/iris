@@ -110,11 +110,12 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
     out.append((ws and port is not None, "browser: " + (f"remote control allowed ({port.parent.name})" if ws and port
                 else "pip install -e .[browser]" if not ws else
                 "open brave://inspect/#remote-debugging and tick 'Allow remote debugging' for fast web pages")))
-    from iris.__main__ import desktop_dir
+    if not bundled():  # the installer makes its own Start menu and desktop shortcuts
+        from iris.__main__ import desktop_dir
 
-    have = (desktop_dir() / "Iris.cmd").exists()
-    out.append((have, "shortcut: Iris.cmd on the desktop" if have else
-                "shortcut: none on the desktop; iris shortcut puts one there (optional)"))
+        have = (desktop_dir() / "Iris.cmd").exists()
+        out.append((have, "shortcut: Iris.cmd on the desktop" if have else
+                    "shortcut: none on the desktop; iris shortcut puts one there (optional)"))
     return out
 
 

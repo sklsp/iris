@@ -64,3 +64,10 @@ def test_shortcut_present_reports_found(tmp_path, monkeypatch):
     (tmp_path / "Iris.cmd").touch()
     rows = doctor.checks(payload={"reachable": False})
     assert (True, "shortcut: Iris.cmd on the desktop") in rows
+
+
+def test_the_installed_app_has_no_shortcut_check(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_DESKTOP_DIR", str(tmp_path))
+    monkeypatch.setattr(doctor, "bundled", lambda: True)
+    rows = doctor.checks(payload={"reachable": False})
+    assert not any(line.startswith("shortcut") for _, line in rows)

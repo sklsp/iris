@@ -164,7 +164,7 @@ def reminder_cancel(rid: int) -> str:
         rows = _read()
         kept = [r for r in rows if r["id"] != rid]
         if len(kept) == len(rows):
-            return f"error: no reminder with id {rid}"
+            return f"error: no reminder with id {rid}; reminder_list shows the ids"
         removed = next(r for r in rows if r["id"] == rid)
         _write(None, kept)
     _cancel_handle(handle)

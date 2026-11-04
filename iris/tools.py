@@ -208,7 +208,7 @@ def comfy_queue(workflow: str) -> str:
     folder = Path(os.environ.get("IRIS_COMFY_WORKFLOWS", "~/.iris/workflows")).expanduser()
     path = folder / f"{workflow}.json"
     if not path.is_file():
-        return f"error: no saved workflow named {workflow}"
+        return f"error: no saved workflow named {workflow}; comfy_workflows lists them"
     try:
         prompt = json.loads(path.read_text(encoding="utf-8"))
     except ValueError:
@@ -605,7 +605,7 @@ def queue_remove(id: int) -> str:
     try:
         p = _remove(id)
     except LookupError:
-        return f"error: no prompt with id {id}"
+        return f"error: no prompt with id {id}; queue_list shows the ids"
     text = str(p.get("text", ""))
     if len(text) > 80:
         text = text[:77] + "..."
@@ -623,7 +623,7 @@ def queue_move(id: int, direction: str) -> str:
     try:
         _move(id, -1 if d == "up" else 1)
     except LookupError:
-        return f"error: no prompt with id {id}"
+        return f"error: no prompt with id {id}; queue_list shows the ids"
     return f"Moved prompt {id} {d}.\n{_listing()}"
 
 
@@ -831,7 +831,7 @@ def timer_cancel(id: int = 0) -> str:
         return f"Cancelled {n} timer{'s' if n != 1 else ''}."
     if TIMERS.cancel(id):
         return f"Cancelled timer {id}."
-    return f"error: no timer {id}"
+    return f"error: no timer {id}; timer_list shows the running ones"
 
 
 def request_capability(request: str, tool_name: str, tier: str, plan: str) -> str:

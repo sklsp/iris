@@ -131,6 +131,11 @@ def test_note_remove_none_matching_is_an_error(notes_file):
     assert notes_file.read_text(encoding="utf-8") == "- 2026-10-31 09:01 buy milk\n"
 
 
+def test_note_remove_none_matching_names_notes_read(notes_file):
+    notes_file.write_text("- 2026-10-31 09:01 buy milk\n", encoding="utf-8")
+    assert notes.note_remove("xyz") == 'error: no notes containing "xyz"; notes_read shows them'
+
+
 def test_note_remove_several_matches_lists_them_and_keeps_the_file(notes_file):
     notes_file.write_text(
         "- 2026-10-31 09:01 buy milk\n"
@@ -296,6 +301,10 @@ def test_reminder_cancel_unknown_id_is_an_error_and_keeps_the_file(reminders_fil
     assert result.startswith("error:") and "9" in result
     assert json.loads(reminders_file.read_text(encoding="utf-8")) == [
         {"id": 1, "due": "2026-10-31T18:00", "text": "call mom"}]
+
+
+def test_reminder_cancel_with_nothing_saved_names_reminder_list(reminders_file):
+    assert reminders.reminder_cancel(99) == "error: no reminder with id 99; reminder_list shows the ids"
 
 
 # --- start_reminders ---------------------------------------------------------------

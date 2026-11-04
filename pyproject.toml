@@ -53,6 +53,11 @@ files = ["iris"]
 python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["iris.policy", "iris.registry", "iris.eval"]
+disallow_untyped_defs = false
 
 [tool.coverage.run]
 source = ["iris"]

@@ -449,8 +449,8 @@ class Panel:
 
     WIDTH, MARGIN, PAD, INDENT, RADIUS, POLL_MS = 560, 10, 18, 54, 20, 40  # WIDTH: the window, glow margin included
 
-    def __init__(self, tk: Any, events: queue.Queue, clock=time.monotonic, user32: Any = None,
-                 out: IO[str] | None = None):
+    def __init__(self, tk: Any, events: queue.Queue, clock: Callable[[], float] = time.monotonic, user32: Any = None,
+                 out: IO[str] | None = None) -> None:
         self.tk, self.events, self.clock, self.view, self.tint = tk, events, clock, View(), Tint()
         self.out, self.hover = out, False
         if user32 is not None:

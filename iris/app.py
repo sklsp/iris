@@ -104,7 +104,7 @@ def show_running(title: str = TITLE) -> bool:
     found: list[int] = []
 
     @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-    def each(hwnd, _lparam):
+    def each(hwnd: int, _lparam: int) -> bool:
         text, cls = ctypes.create_unicode_buffer(256), ctypes.create_unicode_buffer(256)
         user32.GetWindowTextW(hwnd, text, 256)
         user32.GetClassNameW(hwnd, cls, 256)
@@ -325,7 +325,7 @@ class Tray:
                       self._item("Quit Iris", self.app.quit)):
             self.menu.Items.Add(entry)
 
-        def opening(_sender, _args):
+        def opening(_sender: object, _args: object) -> None:
             listen.Text = "Stop listening" if self.app.voice.running else "Start listening"
 
         self.menu.Opening += opening

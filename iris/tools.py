@@ -831,7 +831,7 @@ def timer_cancel(id: int = 0) -> str:
         return f"Cancelled {n} timer{'s' if n != 1 else ''}."
     if TIMERS.cancel(id):
         return f"Cancelled timer {id}."
-    return f"error: no timer {id}"
+    return f"error: no timer {id}; timer_list shows the running ones"
 
 
 def request_capability(request: str, tool_name: str, tier: str, plan: str) -> str:

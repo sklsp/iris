@@ -1090,7 +1090,7 @@ def test_timer_cancel_one(fake_timers):
 
 
 def test_timer_cancel_unknown_id(fake_timers):
-    assert tools.timer_cancel(7) == "error: no timer 7"
+    assert tools.timer_cancel(7) == "error: no timer 7; timer_list shows the running ones"
 
 
 def test_timer_cancel_zero_cancels_all(fake_timers):

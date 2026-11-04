@@ -102,8 +102,6 @@ class Journal:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-# What Iris says when the model can not answer, in English or Dutch (the languages the eval tests most).
-# What Iris says when the model can not answer, per language: en, nl, de, fr, es.
 # what a model call can raise: the server is down or answers badly (OSError, HTTPException such as IncompleteRead),
 # or its JSON lacks what a reply needs (KeyError, IndexError, TypeError, ValueError)
 _LLM_ERRORS = (OSError, http.client.HTTPException, KeyError, IndexError, TypeError, ValueError)
@@ -121,6 +119,7 @@ def _llm_error(exc: BaseException) -> str:
     return text[:500]
 
 
+# What Iris says when the model can not answer, per language: en, nl, de, fr, es.
 _SORRY = {
     "slow": ("That took me too long to think through. Try asking it in a shorter way.",
              "Daar moest ik te lang over nadenken. Vraag het iets korter.",

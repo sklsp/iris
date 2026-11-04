@@ -72,6 +72,22 @@ def test_the_installed_app_has_no_shortcut_check(tmp_path, monkeypatch):
     rows = doctor.checks(payload={"reachable": False})
     assert not any(line.startswith("shortcut") for _, line in rows)
 
+def _voice_extras(monkeypatch, missing=()):
+    """Report the voice extras as installed (CI has none), so doctor reaches its speech check; `missing` stay absent."""
+    import iris.voice as v
+
+    real_find_spec = importlib.util.find_spec
+    extras = {"faster_whisper", "sounddevice", "openwakeword"}
+
+    def find_spec(name, *args, **kwargs):
+        if name in missing:
+            return None
+        return object() if name in extras else real_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
+    monkeypatch.setattr(v, "_cuda_available", lambda: False)
+
+
 def test_piper_with_all_its_voices_lists_them(tmp_path, monkeypatch):
     import iris.voice as v
 
@@ -85,6 +101,7 @@ def test_piper_with_all_its_voices_lists_them(tmp_path, monkeypatch):
     monkeypatch.setattr(v, "PIPER_VOICES", voices)
     monkeypatch.setattr(v, "PIPER_DIR", pdir)
     monkeypatch.setattr(v, "piper_runtime", lambda: runtime)
+    _voice_extras(monkeypatch)
     monkeypatch.setenv("IRIS_TTS", "piper")
     rows = doctor.checks(payload={"reachable": False})
     assert (True, "speech: Piper nl_test-a, en_test-b") in rows
@@ -93,14 +110,7 @@ def test_piper_with_all_its_voices_lists_them(tmp_path, monkeypatch):
 def test_piper_not_installed_says_what_to_install(tmp_path, monkeypatch):
     import iris.voice as v
 
-    real_find_spec = importlib.util.find_spec
-
-    def no_piper(name, *args, **kwargs):
-        if name == "piper":
-            return None
-        return real_find_spec(name, *args, **kwargs)
-
-    monkeypatch.setattr(importlib.util, "find_spec", no_piper)
+    _voice_extras(monkeypatch, missing={"piper"})
     monkeypatch.setattr(v, "PIPER_DIR", tmp_path / "voices")  # no .onnx files there; that is not this line
     monkeypatch.setattr(v, "piper_runtime", lambda: tmp_path / "nope")  # no app Piper pack either
     monkeypatch.setattr(doctor, "bundled", lambda: False)  # not the installed app

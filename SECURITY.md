@@ -74,6 +74,22 @@ The attacker does not control the code: tiers, word lists, path roots and the jo
 - **Approving from the dashboard needs the token.** `POST /api/skills/approve` and `/remove` need the page token and a
   loopback Origin, like every other write; proven by `test_the_skills_page_shows_the_code_and_approves_only_with_the_token`.
 
+- **The name the tier saw is the control that is used.** A click or typing matches a control by part of its name,
+  so when the control found has a send, pay, password or delete word that the given name lacks ("Sen" for "Send"),
+  the tool stops and asks for the full name, which the tier then judges; proven by
+  `test_a_partial_name_never_clicks_or_types_into_a_send_pay_or_password_control`.
+- **A browser number belongs to the page it was read from.** The item list keeps every label whole (a `"` in a label
+  no longer hides "Pay"), and a click or typing in a tab other than the one read is refused; proven by
+  `test_a_quote_in_a_label_never_hides_the_rest_of_it_from_the_tier` and `test_numbers_belong_to_the_tab_they_were_read_in`.
+- **Tool text can not leave its wrapper.** A `</untrusted_data>` (any case or spacing) inside a result is escaped,
+  so page or file text never reads as Iris's own; proven by `test_a_result_can_never_close_its_untrusted_wrapper`.
+- **The web fetch refuses this PC and private networks by address.** `http_get` resolves the name and refuses any
+  address that is not public, also old IPv4 forms such as `127.1` or `2130706433`, and the same check runs on every
+  redirect; proven by `test_local_hosts_refused` and `test_a_name_or_old_form_that_resolves_locally_is_refused`.
+- **The dashboard answers only to its loopback name.** A request whose Host is not 127.0.0.1 or localhost gets 421
+  and no data, so a site that rebinds its own name to 127.0.0.1 can not read the page, its token or any route;
+  proven by `test_a_rebound_host_name_gets_nothing`.
+
 ## Known limits
 
 - **`confirm = "important"` is a trade.** It is off by default. When the user turns it on, everyday confirm actions run
@@ -110,4 +126,24 @@ Nothing is pinned as a known bug. The limits below are accepted tradeoffs and op
 - **Clicking by sight trusts the model's words.** The NEVER check reads the target as the model described it, not the
   pixels it ends up clicking: "the blue button" on a pay page is only confirm. The spoken question names the target,
   so the user's no is the real check. Screenshots go only to the local model in LM Studio.
+- **Enter in a chat window has more spellings than the rule knows.** Pressing `{ENTER}` in a mail or chat window is
+  never, but `~`, `{ENTER 2}` and `{VK_RETURN}` also press Enter and stay confirm, and `type_text` with a newline in
+  the text presses Enter too (confirm, so the user is asked first). The window is judged by the name the model gave.
+  Widening the rule is a change to `iris/policy.py`, left to the maintainer.
+- **open_url opens local addresses.** Unlike the web fetch, `open_url` (safe) opens any http(s) address in the
+  browser, also `http://127.0.0.1` (a developer may want that), and the page it returns reaches the model as data.
+- **Some key and token files read without a question.** The secret-looking-name rule does not catch `id_ecdsa`,
+  `id_dsa`, `.npmrc`, `.pypirc` or `.netrc`.
+- **A web fetch name is looked up twice.** The address check resolves the name, and urlopen resolves it again, so a
+  DNS answer that changes in between (rebinding with a very short TTL) still passes.
 - **A started session runs in Cline's yolo mode.** `cline_start` passes -z to the CLI, so everything that new session does is auto approved; the user's yes to Iris is the only gate, and the prompt still comes only from their own queue.
+
+## Supported versions
+
+| Version | Security fixes |
+|---|---|
+| 1.0.x | yes |
+| 0.x | no: install 1.0 (README, "Upgrading from 0.x") |
+
+Report a security problem privately: through "Report a vulnerability" on the repository's Security tab where it is
+on, else in an issue that asks for a private contact, without the details.

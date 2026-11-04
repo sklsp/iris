@@ -23,7 +23,7 @@ from iris.overlay import Overlay, launch
 if TYPE_CHECKING:
     import numpy as np
 
-# None means automatic: large-v3-turbo on the GPU when CUDA works (pip install iris[gpu]), small on the CPU otherwise.
+# None means automatic: large-v3-turbo on the GPU when CUDA works (pip install -e .[gpu]), small on the CPU otherwise.
 WHISPER_MODEL = config.setting("IRIS_WHISPER", "whisper_model") or None
 WHISPER_DEVICE = os.environ.get("IRIS_WHISPER_DEVICE")  # "cpu" or "cuda" to force one
 RATE = 16000

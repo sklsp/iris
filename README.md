@@ -594,6 +594,10 @@ shows with its own badge.
 | `IRIS_VOXCPM_GPU` / `IRIS_VOXCPM_MARGIN` | config `voxcpm_gpu`, else `0` / `1.15` | GPU for VoxCPM2; safety margin on the wait before it plays |
 | `IRIS_VOXCPM_STEPS` | `10` | VoxCPM2 diffusion steps (fewer is a little faster, a little rougher) |
 | `IRIS_VOXCPM_CACHE` | `512` | VoxCPM2 attention cache positions; smaller is faster, a long answer is spoken in pieces |
+| `IRIS_VOXCPM_DIR` | `~/.iris/voxcpm` | where the VoxCPM2 voice pack (its own Python and model) lives |
+| `IRIS_VOXCPM_MODEL` | `openbmb/VoxCPM2` | the VoxCPM2 model the worker loads (a Hugging Face id or a folder) |
+| `IRIS_STARTUP_DIR` | the Windows Startup folder | where `iris startup on` writes Iris.cmd (tests point it elsewhere) |
+| `IRIS_DESKTOP_DIR` | the Windows desktop folder | where `iris shortcut` writes Iris.cmd (tests point it elsewhere) |
 | `IRIS_PIPER_DIR` | `~/.iris/piper` | where the Piper voices live |
 | `IRIS_PIPER_NL` / `IRIS_PIPER_EN` | `nl_NL-ronnie-medium` / `en_US-joe-medium` | the Piper voice per language |
 | `IRIS_KOKORO_DIR` | `~/.iris` | where the Kokoro model files live |
@@ -610,7 +614,7 @@ shows with its own badge.
 | `IRIS_CONCEPTKIT_DIR` | config `conceptkit_dir`, else `~/conceptkit` | where concept_sites runs conceptkit |
 | `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
 | `IRIS_LMS_BIN` | lms on PATH | where the model control finds the LM Studio CLI |
-| `IRIS_SESSIONS_DB` | `~/.iris/sessions.db` | where the Sessions tab reads its rows from |
+| `IRIS_SESSIONS_DB` | `~/.cline/data/db/sessions.db` | where the Sessions tab reads its rows from |
 | `IRIS_CLAUDE_DIR` | `~/.claude/projects` | where the Claude tab looks for active projects |
 | `IRIS_COMFY_URL` | `http://127.0.0.1:8188` | where comfy_status looks |
 | `IRIS_COMFY_WORKFLOWS` | `~/.iris/workflows` | the folder comfy_workflows lists .json files from |

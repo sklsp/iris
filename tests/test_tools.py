@@ -437,7 +437,7 @@ def test_comfy_queue_when_not_running(tmp_path, monkeypatch):
         raise urllib.error.URLError("refused")
 
     monkeypatch.setattr(urllib.request, "urlopen", fake)
-    assert tools.comfy_queue("anime") == "error: ComfyUI is not running"
+    assert tools.comfy_queue("anime") == "error: ComfyUI is not running; start ComfyUI, then ask again"
 
 
 def test_comfy_queue_without_gpu_room_does_not_post(tmp_path, monkeypatch):
@@ -1102,7 +1102,7 @@ def test_timer_cancel_zero_cancels_all(fake_timers):
 
 def test_timer_tools_refuse_to_run_without_a_timers(monkeypatch):
     monkeypatch.setattr(tools, "TIMERS", None)
-    msg = "error: timers only work while Iris is running in voice or text mode"
+    msg = "error: timers only work while Iris runs in voice or text mode (python -m iris or python -m iris --voice)"
     assert tools.timer_set(5) == msg
     assert tools.timer_list() == msg
     assert tools.timer_cancel() == msg

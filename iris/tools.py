@@ -224,7 +224,7 @@ def comfy_queue(workflow: str) -> str:
         with urllib.request.urlopen(req, timeout=10) as r:
             out = json.loads(r.read().decode())
     except (OSError, ValueError):
-        return "error: ComfyUI is not running"
+        return "error: ComfyUI is not running; start ComfyUI, then ask again"
     return f"queued {workflow} as {out.get('prompt_id', '?')}"
 
 
@@ -782,10 +782,13 @@ def _seconds_until(at: str) -> float:
     return (target - now).total_seconds()
 
 
+TIMERS_OFF = "error: timers only work while Iris runs in voice or text mode (python -m iris or python -m iris --voice)"
+
+
 def timer_set(minutes: float | None = None, label: str = "", message: str = "", at: str = "") -> str:
     """Set a countdown timer for `minutes` or until the clock time `at`; Iris says out loud when it is done."""
     if TIMERS is None:
-        return "error: timers only work while Iris is running in voice or text mode"
+        return TIMERS_OFF
     if at:
         if minutes is not None:
             return "error: give minutes or at, not both"
@@ -812,7 +815,7 @@ def timer_set(minutes: float | None = None, label: str = "", message: str = "", 
 def timer_list() -> str:
     """The running timers and how long each has left."""
     if TIMERS is None:
-        return "error: timers only work while Iris is running in voice or text mode"
+        return TIMERS_OFF
     items = TIMERS.list()
     if not items:
         return "No timers running."
@@ -822,7 +825,7 @@ def timer_list() -> str:
 def timer_cancel(id: int = 0) -> str:
     """Stop a timer by its number, or all timers with 0."""
     if TIMERS is None:
-        return "error: timers only work while Iris is running in voice or text mode"
+        return TIMERS_OFF
     if id == 0:
         n = TIMERS.cancel_all()
         return f"Cancelled {n} timer{'s' if n != 1 else ''}."

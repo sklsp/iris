@@ -235,7 +235,7 @@ def test_read_file_reads_pdf_with_pypdf(tmp_path):
     p = tmp_path / "doc.pdf"
     _make_pdf(p)
     if importlib.util.find_spec("pypdf") is None:  # not installed in this venv
-        assert files.read_file(str(p)) == "error: install pypdf to read PDF files"
+        assert files.read_file(str(p)) == "error: reading PDF files needs pypdf: pip install pypdf in Iris's Python"
     else:
         assert files.read_file(str(p)) == "hello pdf world"
 

@@ -33,9 +33,9 @@ def clipboard_read() -> str:
         r = subprocess.run(["powershell", "-NoProfile", "-Command", _UTF8 + "Get-Clipboard -Raw"],
                            capture_output=True, text=True, encoding="utf-8", timeout=10)
     except subprocess.TimeoutExpired:
-        return "error: reading the clipboard timed out"
+        return "error: reading the clipboard timed out; another program may be holding it, try again"
     except OSError:
-        return "error: could not read the clipboard"
+        return "error: could not read the clipboard; another program may be holding it, try again"
     text = r.stdout.rstrip("\r\n")
     if not text:
         return "The clipboard is empty."
@@ -51,11 +51,11 @@ def clipboard_write(text: str) -> str:
         r = subprocess.run(["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value $env:IRIS_CLIP"],
                            env={**os.environ, "IRIS_CLIP": text}, capture_output=True, text=True, timeout=10)
     except subprocess.TimeoutExpired:
-        return "error: writing to the clipboard timed out"
+        return "error: writing to the clipboard timed out; another program may be holding it, try again"
     except OSError:
-        return "error: could not write the clipboard"
+        return "error: could not write the clipboard; another program may be holding it, try again"
     if r.returncode != 0:
-        return "error: could not write the clipboard"
+        return "error: could not write the clipboard; another program may be holding it, try again"
     return f"put {len(text)} characters on the clipboard"
 
 
@@ -166,7 +166,7 @@ def _ask(png: bytes, ask: Callable[[bytes, str], str], text: str) -> str:
     except urllib.error.HTTPError as exc:
         return f"error: the model could not look at the image ({exc.code}); it may not read images"
     except (urllib.error.URLError, OSError, ValueError, KeyError):
-        return "error: could not reach the model to look at the screen"
+        return "error: could not reach the model to look at the screen; is the model server running?"
 
 
 def look_at_screen(question: str, window: str = "") -> str:

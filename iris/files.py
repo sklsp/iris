@@ -117,7 +117,7 @@ def _pdf_text(p: Path) -> str:
     try:
         import pypdf
     except ImportError:
-        return "error: install pypdf to read PDF files"
+        return "error: reading PDF files needs pypdf: pip install pypdf in Iris's Python"
     reader = pypdf.PdfReader(str(p))
     return "\n".join(page.extract_text() or "" for page in reader.pages)
 

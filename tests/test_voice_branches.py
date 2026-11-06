@@ -3,6 +3,7 @@
 import queue
 import sys
 import threading
+import time
 import types
 
 import pytest
@@ -50,6 +51,43 @@ def test_chime_swallows_sounddevice_failures(monkeypatch):
     monkeypatch.setitem(sys.modules, "sounddevice", None)  # import raises ImportError
     s = voice.VoiceSession.__new__(voice.VoiceSession)  # chime uses no instance state
     s.chime()  # must not raise: listening goes on without the chime
+
+
+def test_chime_stops_when_the_sound_device_stalls(monkeypatch):
+    stopped = []
+    gate = threading.Event()  # never set: the device never finishes playing
+
+    sd = types.ModuleType("sounddevice")
+    sd.play = lambda tone, rate: None
+    sd.wait = gate.wait  # blocks until the (never-set) event
+    sd.stop = lambda: stopped.append(1)
+    monkeypatch.setitem(sys.modules, "sounddevice", sd)
+    monkeypatch.setenv("IRIS_CHIME", "1")  # conftest mutes it for the whole run
+    s = voice.VoiceSession.__new__(voice.VoiceSession)
+    t0 = time.monotonic()
+    s.chime()
+    assert time.monotonic() - t0 < 1.5  # a stalled device must never hold listening forever
+    assert stopped == [1]
+
+
+def test_chime_does_not_stop_a_normal_tone(monkeypatch):
+    stopped = []
+    played = []
+
+    sd = types.ModuleType("sounddevice")
+
+    def _play(tone, rate, **kwargs):
+        played.append((rate, kwargs))
+
+    sd.play = _play
+    sd.wait = lambda: None  # the tone finishes at once
+    sd.stop = lambda: stopped.append(1)
+    monkeypatch.setitem(sys.modules, "sounddevice", sd)
+    monkeypatch.setenv("IRIS_CHIME", "1")  # conftest mutes it for the whole run
+    s = voice.VoiceSession.__new__(voice.VoiceSession)
+    s.chime()
+    assert played == [(22050, {})]  # non-blocking play, then wait for the tone to finish
+    assert stopped == []
 
 
 def test_record_calls_the_speakers_heard_hook():

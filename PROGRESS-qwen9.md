@@ -1,7 +1,7 @@
 # Night run qwen9 progress
 
 - [x] Q1. A stuck answer is stopped, not talked over (2176 passed in 123.95s (0:02:03))
-- [ ] Q2. The chime can never hang listening
+- [x] Q2. The chime can never hang listening (2178 passed in 116.91s (0:01:56))
 - [ ] Q3. Push-to-talk without a console says so instead of waiting forever
 - [ ] Q4. Piper reads its text as UTF-8 in every locale
 - [ ] Q5. One bad sentence does not switch the voice for the rest of the run

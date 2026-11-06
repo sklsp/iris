@@ -500,13 +500,14 @@ def test_the_wake_phrase_is_not_part_of_the_request():
 def test_chime_plays_unless_muted(monkeypatch):
     played = []
     monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
-        play=lambda tone, rate, blocking=False: played.append((len(tone), rate, blocking))))
+        play=lambda tone, rate, blocking=False: played.append((len(tone), rate, blocking)),
+        wait=lambda: None, stop=lambda: None))
     s = VoiceSession.__new__(VoiceSession)
     s.chime()
     assert played == []  # the tests mute it
     monkeypatch.setenv("IRIS_CHIME", "1")
     s.chime()
-    assert played == [(int(0.12 * 22050), 22050, True)]
+    assert played == [(int(0.12 * 22050), 22050, False)]  # non-blocking: a stalled device must not hang listening
 
 
 def test_piper_picks_the_voice_by_language_and_follows_the_user_for_short_answers(tmp_path, monkeypatch):

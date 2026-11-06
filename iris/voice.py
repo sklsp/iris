@@ -455,7 +455,8 @@ class VoiceSession:
 
     def chime(self) -> None:
         """A short tone right after the wake word, so the user hears that Iris is listening (IRIS_CHIME=0 mutes
-        it). It finishes before recording starts, so it never ends up in the request."""
+        it). It finishes before recording starts, so it never ends up in the request; a stalled sound device can
+        hold it for at most 1.0 s."""
         if os.environ.get("IRIS_CHIME", "1") == "0":
             return
         try:
@@ -464,7 +465,12 @@ class VoiceSession:
 
             t = np.arange(int(0.12 * 22050)) / 22050
             tone = (0.4 * np.sin(2 * np.pi * 880 * t) * np.minimum(1, (0.12 - t) * 40)).astype("float32")
-            sd.play(tone, 22050, blocking=True)
+            sd.play(tone, 22050)
+            waiter = threading.Thread(target=sd.wait, daemon=True)
+            waiter.start()
+            waiter.join(1.0)
+            if waiter.is_alive():
+                sd.stop()  # the device stalled: never let a chime hold listening
         except Exception:  # noqa: BLE001 - the chime is a nicety; listening goes on without it
             pass
 

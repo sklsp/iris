@@ -1562,7 +1562,7 @@ function renderSetup(d){
       (() => { const r = el("div", "su-row"); r.append(custom, suButton("Use this", async () => {
         const url = custom.value.trim() || pick.value;
         srvMsg.textContent = "saving...";
-        const r2 = await postModel("/api/setup/server", {url, model: models.value});
+        const r2 = await postModel("/api/setup/server", {url, model: custom.value.trim() ? "" : models.value});
         srvMsg.textContent = r2 && r2.ok ? "Iris will use " + r2.model + " at " + r2.url + "."
           : ((r2 && (r2.error || r2.errors && Object.values(r2.errors).join("; "))) || "could not save");
         srvMsg.className = r2 && r2.ok ? "set-msg ok" : "set-msg bad";

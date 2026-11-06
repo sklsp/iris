@@ -207,3 +207,23 @@ def test_piper_voice_is_built_once_and_cached(tmp_path, monkeypatch):
     second = s._piper_voice(lang)
     assert first is second and made == [model]
 
+
+def test_wait_for_speech_stops_a_stuck_thread(monkeypatch):
+    s = voice.VoiceSession.__new__(voice.VoiceSession)  # no mic, no wake word, no Whisper
+    stop = threading.Event()
+    s._stop = stop
+    s._interrupted = False
+
+    class _Stuck:
+        def join(self, timeout=None):
+            pass  # returns at once; the thread is still "alive"
+
+        def is_alive(self):
+            return True
+
+    s._speech = _Stuck()
+    monkeypatch.setattr(voice, "SPEECH_TIMEOUT", 0.01)
+    assert s.wait_for_speech() is False
+    assert stop.is_set()  # the stuck speech must be stopped, not talked over by the next answer
+    assert s._speech is None
+

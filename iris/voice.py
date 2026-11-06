@@ -405,6 +405,9 @@ class VoiceSession:
             self._speech.join(SPEECH_TIMEOUT)  # bounded: a stuck speech thread must never freeze Iris
             if self._speech.is_alive():
                 print("(speech got stuck; carrying on without it)")
+                stop = self._stop
+                if stop is not None:
+                    stop.set()  # the stuck speech keeps playing otherwise and talks over the next answer
                 self._speech = None
         return self._interrupted
 

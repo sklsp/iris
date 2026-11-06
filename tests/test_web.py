@@ -453,3 +453,8 @@ def test_a_name_that_does_not_resolve_is_left_to_urlopen(monkeypatch, fake_urlop
     monkeypatch.setattr(web, "_resolve", nothing)
     web.http_get("https://example.com/")
     assert len(fake_urlopen.calls) == 1
+
+
+def test_read_text_keeps_the_page_after_options_without_end_tags():
+    html = "<html><title>T</title><body><select><option>One<option>Two</select><p>After the menu</p></body></html>"
+    assert web.read_text("u", get=lambda u: (200, "text/html", html)) == "Title: T\nAfter the menu"

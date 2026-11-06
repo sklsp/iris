@@ -847,6 +847,7 @@ class Speaker:
         self._piper: dict[str, PiperProcess] = {}
         self._vox: VoxProcess | None = None
         self._lang = "en"  # the language of the last answer, for a short one whose language is unclear
+        self._failures: dict[str, int] = {}  # consecutive failures per engine; three in a row switches the voice
         if self.engine == "voxcpm":  # start loading now: it takes half a minute or more
             try:
                 self._vox = VoxProcess()
@@ -872,6 +873,19 @@ class Speaker:
             except Exception:  # noqa: BLE001 - stopping one worker must not keep the others running
                 pass
 
+    def _note_failure(self, key: str, display: str, fallback: str) -> None:
+        """Count one failure of engine `key`; after three in a row the voice switches to `fallback` for good."""
+        count = self._failures.get(key, 0) + 1
+        self._failures[key] = count
+        if count >= 3:
+            print(f"{display} failed {count} times; using {fallback} from now on.")
+            self.engine = fallback
+
+    def _note_success(self, key: str) -> None:
+        """A fully spoken answer resets the failure streak of its engine."""
+        if self._failures.get(key):
+            self._failures[key] = 0
+
     def speak(self, text: str, stop_event: threading.Event | None = None) -> bool:
         """Print the answer and speak it with the best engine available; True unless a wake word cut it short."""
         print(f"Iris: {text}")
@@ -881,6 +895,10 @@ class Speaker:
             return self._speak_piper(text, stop_event)
         if self.engine == "kokoro":
             return self._speak_kokoro(text, stop_event)
+        return self._speak_sapi(text)
+
+    def _speak_sapi(self, text: str) -> bool:
+        """Windows SAPI. Speech is a nicety, so any failure just means the printed line stands."""
         try:
             import pyttsx3
 
@@ -916,20 +934,26 @@ class Speaker:
             self._lang = lang
         try:
             path = self._piper_voice(self._lang).wav(text)
-            return _play_wav(path, stop_event)
+            ok = _play_wav(path, stop_event)
+            if ok:
+                self._note_success("piper")  # a fully spoken answer resets Piper's failure streak
+            return ok
         except Exception as exc:  # noqa: BLE001 - fall back to SAPI so Iris keeps talking
             print(f"Piper failed ({exc}); using Windows SAPI instead.")
-            self.engine = "sapi"
-            return self.speak(text, stop_event)
+            self._note_failure("piper", "Piper", "sapi")  # switches the voice only after three in a row
+            return self._speak_sapi(text)
 
     def _speak_voxcpm(self, vox: VoxProcess, text: str, stop_event: threading.Event | None) -> bool:
         if not vox.ready.is_set():  # still loading (a minute or more): Piper says this one rather than keep you waiting
             return self._speak_piper(text, stop_event)
         try:
-            return _play_stream(vox.stream(text), vox.rate, len(text) / CHARS_PER_SECOND, stop_event)
+            ok = _play_stream(vox.stream(text), vox.rate, len(text) / CHARS_PER_SECOND, stop_event)
+            if ok:
+                self._note_success("voxcpm")  # a fully spoken answer resets VoxCPM's failure streak
+            return ok
         except Exception as exc:  # noqa: BLE001 - fall back to Piper so Iris keeps talking
             print(f"VoxCPM failed ({exc}); using Piper instead.")
-            self.engine = "piper"
+            self._note_failure("voxcpm", "VoxCPM", "piper")  # switches the voice only after three in a row
             return self._speak_piper(text, stop_event)
 
     def _kokoro_model(self) -> Any:
@@ -966,11 +990,14 @@ class Speaker:
                         time.sleep(0.02)
                 return True
 
-            return asyncio.run(play())
+            ok = asyncio.run(play())
+            if ok:
+                self._note_success("kokoro")  # a fully spoken answer resets Kokoro's failure streak
+            return ok
         except Exception as exc:  # noqa: BLE001 - fall back to SAPI so Iris keeps talking
             print(f"Kokoro failed ({exc}); using Windows SAPI instead.")
-            self.engine = "sapi"
-            return self.speak(text, stop_event)
+            self._note_failure("kokoro", "Kokoro", "sapi")  # switches the voice only after three in a row
+            return self._speak_sapi(text)
 
 
 def _play_wav(path: Path, stop_event: threading.Event | None, slack: float = 3.0) -> bool:

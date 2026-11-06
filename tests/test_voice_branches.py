@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import types
+from pathlib import Path
 
 import pytest
 
@@ -324,4 +325,142 @@ def test_piper_env_is_utf8_with_and_without_a_runtime_folder(tmp_path, monkeypat
     env = envs[1]
     assert env["PYTHONIOENCODING"] == "utf-8" and env["PYTHONUTF8"] == "1"
     assert env["PYTHONPATH"].startswith(str(runtime))
+
+
+# --- one bad sentence must not switch the voice for the rest of the run -------------------------------------------
+
+def _bare_speaker(engine):
+    s = voice.Speaker.__new__(voice.Speaker)  # no model loading in __init__
+    s.engine = engine
+    s._kokoro = None
+    s._piper = {}
+    s._vox = None
+    s._lang = "en"
+    s._failures = {}
+    return s
+
+
+def _fake_pyttsx3(monkeypatch):
+    class _Engine:
+        def say(self, text):
+            pass
+
+        def runAndWait(self):
+            pass
+
+    mod = types.ModuleType("pyttsx3")
+    mod.init = lambda: _Engine()  # no real SAPI or desktop
+    monkeypatch.setitem(sys.modules, "pyttsx3", mod)
+
+
+class _ScriptedPiper:
+    """A PiperProcess whose wav() follows a script of True (ok) / False (fail)."""
+
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.calls = 0
+
+    def wav(self, text, timeout=20):
+        ok = self.outcomes[self.calls] if self.calls < len(self.outcomes) else True
+        self.calls += 1
+        if not ok:
+            raise RuntimeError("piper boom")
+        return Path("fake.wav")
+
+
+def test_piper_one_failure_keeps_the_engine(monkeypatch):
+    s = _bare_speaker("piper")
+    s._piper["en"] = _ScriptedPiper([False, True])  # the first answer fails, the next works
+    _fake_pyttsx3(monkeypatch)
+    monkeypatch.setattr(voice, "_play_wav", lambda path, stop_event, slack=3.0: True)  # no real audio
+
+    s.speak("one")   # Piper fails once: SAPI says this one answer only
+    s.speak("two")   # Piper works again
+    assert s.engine == "piper"
+
+
+def test_piper_three_failures_in_a_row_switch_to_sapi(monkeypatch, capsys):
+    s = _bare_speaker("piper")
+    s._piper["en"] = _ScriptedPiper([False, False, False])  # keeps failing
+    _fake_pyttsx3(monkeypatch)
+    monkeypatch.setattr(voice, "_play_wav", lambda path, stop_event, slack=3.0: True)
+
+    for i in range(3):
+        s.speak(f"answer {i}")
+    assert s.engine == "sapi"  # only after three failures in a row does the voice switch
+    out = capsys.readouterr().out
+    assert "Piper failed 3 times; using sapi from now on." in out
+
+
+def test_piper_fail_work_fail_fail_stays_on_piper(monkeypatch):
+    s = _bare_speaker("piper")
+    s._piper["en"] = _ScriptedPiper([False, True, False, False])  # the success breaks the streak
+    _fake_pyttsx3(monkeypatch)
+    monkeypatch.setattr(voice, "_play_wav", lambda path, stop_event, slack=3.0: True)
+
+    for i in range(4):
+        s.speak(f"answer {i}")
+    assert s.engine == "piper"  # never three failures in a row
+
+
+class _ScriptedStream:
+    """A stand-in for voice._play_stream following a script of True (ok) / False (fail)."""
+
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.calls = 0
+
+    def __call__(self, chunks, rate, expected, stop_event, slack=3.0):
+        ok = self.outcomes[self.calls] if self.calls < len(self.outcomes) else True
+        self.calls += 1
+        if not ok:
+            raise RuntimeError("vox boom")
+        return True
+
+
+class _FakeVox:
+    def __init__(self):
+        self.ready = threading.Event()
+        self.ready.set()  # loaded, so it takes the ready path rather than delegating to Piper
+        self.rate = 22050
+
+    def stream(self, text):
+        return iter([])
+
+
+def _vox_speaker(monkeypatch, outcomes):
+    s = _bare_speaker("voxcpm")
+    s._vox = _FakeVox()
+    s._piper["en"] = _ScriptedPiper([True] * 10)  # the Piper fallback always works here
+    monkeypatch.setattr(voice, "_play_stream", _ScriptedStream(outcomes))  # no real audio
+    monkeypatch.setattr(voice, "_play_wav", lambda path, stop_event, slack=3.0: True)
+    return s
+
+
+def test_voxcpm_one_failure_keeps_the_engine(monkeypatch):
+    s = _vox_speaker(monkeypatch, [False, True])  # the first answer fails, the next works
+    s.speak("one")   # VoxCPM fails once: Piper says this one answer only
+    s.speak("two")   # VoxCPM works again
+    assert s.engine == "voxcpm"
+
+
+def test_voxcpm_three_failures_in_a_row_switch_to_piper(monkeypatch, capsys):
+    s = _vox_speaker(monkeypatch, [False, False, False])  # keeps failing
+    for i in range(3):
+        s.speak(f"answer {i}")
+    assert s.engine == "piper"  # only after three failures in a row does the voice switch
+    out = capsys.readouterr().out
+    assert "VoxCPM failed 3 times; using piper from now on." in out
+
+
+def test_voxcpm_fail_work_fail_fail_stays_on_voxcpm(monkeypatch):
+    s = _vox_speaker(monkeypatch, [False, True, False, False])  # the success breaks the streak
+    for i in range(4):
+        s.speak(f"answer {i}")
+    assert s.engine == "voxcpm"  # never three failures in a row
+
+
+def test_speaker_initializes_failure_counts():
+    s = voice.Speaker(engine="sapi")  # SAPI loads nothing in __init__, so no processes start
+    assert s._failures == {} and s.engine == "sapi"
 

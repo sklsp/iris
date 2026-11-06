@@ -248,9 +248,11 @@ def test_speaker_kokoro_without_model_files_falls_back_and_never_downloads(monke
 
     monkeypatch.setattr(socket.socket, "connect", no_network)
     spk = Speaker(engine="kokoro")
-    assert spk.speak("still talking") is True  # no Kokoro files, so SAPI speaks instead
-    assert said == ["still talking"]
-    assert spk.engine == "sapi"
+    # no Kokoro files, so SAPI speaks each answer; the voice only switches after three in a row
+    assert spk.speak("still talking") is True and spk.engine == "kokoro"  # one failure: still tries Kokoro
+    assert spk.speak("again") is True and spk.engine == "kokoro"  # two failures: not yet
+    assert spk.speak("third time") is True and spk.engine == "sapi"  # three in a row: switches for good
+    assert said == ["still talking", "again", "third time"]
 
 
 class _FakeWake:
@@ -542,9 +544,11 @@ def test_piper_missing_voice_falls_back_to_sapi(tmp_path, monkeypatch, capsys):
     spk.engine = "piper"
     monkeypatch.setitem(sys.modules, "pyttsx3", types.SimpleNamespace(init=lambda: types.SimpleNamespace(
         say=lambda t: None, runAndWait=lambda: None)))
-    assert spk.speak("Het is nu tien over twaalf.") is True
+    assert spk.speak("Het is nu tien over twaalf.") is True and spk.engine == "piper"  # one failure: still tries Piper
     out = capsys.readouterr().out
-    assert "python -m piper.download_voices nl_NL-ronnie-medium" in out and spk.engine == "sapi"
+    assert "python -m piper.download_voices nl_NL-ronnie-medium" in out
+    assert spk.speak("Het is nu tien over twaalf.") is True and spk.engine == "piper"  # two failures: not yet
+    assert spk.speak("Het is nu tien over twaalf.") is True and spk.engine == "sapi"  # three in a row: switches
 
 
 def test_whisper_uses_turbo_on_the_gpu_and_small_on_the_cpu(monkeypatch):

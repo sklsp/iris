@@ -9,7 +9,7 @@
 - [x] Q7. If the tray icon fails, closing the window quits instead of hiding Iris (2195 passed in 109.15s (0:01:49))
 - [x] Q8. A failed browser connection is a BrowserError (2199 passed in 119.17s (0:01:59))
 - [x] Q9. ASP.NET pages are not read as empty (2201 passed in 121.68s (0:02:01))
-- [ ] Q10. click does not click twice
+- [x] Q10. click does not click twice (2204 passed in 117.55s (0:01:57))
 - [ ] Q11. config.toml is parsed once until it changes
 - [ ] Q12. The system tool and the dashboard do not wait 0.3 s for the CPU
 - [ ] Q13. The dashboard stops polling while it is hidden

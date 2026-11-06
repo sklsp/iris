@@ -425,8 +425,11 @@ def click(window: str, control: str) -> str:
     _named_in_full(control, c)
     try:
         c.invoke()
-    except Exception:  # noqa: BLE001 - not every control supports Invoke; fall back to a real click
-        c.click_input()
+    except Exception as exc:  # noqa: BLE001 - not every control supports Invoke; fall back to a real click
+        text = str(exc).lower()
+        if isinstance(exc, NotImplementedError) or "not supported" in text or "pattern" in text:
+            c.click_input()
+        # otherwise invoke already acted (a dialog closed, a COM timeout): clicking again would press it twice
     return f"clicked {c.element_info.control_type} {c.window_text()!r}"
 
 

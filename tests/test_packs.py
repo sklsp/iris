@@ -46,8 +46,24 @@ def test_the_name_wake_word_needs_no_model_and_adds_whisper_tiny(plain, monkeypa
     assert by_id(packs.packs())["voxcpm"]["available"] is True
 
 
+def test_a_changed_voice_setting_is_seen_without_a_restart(monkeypatch):
+    """The Setup tab reads the model and voices from config.toml at call time, so a change on the Settings
+    tab applies to the next install or check without restarting Iris."""
+    cfg = config.config_path()
+    cfg.write_text('piper_nl = "nl_A"\nwhisper_model = "w_A"\n', encoding="utf-8")
+    assert packs.whisper_names()[0] == "w_A"
+    voices = packs.steps("piper")[1][1]
+    assert "nl_A" in voices and "en_US-joe-medium" in voices
+    cfg.write_text('piper_nl = "nl_B"\nwhisper_model = "w_B"\n', encoding="utf-8")
+    st = cfg.stat()  # same size, and a fast runner can write twice within one timestamp: move the mtime on
+    os.utime(cfg, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+    assert packs.whisper_names()[0] == "w_B"
+    voices = packs.steps("piper")[1][1]
+    assert "nl_B" in voices and "en_US-joe-medium" in voices
+
+
 def test_steps_keep_every_pack_in_its_own_folder(monkeypatch):
-    monkeypatch.setattr(voice, "WHISPER_MODEL", "small")
+    config.config_path().write_text('whisper_model = "small"\n', encoding="utf-8")  # a fixed name: no GPU probe
     gpu = packs.steps("gpu")[0][1]
     assert gpu[:3] == [sys.executable, "-m", "pip"] and gpu[gpu.index("--target") + 1] == str(packs.gpu_dir())
     piper = packs.steps("piper")
@@ -224,6 +240,7 @@ def test_installed_checks(tmp_path, monkeypatch):
     monkeypatch.setattr(packs, "_wake_files", lambda: (_ for _ in ()).throw(KeyError("own model")))
     assert packs._wake_installed() is False
     monkeypatch.setitem(sys.modules, "faster_whisper.utils", None)
+    monkeypatch.setattr(packs, "_has_nvidia", lambda: False)  # no GPU probe in a test
     assert packs._whisper_installed() is False
     monkeypatch.setattr(voice, "_cuda_available", lambda: True)
     assert packs._gpu_installed() is True
@@ -239,7 +256,8 @@ def test_whisper_is_installed_when_every_model_downloads(monkeypatch):
     parent.utils = utils
     monkeypatch.setitem(sys.modules, "faster_whisper", parent)
     monkeypatch.setitem(sys.modules, "faster_whisper.utils", utils)
-    monkeypatch.setattr(voice, "WHISPER_MODEL", "small")  # a fixed name: no GPU probe, one model to check
+    # a fixed name: no GPU probe, one model to check
+    config.config_path().write_text('whisper_model = "small"\n', encoding="utf-8")
     assert packs._whisper_installed() is True
     assert calls[0] == "small"
 

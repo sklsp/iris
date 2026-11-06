@@ -4,6 +4,7 @@ probe, recording, voice and GitHub answer is a fake."""
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -74,6 +75,27 @@ def test_use_server_saves_the_url_and_the_model():
 def test_use_server_refuses(body, models, error):
     r = firstrun.use_server(body, lambda url: models)
     assert r["ok"] is False and error in r["error"]
+
+
+def test_use_server_with_a_custom_url_uses_the_first_listed_model():
+    """A custom URL has no model list in the drop-down, so an empty model means "the first one it lists"."""
+    from iris.llm import read_settings
+
+    r = firstrun.use_server({"url": "http://127.0.0.1:5000/v1", "model": ""}, lambda url: ["m1", "m2"])
+    assert r == {"ok": True, "url": "http://127.0.0.1:5000/v1", "model": "m1"}
+    assert config.get("llm_url") == "http://127.0.0.1:5000/v1" and read_settings()["model"] == "m1"
+
+
+def test_use_server_still_saves_a_named_model_and_refuses_one_not_listed():
+    r = firstrun.use_server({"url": "http://127.0.0.1:5000/v1", "model": "m2"}, lambda url: ["m1", "m2"])
+    assert r["ok"] is True and r["model"] == "m2"
+    r = firstrun.use_server({"url": "http://127.0.0.1:5000/v1", "model": "zzz"}, lambda url: ["m1", "m2"])
+    assert r["ok"] is False and "pick one of the models" in r["error"]
+
+
+def test_the_setup_tab_sends_no_model_for_a_custom_url():
+    html = (Path(firstrun.__file__).parent / "dashboard" / "index.html").read_text(encoding="utf-8")
+    assert 'custom.value.trim() ? "" : models.value' in html
 
 
 def test_mic_test_measures_the_level():

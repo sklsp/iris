@@ -333,14 +333,15 @@ class Agent:
             return f"error: {exc}"
         try:
             result = tool.fn(**call.args)
-            if isinstance(result, str) and result.startswith("error:"):
-                self.journal.log(**entry, outcome="error", error=result[:500], error_kind="tool")
-            else:
-                self.journal.log(**entry, outcome="ok", result=result[:500])
-            return result
         except Exception as exc:  # noqa: BLE001 - every failure goes back to the model as data
             self.journal.log(**entry, outcome="error", error=repr(exc))
             return f"error: {exc}"
+        # outside the try on purpose: a journal that can not be written stops the turn instead of reporting a tool error
+        if isinstance(result, str) and result.startswith("error:"):
+            self.journal.log(**entry, outcome="error", error=result[:500], error_kind="tool")
+        else:
+            self.journal.log(**entry, outcome="ok", result=result[:500])
+        return result
 
 
 # confirm = "important": the NEVER that these tools reach through their arguments (a pay or send button, Enter in a mail

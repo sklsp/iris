@@ -21,16 +21,31 @@ def settings_path() -> Path:
     return Path(os.environ.get("IRIS_SETTINGS") or (Path.home() / ".iris" / "settings.json"))
 
 
-def read_settings() -> dict:
-    """The contents of settings.json, re-read on every call so edits apply at once.
+_cache: tuple[tuple[str, int, int], dict] | None = None  # ((path, mtime_ns, size), parsed) until the file changes
 
-    A missing file, a broken one and a non-object top level all mean "no user choice"."""
+
+def read_settings() -> dict:
+    """The contents of settings.json; re-read when the file changes (its path, mtime or size).
+
+    A missing file, a broken one and a non-object top level all mean "no user choice"; callers get a copy."""
+    global _cache
+    path = settings_path()
     try:
-        with settings_path().open(encoding="utf-8") as f:
+        st = path.stat()
+    except OSError:
+        return {}
+    key = (str(path), st.st_mtime_ns, st.st_size)
+    if _cache is not None and _cache[0] == key:
+        return dict(_cache[1])
+    try:
+        with path.open(encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    _cache = (key, data)
+    return dict(data)
 
 
 def resolve_model() -> tuple[str, str]:

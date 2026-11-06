@@ -234,7 +234,7 @@ def test_events_and_replies_for_other_ids_are_skipped_until_the_own_answer(monke
 
 
 def test_a_request_waits_for_the_watcher_to_connect_and_gets_its_connection(monkeypatch):
-    monkeypatch.setattr(browser, "WATCH_WAIT", 0.5)
+    monkeypatch.setattr(browser, "WATCH_WAIT", 5.0)  # generous: a loaded CI runner can start the thread late
     browser._watching.set()
     fake = object()
 

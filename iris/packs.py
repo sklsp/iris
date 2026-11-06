@@ -61,7 +61,7 @@ def whisper_names() -> list[str]:
     """The Whisper models voice mode will load: the chosen or automatic one, plus tiny for the "iris" wake word."""
     from iris import voice
 
-    names = [voice.WHISPER_MODEL or ("large-v3-turbo" if _has_nvidia() else "small")]
+    names = [voice.whisper_model() or ("large-v3-turbo" if _has_nvidia() else "small")]
     if config.setting("IRIS_WAKEWORD", "wakeword", "hey_jarvis").lower() in ("iris", "hey_iris"):
         names.append(config.setting("IRIS_WAKE_WHISPER", "wake_whisper", "tiny"))
     return names
@@ -109,7 +109,7 @@ def _piper_installed() -> bool:
     from iris import voice
 
     have = (piper_runtime() / "piper").is_dir() or _importable("piper")
-    return have and all((voice.PIPER_DIR / f"{v}.onnx").exists() for v in voice.PIPER_VOICES.values())
+    return have and all((voice.PIPER_DIR / f"{v}.onnx").exists() for v in voice.piper_voices().values())
 
 
 def _importable(module: str) -> bool:
@@ -155,7 +155,7 @@ def packs() -> list[dict]:
         {"id": "piper", "name": "Piper voices (Dutch and English)", "size": "about 200 MB",
          "license": "Piper: GPL-3.0, run as a separate program. Voices: per model card (the defaults are trained "
                     "on CC0 data)",
-         "what": f"Natural local voices: {', '.join(voice.PIPER_VOICES.values())}. Then pick piper as the voice "
+         "what": f"Natural local voices: {', '.join(voice.piper_voices().values())}. Then pick piper as the voice "
                  "engine on the Settings tab.", "available": True, "installed": _piper_installed},
         {"id": "voxcpm", "name": "VoxCPM2 voice", "size": "about 3 GB now, 5 GB more on first use",
          "license": "Apache-2.0 (uv, which installs it: MIT or Apache-2.0)",
@@ -187,7 +187,7 @@ def steps(pack_id: str) -> list[tuple[str, list[str] | Callable[[Job], None]]]:
         return [("Installing cuBLAS and cuDNN (about 2 GB)",
                  pip + ["--target", str(gpu_dir()), "nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"])]
     if pack_id == "piper":
-        voices = list(voice.PIPER_VOICES.values())
+        voices = list(voice.piper_voices().values())
         return [("Installing Piper as a separate program", pip + ["--target", str(piper_runtime()), "piper-tts"]),
                 ("Downloading the voices", [sys.executable, "-m", "piper.download_voices", *voices,
                                             "--data-dir", str(voice.PIPER_DIR)])]

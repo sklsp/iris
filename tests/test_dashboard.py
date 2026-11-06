@@ -450,6 +450,51 @@ def test_agents_and_lmstudio_are_cached_for_30_seconds(monkeypatch):
     d._cache.clear()
 
 
+def test_two_polls_of_the_same_key_fetch_once():
+    d._cache.clear()
+    calls = []
+    barrier = threading.Barrier(2)
+    results = {}
+
+    def slow():
+        calls.append(1)
+        time.sleep(0.1)  # a slow fetch, like lms or the runs folder
+        return {"ok": True}
+
+    def worker(name):
+        barrier.wait()
+        results[name] = d._cached("k", slow)
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in ("one", "two")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(2)
+    assert calls == [1]  # the second poll waited and got the first fetch's value
+    assert results["one"] is results["two"]
+    d._cache.clear()
+
+
+def test_a_second_key_does_not_wait_for_the_first():
+    d._cache.clear()
+    inside = threading.Event()
+    release = threading.Event()
+
+    def slow():
+        inside.set()  # now fetching key "a"
+        release.wait(0.2)  # hold it open; no real wait over 0.2 s
+        return {"ok": True, "key": "a"}
+
+    t = threading.Thread(target=lambda: d._cached("a", slow))
+    t.start()
+    assert inside.wait(1)  # the first key is mid-fetch now
+    got = d._cached("b", lambda: {"ok": True, "key": "b"})  # a different key must not wait for it
+    release.set()
+    t.join(2)
+    assert got == {"ok": True, "key": "b"}
+    d._cache.clear()
+
+
 def test_journal_script_text_renders_as_text(tmp_path, monkeypatch):
     """Journal text is untrusted screen content. The API must pass it through raw and the page
     may only insert it with textContent, so a <script> tag shows up as characters, not code."""

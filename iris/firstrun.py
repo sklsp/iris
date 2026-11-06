@@ -61,7 +61,7 @@ def servers(probe_fn: Callable[[str], list[str] | None] = probe) -> list[dict]:
 
 
 def use_server(body: dict, probe_fn: Callable[[str], list[str] | None] = probe) -> dict:
-    """Save the server (llm_url) and the model (settings.json) the user picked; the model must be on that server."""
+    """Save the server (llm_url) and the model (settings.json); an empty model takes the first one the server lists."""
     from iris import settings
     from iris.llm import read_settings, settings_path
 
@@ -69,6 +69,8 @@ def use_server(body: dict, probe_fn: Callable[[str], list[str] | None] = probe) 
     models = probe_fn(url) if url else None
     if models is None:
         return {"ok": False, "error": f"no OpenAI-compatible server answers at {url or '(empty)'}"}
+    if not model and models:
+        model = models[0]  # a custom URL has no drop-down; LM Studio lists the loaded model first
     if model not in models:
         return {"ok": False, "error": "pick one of the models this server lists" if models
                 else "the server lists no models: load or download one first"}

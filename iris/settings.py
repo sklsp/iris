@@ -102,6 +102,20 @@ def payload() -> dict:
     fields = []
     for f in FIELDS:
         row = {**f, "value": data.get(f["key"], f["default"]), "set": f["key"] in data}
+        if row["set"]:  # a hand-edited file may hold the wrong type; repair it so the page can show and save it
+            value = row["value"]
+            if f["type"] in ("list", "plugins") and isinstance(value, str):
+                row["value"] = [value]  # one line is one item; the page joins lists into lines
+            elif f["type"] in ("number", "int", "gpu"):
+                if isinstance(value, str):  # whisper_gpu = "1" works at runtime (config.number parses it)
+                    try:
+                        number = float(value)
+                        if number == number and abs(number) != float("inf"):
+                            row["value"] = value = int(number) if number == int(number) else number
+                    except ValueError:
+                        pass
+                if not isinstance(value, int | float) or isinstance(value, bool):  # a bool is not a number
+                    row["value"], row["invalid"] = f["default"], str(value)  # show the default; keep the text visible
         if f.get("env") and os.environ.get(f["env"], "").strip():
             row["overridden_by"] = f"{f['env']}={os.environ[f['env']]}"
         if f["type"] == "plugins":

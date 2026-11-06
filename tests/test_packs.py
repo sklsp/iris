@@ -55,7 +55,8 @@ def test_a_changed_voice_setting_is_seen_without_a_restart(monkeypatch):
     voices = packs.steps("piper")[1][1]
     assert "nl_A" in voices and "en_US-joe-medium" in voices
     cfg.write_text('piper_nl = "nl_B"\nwhisper_model = "w_B"\n', encoding="utf-8")
-    os.utime(cfg)  # a new mtime, so the config cache re-reads the file
+    st = cfg.stat()  # same size, and a fast runner can write twice within one timestamp: move the mtime on
+    os.utime(cfg, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
     assert packs.whisper_names()[0] == "w_B"
     voices = packs.steps("piper")[1][1]
     assert "nl_B" in voices and "en_US-joe-medium" in voices

@@ -1,5 +1,8 @@
 """config.toml and the plugin registry: what the user sets decides the name in the prompt and the tools offered."""
 
+import os
+import tomllib
+
 import pytest
 
 from iris import __version__, config, registry
@@ -215,6 +218,36 @@ def test_a_config_with_a_bom_is_read_and_saved(tmp_path, monkeypatch):
     assert config.load()["name"] == "Jay" and config.error() is None
     settings.write({"city": "Utrecht"})
     assert config.raw() == {"name": "Jay", "city": "Utrecht"} and not path.read_bytes().startswith(b"\xef")
+
+
+def test_raw_parses_once_until_the_file_changes(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    path.write_text('name = "Jay"\n', encoding="utf-8")
+    monkeypatch.setenv("IRIS_CONFIG", str(path))
+
+    parses = []
+    real_loads = tomllib.loads
+
+    def counting(text):
+        parses.append(1)
+        return real_loads(text)
+
+    monkeypatch.setattr(tomllib, "loads", counting)
+
+    first = config.raw()
+    assert first == {"name": "Jay"}
+    first["name"] = "Hacked"  # a caller must not be able to change the cached dict
+    assert config.raw() == {"name": "Jay"}
+    assert len(parses) == 1  # two reads, one parse
+
+    path.write_text('name = "Kim"\n', encoding="utf-8")
+    st = path.stat()
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))  # a new mtime
+    assert config.raw() == {"name": "Kim"}  # a changed file is read again
+    assert len(parses) == 2
+
+    path.unlink()
+    assert config.raw() == {}  # and so is a removed one
 
 
 @pytest.mark.parametrize("content,why", [(b'name = "Jay', "Unterminated string"),

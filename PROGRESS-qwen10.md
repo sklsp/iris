@@ -6,4 +6,4 @@
 - [x] Q4. A wrong-typed value in config.toml does not break or wipe the Settings tab (2214 passed in 97.14s (0:01:37))
 - [x] Q5. Two dashboard polls of the same route fetch once (2216 passed in 98.11s (0:01:38))
 - [x] Q6. The model name is read from settings.json once until it changes (2219 passed in 97.25s (0:01:37))
-- [ ] Q7. CHANGELOG for this run
+- [x] Q7. CHANGELOG for this run (2219 passed in 96.98s (0:01:36))

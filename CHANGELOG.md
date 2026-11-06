@@ -26,6 +26,7 @@
 - One tool result is at most 24000 characters, with a marker that says how much was left out; browser pages say when they were cut.
 - The dashboard does not poll while its window is hidden.
 - config.toml is parsed once until it changes, and the CPU reading no longer waits 0.3 s.
+- settings.json is read once until it changes, and two dashboard polls of one route fetch once.
 
 
 ### Skills
@@ -58,6 +59,9 @@
 - Pack installs time out after 30 minutes and an interrupted install is not reported as done.
 - Iris quits when the window closes and the tray icon could not start, instead of hiding with no way back.
 - A failed browser connection falls back at once, ASP.NET pages are read, and click never clicks twice.
+- A journal that can not be written stops the turn, so a tool never runs twice for it.
+- The Setup tab installs the voices and Whisper model now set, can use a custom model server, and the Settings
+  tab copes with hand-edited values of the wrong type.
 
 
 ### Docs

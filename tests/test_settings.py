@@ -112,6 +112,20 @@ def test_gpus_is_empty_without_nvidia(monkeypatch):
     assert settings._gpus() == []
 
 
+def test_a_wrong_typed_value_in_the_file_does_not_break_or_wipe_the_tab():
+    config.config_path().write_text('folders = "C:/x"\nplugins = "lmstudio"\nsilence = "fast"\n', encoding="utf-8")
+    rows = {f["key"]: f for f in settings.payload()["fields"]}
+    assert rows["folders"]["value"] == ["C:/x"] and rows["plugins"]["value"] == ["lmstudio"]  # a line is one item
+    assert rows["silence"]["value"] == 1.8 and rows["silence"]["invalid"] == "fast"
+
+
+def test_a_correct_file_gives_rows_without_invalid():
+    config.config_path().write_text('folders = ["C:/x"]\nsilence = 2.5\n', encoding="utf-8")
+    rows = {f["key"]: f for f in settings.payload()["fields"]}
+    assert rows["folders"]["value"] == ["C:/x"] and rows["silence"]["value"] == 2.5
+    assert all("invalid" not in row for row in rows.values())
+
+
 def test_save_writes_only_changes_and_names_the_ones_that_need_a_restart(monkeypatch):
     from iris import dashboard
 

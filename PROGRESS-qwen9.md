@@ -11,6 +11,6 @@
 - [x] Q9. ASP.NET pages are not read as empty (2201 passed in 121.68s (0:02:01))
 - [x] Q10. click does not click twice (2204 passed in 117.55s (0:01:57))
 - [x] Q11. config.toml is parsed once until it changes (2206 passed in 119.40s (0:01:59))
-- [ ] Q12. The system tool and the dashboard do not wait 0.3 s for the CPU
+- [x] Q12. The system tool and the dashboard do not wait 0.3 s for the CPU (2207 passed in 96.23s (0:01:36))
 - [ ] Q13. The dashboard stops polling while it is hidden
 - [ ] Q14. CHANGELOG for this run

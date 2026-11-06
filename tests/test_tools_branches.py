@@ -90,3 +90,28 @@ def test_click_does_not_click_again_when_invoke_acted_and_then_failed(monkeypatc
     out = tools.click("notepad", "ok")
     assert out.startswith("clicked")
     assert flaky.invoke_calls == 1 and flaky.click_input_calls == 0
+
+
+def test_system_data_does_not_wait_for_the_cpu(monkeypatch):
+    intervals = []
+
+    def fake_cpu(interval=None):
+        intervals.append(interval)
+        return 43.0
+
+    class _VM:
+        used = 8 * 2**30
+        total = 16 * 2**30
+
+    monkeypatch.setattr("psutil.cpu_percent", fake_cpu)
+    monkeypatch.setattr("psutil.virtual_memory", lambda: _VM())
+
+    def boom(cmd, **kw):
+        raise OSError("no nvidia-smi")
+
+    monkeypatch.setattr(tools.subprocess, "run", boom)
+
+    d = tools.system_data()
+
+    assert intervals == [None]  # non-blocking; the module was primed once at import
+    assert d["cpu_percent"] == 43.0 and d["gpus"] == []

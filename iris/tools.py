@@ -21,6 +21,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 from iris import config
 from iris.browser import browser_click, browser_read, browser_scroll, browser_type
 from iris.desktop import (
@@ -74,6 +76,8 @@ from iris.reminders import reminder_cancel, reminder_list, reminder_set
 from iris.timers import Timers
 from iris.weather import weather
 
+psutil.cpu_percent(interval=None)  # prime; the first result is meaningless, later calls compare with it
+
 # Re-exported from iris.policy so existing imports of these names from iris.tools keep working; tools.py
 # itself only uses some of them, and __all__ marks the rest as deliberate re-exports.
 __all__ = ["NEVER", "_MAIL_CHAT", "_NEVER_WORDS", "_SYSTEM_DIRS", "_trash_roots", "_under"]
@@ -106,10 +110,8 @@ class Tool:
 # --- senses -------------------------------------------------------------------
 def system_data() -> dict:
     """The same numbers as system_status, as data instead of text (the dashboard uses this)."""
-    import psutil
-
     vm = psutil.virtual_memory()
-    d = {"cpu_percent": psutil.cpu_percent(interval=0.3),
+    d = {"cpu_percent": psutil.cpu_percent(interval=None),  # non-blocking; primed at import
          "ram_used_gb": vm.used / 2**30,
          "ram_total_gb": vm.total / 2**30}
     gpus = []

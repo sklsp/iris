@@ -427,7 +427,8 @@ def click(window: str, control: str) -> str:
         c.invoke()
     except Exception as exc:  # noqa: BLE001 - not every control supports Invoke; fall back to a real click
         text = str(exc).lower()
-        if isinstance(exc, NotImplementedError) or "not supported" in text or "pattern" in text:
+        unsupported = isinstance(exc, NotImplementedError) or type(exc).__name__ == "NoPatternInterfaceError"
+        if unsupported or "not supported" in text or "pattern" in text:  # pywinauto's error has no message
             c.click_input()
         # otherwise invoke already acted (a dialog closed, a COM timeout): clicking again would press it twice
     return f"clicked {c.element_info.control_type} {c.window_text()!r}"

@@ -61,6 +61,22 @@ def test_click_falls_back_to_a_real_click_when_invoke_is_not_supported(monkeypat
     assert stubborn.invoke_calls == 1 and stubborn.click_input_calls == 1
 
 
+def test_click_falls_back_on_pywinauto_s_own_missing_pattern_error(monkeypatch):
+    class NoPatternInterfaceError(Exception):  # pywinauto.uia_defines raises it with no message at all
+        pass
+
+    plain = FakeControl(text="Go", kind="Button")
+
+    def invoke():
+        raise NoPatternInterfaceError()
+
+    monkeypatch.setattr(plain, "invoke", invoke)
+    _install_desktop(monkeypatch, FakeDesktop([FakeWindow("Notepad", [plain])]))
+
+    assert tools.click("notepad", "go") == "clicked Button 'Go'"
+    assert plain.click_input_calls == 1
+
+
 def test_click_does_not_click_again_when_invoke_acted_and_then_failed(monkeypatch):
     flaky = FakeControl(text="OK", kind="Button")
 

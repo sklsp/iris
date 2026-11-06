@@ -295,3 +295,33 @@ def test_push_to_talk_without_a_console_says_so(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Push-to-talk needs a console window; use the wake word instead." in out
 
+
+def test_piper_env_is_utf8_with_and_without_a_runtime_folder(tmp_path, monkeypatch):
+    envs = []
+
+    class _Popen:
+        def __init__(self, args, **kwargs):
+            envs.append(kwargs.get("env"))  # no real Piper process
+
+    def _mkdtemp(prefix=""):
+        d = tmp_path / "piper-tmp"
+        d.mkdir(exist_ok=True)
+        return str(d)
+
+    monkeypatch.setattr(voice.subprocess, "Popen", _Popen)
+    monkeypatch.setattr(voice.tempfile, "mkdtemp", _mkdtemp)  # no temp folder outside tmp_path
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    runtime = tmp_path / "runtime"
+    monkeypatch.setattr(voice, "piper_runtime", lambda: runtime)
+
+    voice.PiperProcess(tmp_path / "model.onnx")  # no runtime folder yet
+    env = envs[0]
+    assert env is not None and env["PYTHONIOENCODING"] == "utf-8" and env["PYTHONUTF8"] == "1"
+    assert "PYTHONPATH" not in env
+
+    runtime.mkdir()
+    voice.PiperProcess(tmp_path / "model.onnx")  # now the runtime folder exists
+    env = envs[1]
+    assert env["PYTHONIOENCODING"] == "utf-8" and env["PYTHONUTF8"] == "1"
+    assert env["PYTHONPATH"].startswith(str(runtime))
+

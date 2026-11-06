@@ -204,7 +204,8 @@ def test_piper_runs_with_the_packs_runtime_on_its_path(tmp_path, monkeypatch):
 
     monkeypatch.setattr(voice.subprocess, "Popen", lambda cmd, **kw: seen.update(kw) or P())
     voice.PiperProcess(tmp_path / "v.onnx")
-    assert seen["env"] is None  # nothing installed by the app: the normal environment
+    assert seen["env"] is not None  # always an env now: UTF-8 stdin in every locale
+    assert seen["env"]["PYTHONIOENCODING"] == "utf-8" and seen["env"]["PYTHONUTF8"] == "1"
     voice.piper_runtime().mkdir(parents=True)
     voice.PiperProcess(tmp_path / "v.onnx")
     assert seen["env"]["PYTHONPATH"].startswith(str(voice.piper_runtime()))

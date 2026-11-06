@@ -631,8 +631,9 @@ class PiperProcess:
     def __init__(self, model: Path):
         self.dir = Path(tempfile.mkdtemp(prefix="iris-piper-"))
         runtime = piper_runtime()  # the app's Piper pack keeps Piper in its own folder, outside Iris's packages
-        env = {**os.environ, "PYTHONPATH": str(runtime) + os.pathsep + os.environ.get("PYTHONPATH", "")} \
-            if runtime.is_dir() else None
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}  # UTF-8 stdin in every locale
+        if runtime.is_dir():
+            env["PYTHONPATH"] = str(runtime) + os.pathsep + os.environ.get("PYTHONPATH", "")
         self.proc = subprocess.Popen([sys.executable, "-m", "piper", "-m", str(model), "-d", str(self.dir)],
                                      stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                      text=True, encoding="utf-8", env=env)

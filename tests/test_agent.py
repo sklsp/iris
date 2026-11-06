@@ -175,6 +175,25 @@ def test_returned_error_text_is_journaled_as_an_error(tmp_path):
                         for t in ("error: x", "errors: 3", "Error: x", "ok, no error: here")]
 
 
+def test_a_journal_that_can_not_be_written_stops_the_turn(tmp_path):
+    """The tool already ran when its ok line can not be written: the OSError goes up instead of coming back to the
+    model as a tool error it would run again."""
+    ran = []
+    tools = {"status": Tool("status", "", {}, [], SAFE, lambda **kw: ran.append(kw) or "done")}
+
+    class BrokenJournal(Journal):
+        def log(self, **entry):
+            if entry.get("outcome") == "ok":  # the disk fills up exactly when the ok line is written
+                raise OSError(28, "No space left on device")
+            super().log(**entry)
+
+    llm = ScriptedLLM(call("status"), answer("Done."))
+    a = Agent(llm, lambda q: True, BrokenJournal(tmp_path / "j.jsonl"), tools)
+    with pytest.raises(OSError):
+        a.handle("how is my pc")
+    assert len(ran) == 1  # the tool ran once; it must not be run again as if it had failed
+
+
 def test_real_tool_tiers():
     assert TOOLS["read_window"].tier_of({"title": "x"}) == SAFE
     assert TOOLS["click"].tier_of({"window": "Chrome", "control": "Afrekenen"}) == "never"

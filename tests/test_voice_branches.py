@@ -1,5 +1,6 @@
 """Branch tests for iris/voice.py that need no mic, no Whisper, no Piper and no sound device."""
 
+import builtins
 import queue
 import sys
 import threading
@@ -264,4 +265,33 @@ def test_wait_for_speech_stops_a_stuck_thread(monkeypatch):
     assert s.wait_for_speech() is False
     assert stop.is_set()  # the stuck speech must be stopped, not talked over by the next answer
     assert s._speech is None
+
+
+def test_push_to_talk_without_a_console_says_so(monkeypatch, capsys):
+    v = voice.Voice.__new__(voice.Voice)  # no Whisper model load
+
+    def _no_stdin():
+        raise EOFError  # the desktop app and pipes have no console to press Enter in
+
+    monkeypatch.setattr(builtins, "input", _no_stdin)
+
+    class _Stream:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    sd = types.ModuleType("sounddevice")
+    sd.InputStream = _Stream
+    monkeypatch.setitem(sys.modules, "sounddevice", sd)
+    t0 = time.monotonic()
+    text = v.listen()
+    assert time.monotonic() - t0 < 1.5  # no console: it must not wait for an Enter that never comes
+    assert text == ""
+    out = capsys.readouterr().out
+    assert "Push-to-talk needs a console window; use the wake word instead." in out
 

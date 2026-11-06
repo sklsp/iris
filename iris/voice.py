@@ -287,6 +287,7 @@ class Voice:
         import sounddevice as sd
 
         chunks, stop = [], threading.Event()
+        no_console = False  # input() died (no stdin): there is no console to press Enter in
 
         def cb(indata: np.ndarray, frames: int, t: Any, status: Any) -> None:
             chunks.append(indata.copy())
@@ -294,12 +295,19 @@ class Voice:
         print(prompt)
 
         def _stop_on_enter() -> None:
-            input()
+            nonlocal no_console
+            try:
+                input()
+            except (EOFError, OSError):  # the desktop app and pipes have no stdin; Enter can never come
+                no_console = True
             stop.set()
 
         with sd.InputStream(samplerate=RATE, channels=1, dtype="float32", callback=cb):
             threading.Thread(target=_stop_on_enter, daemon=True).start()
             stop.wait()
+        if no_console:
+            print("Push-to-talk needs a console window; use the wake word instead.")
+            return ""
         if not chunks:
             return ""
         audio = np.concatenate(chunks)[:, 0]

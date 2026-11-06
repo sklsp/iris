@@ -324,6 +324,34 @@ def test_read_text_skips_nav_footer_script_style():
         assert gone not in out, f"{gone!r} should have been skipped"
 
 
+def test_read_text_returns_the_paragraphs_of_an_aspnet_form_page():
+    def get(url):
+        return url, "text/html", (
+            "<html><head><title>Harbour report</title></head>"
+            '<body><form id="aspnetForm" method="post">'
+            "<h1>The harbour report</h1>"
+            "<p>The tide turned at noon.</p>"
+            "<p>Two ferries are due this evening.</p>"
+            "</form></body></html>")
+
+    out = web.read_text("http://example.com/aspnet", get=get)
+    assert out == ("Title: Harbour report\nThe harbour report\n"
+                   "The tide turned at noon.\nTwo ferries are due this evening.")
+
+
+def test_read_text_does_not_return_the_options_of_a_select():
+    def get(url):
+        return url, "text/html", (
+            "<html><head><title>Filter</title></head>"
+            "<body><p>Pick a month.</p>"
+            "<select><option>One</option></select>"
+            "</body></html>")
+
+    out = web.read_text("http://example.com/select", get=get)
+    assert "One" not in out
+    assert "Pick a month." in out
+
+
 def test_read_text_title_first_and_order():
     def get(url):
         return url, "text/html", ARTICLE

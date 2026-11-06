@@ -199,7 +199,8 @@ class _ResultParser(HTMLParser):
 
 
 # --- read_text -----------------------------------------------------------------
-_SKIP_TAGS = frozenset({"script", "style", "noscript", "svg", "nav", "header", "footer", "aside", "form", "template"})
+_SKIP_TAGS = frozenset({"script", "style", "noscript", "svg", "nav", "header", "footer", "aside", "template",
+                        "select", "option", "button"})  # no "form": ASP.NET pages wrap the whole body in one <form>
 _BLOCK_TAGS = frozenset({"h1", "h2", "h3", "h4", "p", "li", "td", "th", "pre"})
 
 
@@ -266,7 +267,8 @@ def read_text(url: str, max_chars: int = 6000, get: Callable[[str], tuple[str, s
 
     The title comes first as "Title: ...", then headings (h1 to h4), paragraphs, list items, table cells and pre
     blocks in document order, each on its own line. Everything inside script, style, noscript, svg, nav, header,
-    footer, aside, form and template is skipped. text/plain comes back as is; any other type raises ValueError.
+    footer, aside, template, select, option and button is skipped; form content is kept because ASP.NET pages wrap
+    the whole body in one <form>. text/plain comes back as is; any other type raises ValueError.
     """
     _, content_type, body = get(url)
     media = content_type.split(";")[0].strip().lower()

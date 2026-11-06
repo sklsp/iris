@@ -8,7 +8,7 @@
 - [x] Q6. Pack installs have a time limit and an interrupted one is not Done (2192 passed in 107.33s (0:01:47))
 - [x] Q7. If the tray icon fails, closing the window quits instead of hiding Iris (2195 passed in 109.15s (0:01:49))
 - [x] Q8. A failed browser connection is a BrowserError (2199 passed in 119.17s (0:01:59))
-- [ ] Q9. ASP.NET pages are not read as empty
+- [x] Q9. ASP.NET pages are not read as empty (2201 passed in 121.68s (0:02:01))
 - [ ] Q10. click does not click twice
 - [ ] Q11. config.toml is parsed once until it changes
 - [ ] Q12. The system tool and the dashboard do not wait 0.3 s for the CPU

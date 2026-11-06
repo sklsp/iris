@@ -90,6 +90,7 @@ def _lm_base_from_settings() -> str:
 
 _lock = threading.Lock()
 _cache: dict[str, tuple[float, dict]] = {}   # key -> (fetched_at, payload)
+_key_locks: dict[str, threading.Lock] = {}   # one lock per cached key; created under _lock
 _history: deque[dict] = deque(maxlen=240)    # system samples for the sparklines
 set_lm_base(_lm_base_from_settings())
 
@@ -547,14 +548,17 @@ def claude_projects(projects_dir: Path | str | None = None, now: float | None = 
 
 
 def _cached(key: str, fn: Callable[[], Any]) -> dict:
-    now = time.time()
-    with _lock:
+    """One fetch per key while it is fresh; a second caller for the same key waits and gets its value."""
+    with _lock:  # one lock per key, created here so two misses cannot make two locks
+        key_lock = _key_locks.setdefault(key, threading.Lock())
+    with key_lock:  # held while checking AND fetching; other keys never wait for this one
+        now = time.time()
         hit = _cache.get(key)
         if hit and now - hit[0] < CACHE_SECONDS:
             return hit[1]
-    value = fn()
-    with _lock:
-        _cache[key] = (now, value)
+        value = fn()
+        with _lock:
+            _cache[key] = (time.time(), value)
     return value
 
 

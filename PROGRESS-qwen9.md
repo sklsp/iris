@@ -13,4 +13,4 @@
 - [x] Q11. config.toml is parsed once until it changes (2206 passed in 119.40s (0:01:59))
 - [x] Q12. The system tool and the dashboard do not wait 0.3 s for the CPU (2207 passed in 96.23s (0:01:36))
 - [x] Q13. The dashboard stops polling while it is hidden (2207 passed in 96.95s (0:01:36))
-- [ ] Q14. CHANGELOG for this run
+- [x] Q14. CHANGELOG for this run (2207 passed in 96.20s (0:01:36))

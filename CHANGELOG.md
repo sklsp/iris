@@ -25,6 +25,8 @@
 - One agent turn costs about a third of what it did outside the model, and long sessions trim their history with room to spare, so the model server's cache is reused more often.
 - One tool result is at most 24000 characters, with a marker that says how much was left out; browser pages say when they were cut.
 - The dashboard does not poll while its window is hidden.
+- config.toml is parsed once until it changes, the CPU reading no longer waits 0.3 s,
+  and the dashboard stops polling while hidden.
 
 
 ### Skills
@@ -51,6 +53,12 @@
 - The update check orders 1.0.0rc1 before 1.0.0 and survives odd answers.
 - Autopilot removes the prompt it started, not whichever was oldest by then.
 - read_file reads UTF-16 files, and a folder listing survives one unreadable entry.
+- A stuck answer is stopped before the next one, the chime and push-to-talk can no longer hang listening,
+  and Piper reads accented text correctly.
+- One failed sentence no longer switches the voice for the rest of the run (three in a row do).
+- Pack installs time out after 30 minutes and an interrupted install is not reported as done.
+- Iris quits when the window closes and the tray icon could not start, instead of hiding with no way back.
+- A failed browser connection falls back at once, ASP.NET pages are read, and click never clicks twice.
 
 
 ### Docs

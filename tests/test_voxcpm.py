@@ -203,7 +203,10 @@ def test_speaker_falls_back_to_piper_when_voxcpm_fails_mid_answer(monkeypatch):
     spk.engine, spk._vox = "voxcpm", Broken()
     said = []
     monkeypatch.setattr(spk, "_speak_piper", lambda text, stop: said.append(text) or True)
-    assert spk.speak("Hallo") is True and said == ["Hallo"] and spk.engine == "piper"
+    assert spk.speak("Hallo") is True and spk.engine == "voxcpm"  # one failure: still tries VoxCPM next time
+    assert spk.speak("Hallo") is True and spk.engine == "voxcpm"  # two failures: not yet
+    assert spk.speak("Hallo") is True and spk.engine == "piper"  # three in a row: switches for good
+    assert said == ["Hallo", "Hallo", "Hallo"]
 
 
 def test_the_worker_speaks_a_long_answer_in_pieces_that_fit_its_cache():

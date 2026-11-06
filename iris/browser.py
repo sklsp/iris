@@ -78,7 +78,12 @@ class Connection:
             raise BrowserError("install the browser extra first: pip install -e .[browser]") from None
 
         # the handshake waits while the browser asks the user to Allow it
-        self.ws: Any = websocket.create_connection(url, timeout=handshake, suppress_origin=True)
+        try:
+            self.ws: Any = websocket.create_connection(url, timeout=handshake, suppress_origin=True)
+        except (OSError, websocket.WebSocketException) as exc:
+            # a refused or timed-out port is the browser closing or restarting, not something Iris can fix itself
+            raise BrowserError("could not reach the browser's DevTools port; make sure the browser is open "
+                               "and has allowed remote control") from exc
         self.ws.settimeout(15)
         self._id = 0
         self._slow = (TimeoutError, websocket.WebSocketTimeoutException)

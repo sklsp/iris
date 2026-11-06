@@ -32,7 +32,7 @@ def _install_fake_psutil(monkeypatch, cpu=43.0):
     mod = types.ModuleType("psutil")
     mod.virtual_memory = lambda: _FakeVM()
     mod.cpu_percent = lambda interval=None: calls.append(interval) or cpu
-    monkeypatch.setitem(sys.modules, "psutil", mod)
+    monkeypatch.setattr(tools, "psutil", mod)  # system_data uses the module-level name now
     return calls
 
 
@@ -59,7 +59,7 @@ def test_system_data_reports_cpu_ram_and_gpus(monkeypatch):
 
     d = tools.system_data()
 
-    assert d["cpu_percent"] == 43.0 and cpu_calls == [0.3]
+    assert d["cpu_percent"] == 43.0 and cpu_calls == [None]
     assert d["ram_used_gb"] == pytest.approx(8.0) and d["ram_total_gb"] == pytest.approx(16.0)
     assert d["gpus"] == [{"index": 0, "name": "NVIDIA GeForce RTX 3090", "load_percent": 75.0,
                           "vram_used_mib": 10240.0, "vram_total_mib": 24576.0, "temp_c": 68.0}]

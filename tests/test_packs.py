@@ -71,6 +71,29 @@ class FakeProc:
         return self.returncode
 
 
+class HungProc:
+    """A process whose pipe never closes and which never exits, like a pip stuck on the network."""
+
+    def __init__(self):
+        self.killed = False
+
+    @property
+    def stdout(self):
+        return _hang()
+
+    def kill(self):
+        self.killed = True
+
+    def wait(self):
+        return -15  # run only waits after it has killed us
+
+
+def _hang():
+    while True:
+        time.sleep(0.02)
+        yield ""
+
+
 def test_run_streams_output_and_stops_at_the_first_failure(monkeypatch):
     monkeypatch.setattr(packs, "steps", lambda pack: [("one", ["a"]), ("two", ["b"]), ("three", ["c"])])
     outputs = iter([FakeProc(["fetching", ""], 0), FakeProc(["oops"], 2)])
@@ -92,6 +115,49 @@ def test_run_calls_function_steps(monkeypatch):
     job = packs.Job("voxcpm")
     packs.run(job)
     assert job.state == "done" and list(job.lines) == ["== unpack", "unpacked", "== Done"]
+
+
+def test_a_step_past_its_deadline_is_killed_and_the_job_fails(monkeypatch):
+    monkeypatch.setattr(packs, "STEP_TIMEOUT", 0.05)
+    monkeypatch.setattr(packs, "steps", lambda pack: [("A step that never ends", ["hang"])])
+    hung = HungProc()
+    job = packs.Job("whisper")
+    packs.run(job, lambda cmd, **kw: hung)
+    assert job.state == "failed" and hung.killed is True
+    assert "== Stopped: timed out after 30 minutes: A step that never ends" in list(job.lines)
+
+
+def test_an_install_interrupted_after_step_one_is_not_installed(plain, monkeypatch):
+    monkeypatch.setattr(packs, "_piper_installed", lambda: True)  # partial artifacts fool the content check
+    monkeypatch.setattr(packs, "steps", lambda pack: [("one", ["a"]), ("two", ["b"])])
+    outputs = iter([FakeProc(["ok"], 0), FakeProc([], 1)])
+    job = packs.Job("piper")
+    packs.run(job, lambda cmd, **kw: next(outputs))
+    assert job.state == "failed" and packs.installing_marker("piper").exists()
+    assert by_id(packs.packs())["piper"]["installed"] is False  # interrupted: never Done
+
+
+def test_a_finished_install_removes_the_marker(monkeypatch):
+    monkeypatch.setattr(packs, "steps", lambda pack: [("one", ["a"])])
+    job = packs.Job("piper")
+    packs.run(job, lambda cmd, **kw: FakeProc(["ok"], 0))
+    assert job.state == "done" and not packs.installing_marker("piper").exists()
+
+
+def test_a_rerun_writes_the_marker_before_its_first_step(monkeypatch):
+    seen = []
+    monkeypatch.setattr(packs, "steps", lambda pack: [("one", ["a"])])
+    job = packs.Job("piper")
+    packs.run(job, lambda cmd, **kw: seen.append(packs.installing_marker("piper").exists()) or FakeProc([], 3))
+    assert seen == [True] and job.state == "failed"
+
+
+def test_a_pack_installed_before_markers_existed_still_counts(plain, monkeypatch):
+    monkeypatch.setattr(packs, "_piper_installed", lambda: True)
+    assert by_id(packs.packs())["piper"]["installed"] is True  # no marker at all: an older finished install
+    packs.installing_marker("piper").parent.mkdir(parents=True)
+    packs.installing_marker("piper").write_text("installing\n", encoding="utf-8")
+    assert by_id(packs.packs())["piper"]["installed"] is False  # a started, unfinished install
 
 
 def test_start_runs_one_install_at_a_time(plain, monkeypatch):
@@ -204,7 +270,8 @@ def test_piper_runs_with_the_packs_runtime_on_its_path(tmp_path, monkeypatch):
 
     monkeypatch.setattr(voice.subprocess, "Popen", lambda cmd, **kw: seen.update(kw) or P())
     voice.PiperProcess(tmp_path / "v.onnx")
-    assert seen["env"] is None  # nothing installed by the app: the normal environment
+    assert seen["env"] is not None  # always an env now: UTF-8 stdin in every locale
+    assert seen["env"]["PYTHONIOENCODING"] == "utf-8" and seen["env"]["PYTHONUTF8"] == "1"
     voice.piper_runtime().mkdir(parents=True)
     voice.PiperProcess(tmp_path / "v.onnx")
     assert seen["env"]["PYTHONPATH"].startswith(str(voice.piper_runtime()))

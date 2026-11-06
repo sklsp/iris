@@ -21,6 +21,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 from iris import config
 from iris.browser import browser_click, browser_read, browser_scroll, browser_type
 from iris.desktop import (
@@ -74,6 +76,8 @@ from iris.reminders import reminder_cancel, reminder_list, reminder_set
 from iris.timers import Timers
 from iris.weather import weather
 
+psutil.cpu_percent(interval=None)  # prime; the first result is meaningless, later calls compare with it
+
 # Re-exported from iris.policy so existing imports of these names from iris.tools keep working; tools.py
 # itself only uses some of them, and __all__ marks the rest as deliberate re-exports.
 __all__ = ["NEVER", "_MAIL_CHAT", "_NEVER_WORDS", "_SYSTEM_DIRS", "_trash_roots", "_under"]
@@ -106,10 +110,8 @@ class Tool:
 # --- senses -------------------------------------------------------------------
 def system_data() -> dict:
     """The same numbers as system_status, as data instead of text (the dashboard uses this)."""
-    import psutil
-
     vm = psutil.virtual_memory()
-    d = {"cpu_percent": psutil.cpu_percent(interval=0.3),
+    d = {"cpu_percent": psutil.cpu_percent(interval=None),  # non-blocking; primed at import
          "ram_used_gb": vm.used / 2**30,
          "ram_total_gb": vm.total / 2**30}
     gpus = []
@@ -425,8 +427,12 @@ def click(window: str, control: str) -> str:
     _named_in_full(control, c)
     try:
         c.invoke()
-    except Exception:  # noqa: BLE001 - not every control supports Invoke; fall back to a real click
-        c.click_input()
+    except Exception as exc:  # noqa: BLE001 - not every control supports Invoke; fall back to a real click
+        text = str(exc).lower()
+        unsupported = isinstance(exc, NotImplementedError) or type(exc).__name__ == "NoPatternInterfaceError"
+        if unsupported or "not supported" in text or "pattern" in text:  # pywinauto's error has no message
+            c.click_input()
+        # otherwise invoke already acted (a dialog closed, a COM timeout): clicking again would press it twice
     return f"clicked {c.element_info.control_type} {c.window_text()!r}"
 
 

@@ -446,6 +446,38 @@ def test_closing_hides_to_the_tray_and_says_so_once():
     assert a._on_closing() is True
 
 
+def test_closing_quits_when_the_tray_icon_failed_to_start(monkeypatch):
+    forms = fake_forms()
+
+    def no_shell():
+        raise RuntimeError("no shell")
+
+    monkeypatch.setattr(forms, "NotifyIcon", no_shell)
+    a = app.App(FakeWebview(), forms=forms, voice=FakeVoice())
+    a.window = FakeWindow()
+    monkeypatch.setattr(a.tray.ready, "wait", lambda timeout=None: False)  # the ten-second wait is over at once
+    assert a.tray.start() is False and not a.tray.ready.is_set()
+    assert a._on_closing() is True  # no icon to come back from: the close quits Iris instead of hiding it
+
+
+def test_closing_quits_when_there_is_no_tray_at_all():
+    a = app.App(FakeWebview(), voice=FakeVoice())
+    a.window = FakeWindow()
+    assert a.tray is None  # no forms in the tests, so there is no tray icon to come back from
+    assert a._on_closing() is True
+
+
+def test_tray_run_does_not_crash_when_the_icon_fails(monkeypatch):
+    forms = fake_forms()
+
+    def no_shell():
+        raise RuntimeError("no shell")
+
+    monkeypatch.setattr(forms, "NotifyIcon", no_shell)
+    a = app.App(FakeWebview(), forms=forms, voice=FakeVoice())
+    a.tray._run()  # the failed icon is caught and printed, not raised into the tray thread
+
+
 def test_open_restores_only_a_minimized_window():
     a = app.App(FakeWebview(), voice=FakeVoice())
     a.window = FakeWindow()

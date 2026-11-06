@@ -1,7 +1,7 @@
 # Progress: night run qwen10
 
 - [x] Q1. A journal that can not be written stops the turn instead of reporting a tool error (2208 passed in 95.57s (0:01:35))
-- [ ] Q2. Packs read the Whisper model and Piper voices from the settings now, not from import time
+- [x] Q2. Packs read the Whisper model and Piper voices from the settings now, not from import time (2209 passed in 98.19s (0:01:38))
 - [ ] Q3. The Setup tab can use a custom model server URL
 - [ ] Q4. A wrong-typed value in config.toml does not break or wipe the Settings tab
 - [ ] Q5. Two dashboard polls of the same route fetch once

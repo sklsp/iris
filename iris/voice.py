@@ -25,8 +25,13 @@ from iris.overlay import Overlay, launch
 if TYPE_CHECKING:
     import numpy as np
 
+def whisper_model() -> str | None:
+    """The Whisper model from config.toml, read at call time so a change on the Settings tab needs no restart."""
+    return config.setting("IRIS_WHISPER", "whisper_model") or None
+
+
 # None means automatic: large-v3-turbo on the GPU when CUDA works (pip install -e .[gpu]), small on the CPU otherwise.
-WHISPER_MODEL = config.setting("IRIS_WHISPER", "whisper_model") or None
+WHISPER_MODEL = whisper_model()
 WHISPER_DEVICE = os.environ.get("IRIS_WHISPER_DEVICE")  # "cpu" or "cuda" to force one
 RATE = 16000
 FRAME = 1280  # 80 ms at 16 kHz, the frame size openWakeWord wants
@@ -56,8 +61,15 @@ _KOKORO_FILES = {
 # Piper's own command line in a separate process. Get a voice with
 #   python -m piper.download_voices nl_NL-ronnie-medium --data-dir %USERPROFILE%/.iris/piper
 PIPER_DIR = Path(os.environ.get("IRIS_PIPER_DIR") or (Path.home() / ".iris" / "piper"))
-PIPER_VOICES = {"nl": config.setting("IRIS_PIPER_NL", "piper_nl", "nl_NL-ronnie-medium"),
-                "en": config.setting("IRIS_PIPER_EN", "piper_en", "en_US-joe-medium")}
+def piper_voices() -> dict[str, str]:
+    """The Piper voices from config.toml, read at call time so a change on the Settings tab needs no restart."""
+    return {"nl": config.setting("IRIS_PIPER_NL", "piper_nl", "nl_NL-ronnie-medium"),
+            "en": config.setting("IRIS_PIPER_EN", "piper_en", "en_US-joe-medium")}
+
+
+# The default voices for each language; config.toml (piper_nl / piper_en) can point to any other voice
+# from the same list.
+PIPER_VOICES = piper_voices()
 
 
 def piper_runtime() -> Path:

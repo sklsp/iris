@@ -17,7 +17,6 @@ import queue
 import subprocess
 import sys
 import threading
-import time
 import urllib.request
 import zipfile
 from collections import deque
@@ -45,9 +44,10 @@ def gpu_dir() -> Path:
     return home() / "gpu"
 
 
-def installed_marker(pack_id: str) -> Path:
-    """The file that says this pack's install ran to the end, in its own folder under ~/.iris."""
-    return home() / pack_id / ".installed"
+def installing_marker(pack_id: str) -> Path:
+    """The file that says an install of this pack started and has not finished. A marker of "started" rather than
+    "finished" keeps packs installed before markers existed counted as installed."""
+    return home() / pack_id / ".installing"
 
 
 def piper_runtime() -> Path:
@@ -164,7 +164,7 @@ def packs() -> list[dict]:
          "available": nvidia, "installed": _voxcpm_installed},
     ]
     for r in rows:
-        r["installed"] = bool(r["available"]) and installed_marker(r["id"]).exists() and r["installed"]()
+        r["installed"] = bool(r["available"]) and r["installed"]() and not installing_marker(r["id"]).exists()
     return rows
 
 
@@ -260,20 +260,19 @@ _lock = threading.Lock()
 
 
 def run(job: Job, popen: Callable = subprocess.Popen) -> None:
-    """Run the pack's steps in order; the first failure stops it. The .installed marker is deleted before the
-    first step and written only when every step succeeded, so an interrupted install never counts as installed."""
+    """Run the pack's steps in order; the first failure stops it. The .installing marker is written before the
+    first step and removed only when every step succeeded, so an interrupted install never counts as installed."""
     try:
-        marker = installed_marker(job.pack)
-        if marker.exists():
-            marker.unlink()  # a rerun starts not-installed; only this run's success writes it back
+        marker = installing_marker(job.pack)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("installing\n", encoding="utf-8")
         for title, step in steps(job.pack):
             job.say(f"== {title}")
             if callable(step):
                 step(job)
                 continue
             _run_step(job, title, step, popen)
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text("installed\n", encoding="utf-8")
+        marker.unlink(missing_ok=True)
         job.say("== Done")
         job.state = "done"
     except Exception as exc:  # noqa: BLE001 - the user reads what went wrong on the Setup tab
@@ -285,7 +284,7 @@ def _run_step(job: Job, title: str, command: list[str], popen: Callable) -> None
     """One subprocess step: its output streams to the job and it is killed when STEP_TIMEOUT passes.
 
     The pipe is read in a thread so a silent hang (a pip stuck on the network) still hits the deadline; the main
-    loop only waits for the end-of-pipe signal with the remaining time as its timeout."""
+    loop waits for the end-of-pipe signal at most STEP_TIMEOUT seconds."""
     proc = popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                  env=child_env(job.pack), text=True, encoding="utf-8", errors="replace",
                  creationflags=subprocess.CREATE_NO_WINDOW)
@@ -298,23 +297,12 @@ def _run_step(job: Job, title: str, command: list[str], popen: Callable) -> None
         finished.put(True)
 
     threading.Thread(target=pump, name=f"iris-pack-out-{job.pack}", daemon=True).start()
-    deadline = time.monotonic() + STEP_TIMEOUT
-    timed_out = False
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            timed_out = True
-            break
-        try:
-            finished.get(timeout=remaining)
-            break
-        except queue.Empty:
-            timed_out = True
-            break
-    if timed_out:
+    try:
+        finished.get(timeout=STEP_TIMEOUT)
+    except queue.Empty:
         proc.kill()  # a hung step must not block every pack forever
         proc.wait()
-        raise RuntimeError(f"timed out after 30 minutes: {title}")
+        raise RuntimeError(f"timed out after 30 minutes: {title}") from None
     if proc.wait() != 0:
         raise RuntimeError(f"{title} failed (exit code {proc.returncode})")
 

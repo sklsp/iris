@@ -133,34 +133,31 @@ def test_an_install_interrupted_after_step_one_is_not_installed(plain, monkeypat
     outputs = iter([FakeProc(["ok"], 0), FakeProc([], 1)])
     job = packs.Job("piper")
     packs.run(job, lambda cmd, **kw: next(outputs))
-    assert job.state == "failed" and not packs.installed_marker("piper").exists()
+    assert job.state == "failed" and packs.installing_marker("piper").exists()
     assert by_id(packs.packs())["piper"]["installed"] is False  # interrupted: never Done
 
 
-def test_a_finished_install_writes_the_marker(monkeypatch):
+def test_a_finished_install_removes_the_marker(monkeypatch):
     monkeypatch.setattr(packs, "steps", lambda pack: [("one", ["a"])])
     job = packs.Job("piper")
     packs.run(job, lambda cmd, **kw: FakeProc(["ok"], 0))
-    assert job.state == "done" and packs.installed_marker("piper").exists()
+    assert job.state == "done" and not packs.installing_marker("piper").exists()
 
 
-def test_a_rerun_deletes_the_marker_before_its_first_step(monkeypatch):
+def test_a_rerun_writes_the_marker_before_its_first_step(monkeypatch):
+    seen = []
     monkeypatch.setattr(packs, "steps", lambda pack: [("one", ["a"])])
-    marker = packs.installed_marker("piper")
-    marker.parent.mkdir(parents=True)
-    marker.write_text("installed\n", encoding="utf-8")
     job = packs.Job("piper")
-    packs.run(job, lambda cmd, **kw: FakeProc([], 3))
-    assert job.state == "failed" and not marker.exists()
+    packs.run(job, lambda cmd, **kw: seen.append(packs.installing_marker("piper").exists()) or FakeProc([], 3))
+    assert seen == [True] and job.state == "failed"
 
 
-def test_a_pack_counts_as_installed_only_with_its_marker(plain, monkeypatch):
+def test_a_pack_installed_before_markers_existed_still_counts(plain, monkeypatch):
     monkeypatch.setattr(packs, "_piper_installed", lambda: True)
-    rows = by_id(packs.packs())
-    assert rows["piper"]["installed"] is False  # the content is there but no marker: not a finished install
-    packs.installed_marker("piper").parent.mkdir(parents=True)
-    packs.installed_marker("piper").write_text("installed\n", encoding="utf-8")
-    assert by_id(packs.packs())["piper"]["installed"] is True
+    assert by_id(packs.packs())["piper"]["installed"] is True  # no marker at all: an older finished install
+    packs.installing_marker("piper").parent.mkdir(parents=True)
+    packs.installing_marker("piper").write_text("installing\n", encoding="utf-8")
+    assert by_id(packs.packs())["piper"]["installed"] is False  # a started, unfinished install
 
 
 def test_start_runs_one_install_at_a_time(plain, monkeypatch):

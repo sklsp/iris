@@ -7,7 +7,7 @@
 - [x] Q5. One bad sentence does not switch the voice for the rest of the run (2187 passed in 118.26s (0:01:58))
 - [x] Q6. Pack installs have a time limit and an interrupted one is not Done (2192 passed in 107.33s (0:01:47))
 - [x] Q7. If the tray icon fails, closing the window quits instead of hiding Iris (2195 passed in 109.15s (0:01:49))
-- [ ] Q8. A failed browser connection is a BrowserError
+- [x] Q8. A failed browser connection is a BrowserError (2199 passed in 119.17s (0:01:59))
 - [ ] Q9. ASP.NET pages are not read as empty
 - [ ] Q10. click does not click twice
 - [ ] Q11. config.toml is parsed once until it changes

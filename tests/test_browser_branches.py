@@ -132,6 +132,64 @@ def test_the_connection_passes_the_handshake_as_timeout_and_sets_fifteen_seconds
     assert conn._slow == (TimeoutError, WebSocketTimeoutException)
 
 
+class _WsFailure(Exception):  # stands in for the websocket library's own exception class
+    pass
+
+
+def _ws_module_raising(error: Exception) -> types.ModuleType:
+    """A fake websocket module whose create_connection raises `error`."""
+    mod = types.ModuleType("websocket")
+
+    def create_connection(url, timeout=None, suppress_origin=False):
+        raise error
+
+    mod.create_connection = create_connection
+    mod.WebSocketException = _WsFailure
+    return mod
+
+
+def test_a_refused_devtools_port_becomes_a_browser_error(monkeypatch):
+    monkeypatch.setitem(sys.modules, "websocket", _ws_module_raising(OSError("connection refused")))
+    with pytest.raises(browser.BrowserError) as exc:
+        browser.Connection("ws://127.0.0.1:9/devtools/browser/x")
+    assert str(exc.value) == ("could not reach the browser's DevTools port; make sure the browser is open "
+                              "and has allowed remote control")
+    assert isinstance(exc.value.__cause__, OSError)
+
+
+def test_a_timed_out_devtools_port_becomes_a_browser_error(monkeypatch):
+    monkeypatch.setitem(sys.modules, "websocket", _ws_module_raising(TimeoutError("timed out")))
+    with pytest.raises(browser.BrowserError) as exc:
+        browser.Connection("ws://127.0.0.1:9/devtools/browser/x")
+    assert isinstance(exc.value.__cause__, TimeoutError)
+
+
+def test_the_websocket_librarys_own_failure_becomes_a_browser_error(monkeypatch):
+    monkeypatch.setitem(sys.modules, "websocket", _ws_module_raising(_WsFailure("bad handshake")))
+    with pytest.raises(browser.BrowserError) as exc:
+        browser.Connection("ws://127.0.0.1:9/devtools/browser/x")
+    assert isinstance(exc.value.__cause__, _WsFailure)
+
+
+def test_web_search_takes_its_fallback_once_when_the_connect_fails(monkeypatch):
+    from iris import tools, web
+
+    browser._watching.clear()  # an earlier test may have left the watcher flag set
+    browser._conn = None
+    monkeypatch.setitem(sys.modules, "websocket", _ws_module_raising(OSError("connection refused")))
+    monkeypatch.setattr(browser, "_ws_url", lambda: "ws://127.0.0.1:9/devtools/browser/x")
+    calls = []
+
+    def fake_search(query):
+        calls.append(query)
+        return [{"title": "A result.", "url": "https://a.example/", "snippet": "It."}]
+
+    monkeypatch.setattr(web, "search", fake_search)
+    out = tools.web_search("sinners 2025 film")
+    assert calls == ["sinners 2025 film"]  # the DuckDuckGo fallback ran exactly once
+    assert out.startswith("1. A result.")
+
+
 class ScriptedWs:  # answers recv() with prepared replies, one per call
     def __init__(self, replies):
         self.replies = list(replies)

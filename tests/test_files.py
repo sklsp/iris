@@ -607,7 +607,7 @@ def test_one_unreadable_entry_never_hides_the_rest_of_a_folder(tmp_path, monkeyp
 
 @pytest.mark.parametrize("name,data", [("out.txt", "dir > out.txt\ncafé".encode("utf-16")),
                                        ("out.log", "\ufeffdir > out.txt\ncafé".encode("utf-16-be")),
-                                       ("notes.md", "\ufeffdir > out.txt\ncafé".encode("utf-8")),
+                                       ("notes.md", "\ufeffdir > out.txt\ncafé".encode()),
                                        ("data.cfg", "dir > out.txt\ncafé".encode("utf-16"))])
 def test_utf16_and_utf8_bom_files_read_as_text(tmp_path, name, data):
     (tmp_path / name).write_bytes(data)

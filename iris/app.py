@@ -297,13 +297,13 @@ class Tray:
         self.menu: Any = None
         self.ready = threading.Event()
 
-    def start(self) -> None:
-        """Start the tray's own STA thread and wait up to ten seconds for it to show the icon."""
+    def start(self) -> bool:
+        """Start the tray's own STA thread and wait up to ten seconds for it to show the icon; True when it did."""
         t = self.f.Thread(self.f.ThreadStart(self._run))
         t.SetApartmentState(self.f.ApartmentState.STA)
         t.IsBackground = True
         t.Start()
-        self.ready.wait(10)
+        return self.ready.wait(10)
 
     def _later(self, fn: Callable[[], object]) -> Callable[[object, object], None]:
         return lambda _sender, _args: threading.Thread(target=fn, daemon=True).start()
@@ -315,28 +315,31 @@ class Tray:
 
     def _run(self) -> None:
         f = self.f
-        self.icon = f.NotifyIcon()
-        self.icon.Icon = f.Icon(str(ICON))
-        self.icon.Text = TITLE
-        self.menu = f.ContextMenuStrip()
-        listen = self._item("Start listening", self.app.toggle_listening)
-        for entry in (self._item("Open Iris", self.app.open), listen, f.ToolStripSeparator(),
-                      self._item("Settings", self.app.settings), f.ToolStripSeparator(),
-                      self._item("Quit Iris", self.app.quit)):
-            self.menu.Items.Add(entry)
+        try:
+            self.icon = f.NotifyIcon()
+            self.icon.Icon = f.Icon(str(ICON))
+            self.icon.Text = TITLE
+            self.menu = f.ContextMenuStrip()
+            listen = self._item("Start listening", self.app.toggle_listening)
+            for entry in (self._item("Open Iris", self.app.open), listen, f.ToolStripSeparator(),
+                          self._item("Settings", self.app.settings), f.ToolStripSeparator(),
+                          self._item("Quit Iris", self.app.quit)):
+                self.menu.Items.Add(entry)
 
-        def opening(_sender: object, _args: object) -> None:
-            listen.Text = "Stop listening" if self.app.voice.running else "Start listening"
+            def opening(_sender: object, _args: object) -> None:
+                listen.Text = "Stop listening" if self.app.voice.running else "Start listening"
 
-        self.menu.Opening += opening
-        self.icon.DoubleClick += self._later(self.app.open)
-        self.icon.ContextMenuStrip = self.menu
-        _ = self.menu.Handle  # create the handle now, so close() can BeginInvoke on this thread
-        self.icon.Visible = True
-        self.ready.set()
-        f.Application.Run()
-        self.icon.Visible = False
-        self.icon.Dispose()
+            self.menu.Opening += opening
+            self.icon.DoubleClick += self._later(self.app.open)
+            self.icon.ContextMenuStrip = self.menu
+            _ = self.menu.Handle  # create the handle now, so close() can BeginInvoke on this thread
+            self.icon.Visible = True
+            self.ready.set()
+            f.Application.Run()
+            self.icon.Visible = False
+            self.icon.Dispose()
+        except Exception as exc:  # no shell or a failed icon: leave ready unset, so closing the window quits Iris
+            print(f"the tray icon could not start: {exc}")
 
     def notify(self, text: str) -> None:
         """A balloon next to the clock: never takes focus from the window Iris types into."""
@@ -418,8 +421,10 @@ class App:
                 self.tray.notify(message)
 
     def _on_closing(self) -> bool:
-        """The close button hides the window to the tray; only Quit ends the app."""
+        """The close button hides the window to the tray; without a tray icon it quits Iris instead."""
         if self._quitting:
+            return True
+        if self.tray is None or not self.tray.ready.is_set():  # no icon to come back from, so closing ends Iris
             return True
         threading.Thread(target=self.window.hide, daemon=True).start()
         if not self._told_tray and self.tray is not None:

@@ -25,8 +25,7 @@
 - One agent turn costs about a third of what it did outside the model, and long sessions trim their history with room to spare, so the model server's cache is reused more often.
 - One tool result is at most 24000 characters, with a marker that says how much was left out; browser pages say when they were cut.
 - The dashboard does not poll while its window is hidden.
-- config.toml is parsed once until it changes, the CPU reading no longer waits 0.3 s,
-  and the dashboard stops polling while hidden.
+- config.toml is parsed once until it changes, and the CPU reading no longer waits 0.3 s.
 
 
 ### Skills

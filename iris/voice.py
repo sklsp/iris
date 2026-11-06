@@ -25,6 +25,7 @@ from iris.overlay import Overlay, launch
 if TYPE_CHECKING:
     import numpy as np
 
+
 def whisper_model() -> str | None:
     """The Whisper model from config.toml, read at call time so a change on the Settings tab needs no restart."""
     return config.setting("IRIS_WHISPER", "whisper_model") or None
@@ -61,6 +62,8 @@ _KOKORO_FILES = {
 # Piper's own command line in a separate process. Get a voice with
 #   python -m piper.download_voices nl_NL-ronnie-medium --data-dir %USERPROFILE%/.iris/piper
 PIPER_DIR = Path(os.environ.get("IRIS_PIPER_DIR") or (Path.home() / ".iris" / "piper"))
+
+
 def piper_voices() -> dict[str, str]:
     """The Piper voices from config.toml, read at call time so a change on the Settings tab needs no restart."""
     return {"nl": config.setting("IRIS_PIPER_NL", "piper_nl", "nl_NL-ronnie-medium"),

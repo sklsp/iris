@@ -70,6 +70,9 @@
   search page, and a deck or sheet with no details is made with general content instead of a question.
 - [model] Clearer tool descriptions: a smart device without a tool goes straight to a new-skill plan, a window
   that is not open is not retried, and one weather call answers for tomorrow.
+- Review fixes: a failing fallback voice no longer replaces VoxCPM2 for good and a dropped VoxCPM2 frees its GPU,
+  Kokoro no longer pauses between sentences, a hold line ignores the wake word, config reads are deep copies, and
+  an answer after the last step is asked for in words.
 
 
 ### Docs

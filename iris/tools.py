@@ -1194,7 +1194,9 @@ TOOLS = {t.name: t for t in [
          {}, [], SAFE, clock),
     Tool("weather",
          "The current weather for a place (or the city from config.toml) plus up to seven days of forecast; "
-         "use it when the user asks about the weather or how warm or wet it will be.",
+         "use it when the user asks about the weather or how warm or wet it will be."
+         " One call holds today and the coming days, and tomorrow is the first date after today in it:"
+         " answer from that result, do not call it again or search the web.",
          {"place": S, "days": {"type": "integer"}}, [], SAFE, weather),
     Tool("email_draft",
          "Open a new email as a draft in the user's default mail app; it never sends, the user reviews and presses "

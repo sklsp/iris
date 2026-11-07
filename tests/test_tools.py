@@ -958,6 +958,14 @@ def test_request_capability_description_covers_smart_devices_and_online_services
     assert phrase in desc
 
 
+# --- weather description --------------------------------------------------------
+def test_weather_description_says_one_call_holds_tomorrow_too():
+    desc = tools.TOOLS["weather"].description
+    phrase = ("One call holds today and the coming days, and tomorrow is the first date after"
+              " today in it: answer from that result, do not call it again or search the web.")
+    assert phrase in desc
+
+
 # --- registry guards -----------------------------------------------------------
 def test_every_tool_is_documented():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")

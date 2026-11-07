@@ -932,6 +932,16 @@ def test_queue_take_points_numbered_removals_to_queue_remove():
     assert "haal uit de wachtrij" in remove
 
 
+# --- make_presentation and make_spreadsheet descriptions -------------------------
+def test_make_office_descriptions_do_not_ask_what_to_put_in():
+    pres = tools.TOOLS["make_presentation"].description
+    sheet = tools.TOOLS["make_spreadsheet"].description
+    phrase = ("When the request gives no details and one quick look finds none,"
+              " make it anyway with sensible general content and say so in the answer; do not ask first.")
+    assert phrase in pres
+    assert phrase in sheet
+
+
 # --- registry guards -----------------------------------------------------------
 def test_every_tool_is_documented():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")

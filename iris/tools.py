@@ -1131,7 +1131,9 @@ TOOLS = {t.name: t for t in [
     Tool("make_presentation",
          "Make a PowerPoint .pptx for the user from a title and slide entries; use it when the user wants slides"
          " or a deck about a topic. Write the actual content yourself: real titles and bullets, 4 to 8 slides"
-         " unless the user asks otherwise; for a research topic use web_search and web_read first.",
+         " unless the user asks otherwise; for a research topic use web_search and web_read first."
+         " When the request gives no details and one quick look finds none, make it anyway with sensible"
+         " general content and say so in the answer; do not ask first.",
          {"path": S, "title": S,
           "slides": {"type": "array", "items": {"type": "object",
                                                 "properties": {"title": S,
@@ -1141,7 +1143,9 @@ TOOLS = {t.name: t for t in [
     Tool("make_spreadsheet",
          "Make a spreadsheet .xlsx for the user from named worksheets of rows; use it when the user wants a table,"
          " list or data file. Write the actual content yourself: real headers and data rows about the topic; for a"
-         " research topic use web_search and web_read first.",
+         " research topic use web_search and web_read first."
+         " When the request gives no details and one quick look finds none, make it anyway with sensible"
+         " general content and say so in the answer; do not ask first.",
          {"path": S,
           "sheets": {"type": "array", "items": {"type": "object",
                                                 "properties": {"name": S,

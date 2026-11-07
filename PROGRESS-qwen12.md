@@ -1,4 +1,4 @@
 - [x] Q1. queue_remove also covers 'take it out of the queue' (2227 passed in 114.88s (0:01:54))
 - [x] Q2. open_url's result is the answer to a site search (2228 passed in 97.75s (0:01:37))
-- [ ] Q3. make_presentation and make_spreadsheet do not ask what to put in
+- [x] Q3. make_presentation and make_spreadsheet do not ask what to put in (2229 passed in 97.20s (0:01:37))
 - [ ] Q4. CHANGELOG for this run

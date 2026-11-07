@@ -918,6 +918,14 @@ def test_queue_take_and_remove_descriptions_point_to_the_right_tool():
     assert "call queue_list first" in remove
 
 
+def test_queue_take_points_numbered_removals_to_queue_remove():
+    take = tools.TOOLS["queue_take"].description
+    remove = tools.TOOLS["queue_remove"].description
+    assert "A request to take a prompt out of the queue by its number is queue_remove." in take
+    assert "take it out of the queue" in remove
+    assert "haal uit de wachtrij" in remove
+
+
 # --- registry guards -----------------------------------------------------------
 def test_every_tool_is_documented():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")

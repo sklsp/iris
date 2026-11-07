@@ -1043,14 +1043,16 @@ TOOLS = {t.name: t for t in [
     Tool("queue_add", "Put a prompt in the agent queue for one agent (a repo or chat name). Asks the user first.",
           {"agent": S, "text": S}, ["agent", "text"], CONFIRM, queue_add),
     Tool("queue_take",
-         "Take the oldest waiting prompt for one agent out of the queue to paste it into that agent:"
+         "Hand the oldest waiting prompt for one agent to that agent:"
          " returns its text so it can be pasted with type_text."
-         " Only for handing a prompt to an agent, never to delete one. Asks the user first.",
+         " Only for handing a prompt to an agent, never to delete one."
+         " A request to take a prompt out of the queue by its number is queue_remove. Asks the user first.",
           {"agent": S}, ["agent"], CONFIRM, queue_take),
     Tool("queue_remove",
          "Delete one waiting prompt from the agent queue by its id."
-         " Use this whenever the user wants a prompt removed, deleted or gone,"
-         " also when they name it by its text: call queue_list first to find its id. Asks the user first.",
+         " 'Remove', 'delete', 'gone' or 'take it out of the queue'"
+         " (Dutch 'haal uit de wachtrij') all mean this tool,"
+         " also when the user names it by its text: call queue_list first to find its id. Asks the user first.",
          {"id": {"type": "integer"}}, ["id"], CONFIRM, queue_remove),
     Tool("queue_move",
          "Move one waiting prompt in the agent queue one place up (earlier) or down (later)"

@@ -590,8 +590,9 @@ class VoiceSession:
         if panel:  # a hold line must not move the panel off "Thinking..."
             self.overlay.send("answer", text)  # before the watcher starts, so an interruption always comes after it
         stop = self._stop = threading.Event()
-        # while next_request listens (a timer speaking from its own thread), it owns the frames and hears the wake word
-        watch = not self._listening.is_set()
+        # while next_request listens (a timer speaking from its own thread), it owns the frames and hears the wake word;
+        # a hold line is not watched either, so "One moment." can never send "interrupted" or skip the next wake word
+        watch = panel and not self._listening.is_set()
         watcher = threading.Thread(target=self._watch_for_wake, args=(stop,), daemon=True)
         if watch:
             watcher.start()

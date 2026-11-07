@@ -590,8 +590,9 @@ class VoiceSession:
         if panel:  # a hold line must not move the panel off "Thinking..."
             self.overlay.send("answer", text)  # before the watcher starts, so an interruption always comes after it
         stop = self._stop = threading.Event()
-        # while next_request listens (a timer speaking from its own thread), it owns the frames and hears the wake word
-        watch = not self._listening.is_set()
+        # while next_request listens (a timer speaking from its own thread), it owns the frames and hears the wake word;
+        # a hold line is not watched either, so "One moment." can never send "interrupted" or skip the next wake word
+        watch = panel and not self._listening.is_set()
         watcher = threading.Thread(target=self._watch_for_wake, args=(stop,), daemon=True)
         if watch:
             watcher.start()
@@ -892,10 +893,11 @@ class Speaker:
                 pass
 
     def _note_failure(self, key: str, display: str, fallback: str) -> None:
-        """Count one failure of engine `key`; after three in a row the voice switches to `fallback` for good."""
+        """Count one failure of engine `key`; after three in a row the voice switches to `fallback` for good. Only the
+        chosen engine is ever switched away from: a stand-in (Piper while VoxCPM loads) failing must not do it."""
         count = self._failures.get(key, 0) + 1
         self._failures[key] = count
-        if count >= 3:
+        if count >= 3 and self.engine == key:
             print(f"{display} failed {count} times; using {fallback} from now on.")
             self.engine = fallback
 
@@ -972,6 +974,12 @@ class Speaker:
         except Exception as exc:  # noqa: BLE001 - fall back to Piper so Iris keeps talking
             print(f"VoxCPM failed ({exc}); using Piper instead.")
             self._note_failure("voxcpm", "VoxCPM", "piper")  # switches the voice only after three in a row
+            if self.engine != "voxcpm" and self._vox is not None:  # switched away for good: free its GPU memory now
+                try:
+                    self._vox.close()
+                except Exception:  # noqa: BLE001 - stopping the worker must not hide the fallback
+                    pass
+                self._vox = None
             return self._speak_piper(text, stop_event)
 
     def _kokoro_model(self) -> Any:
@@ -998,14 +1006,15 @@ class Speaker:
                     if stop_event is not None and stop_event.is_set():
                         return False
                     # sd.play returns at once and the next play would cut this chunk off: wait for its end,
-                    # stopping at once for a wake word
+                    # stopping at once for a wake word. asyncio.sleep keeps the loop free so create_stream can
+                    # make the next chunk while this one plays
                     sd.play(chunk.astype("float32"), sr)
                     end = time.perf_counter() + len(chunk) / sr
                     while time.perf_counter() < end:
                         if stop_event is not None and stop_event.is_set():
                             getattr(sd, "stop", lambda: None)()
                             return False
-                        time.sleep(0.02)
+                        await asyncio.sleep(0.02)
                 return True
 
             ok = asyncio.run(play())

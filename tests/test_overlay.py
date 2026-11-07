@@ -392,6 +392,21 @@ def test_a_hold_line_speaks_without_touching_the_panel():
     assert s.speaker.said == ["One moment."]  # the mouth still spoke it
 
 
+def test_a_hold_line_does_not_watch_for_the_wake_word():
+    s = _session("")
+    s.wake = _Wake(True)  # Jay says the wake word while the hold line plays
+    s._frames.put(np.zeros(FRAME, dtype="float32"))
+
+    def speak(text, stop_event=None):
+        stop_event.wait(1.0)  # talk long enough for a watcher to hear it if there is one
+        return True
+
+    s.speaker.speak = speak  # type: ignore[method-assign]
+    s.speak_async("One moment.", panel=False).join()
+    assert not s._wake_seen  # no barge-in was recorded, so the next request still waits for a wake word
+    assert s.overlay.sent == []  # and the overlay never heard "interrupted" either
+
+
 def test_voice_mode_carries_on_with_a_dead_overlay():
     """The point of the separate process: whatever happened to it, the voice loop hears and answers as before."""
     proc = subprocess.Popen([sys.executable, "-c", "pass"], stdin=subprocess.PIPE, text=True, encoding="ascii")

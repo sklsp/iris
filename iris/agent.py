@@ -65,7 +65,7 @@ MAX_RESULT_CHARS = 24_000  # one tool result: a long window or page must not fil
 OUT_OF_STEPS = ("You have used all your steps for this request. Do not call tools. Answer now, in the language of the "
                 "request, with what you found so far, and say in one sentence what is still left to do.")
 _ITEM_LINE = re.compile(r"\[\d+\] ")
-_WRAPPER_TAG = re.compile(r"<\s*/?\s*untrusted_data\s*>", re.I)
+_WRAPPER_TAG = re.compile(r"<\s*/?\s*untrusted_data[^>]*>", re.I)
 
 
 def _cap(result: str) -> str:
@@ -256,13 +256,23 @@ class Agent:
     def _out_of_steps(self, schemas: list[dict]) -> str:
         """One last call that asks for an answer without tools, so the user hears what was found instead of nothing.
         The same tool list goes along: the server keeps the whole conversation so far cached (its start holds the
-        tools), and this call comes after the most steps, when that cache is largest."""
+        tools), and this call comes after the most steps, when that cache is largest. When the model answers with a
+        tool call anyway, one more call without any tools asks for words."""
         self.messages.append({"role": "user", "content": OUT_OF_STEPS})
         try:
             reply = self.llm.chat(self.messages, schemas)
         except _LLM_ERRORS as exc:
             self.journal.log(event="llm_error", error=_llm_error(exc))
             reply = None
+        if reply is not None and reply.calls and not reply.text.strip():
+            # it answered "do not call tools" with a tool call, which can not be used; ask once more without any tools
+            try:
+                retry = self.llm.chat(self.messages, [])
+            except _LLM_ERRORS as exc:
+                self.journal.log(event="llm_error", error=_llm_error(exc))
+                retry = None
+            if retry is not None:
+                reply = retry
         self.messages.pop()  # the user never said it
         if reply is None or reply.calls or not reply.text.strip():
             return ""

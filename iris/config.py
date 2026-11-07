@@ -13,6 +13,7 @@ applies to the next request without a restart.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import tomllib
@@ -33,8 +34,9 @@ _cache: tuple[tuple[str, int, int, int], dict] | None = None
 
 def raw() -> dict:
     """The file as parsed; {} when it is missing or broken (error() says why). A UTF-8 BOM, which Notepad and
-    PowerShell write, is fine. Parsed once per (path, file id, mtime_ns, size);
-    a changed, removed or new file is read again, also a new file of the same size within one clock tick."""
+    PowerShell write, is fine. The result is a deep copy, so callers may change it. Parsed once per
+    (path, file id, mtime_ns, size); a changed, removed or new file is read again, also a new file of the same
+    size within one clock tick."""
     global _cache
     path = config_path()
     try:
@@ -43,13 +45,13 @@ def raw() -> dict:
         return {}
     key = (str(path), st.st_ino, st.st_mtime_ns, st.st_size)
     if _cache is not None and _cache[0] == key:
-        return dict(_cache[1])
+        return copy.deepcopy(_cache[1])
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
         return {}
     _cache = (key, data)
-    return dict(data)
+    return copy.deepcopy(data)
 
 
 def error() -> str | None:

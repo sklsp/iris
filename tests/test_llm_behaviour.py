@@ -105,6 +105,16 @@ def test_a_caller_changing_the_dict_does_not_change_the_next_result(tmp_path, mo
     assert llm.read_settings() == {"model": "first"}  # the cache holds its own dict
 
 
+def test_a_caller_changing_a_nested_value_does_not_change_the_next_result(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"model": "first", "extra": ["a"]}), encoding="utf-8")
+    monkeypatch.setenv("IRIS_SETTINGS", str(path))
+    llm._cache = None
+    got = llm.read_settings()
+    got["extra"].append("x")  # a caller may change what it gets...
+    assert llm.read_settings()["extra"] == ["a"]  # ...but the cache keeps its own list, so later reads are untouched
+
+
 def test_chat_sends_full_body_and_parses_plain_text_reply(monkeypatch):
     seen = _fake_urlopen(
         monkeypatch, {"choices": [{"message": {"content": "hello there"}}]}

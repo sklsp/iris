@@ -991,7 +991,9 @@ TOOLS = {t.name: t for t in [
           "Never used to send messages or emails.",
          {"window": S, "keys": S}, ["window", "keys"], CONFIRM, press_keys, _press_keys_tier),
     Tool("focus_window", "Bring the window whose title contains `title` to the front and give it focus. The"
-                         " browser_* tools work on the page directly and need no focus first.",
+                         " browser_* tools work on the page directly and need no focus first."
+                         " When it answers that the window is not open, check list_windows at most once and tell"
+                         " the user; do not retry or open the app unless they asked to open it.",
          {"title": S}, ["title"], SAFE, focus_window),
     Tool("scroll", "Scroll up or down inside a desktop app's window (mouse wheel at its center). For a web page in"
                    " Brave, Chrome or Edge, use browser_scroll instead.",

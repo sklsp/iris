@@ -80,6 +80,13 @@ def test_missing_window_error_tells_the_model_to_stop_retrying(monkeypatch):
         "then tell the user instead of retrying.")
 
 
+def test_focus_window_description_says_not_open_is_not_retried():
+    desc = tools.TOOLS["focus_window"].description
+    phrase = ("When it answers that the window is not open, check list_windows at most once and tell"
+              " the user; do not retry or open the app unless they asked to open it.")
+    assert phrase in desc
+
+
 # --- scroll -------------------------------------------------------------------
 def test_scroll_down_sends_negative_delta(monkeypatch, fake_window):
     calls = []

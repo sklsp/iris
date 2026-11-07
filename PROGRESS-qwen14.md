@@ -1,4 +1,4 @@
 - [x] Q1. request_capability covers smart devices and online services (2239 passed in 95.36s (0:01:35))
-- [ ] Q2. focus_window: a window that is not open is not retried
+- [x] Q2. focus_window: a window that is not open is not retried (2240 passed in 97.22s (0:01:37))
 - [ ] Q3. weather: one call holds tomorrow too
 - [ ] Q4. CHANGELOG for this run

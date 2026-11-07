@@ -27,20 +27,21 @@ def config_path() -> Path:
     return Path(os.environ.get("IRIS_CONFIG") or (Path.home() / ".iris" / "config.toml"))
 
 
-_cache: tuple[tuple[str, int, int], dict] | None = None  # ((path, mtime_ns, size), parsed) until the file changes
+# ((path, file id, mtime_ns, size), parsed) until the file changes
+_cache: tuple[tuple[str, int, int, int], dict] | None = None
 
 
 def raw() -> dict:
     """The file as parsed; {} when it is missing or broken (error() says why). A UTF-8 BOM, which Notepad and
-    PowerShell write, is fine. Parsed once per (path, mtime_ns, size);
-    a changed, removed or new file is read again."""
+    PowerShell write, is fine. Parsed once per (path, file id, mtime_ns, size);
+    a changed, removed or new file is read again, also a new file of the same size within one clock tick."""
     global _cache
     path = config_path()
     try:
         st = path.stat()
     except OSError:
         return {}
-    key = (str(path), st.st_mtime_ns, st.st_size)
+    key = (str(path), st.st_ino, st.st_mtime_ns, st.st_size)
     if _cache is not None and _cache[0] == key:
         return dict(_cache[1])
     try:

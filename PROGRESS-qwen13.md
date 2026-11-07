@@ -1,0 +1,4 @@
+- [x] Q1. VoiceSession.speak_async(text, panel=False) speaks without touching the panel (2232 passed in 95.90s (0:01:35))
+- [ ] Q2. agent.hold_line and agent.start_hold
+- [ ] Q3. The voice loop says the hold line on a long request
+- [ ] Q4. CHANGELOG for this run

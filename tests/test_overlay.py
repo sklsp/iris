@@ -384,6 +384,14 @@ def test_an_interrupted_answer_does_not_idle():
     assert s.overlay.sent == [("answer", "Er was eens..."), "interrupted"]
 
 
+def test_a_hold_line_speaks_without_touching_the_panel():
+    s = _session("")
+    s.speak_async("One moment.", panel=False).join()
+    assert s.overlay.sent == []  # no "answer", no "idle": the panel keeps showing Thinking...
+    assert not s._answered  # left as it was: a hold line opens no follow-up window
+    assert s.speaker.said == ["One moment."]  # the mouth still spoke it
+
+
 def test_voice_mode_carries_on_with_a_dead_overlay():
     """The point of the separate process: whatever happened to it, the voice loop hears and answers as before."""
     proc = subprocess.Popen([sys.executable, "-c", "pass"], stdin=subprocess.PIPE, text=True, encoding="ascii")

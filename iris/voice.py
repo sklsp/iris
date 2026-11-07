@@ -570,22 +570,25 @@ class VoiceSession:
         self.speak_async(text)
         return self.wait_for_speech()
 
-    def speak_async(self, text: str) -> threading.Thread:
+    def speak_async(self, text: str, panel: bool = True) -> threading.Thread:
         """Speak in a background thread, so the agent can listen for the next request while Iris talks.
 
         A wake word during the speech stops it; the next next_request() then records straight away
-        instead of waiting for a new wake word."""
+        instead of waiting for a new wake word. With panel=False the overlay is left alone (a hold
+        line under "Thinking...") and no follow-up window opens."""
         with self._speak_lock:  # one speech at a time, whichever thread asks
             self.wait_for_speech()
             self._interrupted = False
-            self._answered = True
-            thread = threading.Thread(target=self._speak_and_watch, args=(text,), daemon=True)
+            if panel:
+                self._answered = True
+            thread = threading.Thread(target=self._speak_and_watch, args=(text, panel), daemon=True)
             self._speech = thread
             thread.start()
         return thread
 
-    def _speak_and_watch(self, text: str) -> None:
-        self.overlay.send("answer", text)  # before the watcher starts, so an interruption always comes after it
+    def _speak_and_watch(self, text: str, panel: bool = True) -> None:
+        if panel:  # a hold line must not move the panel off "Thinking..."
+            self.overlay.send("answer", text)  # before the watcher starts, so an interruption always comes after it
         stop = self._stop = threading.Event()
         # while next_request listens (a timer speaking from its own thread), it owns the frames and hears the wake word
         watch = not self._listening.is_set()
@@ -599,7 +602,7 @@ class VoiceSession:
         if watch:
             watcher.join(timeout=1.0)
         self._interrupted = not finished
-        if finished:  # not when a wake word or a cancel cut it short: the panel moved on
+        if panel and finished:  # not when a wake word or a cancel cut it short: the panel moved on
             self.overlay.send("idle")
 
     def _watch_for_wake(self, stop: threading.Event) -> None:

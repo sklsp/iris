@@ -1187,7 +1187,9 @@ TOOLS = {t.name: t for t in [
          {"target": S, "window": S}, ["target"], CONFIRM, click_on_screen, _click_on_screen_tier),
     Tool("close_window",
          "Close the first window whose title contains the given text (WM_CLOSE, so the app can still ask to save);"
-         " use it when the user asks to close an app or window.",
+         " use it when the user asks to close an app or window."
+         " The title match is a substring, so call it directly with the app name; no list_windows or focus_window"
+         " first.",
          {"title": S}, ["title"], CONFIRM, close_window),
     Tool("clock",
          "The local date and time, weekday and ISO week; use it when the user asks what time or day it is.",

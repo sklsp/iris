@@ -68,6 +68,8 @@
   refused instead of passing the prompt through cmd.exe.
 - [model] Clearer tool descriptions: taking a prompt out of the queue removes it, a site search answers from the
   search page, and a deck or sheet with no details is made with general content instead of a question.
+- [model] Clearer tool descriptions: a smart device without a tool goes straight to a new-skill plan, a window
+  that is not open is not retried, and one weather call answers for tomorrow.
 
 
 ### Docs

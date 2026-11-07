@@ -80,6 +80,13 @@ def test_missing_window_error_tells_the_model_to_stop_retrying(monkeypatch):
         "then tell the user instead of retrying.")
 
 
+def test_focus_window_description_says_not_open_is_not_retried():
+    desc = tools.TOOLS["focus_window"].description
+    phrase = ("When it answers that the window is not open, check list_windows at most once and tell"
+              " the user; do not retry or open the app unless they asked to open it.")
+    assert phrase in desc
+
+
 # --- scroll -------------------------------------------------------------------
 def test_scroll_down_sends_negative_delta(monkeypatch, fake_window):
     calls = []
@@ -940,6 +947,23 @@ def test_make_office_descriptions_do_not_ask_what_to_put_in():
               " make it anyway with sensible general content and say so in the answer; do not ask first.")
     assert phrase in pres
     assert phrase in sheet
+
+
+# --- request_capability description ---------------------------------------------
+def test_request_capability_description_covers_smart_devices_and_online_services():
+    desc = tools.TOOLS["request_capability"].description
+    phrase = ("A smart device or online service with no tool here (lamps, a thermostat, "
+              "a streaming account) is such a request: call this straight away, do not look"
+              " for an app or a window first.")
+    assert phrase in desc
+
+
+# --- weather description --------------------------------------------------------
+def test_weather_description_says_one_call_holds_tomorrow_too():
+    desc = tools.TOOLS["weather"].description
+    phrase = ("One call holds today and the coming days, and tomorrow is the first date after"
+              " today in it: answer from that result, do not call it again or search the web.")
+    assert phrase in desc
 
 
 # --- registry guards -----------------------------------------------------------

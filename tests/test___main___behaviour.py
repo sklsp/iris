@@ -106,6 +106,7 @@ class FakeSession:
     def __init__(self, script):
         self.script = list(script)
         self.async_said = []
+        self.async_panels = []
         self.blocking_said = []
         self.entered = 0
         self.exited = 0
@@ -113,8 +114,9 @@ class FakeSession:
     def next_request(self):
         return self.script.pop(0)
 
-    def speak_async(self, text):
+    def speak_async(self, text, panel=True):
         self.async_said.append(text)
+        self.async_panels.append(panel)
 
     def speak(self, text):
         self.blocking_said.append(text)
@@ -290,6 +292,91 @@ def test_voice_mode_uses_session_context_manager_and_async_speech(tmp_path, monk
     assert session.blocking_said == ["Proceed?"]
     assert session.entered == 1
     assert session.exited == 1
+
+
+def test_voice_mode_says_a_hold_line_when_the_answer_is_slow(tmp_path, monkeypatch):
+    """A request that runs longer than HOLD_AFTER gets one short holding line before the answer."""
+    import iris.agent as iagent
+
+    holder = _install_agent(monkeypatch)
+    session_holder = {}
+
+    def session_factory():
+        s = FakeSession(["what time is it", "quit"])
+        session_holder["session"] = s
+        return s
+
+    monkeypatch.setattr(ivoice, "VoiceSession", session_factory)
+    monkeypatch.setattr(iagent, "HOLD_AFTER", 0.01)
+
+    def slow_handle(self, request):
+        self.requests.append(request)
+        threading.Event().wait(0.2)  # longer than the patched HOLD_AFTER, so the hold line lands first
+        return f"answer:{request}"
+
+    monkeypatch.setattr(FakeAgent, "handle", slow_handle)
+    monkeypatch.setattr(sys, "argv", ["iris", "--voice", "--journal", str(tmp_path / "j.jsonl")])
+
+    imain.main()
+
+    session = session_holder["session"]
+    assert holder["agent"].requests == ["what time is it"]
+    assert session.async_said == ["Ready.", "One moment.", "answer:what time is it"]
+    assert session.async_panels[1] is False  # the hold line speaks without touching the panel
+
+
+def test_voice_mode_says_no_hold_line_when_the_answer_is_fast(tmp_path, monkeypatch):
+    """A quick answer comes back before HOLD_AFTER elapses, so no holding line is spoken."""
+    holder = _install_agent(monkeypatch)
+    session_holder = {}
+
+    def session_factory():
+        s = FakeSession(["hi there", "quit"])
+        session_holder["session"] = s
+        return s
+
+    monkeypatch.setattr(ivoice, "VoiceSession", session_factory)
+    monkeypatch.setattr(sys, "argv", ["iris", "--voice", "--journal", str(tmp_path / "j.jsonl")])
+
+    imain.main()
+
+    session = session_holder["session"]
+    assert holder["agent"].requests == ["hi there"]
+    assert session.async_said == ["Ready.", "answer:hi there"]  # no hold line
+
+
+def test_voice_mode_confirm_cancels_the_hold_line_before_asking(tmp_path, monkeypatch):
+    """A yes/no question is never talked over by a hold line."""
+    import iris.agent as iagent
+
+    holder = _install_agent(monkeypatch)
+    _ask_confirm_agent(monkeypatch)
+    session_holder = {}
+
+    def session_factory():
+        s = FakeSession(["do the thing", "quit"])
+        session_holder["session"] = s
+        return s
+
+    timers: list[threading.Timer] = []
+    real_start_hold = iagent.start_hold
+
+    def spy(say, request, after=None):
+        timer = real_start_hold(say, request, after=after)
+        timers.append(timer)
+        return timer
+
+    monkeypatch.setattr(ivoice, "VoiceSession", session_factory)
+    monkeypatch.setattr(imain, "start_hold", spy)
+    monkeypatch.setattr(sys, "argv", ["iris", "--voice", "--journal", str(tmp_path / "j.jsonl")])
+
+    imain.main()
+
+    assert len(timers) == 1 and timers[0].finished.is_set(), "confirm must cancel the running hold timer"
+    session = session_holder["session"]
+    assert holder["agent"].requests == ["do the thing"]
+    assert session.blocking_said == ["Proceed?"]
+    assert "One moment." not in session.async_said + session.blocking_said
 
 
 def test_main_installs_timers_that_speak_through_say(tmp_path, monkeypatch, capsys):

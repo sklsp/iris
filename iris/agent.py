@@ -170,11 +170,12 @@ def hold_line(request: str) -> str:
     return _HOLD[LANGS.index(_lang(request))]
 
 
-def start_hold(say: Callable[[str], object], request: str, after: float = HOLD_AFTER) -> threading.Timer:
+def start_hold(say: Callable[[str], object], request: str, after: float | None = None) -> threading.Timer:
     """A long silence sounds like Iris did not hear; say a short holding line once if the answer is still missing.
 
     The caller cancels it as soon as the answer, a question or a cancel comes."""
-    timer = threading.Timer(after, say, args=(hold_line(request),))
+    delay = HOLD_AFTER if after is None else after  # read at call time so tests can shorten it
+    timer = threading.Timer(delay, say, args=(hold_line(request),))
     timer.daemon = True
     timer.start()
     return timer

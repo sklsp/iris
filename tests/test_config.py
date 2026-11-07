@@ -250,6 +250,15 @@ def test_raw_parses_once_until_the_file_changes(tmp_path, monkeypatch):
     assert config.raw() == {}  # and so is a removed one
 
 
+def test_a_caller_changing_a_nested_value_does_not_change_the_next_result(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    path.write_text('plugins = ["a"]\n', encoding="utf-8")
+    monkeypatch.setenv("IRIS_CONFIG", str(path))
+    got = config.raw()
+    got["plugins"].append("x")  # a caller may change what it gets...
+    assert config.raw()["plugins"] == ["a"]  # ...but the cache keeps its own list, so later reads are untouched
+
+
 @pytest.mark.parametrize("content,why", [(b'name = "Jay', "Unterminated string"),
                                          (b'name = "caf\xe9"', "not UTF-8")])
 def test_doctor_says_when_config_toml_can_not_be_read(tmp_path, monkeypatch, content, why):

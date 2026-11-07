@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import json
 import os
 import re
@@ -28,7 +29,8 @@ _cache: tuple[tuple[str, int, int, int], dict] | None = None
 def read_settings() -> dict:
     """The contents of settings.json; re-read when the file changes (its path, file id, mtime or size).
 
-    A missing file, a broken one and a non-object top level all mean "no user choice"; callers get a copy."""
+    A missing file, a broken one and a non-object top level all mean "no user choice"; the result is a deep copy,
+    so callers may change it."""
     global _cache
     path = settings_path()
     try:
@@ -37,7 +39,7 @@ def read_settings() -> dict:
         return {}
     key = (str(path), st.st_ino, st.st_mtime_ns, st.st_size)
     if _cache is not None and _cache[0] == key:
-        return dict(_cache[1])
+        return copy.deepcopy(_cache[1])
     try:
         with path.open(encoding="utf-8") as f:
             data = json.load(f)
@@ -46,7 +48,7 @@ def read_settings() -> dict:
     if not isinstance(data, dict):
         return {}
     _cache = (key, data)
-    return dict(data)
+    return copy.deepcopy(data)
 
 
 def resolve_model() -> tuple[str, str]:

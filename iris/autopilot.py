@@ -47,10 +47,17 @@ def cline_cwd() -> str:
 def cline_command(text: str, cwd: str) -> list[str]:
     """The argv that starts a Cline CLI session with `text` in `cwd`.
 
-    A multi-line text is allowed; it stays one argv item. Empty or whitespace-only text raises ValueError."""
+    A multi-line text is allowed; it stays one argv item. Empty or whitespace-only text raises ValueError.
+    A .cmd or .bat CLI raises LookupError: Windows would run it through cmd.exe and parse the prompt again."""
     if not text.strip():
         raise ValueError("empty prompt")
-    return [cline_cli(), "-z", "-c", cwd, "-P", cline_provider(), "-m", cline_model(), text]
+    cli = cline_cli()
+    if cli.strip().strip('"').lower().endswith((".cmd", ".bat")):
+        raise LookupError(
+            "cline_cli points at a .cmd or .bat file, which would pass the prompt through cmd.exe; "
+            "set cline_cli to Cline's .exe, or to node plus Cline's script"
+        )
+    return [cli, "-z", "-c", cwd, "-P", cline_provider(), "-m", cline_model(), text]
 
 
 def cline_sessions(run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> list[dict] | None:

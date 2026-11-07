@@ -118,6 +118,12 @@ def test_open_url_allows_http_and_https(url, monkeypatch):
     assert started == [url]
 
 
+def test_open_url_description_says_answer_from_the_search_result():
+    desc = tools.TOOLS["open_url"].description
+    assert "After a search URL the result already holds the results:" in desc
+    assert "do not read, scroll or search the page again" in desc
+
+
 # --- files (trash + undo) -----------------------------------------------------
 @pytest.fixture
 def home(tmp_path, monkeypatch):

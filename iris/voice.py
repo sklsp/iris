@@ -892,10 +892,11 @@ class Speaker:
                 pass
 
     def _note_failure(self, key: str, display: str, fallback: str) -> None:
-        """Count one failure of engine `key`; after three in a row the voice switches to `fallback` for good."""
+        """Count one failure of engine `key`; after three in a row the voice switches to `fallback` for good. Only the
+        chosen engine is ever switched away from: a stand-in (Piper while VoxCPM loads) failing must not do it."""
         count = self._failures.get(key, 0) + 1
         self._failures[key] = count
-        if count >= 3:
+        if count >= 3 and self.engine == key:
             print(f"{display} failed {count} times; using {fallback} from now on.")
             self.engine = fallback
 
@@ -972,6 +973,12 @@ class Speaker:
         except Exception as exc:  # noqa: BLE001 - fall back to Piper so Iris keeps talking
             print(f"VoxCPM failed ({exc}); using Piper instead.")
             self._note_failure("voxcpm", "VoxCPM", "piper")  # switches the voice only after three in a row
+            if self.engine != "voxcpm" and self._vox is not None:  # switched away for good: free its GPU memory now
+                try:
+                    self._vox.close()
+                except Exception:  # noqa: BLE001 - stopping the worker must not hide the fallback
+                    pass
+                self._vox = None
             return self._speak_piper(text, stop_event)
 
     def _kokoro_model(self) -> Any:

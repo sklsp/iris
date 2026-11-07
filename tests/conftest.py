@@ -1,5 +1,7 @@
 import pytest
 
+collect_ignore_glob = ["fixtures/*"]  # data in old formats, such as a skill with its own test_skill.py
+
 
 @pytest.fixture(autouse=True)
 def _journal_in_tmp(tmp_path, monkeypatch):
@@ -21,7 +23,14 @@ def _journal_in_tmp(tmp_path, monkeypatch):
     monkeypatch.setattr(iris.browser, "_conn", None)
     import threading
 
+    monkeypatch.setattr(threading, "excepthook", threading.excepthook)  # main() installs its own; put it back after
     monkeypatch.setattr(iris.browser, "_watching", threading.Event())  # a voice-mode test may have started watch()
+    import iris.web  # nor DNS: every name resolves to a public documentation address unless a test says otherwise
+
+    monkeypatch.setattr(iris.web, "_resolve", lambda host: ["93.184.215.14"])
+    import iris.dashboard  # nor a probe of this PC's ports: tests that fake urlopen expect it to be asked
+
+    monkeypatch.setattr(iris.dashboard, "_nothing_listens", lambda url, timeout=0.5: False)
     import iris.update
 
     def offline():

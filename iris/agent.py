@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import inspect
 import json
 import os
@@ -60,9 +61,26 @@ def system_prompt(name: str | None = None, today: str | None = None) -> str:
 
 MAX_STEPS = 30  # a web task (research, then a few searches on a site) takes 15 to 25; a step is 2 to 5 s
 MAX_HISTORY_CHARS = 40_000
+MAX_RESULT_CHARS = 24_000  # one tool result: a long window or page must not fill the model's context on its own
 OUT_OF_STEPS = ("You have used all your steps for this request. Do not call tools. Answer now, in the language of the "
                 "request, with what you found so far, and say in one sentence what is still left to do.")
 _ITEM_LINE = re.compile(r"\[\d+\] ")
+_WRAPPER_TAG = re.compile(r"<\s*/?\s*untrusted_data\s*>", re.I)
+
+
+def _cap(result: str) -> str:
+    """At most MAX_RESULT_CHARS of a tool result, with a marker that says how much was left out."""
+    if len(result) <= MAX_RESULT_CHARS:
+        return result
+    return (result[:MAX_RESULT_CHARS] + f"\n[truncated, {len(result) - MAX_RESULT_CHARS} more characters; ask for a "
+            "smaller part if you need the rest]")
+
+
+def _wrap(result: str) -> str:
+    """A tool result as untrusted data. A tag inside the result that would close (or reopen) the wrapper is
+    defused first, so page or file text can never step outside it and pass as Iris's own words."""
+    inner = _WRAPPER_TAG.sub(lambda m: m[0].replace("<", "&lt;").replace(">", "&gt;"), _cap(result))
+    return f"<untrusted_data>\n{inner}\n</untrusted_data>"
 
 
 def _older_page(result: str) -> str:
@@ -84,7 +102,23 @@ class Journal:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-# What Iris says when the model can not answer, in English or Dutch (the languages the eval tests most).
+# what a model call can raise: the server is down or answers badly (OSError, HTTPException such as IncompleteRead),
+# or its JSON lacks what a reply needs (KeyError, IndexError, TypeError, ValueError)
+_LLM_ERRORS = (OSError, http.client.HTTPException, KeyError, IndexError, TypeError, ValueError)
+
+
+def _llm_error(exc: BaseException) -> str:
+    """The error for the journal, with the server's own reason when it answered with an HTTP error."""
+    text = repr(exc)
+    read = getattr(exc, "read", None)
+    if callable(read):
+        try:
+            text += " " + read().decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001 - the body is a bonus, the status is already in text
+            pass
+    return text[:500]
+
+
 # What Iris says when the model can not answer, per language: en, nl, de, fr, es.
 _SORRY = {
     "slow": ("That took me too long to think through. Try asking it in a shorter way.",
@@ -97,6 +131,16 @@ _SORRY = {
              "Ich erreiche das Modell in LM Studio gerade nicht. Versuch es gleich noch einmal.",
              "Je n'arrive pas à joindre le modèle dans LM Studio. Réessaie dans un instant.",
              "No puedo conectar con el modelo en LM Studio. Inténtalo de nuevo en un momento."),
+    "refused": ("The model server turned this request down; the journal says why. Often the conversation got too "
+                "long: say it again in fewer words.",
+                "De modelserver weigerde dit verzoek; het journaal zegt waarom. Vaak werd het gesprek te lang: zeg "
+                "het nog eens korter.",
+                "Der Modellserver hat diese Anfrage abgelehnt; das Journal sagt warum. Oft wurde das Gespräch zu "
+                "lang: sag es noch einmal kürzer.",
+                "Le serveur du modèle a refusé cette demande ; le journal dit pourquoi. Souvent la conversation est "
+                "devenue trop longue : redis-le plus brièvement.",
+                "El servidor del modelo rechazó esta petición; el diario dice por qué. A menudo la conversación se "
+                "hizo demasiado larga: dilo otra vez más corto."),
     "steps": ("I stopped: this took too many steps.", "Ik ben gestopt: dit kostte te veel stappen.",
               "Ich habe aufgehört: das hat zu viele Schritte gebraucht.",
               "Je me suis arrêtée : cela demandait trop d'étapes.",
@@ -128,11 +172,13 @@ class Agent:
         self.tools = tools() if callable(tools) else tools
         self.messages: list[dict] = [{"role": "system", "content": system_prompt(today=self.today)}]
         self.cancel = threading.Event()  # set from another thread (the overlay's cancel button) to stop this request
+        self._sizes: dict[int, tuple[str, int]] = {}  # id(message) -> (its content, its JSON size), for _trim
 
     def handle(self, request: str) -> str:
         """Run a request through model and tools until it is answered, refused or cancelled; returns what Iris says."""
         if callable(self._tools):
             self.tools = self._tools()
+        self._sizes.pop(id(self.messages[0]), None)
         self.messages[0] = {"role": "system", "content": system_prompt(today=self.today)}
         self.messages.append({"role": "user", "content": request})
         self._lang = _lang(request)  # confirm questions follow the language of the latest request
@@ -147,13 +193,15 @@ class Agent:
                 return self._cancelled()
             try:
                 reply = self.llm.chat(self.messages, schemas)
-            except (OSError, KeyError, IndexError, ValueError) as exc:
+            except _LLM_ERRORS as exc:
                 # LM Studio is down or full: end this turn only and keep the voice loop alive
-                self.journal.log(event="llm_error", error=repr(exc)[:500])
+                self.journal.log(event="llm_error", error=_llm_error(exc))
                 starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
                 del self.messages[starts[-1]:]
                 if "ran out of tokens" in str(exc):  # LM Studio answered, the model just thought too long
                     return _sorry("slow", request)
+                if 400 <= int(getattr(exc, "code", 0) or 0) < 500:  # it answered, and refused (context too long)
+                    return _sorry("refused", request)
                 return _sorry("down", request)
             if self.cancel.is_set():  # cancelled while the model was thinking: its reply is dropped
                 return self._cancelled()
@@ -164,17 +212,16 @@ class Agent:
                 return reply.text
             for call in reply.calls:
                 result = "cancelled by the user" if self.cancel.is_set() else self._run(call)
-                msg = {"role": "tool", "tool_call_id": call.id,
-                       "content": f"<untrusted_data>\n{result}\n</untrusted_data>"}
+                msg = {"role": "tool", "tool_call_id": call.id, "content": _wrap(result)}
                 if call.name.startswith("browser_"):
                     for old, text in pages:
-                        old["content"] = f"<untrusted_data>\n{_older_page(text)}\n</untrusted_data>"
+                        old["content"] = _wrap(_older_page(text))
                     pages.append((msg, result))
                 self.messages.append(msg)
         if self.cancel.is_set():
             return self._cancelled()
         self.journal.log(event="gave_up", steps=MAX_STEPS)
-        text = self._out_of_steps()
+        text = self._out_of_steps(schemas)
         self._trim()
         return text or _sorry("steps", request)
 
@@ -186,13 +233,15 @@ class Agent:
         self._trim()
         return ""
 
-    def _out_of_steps(self) -> str:
-        """One last call without tools, so the user hears what was found instead of nothing."""
+    def _out_of_steps(self, schemas: list[dict]) -> str:
+        """One last call that asks for an answer without tools, so the user hears what was found instead of nothing.
+        The same tool list goes along: the server keeps the whole conversation so far cached (its start holds the
+        tools), and this call comes after the most steps, when that cache is largest."""
         self.messages.append({"role": "user", "content": OUT_OF_STEPS})
         try:
-            reply = self.llm.chat(self.messages, [])
-        except (OSError, KeyError, IndexError, ValueError) as exc:
-            self.journal.log(event="llm_error", error=repr(exc)[:500])
+            reply = self.llm.chat(self.messages, schemas)
+        except _LLM_ERRORS as exc:
+            self.journal.log(event="llm_error", error=_llm_error(exc))
             reply = None
         self.messages.pop()  # the user never said it
         if reply is None or reply.calls or not reply.text.strip():
@@ -201,25 +250,55 @@ class Agent:
         self.journal.log(event="answer", text=reply.text)
         return reply.text
 
+    def _size(self, m: dict) -> int:
+        """A message's JSON size, measured once per content (older browser pages are shortened in place)."""
+        content = m.get("content") or ""
+        known = self._sizes.get(id(m))
+        if known is None or known[0] is not content:
+            known = (content, len(json.dumps(m, ensure_ascii=False)))
+            self._sizes[id(m)] = known
+        return known[1]
+
     def _trim(self) -> None:
-        """Drop the oldest whole turns until history fits in MAX_HISTORY_CHARS.
+        """Drop the oldest whole turns once history passes MAX_HISTORY_CHARS, down to three quarters of it.
 
         The system message is never dropped and the current turn (the last user message onward)
         is kept even when it alone exceeds budget; only whole turns go, so a tool result always
-        keeps its assistant tool_calls message."""
-        while True:
+        keeps its assistant tool_calls message. Trimming with room to spare changes the start of the
+        conversation (which the model server caches) once every few requests instead of on every one,
+        and the journal says when it happened."""
+        size = sum(self._size(m) for m in self.messages)
+        if size <= MAX_HISTORY_CHARS:
+            return
+        dropped = 0
+        while size > MAX_HISTORY_CHARS * 3 // 4:
             starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
-            size = sum(len(json.dumps(m, ensure_ascii=False)) for m in self.messages)
-            if len(starts) <= 1 or size <= MAX_HISTORY_CHARS:
-                return
+            if len(starts) <= 1:
+                break
+            for m in self.messages[starts[0]:starts[1]]:
+                size -= self._size(m)
+                self._sizes.pop(id(m), None)
             del self.messages[starts[0]:starts[1]]
+            dropped += 1
+        if dropped:
+            self.journal.log(event="trimmed", turns=dropped, chars=size)
 
     def _run(self, call: ToolCall) -> str:
         tool = self.tools.get(call.name)
         if tool is None:
             self.journal.log(event="tool", tool=call.name, args=call.args, tier="unknown", outcome="unknown")
             return f"error: unknown tool {call.name!r}"
-        tier = tool.tier_of(call.args)
+        if not isinstance(call.args, dict) or "_unparsed" in call.args:
+            self.journal.log(event="tool", tool=call.name, args=repr(call.args)[:500], tier="unknown",
+                             outcome="error", error_kind="bad_args")
+            return ("error: the arguments were not a JSON object; call the tool again with its parameters by name, "
+                    'like {"window": "Notepad"}')
+        try:
+            tier = tool.tier_of(call.args)
+        except Exception as exc:  # noqa: BLE001 - arguments the tier rules can not read (path=""): never run it
+            self.journal.log(event="tool", tool=call.name, args=call.args, tier="unknown", outcome="error",
+                             error=repr(exc), error_kind="bad_args")
+            return f"error: {exc}"
         sensitive = False
         if important_only():
             tier, sensitive = _important_tier(call.name, call.args, tier)
@@ -234,7 +313,10 @@ class Agent:
             if key is not None and key in self._granted:
                 entry["granted"] = True  # covered by the yes for this window earlier in this request
             else:
-                question = _describe(call.name, call.args, self._lang)
+                try:
+                    question = _describe(call.name, call.args, self._lang)
+                except Exception:  # noqa: BLE001 - a question that can not be put plainly is still asked
+                    question = f"Run {call.name} with {call.args}?"
                 if sensitive:
                     question += _sensitive_note(self._lang)
                 elif key is not None:
@@ -251,14 +333,15 @@ class Agent:
             return f"error: {exc}"
         try:
             result = tool.fn(**call.args)
-            if isinstance(result, str) and result.startswith("error:"):
-                self.journal.log(**entry, outcome="error", error=result[:500], error_kind="tool")
-            else:
-                self.journal.log(**entry, outcome="ok", result=result[:500])
-            return result
         except Exception as exc:  # noqa: BLE001 - every failure goes back to the model as data
             self.journal.log(**entry, outcome="error", error=repr(exc))
             return f"error: {exc}"
+        # outside the try on purpose: a journal that can not be written stops the turn instead of reporting a tool error
+        if isinstance(result, str) and result.startswith("error:"):
+            self.journal.log(**entry, outcome="error", error=result[:500], error_kind="tool")
+        else:
+            self.journal.log(**entry, outcome="ok", result=result[:500])
+        return result
 
 
 # confirm = "important": the NEVER that these tools reach through their arguments (a pay or send button, Enter in a mail

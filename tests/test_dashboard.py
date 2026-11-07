@@ -1,5 +1,6 @@
 """Safety and route tests for the read-only dashboard (no real repos, LLM or journal touched)."""
 
+import http.client
 import json
 import os
 import re
@@ -73,6 +74,34 @@ def test_non_get_methods_are_refused_with_405(server, method, path):
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(req, timeout=5)
     assert exc.value.code == 405
+
+
+def test_head_gets_405_without_a_body(server):
+    """A HEAD answer keeps the 405 status and headers but must not send a body."""
+    host, port = server.removeprefix("http://").rsplit(":", 1)
+    conn = http.client.HTTPConnection(host, int(port), timeout=5)
+    try:
+        conn.request("HEAD", "/api/system")
+        resp = conn.getresponse()
+        assert resp.status == 405
+        assert resp.read() == b""   # a HEAD answer has no body; one here would corrupt keep-alive
+        # the same connection must still work: leftover bytes would break this next request
+        conn.request("GET", "/api/tools")
+        followup = conn.getresponse()
+        assert followup.status == 200
+        json.loads(followup.read().decode("utf-8"))
+    finally:
+        conn.close()
+
+
+def test_put_still_gets_its_json_body(server):
+    """The HEAD fix must not swallow the JSON body of the other refused methods."""
+    req = urllib.request.Request(server + "/api/system", data=b"{}", method="PUT")
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req, timeout=5)
+    assert exc.value.code == 405
+    body = json.loads(exc.value.read().decode("utf-8"))
+    assert "error" in body   # PUT still answers with its JSON error body
 
 
 def test_server_binds_loopback_only():
@@ -362,6 +391,28 @@ def test_api_lmstudio_unreachable_reports_false(monkeypatch):
     assert lmstudio_payload() == {"reachable": False}
 
 
+def test_a_closed_local_port_is_seen_at_once_and_the_plain_list_is_not_tried(monkeypatch):
+    import socket
+
+    listener = socket.socket()  # the real probe, on loopback only
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    open_port = listener.getsockname()[1]
+    assert d._probe(f"http://127.0.0.1:{open_port}/api/v0/models") is False
+    listener.close()
+    assert d._probe(f"http://127.0.0.1:{open_port}/api/v0/models") is True
+    assert d._probe("http://192.0.2.10:1234/v1") is False  # another machine: the real request decides
+
+    asked = []
+
+    def refused(url, timeout=None):
+        asked.append(url)
+        raise d.urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+
+    monkeypatch.setattr(d.urllib.request, "urlopen", refused)
+    assert lmstudio_payload() == {"reachable": False} and len(asked) == 1  # down: no second wait for /v1/models
+
+
 def test_api_lmstudio_lists_models_with_state_and_type(monkeypatch):
     class FakeResp:
         def __init__(self, body):
@@ -425,6 +476,51 @@ def test_agents_and_lmstudio_are_cached_for_30_seconds(monkeypatch):
     first = d._cached("lmstudio", d.lmstudio_payload)
     second = d._cached("lmstudio", d.lmstudio_payload)
     assert first is second and calls == [1]  # the second call hit the cache
+    d._cache.clear()
+
+
+def test_two_polls_of_the_same_key_fetch_once():
+    d._cache.clear()
+    calls = []
+    barrier = threading.Barrier(2)
+    results = {}
+
+    def slow():
+        calls.append(1)
+        time.sleep(0.1)  # a slow fetch, like lms or the runs folder
+        return {"ok": True}
+
+    def worker(name):
+        barrier.wait()
+        results[name] = d._cached("k", slow)
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in ("one", "two")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(2)
+    assert calls == [1]  # the second poll waited and got the first fetch's value
+    assert results["one"] is results["two"]
+    d._cache.clear()
+
+
+def test_a_second_key_does_not_wait_for_the_first():
+    d._cache.clear()
+    inside = threading.Event()
+    release = threading.Event()
+
+    def slow():
+        inside.set()  # now fetching key "a"
+        release.wait(0.2)  # hold it open; no real wait over 0.2 s
+        return {"ok": True, "key": "a"}
+
+    t = threading.Thread(target=lambda: d._cached("a", slow))
+    t.start()
+    assert inside.wait(1)  # the first key is mid-fetch now
+    got = d._cached("b", lambda: {"ok": True, "key": "b"})  # a different key must not wait for it
+    release.set()
+    t.join(2)
+    assert got == {"ok": True, "key": "b"}
     d._cache.clear()
 
 
@@ -1431,6 +1527,7 @@ def _ready_skill(name="say_hello"):
     (folder / "skill.toml").write_text('description = "Greets."\n[params.who]\ntype = "string"\n', encoding="utf-8")
     (folder / "skill.py").write_text("def run(who):\n    return 'hi ' + who\n", encoding="utf-8")
     skills._save_meta(name, {**skills.meta(name), "status": "ready"})
+    skills._save_trust(name, checked=skills._digest(name, "confirm"))  # what a passing check() records
 
 
 def test_the_skills_page_shows_the_code_and_approves_only_with_the_token(server, srv):
@@ -1491,6 +1588,7 @@ def test_logs_payload_tails_each_log(tmp_path, monkeypatch):
     assert by_name["VoxCPM2 speech"]["path"] == str(tmp_path / "voxcpm" / "worker.log")
     assert by_name["App"]["path"] == str(config.config_path().parent / "logs" / "app.log")
     assert by_name["Voice packs"]["path"] == str(config.config_path().parent / "logs" / "packs.log")
+    assert by_name["Crashes"]["path"] == str(config.config_path().parent / "logs" / "crash.log")
 
 
 def test_tail_lines_reads_only_the_end_of_a_big_file(tmp_path, monkeypatch):
@@ -1505,3 +1603,98 @@ def test_tail_lines_reads_only_the_end_of_a_big_file(tmp_path, monkeypatch):
 def test_logs_route_is_read_only(server):
     with urllib.request.urlopen(server + "/api/logs", timeout=5) as r:
         assert json.loads(r.read())["ok"] is True
+
+
+def test_a_rebound_host_name_gets_nothing(server, srv):
+    """DNS rebinding: a site that points its own name at 127.0.0.1 sends its name as Host. It must not read the page
+    (with its token) or any route, and writes stay refused too."""
+    import http.client
+
+    port = int(server.rsplit(":", 1)[1])
+    for method, path in (("GET", "/"), ("GET", "/api/journal"), ("GET", "/api/settings"), ("POST", "/api/settings")):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request(method, path, body="{}" if method == "POST" else None,
+                     headers={"Host": f"evil.example:{port}", "X-Iris-Token": srv.token,
+                              "Origin": f"http://127.0.0.1:{port}"})
+        r = conn.getresponse()
+        body = r.read().decode("utf-8")
+        conn.close()
+        assert r.status == 421 and srv.token not in body, (method, path)
+    for host in (f"127.0.0.1:{port}", f"localhost:{port}", f"LOCALHOST:{port}"):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/", headers={"Host": host})
+        assert conn.getresponse().status == 200
+        conn.close()
+
+
+def _raw_post(srv, path, body: bytes, headers=None):
+    import http.client
+
+    port = srv.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.putrequest("POST", path)
+    for k, v in {"X-Iris-Token": srv.token, "Origin": f"http://127.0.0.1:{port}", **(headers or {})}.items():
+        conn.putheader(k, v)
+    if "Content-Length" not in (headers or {}) and "Transfer-Encoding" not in (headers or {}):
+        conn.putheader("Content-Length", str(len(body)))
+    conn.endheaders(body)
+    r = conn.getresponse()
+    out = r.status, json.loads(r.read().decode("utf-8") or "{}")
+    conn.close()
+    return out
+
+
+@pytest.mark.parametrize("path", ["/api/settings", "/api/skills/approve", "/api/packs/install", "/api/setup/server",
+                                  "/api/queue/add", "/api/models/load"])
+@pytest.mark.parametrize("body", [b"[]", b'"x"', b"5", b"null"])
+def test_a_body_that_is_not_an_object_gets_400_not_a_dropped_connection(srv, path, body):
+    status, data = _raw_post(srv, path, body)
+    assert (status, data["error"]) == (400, "the body must be a JSON object")
+
+
+def test_odd_bodies_get_an_answer(srv):
+    assert _raw_post(srv, "/api/settings", b"[" * 200_000)[0] == 400  # nested too deep for json
+    assert _raw_post(srv, "/api/settings", b"{}", {"Content-Length": "-1"})[0] == 400
+    assert _raw_post(srv, "/api/settings", b"", {"Content-Length": str(2_000_000)})[0] == 413
+    status, data = _raw_post(srv, "/api/setup/done", b"", {"Transfer-Encoding": "chunked"})
+    assert status == 411 and "Content-Length" in data["error"]
+
+
+def test_a_failing_write_answers_500_with_its_reason(srv, monkeypatch):
+    from iris import settings
+
+    def boom(values):
+        raise PermissionError("config.toml is open in another program")
+
+    monkeypatch.setattr(settings, "save", boom)
+    status, data = _raw_post(srv, "/api/settings", b'{"values": {}}')
+    assert status == 500 and data["error"] == "PermissionError: config.toml is open in another program"
+
+
+@pytest.mark.parametrize("value", ["inf", 1e400, "nan"])
+def test_settings_refuse_infinite_numbers(value):
+    from iris import settings
+
+    clean, errors = settings.validate({"voxcpm_gpu": value, "silence": value})
+    assert set(errors) == {"voxcpm_gpu", "silence"}
+
+
+def test_the_page_with_its_token_is_never_cached(server):
+    status, headers, body = get(server + "/")
+    assert status == 200 and headers.get("Cache-Control") == "no-store"
+
+
+def test_the_page_pauses_its_polling_while_hidden():
+    page = d._page_template().decode("utf-8")
+    assert "if (document.hidden || ticking) return;" in page and '"visibilitychange"' in page
+
+
+def test_the_page_meets_the_basic_accessibility_rules():
+    """Muted text and field borders pass contrast (4.5:1 and 3:1 on the panels), keyboard focus is visible, the tabs
+    say which one is open, and the fields without a visible label have one for screen readers."""
+    page = d._page_template().decode("utf-8")
+    assert "#565c66" not in page  # 2.6:1 on the panels; #80868f is 4.6:1 and more
+    assert ":focus-visible{outline:2px solid #7aa2ff" in page and "outline:none" not in page
+    assert page.count('role="tab"') == 11 and 'role="tablist"' in page and "aria-selected" in page
+    for label in ('aria-label="Agent"', 'aria-label="Prompt to queue"', '"Model server"', 'id="updated" aria-live'):
+        assert label in page

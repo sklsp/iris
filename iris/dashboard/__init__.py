@@ -46,10 +46,13 @@ import json
 import os
 import secrets
 import shutil
+import socket
 import sqlite3
 import subprocess
 import threading
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from collections import deque
 from collections.abc import Callable
@@ -61,6 +64,7 @@ from typing import Any
 import psutil
 
 HOST = "127.0.0.1"  # loopback only; never 0.0.0.0
+MAX_BODY = 1_000_000  # bytes a POST body may have: every write takes a few short fields
 PORT = 8765
 CACHE_SECONDS = 30      # agents and LM Studio can be slow; do not re-query on every poll
 HISTORY_SECONDS = 300   # the sparklines cover five minutes
@@ -86,6 +90,7 @@ def _lm_base_from_settings() -> str:
 
 _lock = threading.Lock()
 _cache: dict[str, tuple[float, dict]] = {}   # key -> (fetched_at, payload)
+_key_locks: dict[str, threading.Lock] = {}   # one lock per cached key; created under _lock
 _history: deque[dict] = deque(maxlen=240)    # system samples for the sparklines
 set_lm_base(_lm_base_from_settings())
 
@@ -154,15 +159,39 @@ def _fetch_json(url: str) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _probe(url: str, timeout: float = 0.5) -> bool:
+    """True when url's port on this PC takes no connection. On Windows a refused connection to a closed local port
+    takes seconds (it retries), so a short probe first keeps doctor and the dashboard quick when the server is off."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.hostname not in ("127.0.0.1", "localhost", "::1"):
+        return False  # another machine: let the real request say
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    try:
+        socket.create_connection((parts.hostname, port), timeout=timeout).close()
+    except OSError:
+        return True
+    return False
+
+
+_nothing_listens = _probe  # tests replace this name; they call _probe itself when they test it
+
+
 def lmstudio_payload() -> dict:
     """Every model LM Studio knows. The v0 API says which one is loaded and what kind it
     is; the OpenAI-style /v1 list only gives ids, so a fallback answer carries no state."""
+    if _nothing_listens(V0_MODELS_URL):
+        return {"reachable": False}
     try:
         data = _fetch_json(V0_MODELS_URL)
         models = [{"id": str(m.get("id", "")), "state": m.get("state"), "type": m.get("type")}
                   for m in data.get("data", [])]
         return {"reachable": True, "states_known": True, "models": models}
-    except Exception:  # noqa: BLE001 - no v0 endpoint (older LM Studio): try the plain list
+    except urllib.error.HTTPError:
+        pass  # the server answered without a v0 API (Ollama, llama.cpp, older LM Studio): try the plain list
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, OSError):  # nothing answered at all: the plain list would fail the same way
+            return {"reachable": False}
+    except Exception:  # noqa: BLE001 - bad JSON and the like: try the plain list
         pass
     try:
         data = _fetch_json(V1_MODELS_URL)
@@ -303,6 +332,14 @@ def set_iris_model(body: dict) -> dict:
     os.replace(tmp, path)
     _log_model_event("select", model, "ok")
     return iris_model_payload()
+
+
+def _host_ok(self: Any) -> bool:
+    """The page must have been asked for by its loopback name. A site that rebinds its own name to 127.0.0.1 would
+    otherwise read every GET route (the page with its token, the journal, the settings) as a same-origin page."""
+    host = (self.headers.get("Host") or "").strip().lower()
+    port = str(self.server.server_address[1])
+    return not host or host in (f"127.0.0.1:{port}", f"localhost:{port}", "127.0.0.1", "localhost")
 
 
 def _authorized(self: Any) -> bool:
@@ -511,14 +548,17 @@ def claude_projects(projects_dir: Path | str | None = None, now: float | None = 
 
 
 def _cached(key: str, fn: Callable[[], Any]) -> dict:
-    now = time.time()
-    with _lock:
+    """One fetch per key while it is fresh; a second caller for the same key waits and gets its value."""
+    with _lock:  # one lock per key, created here so two misses cannot make two locks
+        key_lock = _key_locks.setdefault(key, threading.Lock())
+    with key_lock:  # held while checking AND fetching; other keys never wait for this one
+        now = time.time()
         hit = _cache.get(key)
         if hit and now - hit[0] < CACHE_SECONDS:
             return hit[1]
-    value = fn()
-    with _lock:
-        _cache[key] = (now, value)
+        value = fn()
+        with _lock:
+            _cache[key] = (time.time(), value)
     return value
 
 
@@ -626,7 +666,7 @@ def logs_payload() -> dict:
     home = config.config_path().parent
     files = (("Voice mode", home / "logs" / "voice.log"), ("Overlay", home / "overlay.log"),
              ("VoxCPM2 speech", VOXCPM_DIR / "worker.log"), ("App", home / "logs" / "app.log"),
-             ("Voice packs", home / "logs" / "packs.log"))
+             ("Voice packs", home / "logs" / "packs.log"), ("Crashes", home / "logs" / "crash.log"))
     return {"ok": True, "logs": [{"name": name, "path": str(p), "exists": p.exists(), "lines": tail_lines(p)}
                                  for name, p in files]}
 
@@ -811,10 +851,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # GET stays read-only; the write routes refuse it with a 405
         """Serve the dashboard page and its read-only /api routes; a write route answers 405 until it gets a POST."""
         path = self.path.split("?", 1)[0]
-        if path == "/":
+        if not _host_ok(self):
+            self._json({"error": "open the dashboard at http://127.0.0.1 or http://localhost"}, code=421)
+        elif path == "/":
             token = getattr(self.server, "token", "")
             page = _page_template().replace(b"__IRIS_TOKEN__", token.encode())
-            self._send(200, page, "text/html; charset=utf-8")
+            self._send(200, page, "text/html; charset=utf-8", cache=False)  # its token is new on every start
         elif path == "/api/iris/model":
             self._json(iris_model_payload())   # readable via GET; writes go through the POST below
         elif path == "/api/settings":
@@ -869,6 +911,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # the write routes and nothing else
         """The only door to changes: check the token, then run the named write action with its JSON body."""
         path = self.path.split("?", 1)[0]
+        if not _host_ok(self):
+            self._drain_body()
+            self._json({"error": "open the dashboard at http://127.0.0.1 or http://localhost"}, code=421)
+            return
         if path not in WRITE_ROUTES:
             self._drain_body()
             self._json({"error": "read only: this route does not accept POST"}, code=405)
@@ -877,11 +923,26 @@ class Handler(BaseHTTPRequestHandler):
             self._drain_body()
             self._json({"error": "forbidden: wrong token or origin"}, code=403)
             return
+        if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+            self.close_connection = True  # its bytes would otherwise be read as the next request
+            self._json({"error": "send the JSON body with a Content-Length"}, code=411)
+            return
         try:
             length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_BODY:
+            self.close_connection = True
+            self._json({"error": f"the body must be a JSON object of at most {MAX_BODY} bytes"},
+                       code=413 if length > MAX_BODY else 400)
+            return
+        try:
             body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-        except (ValueError, UnicodeDecodeError):
+        except (ValueError, UnicodeDecodeError, RecursionError):
             self._json({"error": "bad JSON body"}, code=400)
+            return
+        if not isinstance(body, dict):
+            self._json({"error": "the body must be a JSON object"}, code=400)
             return
         try:
             if path == "/api/iris/model":
@@ -915,6 +976,9 @@ class Handler(BaseHTTPRequestHandler):
         except ModelActionError as exc:
             self._json({"error": exc.message}, code=exc.code)
             return
+        except Exception as exc:  # noqa: BLE001 - any other failure is an answer too, never a dropped connection
+            self._json({"error": f"{type(exc).__name__}: {exc}"}, code=500)
+            return
         self._json(payload)
 
     def _method_not_allowed(self) -> None:  # PUT, DELETE, PATCH, OPTIONS and HEAD alike
@@ -926,14 +990,17 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, payload: dict, code: int = 200) -> None:
         self._send(code, json.dumps(payload), "application/json")
 
-    def _send(self, code: int, body: str | bytes, ctype: str) -> None:
+    def _send(self, code: int, body: str | bytes, ctype: str, cache: bool = True) -> None:
         data = body.encode("utf-8") if isinstance(body, str) else body
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        if not cache:
+            self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         # no CORS headers on purpose: other websites must not be able to read this
         self.end_headers()
-        self.wfile.write(data)
+        if self.command != "HEAD":   # a HEAD answer keeps its headers but never sends its body
+            self.wfile.write(data)
 
     def log_message(self, fmt: str, *args: object) -> None:  # keep the console quiet while it runs
         """No per-request logging; a running dashboard must not fill the console."""

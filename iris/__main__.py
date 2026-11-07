@@ -109,6 +109,26 @@ def skill_main(argv: list[str]) -> int:
 
 
 def main() -> None:
+    """Run Iris. An error nobody caught goes to logs/crash.log with its traceback, and the user gets one sentence
+    that says where; an error in a background thread (a timer, a watcher) is logged the same way and voice mode
+    carries on."""
+    from iris import config
+
+    def thread_failed(args: threading.ExceptHookArgs) -> None:
+        if args.exc_value is not None and not isinstance(args.exc_value, SystemExit):
+            path = config.log_crash(f"thread {args.thread.name if args.thread else '?'}", args.exc_value)
+            print(f"(a background task failed: {args.exc_value}; the details are in {path})", file=sys.stderr)
+
+    threading.excepthook = thread_failed
+    try:
+        _main()
+    except Exception as exc:  # noqa: BLE001 - the last stop: write it down, say where, exit non-zero
+        path = config.log_crash("iris " + " ".join(sys.argv[1:]), exc)
+        print(f"Iris stopped on an error: {exc}. The details are in {path}.", file=sys.stderr)
+        raise SystemExit(1) from None
+
+
+def _main() -> None:
     """Dispatch a subcommand such as dashboard or doctor; without one, run the request loop in text, push-to-talk
     or wake-word mode."""
     if len(sys.argv) > 1 and sys.argv[1] == "eval":
@@ -165,7 +185,9 @@ def main() -> None:
     ap.add_argument("--version", action="version", version=f"iris {__version__}")
     ap.add_argument("--voice", action="store_true")
     ap.add_argument("--push-to-talk", action="store_true")
-    ap.add_argument("--journal", default=str(Path.home() / ".iris" / "journal.jsonl"))
+    from iris.dashboard import journal_path  # IRIS_JOURNAL, the same file the dashboard reads
+
+    ap.add_argument("--journal", default=str(journal_path()))
     ap.add_argument("--supervised", action="store_true", help=argparse.SUPPRESS)  # started by `iris app`
     a = ap.parse_args()
     Path(a.journal).parent.mkdir(parents=True, exist_ok=True)

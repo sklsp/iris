@@ -75,11 +75,23 @@ def _mtime(p: Path) -> float:
 def list_folder(path: str) -> str:
     """The entries of a folder: folders first with a trailing /, then files with their size in KB."""
     p = Path(path).expanduser()
+    if p.is_file():
+        return f"error: {p} is a file, not a folder; read_file reads it"
     if not p.is_dir():
         return f"error: no such folder: {p}" + _MISSING
-    dirs = sorted(e.name + "/" for e in p.iterdir() if e.is_dir())
-    files_ = [f"{e.name} {e.stat().st_size // 1024} KB"
-              for e in sorted(p.iterdir(), key=lambda e: e.name) if not e.is_dir()]
+    try:
+        entries = sorted(p.iterdir(), key=lambda e: e.name)
+    except PermissionError:
+        return f"error: Windows does not let Iris look inside {p} (access denied)"
+    dirs, files_ = [], []
+    for e in entries:  # one broken link or cloud placeholder must not hide the rest
+        try:
+            if e.is_dir():
+                dirs.append(e.name + "/")
+            else:
+                files_.append(f"{e.name} {e.stat().st_size // 1024} KB")
+        except OSError:
+            files_.append(f"{e.name} (can not be read)")
     lines = dirs + files_
     if len(lines) > 100:
         return "\n".join(lines[:100]) + f"\n... and {len(lines) - 100} more"
@@ -89,6 +101,8 @@ def list_folder(path: str) -> str:
 def read_file(path: str) -> str:
     """A file as text: plain text, .docx/.pptx from their XML or .pdf via pypdf; at most 20000 characters."""
     p = Path(path).expanduser()
+    if p.is_dir():
+        return f"error: {p} is a folder, not a file; list_folder lists what is in it"
     if not p.is_file():
         return f"error: no such file: {p}" + _MISSING
     suffix = p.suffix.lower()
@@ -99,6 +113,10 @@ def read_file(path: str) -> str:
             text = _office_text(p, suffix)
         else:
             raw = p.read_bytes()
+            if raw.startswith((b"\xff\xfe", b"\xfe\xff")):  # UTF-16 with its BOM: what PowerShell 5's > writes
+                raw = raw.decode("utf-16", "replace").encode("utf-8")
+            elif raw.startswith(b"\xef\xbb\xbf"):
+                raw = raw[3:]
             if suffix in _TEXT_SUFFIXES:
                 text = raw.decode("utf-8", "replace")
             else:
@@ -165,6 +183,8 @@ def resolve_target(path: str, suffix: str = "") -> Path:
 def write_file(path: str, text: str, overwrite: bool = False) -> str:
     """Write UTF-8 text to a file. Overwriting sends the old file to Iris's trash first, so it can be restored."""
     p = resolve_target(path)
+    if p.is_dir():  # overwrite would send the whole folder to the trash and put one file in its place
+        return f"error: {p} is a folder; give a file name inside it, like {p / 'notes.txt'}"
     if p.exists():
         if not overwrite:
             return f"error: {p} exists; say overwrite to replace it"
@@ -201,6 +221,8 @@ def _source_and_target(source: str, destination: str) -> tuple[Path, Path] | str
     if not s.exists():
         return f"error: no such file or folder: {s}"
     d = _destination(destination, s)
+    if s.is_dir() and d.resolve().is_relative_to(s.resolve()):  # copytree would copy its own copy without end
+        return f"error: {d} is inside {s}; pick a destination outside the folder"
     if d.exists():
         return f"error: {d} already exists; never overwrites"
     d.parent.mkdir(parents=True, exist_ok=True)

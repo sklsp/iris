@@ -190,7 +190,7 @@ def test_release_notes_main_prints_them(tmp_path, capsys, monkeypatch):
 
 def test_the_real_changelog_has_a_section_for_this_version():
     section = release_notes.changelog_section((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), __version__)
-    assert section.startswith("- ") and release_notes.version() == __version__
+    assert "\n- " in "\n" + section and release_notes.version() == __version__  # bullets, maybe under ### groups
 
 
 # --- sitecustomize.py: the user's own site-packages stay out of the bundle -------------------------------------------
@@ -265,4 +265,4 @@ def test_no_em_dashes_in_the_installer_texts():
     texts = [p for p in INSTALLER.iterdir() if p.suffix in (".py", ".ps1", ".iss", ".md")]
     assert len(texts) >= 7
     for path in [*texts, ROOT / ".github" / "workflows" / "installer.yml"]:
-        assert "—" not in path.read_text(encoding="utf-8"), path
+        assert "\u2014" not in path.read_text(encoding="utf-8"), path

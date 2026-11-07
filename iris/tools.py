@@ -21,6 +21,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 from iris import config
 from iris.browser import browser_click, browser_read, browser_scroll, browser_type
 from iris.desktop import (
@@ -74,6 +76,8 @@ from iris.reminders import reminder_cancel, reminder_list, reminder_set
 from iris.timers import Timers
 from iris.weather import weather
 
+psutil.cpu_percent(interval=None)  # prime; the first result is meaningless, later calls compare with it
+
 # Re-exported from iris.policy so existing imports of these names from iris.tools keep working; tools.py
 # itself only uses some of them, and __all__ marks the rest as deliberate re-exports.
 __all__ = ["NEVER", "_MAIL_CHAT", "_NEVER_WORDS", "_SYSTEM_DIRS", "_trash_roots", "_under"]
@@ -106,10 +110,8 @@ class Tool:
 # --- senses -------------------------------------------------------------------
 def system_data() -> dict:
     """The same numbers as system_status, as data instead of text (the dashboard uses this)."""
-    import psutil
-
     vm = psutil.virtual_memory()
-    d = {"cpu_percent": psutil.cpu_percent(interval=0.3),
+    d = {"cpu_percent": psutil.cpu_percent(interval=None),  # non-blocking; primed at import
          "ram_used_gb": vm.used / 2**30,
          "ram_total_gb": vm.total / 2**30}
     gpus = []
@@ -202,10 +204,11 @@ def comfy_workflows() -> str:
 
 def comfy_queue(workflow: str) -> str:
     """Queue a saved ComfyUI workflow (API format) by name. Ask first: it uses the GPU for a while."""
+    import urllib.error
     import urllib.request
 
     if not re.fullmatch(r"[A-Za-z0-9_-]+", workflow):
-        return "error: bad workflow name"
+        return "error: a workflow name has only letters, digits, - and _; comfy_workflows lists them"
     folder = Path(os.environ.get("IRIS_COMFY_WORKFLOWS", "~/.iris/workflows")).expanduser()
     path = folder / f"{workflow}.json"
     if not path.is_file():
@@ -213,10 +216,12 @@ def comfy_queue(workflow: str) -> str:
     try:
         prompt = json.loads(path.read_text(encoding="utf-8"))
     except ValueError:
-        return f"error: could not read {workflow}.json"
-    guards = gpu_guard(system_data(), 8000)  # the same check as item 7; nvidia-smi runs once
+        return f"error: {workflow}.json is not valid JSON; export it again from ComfyUI in API format"
+    guards = gpu_guard(system_data(), 8000)  # the same check as gpu_check; nvidia-smi runs once
+    if not guards:
+        return "error: no NVIDIA GPU found (nvidia-smi listed none); ComfyUI workflows need one"
     if not any(g["ok"] for g in guards):
-        return "error: the GPU is busy or hot; try again later"
+        return f"error: no GPU is free for it ({'; '.join(g['reason'] for g in guards)}); try again later"
     base = os.environ.get("IRIS_COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
     req = urllib.request.Request(
         base + "/prompt", data=json.dumps({"prompt": prompt}).encode(),
@@ -224,6 +229,8 @@ def comfy_queue(workflow: str) -> str:
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
             out = json.loads(r.read().decode())
+    except urllib.error.HTTPError as exc:  # ComfyUI runs, and turned the workflow down
+        return f"error: ComfyUI refused {workflow} (HTTP {exc.code}); open it in ComfyUI to see why"
     except (OSError, ValueError):
         return "error: ComfyUI is not running; start ComfyUI, then ask again"
     return f"queued {workflow} as {out.get('prompt_id', '?')}"
@@ -235,7 +242,7 @@ def lmstudio_models() -> str:
 
     p = lmstudio_payload()
     if not p.get("reachable"):
-        return "LM Studio is not reachable."
+        return "LM Studio is not reachable; start LM Studio and its local server, then ask again."
     n = len(p["models"])
     if p.get("states_known"):
         loaded = [m["id"] for m in p["models"] if m.get("state") == "loaded"]
@@ -278,7 +285,7 @@ def followups(today: str = "") -> str:
     folder = Path(os.environ.get("IRIS_LEADSCAN_DIR") or config.get("leadscan_dir", str(Path.home() / "leadscan")))
     file = folder / "out" / "pipeline.csv"
     if not file.exists():
-        return "No leadscan CRM found."
+        return f"No leadscan CRM found at {file}; set leadscan_dir in config.toml to its folder."
     day = today or date.today().isoformat()
     done = {"klant", "geen interesse", "niet benaderen"}
     due = []
@@ -402,17 +409,30 @@ def _control(w: Any, name: str) -> Any:
     exact = [c for c in cands if c.window_text().strip().lower() == n]
     hits = exact or [c for c in cands if n in c.window_text().lower()]
     if not hits:
-        raise LookupError(f"no control named {name!r} in {w.window_text()!r}")
+        raise LookupError(f"no control named {name!r} in {w.window_text()!r}; read_window lists its controls")
     return hits[0]
+
+
+def _named_in_full(given: str, found: Any) -> None:
+    """The tier was judged on the name the model gave, but a control matches by part of its name too: when the control
+    found has a send/pay/password/delete word that the given name lacks, stop, so the tier sees the full name."""
+    full = found.window_text().strip()
+    if _NEVER_WORDS.search(full) and not _NEVER_WORDS.search(given):
+        raise LookupError(f"{given!r} matches the control {full!r}; use its full name")
 
 
 def click(window: str, control: str) -> str:
     """Click a control in a window by name, using Invoke when the control supports it and a real click otherwise."""
     c = _control(_window(window), control)
+    _named_in_full(control, c)
     try:
         c.invoke()
-    except Exception:  # noqa: BLE001 - not every control supports Invoke; fall back to a real click
-        c.click_input()
+    except Exception as exc:  # noqa: BLE001 - not every control supports Invoke; fall back to a real click
+        text = str(exc).lower()
+        unsupported = isinstance(exc, NotImplementedError) or type(exc).__name__ == "NoPatternInterfaceError"
+        if unsupported or "not supported" in text or "pattern" in text:  # pywinauto's error has no message
+            c.click_input()
+        # otherwise invoke already acted (a dialog closed, a COM timeout): clicking again would press it twice
     return f"clicked {c.element_info.control_type} {c.window_text()!r}"
 
 
@@ -425,6 +445,8 @@ def type_text(window: str, text: str, into: str = "", replace: bool = False) -> 
     w = _window(window)
     w.set_focus()
     target = _control(w, into) if into else w
+    if into:
+        _named_in_full(into, target)
     if replace:
         target.type_keys("^a{BACKSPACE}")
     target.type_keys(_escape_keys(text), with_spaces=True, with_newlines=True, pause=0.01)
@@ -504,7 +526,7 @@ def web_search(query: str) -> str:
         try:
             results = search(query)
         except (OSError, ValueError) as e:
-            return f"error: search failed: {e}"
+            return f"error: search failed ({e}); try again, or open a site's search page with open_url"
     if not results:
         return f"No results for '{query}'."
     blocks = [f"{n}. {r['title']}\n   {r['url']}\n   {r['snippet']}" for n, r in enumerate(results, 1)]
@@ -540,15 +562,21 @@ def trash_file(path: str) -> str:
     while dest.exists():
         dest = _trash_dir() / f"{time.strftime('%Y%m%d-%H%M%S')}_{n}_{p.name}"
         n += 1
-    shutil.move(str(p), str(dest))
-    (dest.parent / (dest.name + ".json")).write_text(json.dumps({"original": str(p)}), encoding="utf-8")
+    record = dest.parent / (dest.name + ".json")  # written first: an item in the trash always knows its way back
+    record.write_text(json.dumps({"original": str(p)}), encoding="utf-8")
+    try:
+        shutil.move(str(p), str(dest))
+    except BaseException:
+        record.unlink(missing_ok=True)
+        raise
     return f"moved {p} to the trash; say 'restore' and I'll put it back"
 
 
 def restore_trash(name: str = "") -> str:
     """Put the most recently trashed item back where it came from; name filters by filename substring."""
     d = _trash_dir()
-    items = [x for x in d.iterdir() if not x.name.endswith(".json")]
+    # an item is whatever has its record next to it, so a trashed .json file is an item too
+    items = [x for x in d.iterdir() if (d / (x.name + ".json")).is_file()]
     # most recently trashed first: the .json written at trash time says when, the file's own mtime (kept by the
     # move) does not
     items.sort(key=lambda x: _mtime(d / (x.name + ".json")), reverse=True)
@@ -559,7 +587,8 @@ def restore_trash(name: str = "") -> str:
     meta = json.loads((d / (item.name + ".json")).read_text(encoding="utf-8"))
     original = Path(meta["original"])
     if original.exists():
-        raise FileExistsError(f"{original} already exists; restore it from the trash manually")
+        raise FileExistsError(f"{original} already exists; move that one away first, or take {item} from the "
+                              "trash yourself")
     original.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(item), str(original))
     (d / (item.name + ".json")).unlink()
@@ -653,7 +682,7 @@ def concept_sites() -> str:
             [str(python), "-m", "conceptkit", "check", "--all"], cwd=root, capture_output=True,
             text=True, encoding="utf-8", timeout=120)
     except subprocess.TimeoutExpired:
-        return "conceptkit took too long"
+        return "error: conceptkit took longer than 2 minutes; try again later"
     return ("Sites:\n" + listed.stdout.strip() + "\n\nChecks:\n" + checked.stdout.strip())
 
 
@@ -720,12 +749,18 @@ def calculate(expression: str) -> str:
         return "error: division by zero"
     except OverflowError:
         return "error: number too large"
+    if isinstance(value, complex):  # (-8)**(1/3): Python answers with a complex number, which is not what was asked
+        return "error: no real answer (a negative number to a fractional power)"
     if isinstance(value, float) and not math.isfinite(value):
         return "error: number too large"
     if isinstance(value, float):
-        text = str(int(value)) if value.is_integer() else format(value, ".12g")
+        # a whole float only prints as an integer while every digit is real: 10**100/3 is about 3.33e+99, not exact
+        text = str(int(value)) if value.is_integer() and abs(value) < 1e15 else format(value, ".12g")
     else:
-        text = str(value)
+        try:
+            text = str(value)
+        except ValueError:  # more digits than Python prints (4300)
+            return "error: number too large"
     return f"{expression} = {text}"
 
 
@@ -955,13 +990,16 @@ TOOLS = {t.name: t for t in [
     Tool("press_keys", "Press keyboard shortcuts in a window. pywinauto syntax: ^s = Ctrl+S, {TAB}, {ENTER}. "
           "Never used to send messages or emails.",
          {"window": S, "keys": S}, ["window", "keys"], CONFIRM, press_keys, _press_keys_tier),
-    Tool("focus_window", "Bring the window whose title contains `title` to the front and give it focus.",
+    Tool("focus_window", "Bring the window whose title contains `title` to the front and give it focus. The"
+                         " browser_* tools work on the page directly and need no focus first.",
          {"title": S}, ["title"], SAFE, focus_window),
-    Tool("scroll", "Scroll up or down inside a window (mouse wheel at its center).",
+    Tool("scroll", "Scroll up or down inside a desktop app's window (mouse wheel at its center). For a web page in"
+                   " Brave, Chrome or Edge, use browser_scroll instead.",
          {"window": S, "direction": {"type": "string", "enum": ["up", "down"]},
           "amount": {"type": "integer"}}, ["window", "direction"], SAFE, scroll),
     Tool("open_url",
-         "Open an http or https URL in a new browser tab. The result already lists the page's numbered buttons, links"
+         "Open an http or https URL in the browser (in the tab Iris opened for that site before, else a new tab)."
+         " The result already lists the page's numbered buttons, links"
          " and fields (as browser_read does), so click or type on them next without reading first. To search a site,"
          " open its search URL directly, e.g. https://www.youtube.com/results?search_query=lofi+music or"
          " https://www.netflix.com/search?q=horror. file:, javascript: and data: are refused.",
@@ -980,11 +1018,13 @@ TOOLS = {t.name: t for t in [
          {"index": {"type": "integer"}, "text": S, "enter": {"type": "boolean"}, "tab": S}, ["index", "text"],
          CONFIRM, browser_type, _browser_type_tier),
     Tool("browser_scroll",
-         "Scroll the web page down or up by most of a screen; returns what is visible then, numbered again.",
+         "Scroll the web page in the browser (Brave, Chrome or Edge) down or up by most of a screen; returns what"
+         " is visible then, numbered again.",
          {"direction": {"type": "string", "enum": ["down", "up"]}, "tab": S}, [], SAFE, browser_scroll),
     Tool("web_search",
-         "Search the web (DuckDuckGo) and list titles, links and snippets. "
-         "Then use web_read on the best link to read it.",
+         "Search the web for a general question (in the user's browser, else DuckDuckGo) and list titles, links"
+         " and snippets; then use web_read on the best link to read it. To search inside one site (YouTube,"
+         " Netflix), use open_url with that site's search URL instead.",
          {"query": S}, ["query"], SAFE, web_search),
     Tool("web_read", "Read the text of a web page (http or https links only).",
          {"url": S}, ["url"], SAFE, web_read),

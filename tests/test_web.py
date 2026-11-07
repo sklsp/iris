@@ -147,6 +147,10 @@ def test_non_http_schemes_refused(url):
         "http://10.0.0.5/",
         "http://169.254.16.4/",
         "https://[::1]/",
+        "http://localhost./",
+        "http://100.64.0.1/",
+        "http://[ff02::1]/",
+        "http://0.0.0.0:8765/",
     ],
 )
 def test_local_hosts_refused(url):
@@ -264,7 +268,8 @@ def test_web_search_tool_error_text(monkeypatch, exc):
         raise exc
 
     monkeypatch.setattr(web, "search", boom)
-    assert tools.web_search("test query") == f"error: search failed: {exc}"
+    assert tools.web_search("test query") == (f"error: search failed ({exc}); try again, or open a site's search "
+                                              "page with open_url")
 
 
 def test_web_search_is_a_safe_tool():
@@ -317,6 +322,34 @@ def test_read_text_skips_nav_footer_script_style():
     for gone in ("Home", "About", "Contact", "Harbour Notes", "Search the archive",
                  "Related:", "visitor number 48213", "font-family", "Privacy", "Terms"):
         assert gone not in out, f"{gone!r} should have been skipped"
+
+
+def test_read_text_returns_the_paragraphs_of_an_aspnet_form_page():
+    def get(url):
+        return url, "text/html", (
+            "<html><head><title>Harbour report</title></head>"
+            '<body><form id="aspnetForm" method="post">'
+            "<h1>The harbour report</h1>"
+            "<p>The tide turned at noon.</p>"
+            "<p>Two ferries are due this evening.</p>"
+            "</form></body></html>")
+
+    out = web.read_text("http://example.com/aspnet", get=get)
+    assert out == ("Title: Harbour report\nThe harbour report\n"
+                   "The tide turned at noon.\nTwo ferries are due this evening.")
+
+
+def test_read_text_does_not_return_the_options_of_a_select():
+    def get(url):
+        return url, "text/html", (
+            "<html><head><title>Filter</title></head>"
+            "<body><p>Pick a month.</p>"
+            "<select><option>One</option></select>"
+            "</body></html>")
+
+    out = web.read_text("http://example.com/select", get=get)
+    assert "One" not in out
+    assert "Pick a month." in out
 
 
 def test_read_text_title_first_and_order():
@@ -401,3 +434,27 @@ def test_web_read_is_a_safe_tool():
     assert tool.tier == SAFE
     assert tool.required == ["url"]
 
+
+
+@pytest.mark.parametrize("host,address", [("127.1", "127.0.0.1"), ("2130706433", "127.0.0.1"),
+                                          ("0x7f000001", "127.0.0.1"), ("0", "0.0.0.0"),
+                                          ("rebind.example", "192.168.1.1"), ("v6.example", "fe80::1%3")])
+def test_a_name_or_old_form_that_resolves_locally_is_refused(monkeypatch, fake_urlopen, host, address):
+    monkeypatch.setattr(web, "_resolve", lambda h: ["93.184.215.14", address] if h == host else [])
+    with pytest.raises(ValueError, match="refusing a local address"):
+        web.http_get(f"http://{host}:8765/api/journal")
+    assert fake_urlopen.calls == []
+
+
+def test_a_name_that_does_not_resolve_is_left_to_urlopen(monkeypatch, fake_urlopen):
+    def nothing(host):
+        raise OSError("no such name")
+
+    monkeypatch.setattr(web, "_resolve", nothing)
+    web.http_get("https://example.com/")
+    assert len(fake_urlopen.calls) == 1
+
+
+def test_read_text_keeps_the_page_after_options_without_end_tags():
+    html = "<html><title>T</title><body><select><option>One<option>Two</select><p>After the menu</p></body></html>"
+    assert web.read_text("u", get=lambda u: (200, "text/html", html)) == "Title: T\nAfter the menu"

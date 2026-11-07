@@ -1,5 +1,10 @@
 """config.toml and the plugin registry: what the user sets decides the name in the prompt and the tools offered."""
 
+import os
+import tomllib
+
+import pytest
+
 from iris import __version__, config, registry
 from iris.agent import Agent, Journal, system_prompt
 from iris.tools import TOOLS
@@ -202,3 +207,111 @@ def test_doctor_in_the_installed_app_points_to_the_setup_tab(tmp_path, monkeypat
     assert "voice pack on the Setup tab" in speech
     assert lines("piper")[1] == "speech: Piper not installed: the Piper voices pack on the Setup tab"
     assert "the VoxCPM2 voice pack on the Setup tab" in lines("voxcpm")[1]
+
+
+def test_a_config_with_a_bom_is_read_and_saved(tmp_path, monkeypatch):
+    from iris import settings
+
+    path = tmp_path / "config.toml"
+    monkeypatch.setenv("IRIS_CONFIG", str(path))
+    path.write_bytes(b"\xef\xbb\xbf" + b'name = "Jay"\ncity = "Rotterdam"\n')  # Notepad's "UTF-8 with BOM"
+    assert config.load()["name"] == "Jay" and config.error() is None
+    settings.write({"city": "Utrecht"})
+    assert config.raw() == {"name": "Jay", "city": "Utrecht"} and not path.read_bytes().startswith(b"\xef")
+
+
+def test_raw_parses_once_until_the_file_changes(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    path.write_text('name = "Jay"\n', encoding="utf-8")
+    monkeypatch.setenv("IRIS_CONFIG", str(path))
+
+    parses = []
+    real_loads = tomllib.loads
+
+    def counting(text):
+        parses.append(1)
+        return real_loads(text)
+
+    monkeypatch.setattr(tomllib, "loads", counting)
+
+    first = config.raw()
+    assert first == {"name": "Jay"}
+    first["name"] = "Hacked"  # a caller must not be able to change the cached dict
+    assert config.raw() == {"name": "Jay"}
+    assert len(parses) == 1  # two reads, one parse
+
+    path.write_text('name = "Kim"\n', encoding="utf-8")
+    st = path.stat()
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))  # a new mtime
+    assert config.raw() == {"name": "Kim"}  # a changed file is read again
+    assert len(parses) == 2
+
+    path.unlink()
+    assert config.raw() == {}  # and so is a removed one
+
+
+@pytest.mark.parametrize("content,why", [(b'name = "Jay', "Unterminated string"),
+                                         (b'name = "caf\xe9"', "not UTF-8")])
+def test_doctor_says_when_config_toml_can_not_be_read(tmp_path, monkeypatch, content, why):
+    from iris import doctor
+
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    (tmp_path / "config.toml").write_bytes(content)
+    assert why in (config.error() or "")
+    line = next(line for ok, line in doctor.checks({"reachable": False}) if "config" in line)
+    assert line.startswith("broken config: ") and "every setting in it is ignored" in line
+    assert not line.startswith(doctor.OPTIONAL)  # shown as FIX, not as an optional "--"
+
+
+def test_a_setting_that_is_not_a_number_never_stops_iris_from_starting(tmp_path):
+    import subprocess
+    import sys
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('silence = "fast"\nwake_threshold = "x"\nfollow_up = "soon"\n', encoding="utf-8")
+    env = {**__import__("os").environ, "IRIS_CONFIG": str(cfg)}
+    r = subprocess.run([sys.executable, "-c", "import iris.voice as v; print(v.SILENCE_SECONDS, v.WAKE_THRESHOLD)"],
+                       env=env, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0 and r.stdout.split() == ["1.8", "0.5"], r.stderr
+
+
+def test_doctor_names_the_settings_that_are_not_numbers(tmp_path, monkeypatch):
+    from iris import doctor
+
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    (tmp_path / "config.toml").write_text('silence = "fast"\nfollow_up = 4\n', encoding="utf-8")
+    assert config.number("IRIS_SILENCE", "silence", 1.8) == 1.8 and config.number("X", "follow_up", 8) == 4
+    assert config.bad_numbers() == ["silence = 'fast'"]
+    line = next(line for ok, line in doctor.checks({"reachable": False}) if "not numbers" in line)
+    assert "silence = 'fast'" in line and "Settings tab" in line
+
+
+def test_doctor_covers_the_fallback_voice_kokoro_the_packs_and_missing_folders(tmp_path, monkeypatch):
+    import importlib.util
+
+    from iris import doctor, packs
+    from iris import voice as v
+
+    monkeypatch.delenv("IRIS_TTS", raising=False)
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    (tmp_path / "config.toml").write_text(f'tts = "kokoro"\nfolders = ["{(tmp_path / "gone").as_posix()}"]\n',
+                                          encoding="utf-8")
+    monkeypatch.setattr(v, "KOKORO_DIR", str(tmp_path))
+    monkeypatch.setattr(v, "KOKORO_MODEL", str(tmp_path / "kokoro.onnx"))
+    monkeypatch.setattr(v, "KOKORO_VOICES", str(tmp_path / "voices.bin"))
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name, *a: None if name == "pyttsx3" else (object() if name != "kokoro_onnx" else
+                                                                        real("json")))
+    monkeypatch.setattr(packs, "packs", lambda: [
+        {"id": "whisper", "available": True, "installed": True},
+        {"id": "piper", "available": True, "installed": False},
+        {"id": "gpu", "available": False, "installed": False}])
+    lines = {line.split(":")[0]: (ok, line) for ok, line in doctor.checks({"reachable": False})}
+    assert lines["speech"][0] is False and "two model files in" in lines["speech"][1]
+    assert lines["no fallback voice"][0] is False and "pyttsx3" in lines["no fallback voice"][1]
+    assert lines["voice packs"] == (False, "voice packs: whisper installed; not yet piper (the Setup tab shows each "
+                                           "with its size and license)")
+    folders = next(line for ok, line in doctor.checks({"reachable": False}) if line.startswith("folders"))
+    assert "gone" in folders and not folders.startswith(doctor.OPTIONAL)  # FIX, not optional
+    assert len(doctor.checks({"reachable": False})) <= 25  # one screen

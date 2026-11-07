@@ -39,7 +39,7 @@ Iris: Sending messages is something I never do myself. I can open a draft; you p
   search is three model steps; a search on YouTube or Netflix is two. A benchmark measures every change.
 - **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
   email drafts, notes, reminders and timers.
-- **Measured.** An eval of 215 tasks runs against the real model and the result is published below, including the
+- **Measured.** An eval of 236 tasks runs against the real model and the result is published below, including the
   safety traps.
 - **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (VoxCPM2,
   Piper, SAPI or Kokoro) all run on your machine. An optional overlay shows what you said and the answer, with a
@@ -125,6 +125,27 @@ From source, for development and for the command line.
    .venv\Scripts\iris shortcut      # an Iris.cmd on your desktop: double-click to start voice mode
    .venv\Scripts\iris app           # the desktop app (install the .[app] extra): dashboard window, tray, voice mode
    ```
+
+## Upgrading from 0.x
+
+Install 1.0 over your 0.x (run the new IrisSetup, or `git pull` and `pip install -e .` again). Everything in
+`~/.iris` carries over as it is: `config.toml`, notes, reminders, the prompt queue, the journal, the model choice,
+approved skills, voice packs and logs. Data written by 0.4, 0.5 and 0.6.1 is tested to read in 1.0
+(`tests/test_upgrade.py`); no file changes format, so there is nothing to migrate.
+
+What you may notice:
+
+- A skill that was built but not yet approved needs `capability_check` (or the Skills tab's check) once more
+  before you can approve it: approving now needs a check Iris ran itself. Approved skills stay approved.
+- A `config.toml` saved with a BOM (Notepad's "UTF-8 with BOM") is read now; before, all of it was ignored.
+  `iris doctor` says when the file can not be read or a number setting is not a number.
+- The dashboard answers only at http://127.0.0.1 or http://localhost (with its port), not at another name for this
+  PC.
+- An error nobody caught is written to `~/.iris/logs/crash.log`, and the Logs tab shows it.
+- Tool results and errors read differently in places (they say what to do next); the eval measures that.
+
+To go back, install the 0.6.1 IrisSetup from the releases page (or `git checkout v0.6.1` and `pip install -e .`).
+Your data stays; 0.6.1 ignores the `trust.json` that 1.0 adds next to your skills.
 
 ## Configuration
 
@@ -482,16 +503,16 @@ tab, not an error page.
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-11-04 09:49 on `qwen3.8-27b`: 629/645 passed (97.5%), median 3.6 s, 0.27 confirmations per task, safety: 0 forbidden, 12 refused attempts, 0 unknown tools, language: 0 wrong, answers: 0/135 wrong, 205/215 pass every time.
+Run of 2026-11-06 18:07 on `qwen3.8-27b`: 693/708 passed (97.9%), median 3.5 s, 0.25 confirmations per task, safety: 0 forbidden, 21 refused attempts, 0 unknown tools, language: 1 wrong, answers: 1/153 wrong, 226/236 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 53/57 | 93.0% |
-| files | 108/108 | 100.0% |
-| hands | 110/114 | 96.5% |
-| read | 136/141 | 96.5% |
-| safety | 161/162 | 99.4% |
-| skills | 61/63 | 96.8% |
+| agents | 54/57 | 94.7% |
+| files | 105/108 | 97.2% |
+| hands | 139/141 | 98.6% |
+| read | 145/150 | 96.7% |
+| safety | 180/180 | 100.0% |
+| skills | 70/72 | 97.2% |
 
 <!-- eval:end -->
 
@@ -500,7 +521,7 @@ Run of 2026-11-04 09:49 on `qwen3.8-27b`: 629/645 passed (97.5%), median 3.6 s, 
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether the user says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 215 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 236 tasks: everyday requests in five languages, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.
@@ -633,6 +654,21 @@ shows with its own badge.
 | `IRIS_REMINDERS` | `~/.iris/reminders.json` | pending reminders, kept across restarts |
 | `IRIS_SETTINGS` | `~/.iris/settings.json` | the model chosen on the dashboard |
 | `IRIS_START_MENU` | the two Windows Start menu folders | where open_app looks for shortcuts, ';' separated |
+
+## Stability
+
+From 1.0 on, these stay as they are within a major version:
+
+- the commands and flags: `iris`, `--voice`, `--push-to-talk`, `--journal`, `--version`, and `iris app`,
+  `autopilot`, `config`, `dashboard`, `doctor`, `eval`, `eval-compare`, `init`, `shortcut`, `skill`, `startup`;
+- the keys of `config.toml` and what they mean (see [Configuration](#configuration));
+- the files Iris keeps in `~/.iris`: `config.toml`, `journal.jsonl`, `notes.md`, `reminders.json`, `queue.json`,
+  `settings.json`, `setup.json`, `update.json` and the `skills`, `trash` and `logs` folders;
+- the dashboard's URL routes (`/` and `/api/...`).
+
+New ones can come in any minor version. Removing or renaming one needs a major version (2.0), and gets a warning
+for at least one minor version first. `tests/test_stability.py` fails when one goes missing by accident. Tool names,
+descriptions and the system prompt are not part of this promise: they follow what the eval measures.
 
 ## Limits
 

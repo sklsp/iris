@@ -32,7 +32,7 @@ def _install_fake_psutil(monkeypatch, cpu=43.0):
     mod = types.ModuleType("psutil")
     mod.virtual_memory = lambda: _FakeVM()
     mod.cpu_percent = lambda interval=None: calls.append(interval) or cpu
-    monkeypatch.setitem(sys.modules, "psutil", mod)
+    monkeypatch.setattr(tools, "psutil", mod)  # system_data uses the module-level name now
     return calls
 
 
@@ -59,7 +59,7 @@ def test_system_data_reports_cpu_ram_and_gpus(monkeypatch):
 
     d = tools.system_data()
 
-    assert d["cpu_percent"] == 43.0 and cpu_calls == [0.3]
+    assert d["cpu_percent"] == 43.0 and cpu_calls == [None]
     assert d["ram_used_gb"] == pytest.approx(8.0) and d["ram_total_gb"] == pytest.approx(16.0)
     assert d["gpus"] == [{"index": 0, "name": "NVIDIA GeForce RTX 3090", "load_percent": 75.0,
                           "vram_used_mib": 10240.0, "vram_total_mib": 24576.0, "temp_c": 68.0}]
@@ -327,6 +327,18 @@ def test_click_falls_back_to_real_click_when_invoke_fails(monkeypatch):
     assert stubborn.invoke_calls == 1 and stubborn.click_input_calls == 1
 
 
+def test_a_partial_name_never_clicks_or_types_into_a_send_pay_or_password_control(monkeypatch):
+    send = FakeControl(text="Send", kind="Button")
+    field = FakeControl(text="Wachtwoord", kind="Edit")
+    _install_desktop(monkeypatch, FakeDesktop([FakeWindow("Mail", [send, field])]))
+    with pytest.raises(LookupError, match="'Sen' matches the control 'Send'; use its full name"):
+        tools.click("mail", "Sen")  # judged as a confirm click on "Sen", but it would press Send
+    with pytest.raises(LookupError, match="use its full name"):
+        tools.type_text("mail", "x", into="Wacht")
+    assert send.invoke_calls == 0 and send.click_input_calls == 0 and field.keys == []
+    assert tools.click("mail", "Send") == "clicked Button 'Send'"  # named in full, the tier saw it (and said NEVER)
+
+
 def test_type_text_escapes_and_targets_named_field(monkeypatch):
     field = FakeControl(text="Name", kind="Edit")
     win = FakeWindow("Notepad", [field])
@@ -427,4 +439,4 @@ def test_concept_sites_reports_timeout(tmp_path, monkeypatch):
 
     monkeypatch.setattr(tools.subprocess, "run", boom)
     monkeypatch.setenv("IRIS_CONCEPTKIT_DIR", str(tmp_path))
-    assert tools.concept_sites() == "conceptkit took too long"
+    assert tools.concept_sites() == "error: conceptkit took longer than 2 minutes; try again later"

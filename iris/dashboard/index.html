@@ -38,7 +38,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .mlabel{color:#8a9099;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
 .mval{font-size:13px;color:#e6e6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .spark{width:100%;height:26px;display:block}
-.gpubar{margin-top:10px;padding-bottom:4px;border-bottom:1px solid #23262c;color:#565c66;
+.gpubar{margin-top:10px;padding-bottom:4px;border-bottom:1px solid #23262c;color:#80868f;
         font-size:10px;text-transform:uppercase;letter-spacing:.1em}
 
 /* badges and chips */
@@ -53,12 +53,12 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 /* agents */
 .arow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,.8fr) minmax(0,1.2fr) 76px auto;
       gap:8px;align-items:center;padding:6px 8px;border-bottom:1px solid #1c1f24;font-size:12px}
-.a-head{color:#565c66;font-size:10px;text-transform:uppercase;letter-spacing:.08em;
+.a-head{color:#80868f;font-size:10px;text-transform:uppercase;letter-spacing:.08em;
         border-bottom:1px solid #23262c;padding-top:0}
 .arow.stuck{background:rgba(248,81,73,.05);box-shadow:inset 2px 0 0 #f85149}
 .a-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
 .a-branch{color:#8a9099;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.a-commit .age{color:#565c66;font-size:11px}
+.a-commit .age{color:#80868f;font-size:11px}
 .a-uncom{text-align:right;color:#8a9099}
 .a-uncom.hot{color:#d29922}
 .a-flags{display:flex;gap:4px;justify-content:flex-end;align-items:center;min-width:0}
@@ -97,7 +97,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .turn{padding:8px 0;border-bottom:1px solid #1c1f24}
 .turn:last-child{border-bottom:none;padding-bottom:2px}
 .t-req,.t-ans{display:flex;gap:8px;align-items:baseline}
-.t-time{color:#565c66;font-size:11px;flex:none}
+.t-time{color:#80868f;font-size:11px;flex:none}
 .t-text{min-width:0;overflow-wrap:anywhere}
 .t-req .t-text{color:#e6e6e6}
 .t-ans{margin-left:14px}
@@ -106,7 +106,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .t-tool.refused{background:rgba(248,81,73,.07);box-shadow:inset 2px 0 0 #f85149;margin-left:8px}
 .t-tool.errored{background:rgba(210,153,34,.07);box-shadow:inset 2px 0 0 #d29922;margin-left:8px}
 .t-name{font-size:12px}
-.t-args{color:#565c66;font-size:11px;min-width:0;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t-args{color:#80868f;font-size:11px;min-width:0;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .t-giveup{margin-left:14px;color:#d29922;font-size:12px;padding-top:2px}
 .t-auto{display:flex;gap:8px;align-items:center;margin-top:2px;font-size:12px}
 
@@ -135,25 +135,24 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
      padding:10px 12px;cursor:pointer}
 .tab:hover{color:#c3c7cd}
 .tab.active{color:#e6e6e6;border-bottom-color:#7aa2ff}
-.pane.hidden{display:none}
 
 /* sessions */
 .srow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto auto 58px;gap:8px;align-items:center;
       padding:6px 8px;border-bottom:1px solid #1c1f24;font-size:12px}
 .srow.child{margin-left:18px;padding-left:10px;background:rgba(122,162,255,.03)}
-.s-head{color:#565c66;font-size:10px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #23262c}
+.s-head{color:#80868f;font-size:10px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #23262c}
 .s-folder{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
 .s-model{color:#c3c7cd;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .b-run{color:#3fb950;background:rgba(63,185,80,.14)}
 .b-end{color:#8a9099;background:rgba(138,144,153,.12)}
 .b-prov{color:#7aa2ff;background:rgba(122,162,255,.12)}
-.s-age{text-align:right;color:#565c66}
+.s-age{text-align:right;color:#80868f}
 
 /* claude */
 .crow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #1c1f24;font-size:12px}
 .crow:last-child{border-bottom:none}
 .c-folder{font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.c-age{color:#565c66}
+.c-age{color:#80868f}
 
 /* runs */
 .rrow{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1.3fr) minmax(0,1.6fr) auto 74px;
@@ -165,9 +164,9 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .r-bar{position:relative;height:8px;background:#23262c;border-radius:4px;overflow:hidden;flex:1;min-width:40px}
 .r-fill{position:absolute;left:0;top:0;bottom:0;background:#7aa2ff}
 .r-count{text-align:right;color:#8a9099;font-size:11px;white-space:nowrap;flex:none}
-.r-reason{color:#565c66;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-reason{color:#80868f;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .r-ctrl{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
-.agent-input{width:92px;padding:3px 7px;background:#0e0f11;border:1px solid #23262c;border-radius:4px;color:#e6e6e6;font-size:12px}
+.agent-input{width:92px;padding:3px 7px;background:#0e0f11;border:1px solid #60666f;border-radius:4px;color:#e6e6e6;font-size:12px}
 .btn-start{appearance:none;background:rgba(122,162,255,.14);border:1px solid rgba(122,162,255,.4);color:#7aa2ff;
   font-family:inherit;font-size:11px;font-weight:600;padding:4px 9px;border-radius:4px;cursor:pointer;white-space:nowrap}
 .btn-start:hover:not(:disabled){background:rgba(122,162,255,.24)}
@@ -192,9 +191,9 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 /* queue rows and the add prompt form */
 .qrow{display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-bottom:1px solid #1c1f24;font-size:12px}
 .qrow:last-child{border-bottom:none}
-.q-id{color:#565c66;flex:none}
+.q-id{color:#80868f;flex:none}
 .q-agent{background:#1a1d22;border:1px solid #23262c;border-radius:4px;padding:1px 7px}
-.q-time{color:#565c66;flex:none;font-size:11px;padding-top:1px}
+.q-time{color:#80868f;flex:none;font-size:11px;padding-top:1px}
 .q-textwrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 .q-text{white-space:pre-wrap;word-break:break-word;color:#e6e6e6;line-height:1.4;font-size:12px}
 .q-more{align-self:flex-start;background:none;border:none;padding:0;color:#7aa2ff;font-family:inherit;font-size:11px;cursor:pointer}
@@ -205,7 +204,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .qbtn:disabled{opacity:.4;cursor:default}
 .q-add{margin-top:10px;padding-top:10px;border-top:1px solid #23262c;display:flex;flex-direction:column;gap:8px}
 .q-add-top{display:flex;align-items:center;gap:8px}
-.q-add-text{width:100%;box-sizing:border-box;background:#0e0f11;border:1px solid #23262c;border-radius:4px;color:#e6e6e6;font-family:inherit;font-size:12px;padding:6px 8px;resize:vertical}
+.q-add-text{width:100%;box-sizing:border-box;background:#0e0f11;border:1px solid #60666f;border-radius:4px;color:#e6e6e6;font-family:inherit;font-size:12px;padding:6px 8px;resize:vertical}
 .q-add-err{color:#d29922;font-size:11px;display:none}
 
 @media (max-width:899px){
@@ -228,7 +227,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .done-banner.show{display:flex}
 .btn-notify{appearance:none;background:#1a1d22;border:1px solid #23262c;color:#8a9099;font-family:inherit;font-size:11px;padding:2px 7px;border-radius:4px;cursor:pointer;line-height:1.5;margin-left:8px}
 .btn-notify:hover{color:#e6e6e6;border-color:#3a3f47}
-.t-off{opacity:.45}
+.t-off{opacity:.75}
 .sk{border-top:1px solid #23262c;padding:10px 0}
 .sk:first-child{border-top:none}
 .sk-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -248,9 +247,10 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   align-items:start}
 .set-row label{font-size:13px;padding-top:4px}
 .set-row input[type=text],.set-row input[type=number],.set-row select,.set-row textarea{width:100%;max-width:520px;
-  box-sizing:border-box;background:#0e0f11;border:1px solid #23262c;border-radius:4px;color:#e6e6e6;
+  box-sizing:border-box;background:#0e0f11;border:1px solid #60666f;border-radius:4px;color:#e6e6e6;
   font-family:inherit;font-size:12px;padding:5px 8px}
-.set-row input:focus,.set-row select:focus,.set-row textarea:focus{outline:none;border-color:#7aa2ff}
+.set-row input:focus,.set-row select:focus,.set-row textarea:focus{border-color:#7aa2ff}
+:focus-visible{outline:2px solid #7aa2ff;outline-offset:2px}
 .set-help{grid-column:2;color:#8a9099;font-size:11px;line-height:1.45;max-width:620px}
 .set-err{grid-column:2;color:#f85149;font-size:11px}
 .set-env{grid-column:2;color:#d29922;font-size:11px}
@@ -288,26 +288,26 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
   overflow:auto;white-space:pre-wrap;margin:0}
 .update-note{margin-left:12px;font-size:11px;color:#d29922}
 .update-note a{color:#7aa2ff}
-.log-path{color:#565c66;font-size:11px;font-weight:400;margin-left:8px;text-transform:none;letter-spacing:0}
+.log-path{color:#80868f;font-size:11px;font-weight:400;margin-left:8px;text-transform:none;letter-spacing:0}
 </style>
 </head>
 <body>
 <header class="top">
   <div class="brand">IRIS<small>local dashboard</small></div><span class="update-note" id="update-note"></span>
-  <div class="status"><span class="dot" id="pulse"></span><span class="num" id="updated">connecting...</span></div>
+  <div class="status"><span class="dot" id="pulse"></span><span class="num" id="updated" aria-live="polite">connecting...</span></div>
 </header>
-<nav class="tabs" id="tabs">
-  <button type="button" class="tab active" data-tab="overview">Overview</button>
-  <button type="button" class="tab" data-tab="agents">Agents</button>
-  <button type="button" class="tab" data-tab="activity">Activity</button>
-  <button type="button" class="tab" data-tab="repos">Repos</button>
-  <button type="button" class="tab" data-tab="tools">Tools</button>
-  <button type="button" class="tab" data-tab="eval">Eval</button>
-  <button type="button" class="tab" data-tab="queue">Autopilot</button>
-  <button type="button" class="tab" data-tab="skills">Skills</button>
-  <button type="button" class="tab" data-tab="setup">Setup</button>
-  <button type="button" class="tab" data-tab="settings">Settings</button>
-  <button type="button" class="tab" data-tab="logs">Logs</button>
+<nav class="tabs" id="tabs" role="tablist" aria-label="Dashboard sections">
+  <button type="button" class="tab active" role="tab" aria-selected="true" data-tab="overview">Overview</button>
+  <button type="button" class="tab" role="tab" aria-selected="false" data-tab="agents">Agents</button>
+  <button type="button" class="tab" role="tab" aria-selected="false" data-tab="activity">Activity</button>
+  <button type="button" class="tab" role="tab" aria-selected="false" data-tab="repos">Repos</button>
+  <button type="button" class="tab" role="tab" aria-selected="false" data-tab="tools">Tools</button>
+  <button type="button" class="tab" role="tab" aria-selected="false" data-tab="eval">Eval</button>
+  <button type="button" class="tab" role="tab" aria-selected="false" data-tab="queue">Autopilot</button>
+  <button type="button" class="tab" role="tab" aria-selected="false" data-tab="skills">Skills</button>
+  <button type="button" class="tab" role="tab" aria-selected="false" data-tab="setup">Setup</button>
+  <button type="button" class="tab" role="tab" aria-selected="false" data-tab="settings">Settings</button>
+  <button type="button" class="tab" role="tab" aria-selected="false" data-tab="logs">Logs</button>
 </nav>
 <div id="done-banner" class="done-banner">
   <span id="done-banner-text"></span>
@@ -398,10 +398,10 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
         <div id="queue-body"><div class="empty">loading...</div></div>
         <form id="add-prompt" class="q-add">
           <div class="q-add-top">
-            <input type="text" id="qp-agent" class="agent-input" list="iris-agents" placeholder="qwen" value="qwen">
+            <input type="text" id="qp-agent" class="agent-input" list="iris-agents" placeholder="qwen" value="qwen" aria-label="Agent">
             <button type="submit" class="btn-start">Add</button>
           </div>
-          <textarea id="qp-text" rows="6" class="q-add-text" placeholder="Prompt text (Ctrl+Enter to add)"></textarea>
+          <textarea id="qp-text" rows="6" class="q-add-text" placeholder="Prompt text (Ctrl+Enter to add)" aria-label="Prompt to queue"></textarea>
           <div id="qp-error" class="q-add-err"></div>
         </form>
       </section>
@@ -512,7 +512,6 @@ function drawSpark(cv, values){
   ctx.fill();
 }
 
-const sysHist = {};
 function metricRow(body, key, label, valueText, values){
   const row = el("div", "metric");
   row.appendChild(el("span", "mlabel", label));
@@ -521,7 +520,6 @@ function metricRow(body, key, label, valueText, values){
   cv.className = "spark";
   row.appendChild(cv);
   body.appendChild(row);
-  sysHist[key] = values;
   drawSpark(cv, values);
 }
 
@@ -1382,17 +1380,27 @@ async function skillAction(action, name, question){
   else { await loadSkills(); if (d && d.error) $("skills-body").prepend(el("div", "sk-prob", d.error)); }
 }
 
+let ticking = false;
 async function tick(){
-  const results = await Promise.all(Object.keys(RENDERERS).map(u => j(u)));
-  Object.keys(RENDERERS).forEach((u, i) => RENDERERS[u](results[i]));
-  const dot = $("pulse");
-  const bad = results.some(r => !r || "error" in r);
-  dot.classList.toggle("err", bad);
-  $("updated").textContent = "updated " + new Date().toTimeString().slice(0, 8) + (bad ? " (some feeds down)" : "");
+  // nothing to show while the window is hidden (the app in the tray, a background tab), and never two at once:
+  // a slow LM Studio must not pile up requests
+  if (document.hidden || ticking) return;
+  ticking = true;
+  try {
+    const results = await Promise.all(Object.keys(RENDERERS).map(u => j(u)));
+    Object.keys(RENDERERS).forEach((u, i) => RENDERERS[u](results[i]));
+    const dot = $("pulse");
+    const bad = results.some(r => !r || "error" in r);
+    dot.classList.toggle("err", bad);
+    $("updated").textContent = "updated " + new Date().toTimeString().slice(0, 8) + (bad ? " (some feeds down)" : "");
+  } finally {
+    ticking = false;
+  }
 }
 
 tick();
 setInterval(tick, 3000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });  // fresh at once on return
 
 // --- tabs ------------------------------------------------------------------------
 // --- settings: every config.toml option, saved through the token-protected POST route ----
@@ -1529,6 +1537,8 @@ function renderSetup(d){
   const reach = d.servers.filter(s => s.reachable);
   const pick = el("select"); const models = el("select"); const custom = el("input");
   custom.type = "text"; custom.placeholder = "or another URL, like http://127.0.0.1:5000/v1";
+  pick.setAttribute("aria-label", "Model server"); models.setAttribute("aria-label", "Model");
+  custom.setAttribute("aria-label", "Another model server URL");
   for (const s of d.servers){
     const o = el("option", null, s.name + ": " + s.url + (s.reachable ? "  (" + s.models.length + " models)"
                                                                        : "  (not running)"));
@@ -1552,7 +1562,7 @@ function renderSetup(d){
       (() => { const r = el("div", "su-row"); r.append(custom, suButton("Use this", async () => {
         const url = custom.value.trim() || pick.value;
         srvMsg.textContent = "saving...";
-        const r2 = await postModel("/api/setup/server", {url, model: models.value});
+        const r2 = await postModel("/api/setup/server", {url, model: custom.value.trim() ? "" : models.value});
         srvMsg.textContent = r2 && r2.ok ? "Iris will use " + r2.model + " at " + r2.url + "."
           : ((r2 && (r2.error || r2.errors && Object.values(r2.errors).join("; "))) || "could not save");
         srvMsg.className = r2 && r2.ok ? "set-msg ok" : "set-msg bad";
@@ -1679,7 +1689,10 @@ let logsTimer = null;
 const PANES = ["overview", "agents", "activity", "repos", "tools", "eval", "queue", "skills", "setup", "settings", "logs"];
 function showTab(name){
   if (!PANES.includes(name)) name = "overview";
-  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab").forEach(b => {
+    b.classList.toggle("active", b.dataset.tab === name);
+    b.setAttribute("aria-selected", String(b.dataset.tab === name));  // screen readers hear which tab is open
+  });
   for (const p of PANES) $(p + "-pane").classList.toggle("hidden", p !== name);
   if (name === "eval") loadEval();   // the eval tab fetches when shown, not on every poll
   if (name === "skills") loadSkills();

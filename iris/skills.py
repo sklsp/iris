@@ -103,6 +103,37 @@ def _write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+def _trust() -> dict:
+    """trust.json, next to approved.json and outside every skill folder the builder works in: the tier the user agreed
+    to per skill and the digest of the files check() passed. meta.json sits in the builder's folder, so its tier and
+    status are never trusted on their own."""
+    try:
+        data = json.loads((skills_dir() / "trust.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"tiers": {}, "checked": {}}
+    if not isinstance(data, dict):
+        return {"tiers": {}, "checked": {}}
+    return {"tiers": dict(data.get("tiers") or {}), "checked": dict(data.get("checked") or {})}
+
+
+def _save_trust(name: str, tier: str | None = None, checked: str | None = None, drop: bool = False) -> None:
+    data = _trust()
+    for key, value in (("tiers", tier), ("checked", checked)):
+        if drop:
+            data[key].pop(name, None)
+        elif value is not None:
+            data[key][name] = value
+    skills_dir().mkdir(parents=True, exist_ok=True)
+    _write(skills_dir() / "trust.json", json.dumps(data, indent=1) + "\n")
+
+
+def agreed_tier(name: str) -> str:
+    """The tier the user agreed to in the plan (or on import). A skill planned before 1.0 has no record, so its
+    meta.json tier is used, as before; its approval digest still binds that tier."""
+    tier = _trust()["tiers"].get(name)
+    return tier if tier in (SAFE, CONFIRM) else str(meta(name).get("tier", CONFIRM))
+
+
 def meta(name: str) -> dict:
     path = _folder(name) / "meta.json"
     if not path.exists():
@@ -132,6 +163,7 @@ def save_plan(request: str, name: str, tier: str, plan: str, taken: set[str]) ->
                                            python=sys.executable))
     _save_meta(name, {"name": name, "tier": tier, "request": request, "status": "planned",
                       "created": datetime.now().isoformat(timespec="seconds")})
+    _save_trust(name, tier=tier)
     return folder
 
 
@@ -139,9 +171,13 @@ def listing() -> str:
     d = skills_dir()
     rows = []
     for m in sorted(d.glob("*/meta.json")) if d.is_dir() else []:
-        data = json.loads(m.read_text(encoding="utf-8"))
-        status = "approved" if _approved_ok(data["name"]) else data["status"]
-        rows.append(f"{data['name']} ({data['tier']}): {status}, asked: {str(data['request'])[:60]}")
+        name = m.parent.name
+        try:
+            data = json.loads(m.read_text(encoding="utf-8"))
+            status = "approved" if _approved_ok(name) else str(data.get("status", "?"))
+            rows.append(f"{name} ({agreed_tier(name)}): {status}, asked: {str(data.get('request', ''))[:60]}")
+        except (OSError, ValueError, AttributeError):
+            rows.append(f"{name}: meta.json can not be read; remove the skill and plan it again")
     return "\n".join(rows) or "No skills yet."
 
 
@@ -214,6 +250,11 @@ def check(name: str, run: Callable[..., subprocess.CompletedProcess[str]] = subp
     folder = _folder(name)
     _, problems = _spec(folder)
     problems += guard(folder)
+    tier = agreed_tier(name)
+    if data.get("tier") != tier:
+        problems.append(f"meta.json's tier was changed to {data.get('tier')!r} during the build; the plan says "
+                        f"{tier!r}, and only the plan sets the tier")
+        data["tier"] = tier
     approvals = _approvals()
     if data["status"] == "building" and name in approvals:
         # approve() needs a ready skill, so an approval that exists while it is still building was not the user's
@@ -223,8 +264,10 @@ def check(name: str, run: Callable[..., subprocess.CompletedProcess[str]] = subp
     output = ""
     if not problems:
         try:
-            r = run([sys.executable, "-I", "-m", "pytest", "-q", "-p", "no:cacheprovider", "test_skill.py"],
-                    cwd=folder, capture_output=True, text=True, timeout=TEST_TIMEOUT)
+            # -X utf8: under -I a child ignores PYTHONUTF8, and Windows pipes would use the code page
+            r = run([sys.executable, "-I", "-X", "utf8", "-m", "pytest", "-q", "-p", "no:cacheprovider",
+                     "test_skill.py"], cwd=folder, capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=TEST_TIMEOUT)
             output = (r.stdout + r.stderr).strip()
             if r.returncode != 0:
                 last = [line for line in output.splitlines() if line.strip()]
@@ -235,6 +278,7 @@ def check(name: str, run: Callable[..., subprocess.CompletedProcess[str]] = subp
     data.update(status="blocked" if problems else "ready", problems=problems,
                 checked=datetime.now().isoformat(timespec="seconds"))
     _save_meta(name, data)
+    _save_trust(name, tier=tier, checked="" if problems else _digest(name, tier))
     return data
 
 
@@ -257,8 +301,8 @@ def _approvals() -> dict:
 def _approved_ok(name: str) -> bool:
     entry = _approvals().get(name)
     try:
-        return bool(entry) and entry == _digest(name, meta(name)["tier"])
-    except (OSError, ValueError):
+        return bool(entry) and entry == _digest(name, agreed_tier(name))
+    except (OSError, ValueError, KeyError):
         return False
 
 
@@ -266,8 +310,13 @@ def approve(name: str) -> str:
     data = meta(name)
     if data["status"] != "ready":
         raise ValueError(f"{name} is {data['status']}; only a ready skill can be approved")
+    tier = agreed_tier(name)
+    digest = _digest(name, tier)
+    if _trust()["checked"].get(name) != digest:
+        raise ValueError(f"{name} changed after its last check, or Iris never checked it; check it again "
+                         "(capability_check), then approve it")
     approvals = _approvals()
-    approvals[name] = _digest(name, data["tier"])
+    approvals[name] = digest
     _write(skills_dir() / "approved.json", json.dumps(approvals, indent=1) + "\n")
     return f"approved {name}"
 
@@ -280,6 +329,7 @@ def remove(name: str) -> str:
     approvals = _approvals()
     if approvals.pop(name, None) is not None:
         _write(skills_dir() / "approved.json", json.dumps(approvals, indent=1) + "\n")
+    _save_trust(name, drop=True)
     dest = _trash_dir() / f"{time.strftime('%Y%m%d-%H%M%S')}_skill_{name}"
     shutil.move(str(folder), str(dest))
     # the same sidecar trash_file writes, so restore_trash can put it back (unapproved: the approval is gone)
@@ -298,7 +348,7 @@ def export_skill(name: str, dest: Path | None = None) -> Path:
     data = meta(name)
     dest = dest or Path.cwd() / f"{name}.iris-skill.zip"
     with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("skill.json", json.dumps({"name": name, "tier": data["tier"], "request": data["request"]},
+        z.writestr("skill.json", json.dumps({"name": name, "tier": agreed_tier(name), "request": data["request"]},
                                             ensure_ascii=False, indent=1) + "\n")
         for f in SHARED:
             z.write(_folder(name) / f, f)
@@ -329,14 +379,15 @@ def import_skill(path: Path, tier: str = CONFIRM, taken: Collection[str] = (),
     _save_meta(name, {"name": name, "tier": tier, "request": str(info.get("request", ""))[:500],
                       "status": "building", "source": path.name,
                       "created": datetime.now().isoformat(timespec="seconds")})
+    _save_trust(name, tier=tier)
     return (check_fn or check)(name)
 
 
 def run_skill(name: str, args: dict, run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> str:
     folder = _folder(name)
     try:
-        r = run([sys.executable, "-I", "-c", _HOST, str(folder / "skill.py")], input=json.dumps(args),
-                cwd=folder, capture_output=True, text=True, timeout=RUN_TIMEOUT)
+        r = run([sys.executable, "-I", "-X", "utf8", "-c", _HOST, str(folder / "skill.py")], input=json.dumps(args),
+                cwd=folder, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=RUN_TIMEOUT)
     except subprocess.TimeoutExpired:
         return f"error: {name} took longer than {RUN_TIMEOUT} seconds"
     if r.returncode != 0:
@@ -358,15 +409,21 @@ def approved_tools(taken: set[str]) -> list[dict]:
         spec, problems = _spec(m.parent)
         if problems:
             continue
-        out.append({"name": name, "tier": meta(name)["tier"], "description": spec["description"],
+        out.append({"name": name, "tier": agreed_tier(name), "description": spec["description"],
                     "params": spec.get("params", {}), "required": spec.get("required", [])})
     return out
 
 
 def finished_builds() -> list[str]:
     d = skills_dir()
-    return [m.parent.name for m in sorted(d.glob("*/meta.json")) if d.is_dir()
-            and (m.parent / "DONE").exists() and meta(m.parent.name)["status"] == "building"]
+    out = []
+    for m in sorted(d.glob("*/meta.json")) if d.is_dir() else []:
+        try:
+            if (m.parent / "DONE").exists() and meta(m.parent.name).get("status") == "building":
+                out.append(m.parent.name)
+        except (OSError, ValueError, AttributeError):  # a broken meta.json is that skill's problem, not the watcher's
+            continue
+    return out
 
 
 def watch(announce: Callable[[str], object], interval: float = 30, stop: threading.Event | None = None,
@@ -380,7 +437,10 @@ def watch(announce: Callable[[str], object], interval: float = 30, stop: threadi
                 try:
                     result = check_fn(name)
                 except Exception as exc:  # noqa: BLE001 - one bad build must never stop the watcher
-                    _save_meta(name, {**meta(name), "status": "blocked", "problems": [f"check failed: {exc}"]})
+                    try:
+                        _save_meta(name, {**meta(name), "status": "blocked", "problems": [f"check failed: {exc}"]})
+                    except (OSError, ValueError, TypeError):
+                        pass  # meta.json itself is broken; the announcement still says so
                     announce(f"I could not check the new skill {name}: {exc}")
                     continue
                 if result["status"] == "ready":

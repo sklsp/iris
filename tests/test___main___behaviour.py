@@ -552,3 +552,47 @@ def test_ctrl_c_while_busy_dumps_every_thread_and_reraises(tmp_path, monkeypatch
 
     assert dumps == [{"file": None, "all_threads": True}]
 
+
+
+def test_the_journal_defaults_to_iris_journal_like_the_dashboard(monkeypatch, tmp_path):
+    holder = _install_agent(monkeypatch)
+    _scripted_input(monkeypatch, [])
+    monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "elsewhere.jsonl"))
+    monkeypatch.setattr(sys, "argv", ["iris"])
+    imain.main()
+    assert holder["agent"].journal.path == tmp_path / "elsewhere.jsonl" == idash.journal_path()
+
+
+def test_an_error_nobody_caught_goes_to_the_crash_log_with_one_sentence(monkeypatch, capsys):
+    from iris import config
+
+    _install_agent(monkeypatch)
+    _scripted_input(monkeypatch, ["what time is it"])
+
+    def broken(self, request):
+        raise RuntimeError("the model client broke")
+
+    monkeypatch.setattr(sys, "argv", ["iris"])
+    monkeypatch.setattr(FakeAgent, "handle", broken)
+    with pytest.raises(SystemExit) as stop:
+        imain.main()
+    assert stop.value.code == 1
+    log = config.config_path().parent / "logs" / "crash.log"
+    err = capsys.readouterr().err
+    assert f"Iris stopped on an error: the model client broke. The details are in {log}." in err
+    text = log.read_text(encoding="utf-8")
+    assert "RuntimeError: the model client broke" in text and "Traceback" in text
+
+
+def test_a_background_thread_that_fails_is_logged_and_iris_goes_on(monkeypatch, capsys):
+    from iris import config
+
+    _install_agent(monkeypatch)
+    _scripted_input(monkeypatch, [])
+    monkeypatch.setattr(sys, "argv", ["iris"])
+    imain.main()  # installs the hook, then ends at once (no input)
+    t = threading.Thread(target=lambda: 1 / 0, name="iris-timer")
+    t.start()
+    t.join()
+    assert "a background task failed: division by zero" in capsys.readouterr().err
+    assert "thread iris-timer" in (config.config_path().parent / "logs" / "crash.log").read_text(encoding="utf-8")

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 
 DEFAULTS: dict = {"name": "the user", "plugins": [], "builder": [], "folders": []}
@@ -26,12 +27,42 @@ def config_path() -> Path:
     return Path(os.environ.get("IRIS_CONFIG") or (Path.home() / ".iris" / "config.toml"))
 
 
+_cache: tuple[tuple[str, int, int], dict] | None = None  # ((path, mtime_ns, size), parsed) until the file changes
+
+
 def raw() -> dict:
-    """The file as parsed; {} when it is missing or broken."""
+    """The file as parsed; {} when it is missing or broken (error() says why). A UTF-8 BOM, which Notepad and
+    PowerShell write, is fine. Parsed once per (path, mtime_ns, size);
+    a changed, removed or new file is read again."""
+    global _cache
+    path = config_path()
     try:
-        return tomllib.loads(config_path().read_text(encoding="utf-8"))
+        st = path.stat()
+    except OSError:
+        return {}
+    key = (str(path), st.st_mtime_ns, st.st_size)
+    if _cache is not None and _cache[0] == key:
+        return dict(_cache[1])
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
         return {}
+    _cache = (key, data)
+    return dict(data)
+
+
+def error() -> str | None:
+    """Why config.toml can not be read, or None when it is fine or simply not there (iris doctor shows this)."""
+    path = config_path()
+    if not path.exists():
+        return None
+    try:
+        tomllib.loads(path.read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError:
+        return "it is not UTF-8 text; save it as UTF-8"
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        return str(exc)
+    return None
 
 
 def get(key: str, default: str = "") -> str:
@@ -49,6 +80,55 @@ def setting(env: str, key: str, default: str = "") -> str:
     if isinstance(value, bool) or not isinstance(value, str | int | float):
         return default
     return str(value).strip() or default
+
+
+def number(env: str, key: str, default: float) -> float:
+    """A numeric setting (environment, then config.toml), or the default when it is not a number: one typo such as
+    silence = "fast" must not stop Iris from starting. bad_numbers() lets iris doctor point at it."""
+    try:
+        value = float(setting(env, key, str(default)))
+    except ValueError:
+        return default
+    return value if value == value and abs(value) != float("inf") else default
+
+
+NUMBERS = (("IRIS_SILENCE", "silence"), ("IRIS_FOLLOW_UP", "follow_up"), ("IRIS_WAKE_THRESHOLD", "wake_threshold"),
+           ("IRIS_WHISPER_GPU", "whisper_gpu"), ("IRIS_VOXCPM_GPU", "voxcpm_gpu"))
+
+
+def bad_numbers() -> list[str]:
+    """The numeric settings whose value is not a number, as "key = value" (from config.toml or the environment)."""
+    out = []
+    for env, key in NUMBERS:
+        value = setting(env, key, "")
+        try:
+            if value:
+                float(value)
+        except ValueError:
+            out.append(f"{key} = {value!r}")
+    return out
+
+
+CRASH_LOG_MAX_BYTES = 1_000_000  # crash.log moves to crash.log.1 once it is this big
+
+
+def log_crash(where: str, exc: BaseException) -> Path:
+    """Append the traceback of an error nobody caught to logs/crash.log next to config.toml (the Logs tab shows it),
+    and return its path for the one sentence that tells the user where to look."""
+    import traceback
+    from datetime import datetime
+
+    path = config_path().parent / "logs" / "crash.log"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists() and path.stat().st_size > CRASH_LOG_MAX_BYTES:
+            os.replace(path, path.with_name(path.name + ".1"))
+        with path.open("a", encoding="utf-8", errors="replace") as f:
+            f.write(f"--- {datetime.now():%Y-%m-%d %H:%M:%S} {where}\n")
+            f.write("".join(traceback.format_exception(exc)))
+    except OSError:
+        pass  # a crash log that can not be written must not hide the crash itself
+    return path
 
 
 def load() -> dict:
@@ -86,7 +166,7 @@ name = {name}
 """
 
 
-def init_main(ask=input) -> int:
+def init_main(ask: Callable[[str], str] = input) -> int:
     """`iris init`: ask two questions and write a starter config.toml; never overwrites one."""
     path = config_path()
     if path.exists():

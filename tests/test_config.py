@@ -315,3 +315,15 @@ def test_doctor_covers_the_fallback_voice_kokoro_the_packs_and_missing_folders(t
     folders = next(line for ok, line in doctor.checks({"reachable": False}) if line.startswith("folders"))
     assert "gone" in folders and not folders.startswith(doctor.OPTIONAL)  # FIX, not optional
     assert len(doctor.checks({"reachable": False})) <= 25  # one screen
+
+
+def test_a_recreated_config_of_the_same_size_and_time_is_read_again(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    monkeypatch.setenv("IRIS_CONFIG", str(path))
+    path.write_text('name = "Anna"\n', encoding="utf-8")
+    stamp = path.stat().st_mtime_ns
+    assert config.load()["name"] == "Anna"
+    path.unlink()
+    path.write_text('name = "Bart"\n', encoding="utf-8")  # same size, and the same clock tick below
+    os.utime(path, ns=(stamp, stamp))
+    assert config.load()["name"] == "Bart"

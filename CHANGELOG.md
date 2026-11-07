@@ -64,6 +64,8 @@
   tab copes with hand-edited values of the wrong type.
 - A HEAD request to the dashboard gets its error without a body, and a cline_cli that is a .cmd or .bat file is
   refused instead of passing the prompt through cmd.exe.
+- [model] Clearer tool descriptions: taking a prompt out of the queue removes it, a site search answers from the
+  search page, and a deck or sheet with no details is made with general content instead of a question.
 
 
 ### Docs

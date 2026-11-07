@@ -118,6 +118,12 @@ def test_open_url_allows_http_and_https(url, monkeypatch):
     assert started == [url]
 
 
+def test_open_url_description_says_answer_from_the_search_result():
+    desc = tools.TOOLS["open_url"].description
+    assert "After a search URL the result already holds the results:" in desc
+    assert "do not read, scroll or search the page again" in desc
+
+
 # --- files (trash + undo) -----------------------------------------------------
 @pytest.fixture
 def home(tmp_path, monkeypatch):
@@ -916,6 +922,24 @@ def test_queue_take_and_remove_descriptions_point_to_the_right_tool():
     remove = tools.TOOLS["queue_remove"].description
     assert "never to delete one" in take
     assert "call queue_list first" in remove
+
+
+def test_queue_take_points_numbered_removals_to_queue_remove():
+    take = tools.TOOLS["queue_take"].description
+    remove = tools.TOOLS["queue_remove"].description
+    assert "A request to take a prompt out of the queue by its number is queue_remove." in take
+    assert "take it out of the queue" in remove
+    assert "haal uit de wachtrij" in remove
+
+
+# --- make_presentation and make_spreadsheet descriptions -------------------------
+def test_make_office_descriptions_do_not_ask_what_to_put_in():
+    pres = tools.TOOLS["make_presentation"].description
+    sheet = tools.TOOLS["make_spreadsheet"].description
+    phrase = ("When the request gives no details and one quick look finds none,"
+              " make it anyway with sensible general content and say so in the answer; do not ask first.")
+    assert phrase in pres
+    assert phrase in sheet
 
 
 # --- registry guards -----------------------------------------------------------

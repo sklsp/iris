@@ -1002,7 +1002,8 @@ TOOLS = {t.name: t for t in [
          " The result already lists the page's numbered buttons, links"
          " and fields (as browser_read does), so click or type on them next without reading first. To search a site,"
          " open its search URL directly, e.g. https://www.youtube.com/results?search_query=lofi+music or"
-         " https://www.netflix.com/search?q=horror. file:, javascript: and data: are refused.",
+         " https://www.netflix.com/search?q=horror. After a search URL the result already holds the results:"
+         " answer from it, do not read, scroll or search the page again. file:, javascript: and data: are refused.",
          {"url": S}, ["url"], SAFE, open_url, _open_url_tier),
     Tool("browser_read",
          "Read the web page open in the user's browser (Brave, Chrome or Edge) as numbered buttons, links and fields"
@@ -1043,14 +1044,16 @@ TOOLS = {t.name: t for t in [
     Tool("queue_add", "Put a prompt in the agent queue for one agent (a repo or chat name). Asks the user first.",
           {"agent": S, "text": S}, ["agent", "text"], CONFIRM, queue_add),
     Tool("queue_take",
-         "Take the oldest waiting prompt for one agent out of the queue to paste it into that agent:"
+         "Hand the oldest waiting prompt for one agent to that agent:"
          " returns its text so it can be pasted with type_text."
-         " Only for handing a prompt to an agent, never to delete one. Asks the user first.",
+         " Only for handing a prompt to an agent, never to delete one."
+         " A request to take a prompt out of the queue by its number is queue_remove. Asks the user first.",
           {"agent": S}, ["agent"], CONFIRM, queue_take),
     Tool("queue_remove",
          "Delete one waiting prompt from the agent queue by its id."
-         " Use this whenever the user wants a prompt removed, deleted or gone,"
-         " also when they name it by its text: call queue_list first to find its id. Asks the user first.",
+         " 'Remove', 'delete', 'gone' or 'take it out of the queue'"
+         " (Dutch 'haal uit de wachtrij') all mean this tool,"
+         " also when the user names it by its text: call queue_list first to find its id. Asks the user first.",
          {"id": {"type": "integer"}}, ["id"], CONFIRM, queue_remove),
     Tool("queue_move",
          "Move one waiting prompt in the agent queue one place up (earlier) or down (later)"
@@ -1128,7 +1131,9 @@ TOOLS = {t.name: t for t in [
     Tool("make_presentation",
          "Make a PowerPoint .pptx for the user from a title and slide entries; use it when the user wants slides"
          " or a deck about a topic. Write the actual content yourself: real titles and bullets, 4 to 8 slides"
-         " unless the user asks otherwise; for a research topic use web_search and web_read first.",
+         " unless the user asks otherwise; for a research topic use web_search and web_read first."
+         " When the request gives no details and one quick look finds none, make it anyway with sensible"
+         " general content and say so in the answer; do not ask first.",
          {"path": S, "title": S,
           "slides": {"type": "array", "items": {"type": "object",
                                                 "properties": {"title": S,
@@ -1138,7 +1143,9 @@ TOOLS = {t.name: t for t in [
     Tool("make_spreadsheet",
          "Make a spreadsheet .xlsx for the user from named worksheets of rows; use it when the user wants a table,"
          " list or data file. Write the actual content yourself: real headers and data rows about the topic; for a"
-         " research topic use web_search and web_read first.",
+         " research topic use web_search and web_read first."
+         " When the request gives no details and one quick look finds none, make it anyway with sensible"
+         " general content and say so in the answer; do not ask first.",
          {"path": S,
           "sheets": {"type": "array", "items": {"type": "object",
                                                 "properties": {"name": S,

@@ -62,6 +62,8 @@
 - A journal that can not be written stops the turn, so a tool never runs twice for it.
 - The Setup tab installs the voices and Whisper model now set, can use a custom model server, and the Settings
   tab copes with hand-edited values of the wrong type.
+- A HEAD request to the dashboard gets its error without a body, and a cline_cli that is a .cmd or .bat file is
+  refused instead of passing the prompt through cmd.exe.
 
 
 ### Docs

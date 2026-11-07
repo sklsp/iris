@@ -27,6 +27,8 @@
 - The dashboard does not poll while its window is hidden.
 - config.toml is parsed once until it changes, and the CPU reading no longer waits 0.3 s.
 - settings.json is read once until it changes, and two dashboard polls of one route fetch once.
+- In voice mode Iris says "One moment." once when a request runs past 8 seconds, so a long think no longer
+  sounds like she did not hear you. The panel keeps showing that she is thinking.
 
 
 ### Skills

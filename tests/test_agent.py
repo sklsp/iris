@@ -399,6 +399,43 @@ def test_confirm_questions_and_fallbacks_in_german_french_and_spanish(tmp_path):
     assert _sorry("slow", "xyz") == "That took me too long to think through. Try asking it in a shorter way."
 
 
+def test_hold_line_follows_the_language_of_the_request():
+    from iris.agent import hold_line
+
+    assert hold_line("Ik wil even weten hoe laat het is in Tokio.") == "Even kijken."
+    assert hold_line("What time is it in Tokyo?") == "One moment."
+
+
+def test_start_hold_says_the_line_once_after_the_delay():
+    import threading
+
+    from iris.agent import start_hold
+
+    said = []
+    done = threading.Event()
+
+    def say(text):
+        said.append(text)
+        done.set()
+
+    timer = start_hold(say, "Ik wil even weten hoe laat het is in Tokio.", after=0.01)
+    assert done.wait(2)  # the hold line lands shortly after the delay
+    timer.cancel()  # what the voice loop does when the answer comes
+    assert said == ["Even kijken."]
+
+
+def test_start_hold_cancelled_right_away_says_nothing():
+    import time
+
+    from iris.agent import start_hold
+
+    said = []
+    timer = start_hold(said.append, "Hoe laat is het in Tokio?", after=0.2)
+    timer.cancel()  # the answer (or a cancel) came first
+    time.sleep(0.05)
+    assert said == []
+
+
 def _clicks(*controls, window="Netflix - Brave"):
     calls = [ToolCall(str(i), "click", {"window": window, "control": c}) for i, c in enumerate(controls)]
     return Reply("", calls, {"role": "assistant", "content": ""})

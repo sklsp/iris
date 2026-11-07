@@ -161,6 +161,26 @@ def _sorry(key: str, request: str) -> str:
     return _SORRY[key][LANGS.index(_lang(request))]
 
 
+HOLD_AFTER = 8.0  # seconds a voice request may run before Iris says she is on it
+# the short holding line while the answer is still missing, per language: en, nl, de, fr, es.
+_HOLD = ("One moment.", "Even kijken.", "Einen Moment.", "Un instant.", "Un momento.")
+
+
+def hold_line(request: str) -> str:
+    return _HOLD[LANGS.index(_lang(request))]
+
+
+def start_hold(say: Callable[[str], object], request: str, after: float | None = None) -> threading.Timer:
+    """A long silence sounds like Iris did not hear; say a short holding line once if the answer is still missing.
+
+    The caller cancels it as soon as the answer, a question or a cancel comes."""
+    delay = HOLD_AFTER if after is None else after  # read at call time so tests can shorten it
+    timer = threading.Timer(delay, say, args=(hold_line(request),))
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
 class Agent:
     def __init__(self, llm: LMStudio, confirm: Callable[[str], bool], journal: Journal,
                  tools: dict[str, Tool] | Callable[[], dict[str, Tool]] = active_tools, today: str | None = None):

@@ -24,10 +24,11 @@ import sys
 import threading
 import zipfile
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 from iris import __version__, skills, tools
-from iris.agent import Agent, Journal
+from iris.agent import Agent, Journal, start_hold
 from iris.llm import LMStudio
 from iris.voice import is_yes, speak
 
@@ -200,6 +201,7 @@ def _main() -> None:
                              name="iris-supervised", daemon=True).start()
 
     session = None
+    hold_timer: list[threading.Timer | None] = [None]  # the running hold-line timer, shared by the loop and confirm
     hear: Callable[[], str]
     say: Callable[[str], bool | threading.Thread | None]  # the three modes return different things; none is used
     if not (a.voice or a.push_to_talk):
@@ -226,6 +228,10 @@ def _main() -> None:
         say = session.speak_async  # non-blocking: Iris talks while the next request is processed
 
         def confirm(question: str) -> bool:
+            timer = hold_timer[0]
+            if timer is not None:  # a hold line never talks over a yes/no question
+                timer.cancel()
+                hold_timer[0] = None
             session.speak(question)
             return is_yes(session.next_command())
 
@@ -255,7 +261,15 @@ def _main() -> None:
             if request.lower() in {"quit", "exit", "stop", "stoppen"}:
                 break
             if request:
-                answer = agent.handle(request)
+                if session is not None:
+                    hold_timer[0] = start_hold(partial(session.speak_async, panel=False), request)
+                try:
+                    answer = agent.handle(request)
+                finally:
+                    timer = hold_timer[0]
+                    if timer is not None:  # the answer or an error came; no holding line needed
+                        timer.cancel()
+                        hold_timer[0] = None
                 if cancelled is None or not cancelled.is_set():  # a cancelled request says nothing
                     say(answer)
     except KeyboardInterrupt:

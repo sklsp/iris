@@ -167,6 +167,29 @@ def test_speaker_kokoro_stops_between_chunks_on_interrupt(monkeypatch):
     assert len(played) == 1
 
 
+def test_speaker_kokoro_waits_for_chunks_without_blocking_the_event_loop(monkeypatch):
+    said = []
+    _fake_pyttsx3(monkeypatch, said)  # records any SAPI fallback
+    played = []
+    fake_sd = types.ModuleType("sounddevice")
+    fake_sd.play = lambda data, sr: played.append(len(data))
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+
+    import iris.voice as v
+
+    def no_blocking_sleep(*a):
+        if threading.current_thread() is threading.main_thread():  # only Kokoro's loop runs there
+            raise AssertionError("the event loop must not be blocked with time.sleep")
+
+    monkeypatch.setattr(v.time, "sleep", no_blocking_sleep)  # a blocking wait fails the test at once
+
+    spk = Speaker(engine="kokoro")
+    spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(2)])  # two short chunks
+    assert spk.speak("hello", stop_event=threading.Event()) is True
+    assert played == [2400, 2400]  # Kokoro spoke both chunks...
+    assert said == []  # ...so SAPI was never asked to step in
+
+
 def test_speaker_kokoro_falls_back_to_sapi(monkeypatch, tmp_path):
     said = []
 

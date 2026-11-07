@@ -1005,14 +1005,15 @@ class Speaker:
                     if stop_event is not None and stop_event.is_set():
                         return False
                     # sd.play returns at once and the next play would cut this chunk off: wait for its end,
-                    # stopping at once for a wake word
+                    # stopping at once for a wake word. asyncio.sleep keeps the loop free so create_stream can
+                    # make the next chunk while this one plays
                     sd.play(chunk.astype("float32"), sr)
                     end = time.perf_counter() + len(chunk) / sr
                     while time.perf_counter() < end:
                         if stop_event is not None and stop_event.is_set():
                             getattr(sd, "stop", lambda: None)()
                             return False
-                        time.sleep(0.02)
+                        await asyncio.sleep(0.02)
                 return True
 
             ok = asyncio.run(play())

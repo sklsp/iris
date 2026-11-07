@@ -942,6 +942,15 @@ def test_make_office_descriptions_do_not_ask_what_to_put_in():
     assert phrase in sheet
 
 
+# --- request_capability description ---------------------------------------------
+def test_request_capability_description_covers_smart_devices_and_online_services():
+    desc = tools.TOOLS["request_capability"].description
+    phrase = ("A smart device or online service with no tool here (lamps, a thermostat, "
+              "a streaming account) is such a request: call this straight away, do not look"
+              " for an app or a window first.")
+    assert phrase in desc
+
+
 # --- registry guards -----------------------------------------------------------
 def test_every_tool_is_documented():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")

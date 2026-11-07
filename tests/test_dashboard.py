@@ -1,5 +1,6 @@
 """Safety and route tests for the read-only dashboard (no real repos, LLM or journal touched)."""
 
+import http.client
 import json
 import os
 import re
@@ -73,6 +74,34 @@ def test_non_get_methods_are_refused_with_405(server, method, path):
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(req, timeout=5)
     assert exc.value.code == 405
+
+
+def test_head_gets_405_without_a_body(server):
+    """A HEAD answer keeps the 405 status and headers but must not send a body."""
+    host, port = server.removeprefix("http://").rsplit(":", 1)
+    conn = http.client.HTTPConnection(host, int(port), timeout=5)
+    try:
+        conn.request("HEAD", "/api/system")
+        resp = conn.getresponse()
+        assert resp.status == 405
+        assert resp.read() == b""   # a HEAD answer has no body; one here would corrupt keep-alive
+        # the same connection must still work: leftover bytes would break this next request
+        conn.request("GET", "/api/tools")
+        followup = conn.getresponse()
+        assert followup.status == 200
+        json.loads(followup.read().decode("utf-8"))
+    finally:
+        conn.close()
+
+
+def test_put_still_gets_its_json_body(server):
+    """The HEAD fix must not swallow the JSON body of the other refused methods."""
+    req = urllib.request.Request(server + "/api/system", data=b"{}", method="PUT")
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req, timeout=5)
+    assert exc.value.code == 405
+    body = json.loads(exc.value.read().decode("utf-8"))
+    assert "error" in body   # PUT still answers with its JSON error body
 
 
 def test_server_binds_loopback_only():

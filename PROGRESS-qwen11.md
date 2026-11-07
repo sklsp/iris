@@ -1,0 +1,3 @@
+- [x] Q1. A HEAD request to the dashboard gets its 405 without a body (2222 passed in 96.20s (0:01:36))
+- [ ] Q2. A cline_cli that is a .cmd or .bat is refused instead of run through cmd.exe
+- [ ] Q3. CHANGELOG for this run

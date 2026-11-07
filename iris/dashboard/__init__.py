@@ -999,7 +999,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         # no CORS headers on purpose: other websites must not be able to read this
         self.end_headers()
-        self.wfile.write(data)
+        if self.command != "HEAD":   # a HEAD answer keeps its headers but never sends its body
+            self.wfile.write(data)
 
     def log_message(self, fmt: str, *args: object) -> None:  # keep the console quiet while it runs
         """No per-request logging; a running dashboard must not fill the console."""

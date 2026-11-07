@@ -972,6 +972,12 @@ def test_close_window_description_says_call_it_directly():
     assert "no list_windows or focus_window first" in desc
 
 
+# --- find_files description -----------------------------------------------------
+def test_find_files_description_says_one_search_covers_variants():
+    desc = tools.TOOLS["find_files"].description
+    assert "do not repeat with variants" in desc
+
+
 # --- registry guards -----------------------------------------------------------
 def test_every_tool_is_documented():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")

@@ -1105,7 +1105,9 @@ TOOLS = {t.name: t for t in [
     Tool("capability_remove", "Remove a skill Iris built (it goes to Iris's trash). Asks first.",
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_remove),
     Tool("find_files",
-         "Files and folders whose name contains `name`, in home plus configured folders; newest first.",
+         "Files and folders whose name contains `name` (case does not matter), in home plus configured"
+         " folders; newest first. Search once with the shortest key word (factuur, not facturen 2026);"
+         " do not repeat with variants of the same word.",
          {"name": S, "folder": S}, ["name"], SAFE, find_files),
     Tool("list_folder",
          "The entries of a folder: folders first with a trailing /, then files with their size in KB.",

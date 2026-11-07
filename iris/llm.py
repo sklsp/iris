@@ -21,11 +21,12 @@ def settings_path() -> Path:
     return Path(os.environ.get("IRIS_SETTINGS") or (Path.home() / ".iris" / "settings.json"))
 
 
-_cache: tuple[tuple[str, int, int], dict] | None = None  # ((path, mtime_ns, size), parsed) until the file changes
+# ((path, file id, mtime_ns, size), parsed) until the file changes
+_cache: tuple[tuple[str, int, int, int], dict] | None = None
 
 
 def read_settings() -> dict:
-    """The contents of settings.json; re-read when the file changes (its path, mtime or size).
+    """The contents of settings.json; re-read when the file changes (its path, file id, mtime or size).
 
     A missing file, a broken one and a non-object top level all mean "no user choice"; callers get a copy."""
     global _cache
@@ -34,7 +35,7 @@ def read_settings() -> dict:
         st = path.stat()
     except OSError:
         return {}
-    key = (str(path), st.st_mtime_ns, st.st_size)
+    key = (str(path), st.st_ino, st.st_mtime_ns, st.st_size)
     if _cache is not None and _cache[0] == key:
         return dict(_cache[1])
     try:

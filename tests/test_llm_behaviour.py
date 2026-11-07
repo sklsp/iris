@@ -208,3 +208,17 @@ def test_see_and_locate_send_the_image_and_parse_the_point(monkeypatch):
     seen = _fake_urlopen(monkeypatch, {"choices": [{"message": {"content": " Notepad is open. "}}]})
     assert llm.see(b"PNG", "what is open?") == "Notepad is open."
     assert json.loads(seen["request"].data)["messages"][0]["content"][0]["text"].endswith("Question: what is open?")
+
+
+def test_read_settings_reads_a_replaced_file_of_the_same_size_and_time(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"model": "aaaa"}), encoding="utf-8")
+    monkeypatch.setenv("IRIS_SETTINGS", str(path))
+    llm._cache = None
+    stamp = path.stat().st_mtime_ns
+    assert llm.read_settings() == {"model": "aaaa"}
+    tmp = tmp_path / "settings.json.tmp"  # the settings page saves through a temp file and os.replace
+    tmp.write_text(json.dumps({"model": "bbbb"}), encoding="utf-8")
+    os.replace(tmp, path)
+    os.utime(path, ns=(stamp, stamp))
+    assert llm.read_settings() == {"model": "bbbb"}

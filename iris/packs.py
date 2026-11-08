@@ -12,6 +12,7 @@ can remove it on request. One install runs at a time, as child processes whose o
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import os
 import queue
 import subprocess
@@ -78,10 +79,22 @@ def _wake_name() -> str:
 
 
 def _wake_files() -> list[Path]:
-    import openwakeword
-
+    """The wake model and the feature models next to it. Found on disk when openwakeword is not loaded yet:
+    importing it loads scikit-learn, two seconds that made `iris doctor` slow."""
     name = _wake_name()
-    model = Path(openwakeword.MODELS[name]["model_path"].replace(".tflite", ".onnx"))
+    loaded = sys.modules.get("openwakeword")
+    if loaded is not None:  # the voice loop already has it: use its own table
+        model = Path(loaded.MODELS[name]["model_path"].replace(".tflite", ".onnx"))
+    else:
+        spec = importlib.util.find_spec("openwakeword")
+        locations = getattr(spec, "submodule_search_locations", None)  # absent when it is not installed
+        if not locations:
+            raise ImportError("openwakeword is not installed")
+        folder = Path(next(iter(locations))) / "resources" / "models"
+        found = sorted(folder.glob(f"{name}_v*.onnx"))
+        if not found:
+            raise KeyError(name)  # not downloaded yet, or not one of openwakeword's own models
+        model = found[-1]
     return [model] + [model.parent / f for f in FEATURE_MODELS]
 
 

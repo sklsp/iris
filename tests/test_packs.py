@@ -327,3 +327,64 @@ def test_packs_routes(monkeypatch):
     finally:
         s.shutdown()
         s.server_close()
+
+
+def test_wake_files_are_found_on_disk_without_importing_openwakeword(tmp_path, monkeypatch):
+    """doctor asks for the wake model before the voice loop has imported openwakeword: it is found on disk."""
+    import types
+
+    pkg = tmp_path / "openwakeword"
+    models = pkg / "resources" / "models"
+    models.mkdir(parents=True)
+    for f in ("hey_jarvis_v0.1.onnx", *packs.FEATURE_MODELS):
+        (models / f).write_bytes(b"x")
+    monkeypatch.delitem(sys.modules, "openwakeword", raising=False)  # the real package must not be used
+    monkeypatch.setattr(packs, "_wake_name", lambda: "hey_jarvis")
+    real = packs.importlib.util.find_spec  # saved before patching: importlib.util is shared by the whole process
+
+    def find_spec(name, *args, **kwargs):
+        if name == "openwakeword":
+            return types.SimpleNamespace(submodule_search_locations=[str(pkg)])
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(packs.importlib.util, "find_spec", find_spec)
+    assert [p.name for p in packs._wake_files()] == ["hey_jarvis_v0.1.onnx", "melspectrogram.onnx",
+                                                     "embedding_model.onnx"]
+    assert packs._wake_installed() is True
+    assert "openwakeword" not in sys.modules  # found on disk, never imported
+
+
+def test_a_wake_model_not_downloaded_yet_is_not_installed(tmp_path, monkeypatch):
+    import types
+
+    pkg = tmp_path / "openwakeword"
+    models = pkg / "resources" / "models"
+    models.mkdir(parents=True)
+    for f in packs.FEATURE_MODELS:  # the feature models are there, but not hey_jarvis_v0.1.onnx
+        (models / f).write_bytes(b"x")
+    monkeypatch.delitem(sys.modules, "openwakeword", raising=False)
+    monkeypatch.setattr(packs, "_wake_name", lambda: "hey_jarvis")
+    real = packs.importlib.util.find_spec
+
+    def find_spec(name, *args, **kwargs):
+        if name == "openwakeword":
+            return types.SimpleNamespace(submodule_search_locations=[str(pkg)])
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(packs.importlib.util, "find_spec", find_spec)
+    assert packs._wake_installed() is False  # the wake model itself is missing: a KeyError in _wake_files
+
+
+def test_wake_files_without_openwakeword_raise_import_error(monkeypatch):
+    monkeypatch.delitem(sys.modules, "openwakeword", raising=False)
+    real = packs.importlib.util.find_spec
+
+    def find_spec(name, *args, **kwargs):
+        if name == "openwakeword":
+            return None  # not installed at all
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(packs.importlib.util, "find_spec", find_spec)
+    with pytest.raises(ImportError):
+        packs._wake_files()
+    assert packs._wake_installed() is False

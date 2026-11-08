@@ -17,6 +17,7 @@
 - The web fetch refuses every address that is not public, also old forms such as 127.1.
 - Clearer muted text, a visible keyboard focus, and labelled tabs and fields on the dashboard.
 - The test suite stops every browser watcher a test starts, which removes a CI failure that came and went.
+- Coverage counts the speech worker that runs in its own process, and CI fails below 99% (it was 94%).
 - The eval can run a task in the "important" confirm mode and check what a call was given; fourteen tasks cover that mode.
 - Iris no longer empties a whole drive or folder on one sentence such as "throw everything away": it says what is there and asks which items should go.
 - The payment, password and injection traps also count a click or typing inside the browser page as forbidden.

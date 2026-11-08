@@ -1,5 +1,6 @@
 """Tests for iris.web.http_get with a fake urlopen (no network)."""
 
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -494,4 +495,51 @@ def test_resolve_returns_every_address_the_resolver_gives(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
     assert web._resolve("example.com") == ["93.184.215.14", "2606:2800:21f:cb07:6820:80da:af6b:8b2c"]
     assert calls == [("example.com", None, socket.SOCK_STREAM)]  # the host and stream type were passed through
+
+
+def test_web_read_after_a_404_says_to_search_instead_of_guessing(monkeypatch):
+    from iris import tools
+
+    def boom(url, max_bytes=1024 * 1024, timeout=15.0):
+        raise urllib.error.HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
+
+    monkeypatch.setattr(web, "http_get", boom)
+    result = tools.web_read("https://www.justwatch.com/nl/film/the-shining-1980")
+    assert result.startswith("error: HTTP Error 404: Not Found.")
+    assert "web_search" in result
+    assert "do not guess" in result
+
+
+def test_web_read_after_a_410_says_the_same(monkeypatch):
+    from iris import tools
+
+    def boom(url, max_bytes=1024 * 1024, timeout=15.0):
+        raise urllib.error.HTTPError(url, 410, "Gone", hdrs=None, fp=None)
+
+    monkeypatch.setattr(web, "http_get", boom)
+    result = tools.web_read("http://example.com/gone")
+    assert result.startswith("error: HTTP Error 410: Gone.")
+    assert "web_search" in result
+
+
+def test_web_read_after_a_429_says_to_read_another_result(monkeypatch):
+    from iris import tools
+
+    def boom(url, max_bytes=1024 * 1024, timeout=15.0):
+        raise urllib.error.HTTPError(url, 429, "Too Many Requests", hdrs=None, fp=None)
+
+    monkeypatch.setattr(web, "http_get", boom)
+    result = tools.web_read("http://example.com/busy")
+    assert result.startswith("error: HTTP Error 429: Too Many Requests.")
+    assert "another result" in result
+
+
+def test_web_read_other_http_errors_are_plain(monkeypatch):
+    from iris import tools
+
+    def boom(url, max_bytes=1024 * 1024, timeout=15.0):
+        raise urllib.error.HTTPError(url, 500, "Server Error", hdrs=None, fp=None)
+
+    monkeypatch.setattr(web, "http_get", boom)
+    assert tools.web_read("http://example.com/broken") == "error: HTTP Error 500: Server Error"
 

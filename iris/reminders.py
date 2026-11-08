@@ -157,6 +157,12 @@ def _fire_later(rid: int, text: str) -> Callable[[], None]:
     return lambda: _fire(rid, text)
 
 
+def _seconds_until(due: datetime, now: datetime) -> float:
+    """Seconds from now to due, both local wall times: astimezone() gives each its own UTC offset, so a daylight
+    saving change in between is counted."""
+    return (due.astimezone() - now.astimezone()).total_seconds()
+
+
 def reminder_set(when: str, text: str) -> str:
     """Remember `text` for a time; Iris says it out loud when the time comes.
 
@@ -181,7 +187,7 @@ def reminder_set(when: str, text: str) -> str:
         rows.append({"id": new_id, "due": due.strftime("%Y-%m-%dT%H:%M"), "text": flat})
         _write(None, rows)
         if _announce is not None:
-            _handles[new_id] = _schedule((due - now).total_seconds(), _fire_later(new_id, flat))
+            _handles[new_id] = _schedule(_seconds_until(due, now), _fire_later(new_id, flat))
     return f"reminder set for {due:%Y-%m-%d %H:%M} (id {new_id})"
 
 
@@ -231,7 +237,7 @@ def start_reminders(announce: Callable[[str], object], now: Callable[[], datetim
                 announce(f"Missed reminder: {row['text']}")
             else:
                 rid = row["id"]
-                _handles[rid] = _schedule((due - t).total_seconds(), _fire_later(rid, row["text"]))
+                _handles[rid] = _schedule(_seconds_until(due, t), _fire_later(rid, row["text"]))
                 kept.append(row)
         if len(kept) != len(rows):
             _write(None, kept)

@@ -31,6 +31,7 @@
   sounds like she did not hear you. The panel keeps showing that she is thinking.
 - Closing a window, searching for files and taking the next queued prompt take one tool call where the model
   used to make up to four.
+- Asking for a skill Iris does not have yet answers faster: the plan for the coding agent is six lines at most.
 
 
 ### Skills

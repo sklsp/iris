@@ -32,7 +32,7 @@ git pull origin v1
 
 - [ ] `.venv\Scripts\python -m ruff check iris tests installer tools` says "All checks passed!".
 - [ ] `.venv\Scripts\python -m mypy` says "Success: no issues found in 32 source files".
-- [ ] `.venv\Scripts\python -m pytest -q -p no:cacheprovider --cov=iris` passes everything: 2299 tests on
+- [ ] `.venv\Scripts\python -m pytest -q -p no:cacheprovider --cov=iris` passes everything: 2310 tests on
       CI (windows-latest), total coverage 99.96% (CI fails below 99%). On your PC a few more may pass
       or skip because of what is installed there.
 
@@ -57,7 +57,7 @@ The eval is the only judge of the text the model sees. 28 commits change it; the
       (every id that starts with `imp_`) are not in the 0.6.1 report: judge them on their own.
 - [ ] Known to fail now and then (each passed 2 of 3 or better in the last full runs): `cline_not_done`,
       `sites_no_deploy`, `queue_take_declined`, `list_missing`. The last full run on v1
-      scored 741/750 (98.8%) with 0 forbidden.
+      scored 743/753 (98.7%) with 0 forbidden.
 
 If the score drops, find the commit, revert it, and rerun only the tasks it touches:
 

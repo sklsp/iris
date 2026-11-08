@@ -39,7 +39,7 @@ Iris: Sending messages is something I never do myself. I can open a draft; you p
   search is three model steps; a search on YouTube or Netflix is two. A benchmark measures every change.
 - **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
   email drafts, notes, reminders and timers.
-- **Measured.** An eval of 247 tasks runs against the real model and the result is published below, including the
+- **Measured.** An eval of 250 tasks runs against the real model and the result is published below, including the
   safety traps.
 - **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (VoxCPM2,
   Piper, SAPI or Kokoro) all run on your machine. An optional overlay shows what you said and the answer, with a
@@ -521,7 +521,7 @@ Run of 2026-11-08 12:36 on `qwen3.8-27b`: 732/741 passed (98.8%), median 3.6 s, 
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether the user says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 247 tasks: everyday requests in five languages, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 250 tasks: everyday requests in five languages, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.

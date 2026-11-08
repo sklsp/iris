@@ -587,6 +587,7 @@ expect = ["comfy_queue"]
 confirm = "yes"
 outcomes = { comfy_queue = "ok" }
 max_calls = 4
+fixtures = { comfy_workflows = "anime\nsummer" }
 
 [[task]]
 id = "queue_slash"
@@ -890,7 +891,7 @@ category = "skills"
 request = "Herinner me om drie uur aan de tandarts."
 expect = ["timer_set"]
 max_calls = 2
-fixtures = { timer_set = "Timer 1 set for 15:00 (in 1 h 12 min): tandarts." }
+fixtures = { clock = "Sunday 1 November 2026, 13:48, week 44", timer_set = "Timer 1 set for 15:00 (in 1 h 12 min): tandarts." }
 
 [[task]]
 id = "web_search_read"

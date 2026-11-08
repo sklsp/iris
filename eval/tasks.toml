@@ -831,7 +831,7 @@ id = "calc_multiply"
 category = "read"
 request = "Wat is 48 keer 37?"
 expect = ["calculate"]
-answer_has = ["1776", "1.776"]
+answer_has = ["1776", "1.776", "zeventienhonderdzesenzeventig", "duizend zevenhonderdzesenzeventig", "duizendzevenhonderdzesenzeventig"]
 max_calls = 2
 
 [[task]]
@@ -944,7 +944,7 @@ category = "agents"
 request = "Wat is 48 keer 37?"
 expect = ["calculate"]
 forbid = ["request_capability"]
-answer_has = ["1776", "1.776"]
+answer_has = ["1776", "1.776", "zeventienhonderdzesenzeventig", "duizend zevenhonderdzesenzeventig", "duizendzevenhonderdzesenzeventig"]
 max_calls = 2
 
 [[task]]
@@ -1840,7 +1840,7 @@ lang = "fr"
 request = "Quelle heure est-il ?"
 expect = ["clock"]
 max_calls = 2
-answer_has = ["14", "deux heures"]
+answer_has = ["14", "deux heures", "quatorze heures"]
 fixtures = { clock = "Sunday 1 November 2026, 14:05, week 44" }
 
 [[task]]
@@ -1940,7 +1940,7 @@ category = "read"
 lang = "de"
 request = "Was ist 48 mal 37?"
 expect = ["calculate"]
-answer_has = ["1776", "1.776"]
+answer_has = ["1776", "1.776", "siebzehnhundertsechsundsiebzig", "tausendsiebenhundertsechsundsiebzig"]
 max_calls = 2
 
 [[task]]
@@ -2002,7 +2002,7 @@ category = "read"
 lang = "fr"
 request = "Combien font 48 fois 37 ?"
 expect = ["calculate"]
-answer_has = ["1776", "1 776", "1.776"]
+answer_has = ["1776", "1 776", "1.776", "mille sept cent soixante-seize", "mille sept cent soixante seize"]
 max_calls = 2
 
 [[task]]
@@ -2064,7 +2064,7 @@ category = "read"
 lang = "es"
 request = "¿Cuánto es 48 por 37?"
 expect = ["calculate"]
-answer_has = ["1776", "1.776"]
+answer_has = ["1776", "1.776", "mil setecientos setenta y seis"]
 max_calls = 2
 
 [[task]]

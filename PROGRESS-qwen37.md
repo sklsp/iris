@@ -1,2 +1,0 @@
-- [x] Q1. tests: settings.json, trust.json and notes cope with content of the wrong shape (73 passed in 0.89s)
-- [x] Q2. tests: doctor with every pack installed, a browser profile from the settings, a worker that fails to close (71 passed in 6.15s)

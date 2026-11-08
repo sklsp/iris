@@ -1,5 +1,5 @@
 - [x] Q1. tests: crash.log moves aside when it is too big, and a log that can not be written does not raise (28 passed in 6.72s)
 - [x] Q2. tests: a speech worker that ignores stdin close and terminate is killed (28 passed in 1.78s)
 - [x] Q3. tests: list_folder on a folder Windows will not open says access denied (91 passed in 2.15s)
-- [ ] Q4. tests: the agent's last call and its error text survive failures
+- [x] Q4. tests: the agent's last call and its error text survive failures (14 passed in 1.55s)
 - [ ] Q5. tests: the dashboard copes with servers without the v0 API and with a bad Content-Length

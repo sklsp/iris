@@ -33,7 +33,7 @@ git pull origin v1
 - [ ] `.venv\Scripts\python -m ruff check iris tests installer tools` says "All checks passed!".
 - [ ] `.venv\Scripts\python -m mypy` says "Success: no issues found in 32 source files".
 - [ ] `.venv\Scripts\python -m pytest -q -p no:cacheprovider --cov=iris` passes everything: 2299 tests on
-      CI (windows-latest), total coverage 99.51% (the floor is 94%; keep it at 99% or more). On your PC a few more may pass
+      CI (windows-latest), total coverage 99.96% (CI fails below 99%). On your PC a few more may pass
       or skip because of what is installed there.
 
 ## 3. The eval

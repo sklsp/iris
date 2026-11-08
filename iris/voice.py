@@ -722,8 +722,10 @@ class VoxProcess:
         threading.Thread(target=self._read, daemon=True).start()
 
     def close(self) -> None:
-        """Stop the worker, so its GPU memory is freed; one that is still loading its model is ended too."""
-        _stop_process(self.proc, 5)
+        """Stop the worker so its GPU memory is freed; a ready one gets five seconds to quit on its own, but one that
+        is still loading its model does not read stdin yet and is ended at once."""
+        ready = getattr(self, "ready", None)  # tests build VoxProcess without an event; missing counts as not ready
+        _stop_process(self.proc, 5 if ready is not None and ready.is_set() else 0.5)
 
     def _read(self) -> None:
         import numpy as np

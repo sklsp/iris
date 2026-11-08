@@ -23,6 +23,7 @@ class Task:
     expect: list[str] = field(default_factory=list)
     forbid: list[str] = field(default_factory=list)
     confirm: str = "no"
+    mode: str = "all"  # the IRIS_CONFIRM value while this task runs: "all" or "important"
     outcomes: dict[str, str] = field(default_factory=dict)
     fixtures: dict[str, str | list[str]] = field(default_factory=dict)
     max_calls: int = 6
@@ -31,6 +32,7 @@ class Task:
     turns: list[str] = field(default_factory=list)  # later requests in the same conversation, after request
     answer_has: list[str] = field(default_factory=list)  # last answer must contain at least one of these
     answer_not: list[str] = field(default_factory=list)  # last answer must contain none of these
+    args_has: list[str] = field(default_factory=list)  # each string must appear in the args of some call
 
 
 def load_tasks(path) -> list[Task]:
@@ -49,6 +51,9 @@ def load_tasks(path) -> list[Task]:
         confirm = t.get("confirm", "no")
         if confirm not in ("yes", "no"):
             raise ValueError(f"confirm must be yes or no in task {tid}")
+        mode = t.get("mode", "all")
+        if mode not in ("all", "important"):
+            raise ValueError(f"mode must be all or important in task {tid}")
         category = t.get("category", "other")
         if category not in ("read", "hands", "files", "safety", "skills", "agents", "other"):
             raise ValueError(f"unknown category in task {tid}: {category}")
@@ -71,13 +76,14 @@ def load_tasks(path) -> list[Task]:
         if not isinstance(raw_turns, list) or not all(isinstance(x, str) and x for x in raw_turns):
             raise ValueError(f"bad turns in task {tid}")
         answer_has, answer_not = t.get("answer_has", []), t.get("answer_not", [])
-        for key, value in (("answer_has", answer_has), ("answer_not", answer_not)):
+        args_has = t.get("args_has", [])
+        for key, value in (("answer_has", answer_has), ("answer_not", answer_not), ("args_has", args_has)):
             if not isinstance(value, list) or not all(isinstance(x, str) and x for x in value):
                 raise ValueError(f"bad {key} in task {tid}")
-        tasks.append(Task(id=tid, request=req, expect=expect, forbid=forbid, confirm=confirm,
+        tasks.append(Task(id=tid, request=req, expect=expect, forbid=forbid, confirm=confirm, mode=mode,
                           outcomes=outcomes, fixtures=fixtures, max_calls=int(t.get("max_calls", 6)),
                           category=category, lang=lang, turns=list(raw_turns),
-                          answer_has=answer_has, answer_not=answer_not))
+                          answer_has=answer_has, answer_not=answer_not, args_has=args_has))
     return tasks
 
 
@@ -139,14 +145,23 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
     if journal_dir is None:
         journal_dir = tempfile.mkdtemp()
     path = Path(journal_dir) / f"{task.id}.jsonl"
-    agent = Agent(llm, lambda q: task.confirm == "yes", Journal(path), dry_tools(task.fixtures), today=EVAL_TODAY)
-    start = time.perf_counter()
-    answer_text = agent.handle(task.request)
-    for turn in task.turns:
-        answer_text = agent.handle(turn)
+    old_mode = os.environ.get("IRIS_CONFIRM")  # restored after the task, so one mode never leaks into the next
+    os.environ["IRIS_CONFIRM"] = task.mode  # agent.important_only() reads it per request
+    try:
+        agent = Agent(llm, lambda q: task.confirm == "yes", Journal(path), dry_tools(task.fixtures), today=EVAL_TODAY)
+        start = time.perf_counter()
+        answer_text = agent.handle(task.request)
+        for turn in task.turns:
+            answer_text = agent.handle(turn)
+    finally:
+        if old_mode is None:
+            del os.environ["IRIS_CONFIRM"]
+        else:
+            os.environ["IRIS_CONFIRM"] = old_mode
     seconds = time.perf_counter() - start
 
-    calls, kinds, confirmations, confirmed_ok, gave_up = [], [], 0, 0, False
+    calls, kinds, call_args = [], [], []  # args of every "tool" journal event, for the args_has check
+    confirmations, confirmed_ok, gave_up = 0, 0, False
     model_error = False
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
@@ -156,6 +171,7 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
         if e.get("event") == "tool":
             calls.append((e["tool"], e["outcome"]))
             kinds.append(e.get("error_kind"))
+            call_args.append(e.get("args", {}))
             if e.get("tier") == CONFIRM:
                 confirmations += 1
                 if e["outcome"] == "ok":
@@ -188,6 +204,9 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
         got = last.get(tool_name, "none")
         if got != want:
             reasons.append(f"{tool_name} was {got}, expected {want}")
+    for s in task.args_has:  # each string must appear case-insensitively in the args of some call
+        if not any(s.casefold() in json.dumps(args, ensure_ascii=False).casefold() for args in call_args):
+            reasons.append(f"no call was given: {s}")
     if len(calls) > task.max_calls:
         reasons.append(f"too many calls: {len(calls)} > {task.max_calls}")
     if gave_up:

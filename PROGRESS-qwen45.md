@@ -1,2 +1,0 @@
-- [x] Q1. docs: the 1.0.0 changelog lists today's safety work (2299 passed in 102.06s (0:01:42))
-- [x] Q2. docs: the test plan counts fourteen important-mode tasks and the latest run (2299 passed in 103.52s (0:01:43))

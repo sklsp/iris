@@ -87,14 +87,14 @@ try {
     New-Item -ItemType Directory -Force -Path $Tools | Out-Null
     $Rcedit = Join-Path $Tools "rcedit-x64.exe"
     if (-not (Test-Path $Rcedit)) {
-        foreach ($Try in 1..3) {  # GitHub's download host answers 504 now and then
+        foreach ($Try in 1..5) {  # GitHub's download host answers 504 now and then, sometimes for minutes
             try {
                 Invoke-WebRequest -UseBasicParsing -OutFile $Rcedit `
                     -Uri "https://github.com/electron/rcedit/releases/download/$RceditVersion/rcedit-x64.exe"
                 break
             } catch {
-                if ($Try -eq 3) { throw }
-                Start-Sleep -Seconds 20
+                if ($Try -eq 5) { throw }
+                Start-Sleep -Seconds (30 * $Try)
             }
         }
     }

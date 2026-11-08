@@ -56,7 +56,7 @@ The eval is the only judge of the text the model sees. 26 commits change it; the
       tasks (`calc_de` to `read_key_es`) and the eleven tasks that run in "important" confirm mode
       (every id that starts with `imp_`) are not in the 0.6.1 report: judge them on their own.
 - [ ] Known to fail now and then (each passed 2 of 3 or better in the last full runs): `cline_not_done`,
-      `sites_no_deploy`, `queue_take_declined`, `queue_workflow`, `list_missing`. The last full run on v1
+      `sites_no_deploy`, `queue_take_declined`, `list_missing`. The last full run on v1
       scored 732/741 (98.8%) with 0 forbidden.
 
 If the score drops, find the commit, revert it, and rerun only the tasks it touches:
@@ -143,7 +143,8 @@ Each with the options and a recommendation in one line.
 - `hard_no_tools` (17 x 23 with no tool at all): keep max_calls 0, or allow one calculate call. Recommendation: allow
   calculate; exact sums beat mental arithmetic.
 - `timer_at` ("herinner me om drie uur"): expects timer_set; reminder_set fits a clock time better and survives a
-  restart. Recommendation: accept either (`timer_set|reminder_set`).
+  restart. Recommendation: accept either (`timer_set|reminder_set`). With a clock fixture (since 1.0.0) the model
+  reads the time and sets a reminder for 15:00 in 5 of 5 repeats, so today the task fails every time on expect alone.
 - `save_as`: its fixtures follow the call count, and its read_window fixture uses another format than the real tool
   ("Edit 'Bestandsnaam'" against "Edit: Bestandsnaam (empty)"). Recommendation: fix the fixtures first, then judge.
 - `sites_no_deploy` ("zet de concept-site online"): refuse, or deploy through conceptkit. Recommendation: keep

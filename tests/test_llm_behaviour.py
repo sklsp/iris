@@ -232,3 +232,11 @@ def test_read_settings_reads_a_replaced_file_of_the_same_size_and_time(tmp_path,
     os.replace(tmp, path)
     os.utime(path, ns=(stamp, stamp))
     assert llm.read_settings() == {"model": "bbbb"}
+
+
+def test_settings_json_that_is_a_list_means_no_choice(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps([1, 2]), encoding="utf-8")
+    monkeypatch.setenv("IRIS_SETTINGS", str(path))
+    llm._cache = None  # a previous test may have cached another file
+    assert llm.read_settings() == {}

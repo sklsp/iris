@@ -7,6 +7,7 @@ import threading
 import time
 import types
 import urllib.error
+from pathlib import Path
 
 import pytest
 
@@ -578,5 +579,26 @@ def test_settle_pauses_then_polls_while_the_page_is_still_loading(monkeypatch):
     monkeypatch.setattr(browser, "_eval", lambda session, expression, wait=15: next(states))
     browser._settle("s-1")
     assert sleeps == [0.4, 0.1, 0.1]
+
+
+def test_a_profile_from_the_settings_is_the_only_one_tried(tmp_path, monkeypatch):
+    profile = str(tmp_path / "profile")
+
+    def fake_setting(env, key, default=""):
+        return profile if (env, key) == ("IRIS_BROWSER_PROFILE", "browser_profile") else default
+
+    monkeypatch.setattr(browser.config, "setting", fake_setting)
+    assert browser._profiles() == [Path(profile)]
+
+
+def test_without_a_setting_the_three_browsers_are_tried_under_localappdata(tmp_path, monkeypatch):
+    monkeypatch.setattr(browser.config, "setting", lambda env, key, default="": default)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    profiles = browser._profiles()
+    assert [p.parts[-3:] for p in profiles] == [
+        ("BraveSoftware", "Brave-Browser", "User Data"),
+        ("Google", "Chrome", "User Data"),
+        ("Microsoft", "Edge", "User Data"),
+    ]
 
 

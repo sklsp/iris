@@ -507,3 +507,17 @@ def test_a_worker_that_stops_after_terminate_is_not_killed():
     voice._stop_process(fake, 0.01)
     assert fake.terminated == 1 and fake.killed == 0
 
+
+def test_close_stops_the_other_workers_when_one_raises():
+    # one worker that raises on close must not keep the others running
+    closed = []
+
+    def boom():
+        raise RuntimeError("the worker will not stop")
+
+    s = _bare_speaker("piper")
+    s._piper = {"en": types.SimpleNamespace(close=boom), "nl": types.SimpleNamespace(close=lambda: closed.append(1))}
+    s._vox = None
+    s.close()  # must not raise
+    assert closed == [1] and s._piper == {} and s._vox is None
+

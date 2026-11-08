@@ -939,6 +939,11 @@ def test_queue_take_points_numbered_removals_to_queue_remove():
     assert "haal uit de wachtrij" in remove
 
 
+def test_queue_take_description_covers_fetching_the_next_prompt():
+    take = tools.TOOLS["queue_take"].description
+    assert "without listing the queue first" in take
+
+
 # --- make_presentation and make_spreadsheet descriptions -------------------------
 def test_make_office_descriptions_do_not_ask_what_to_put_in():
     pres = tools.TOOLS["make_presentation"].description

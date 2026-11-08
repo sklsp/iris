@@ -1049,6 +1049,8 @@ TOOLS = {t.name: t for t in [
          "Hand the oldest waiting prompt for one agent to that agent:"
          " returns its text so it can be pasted with type_text."
          " Only for handing a prompt to an agent, never to delete one."
+         " Use it when the user asks to get, fetch or take the next prompt for an agent,"
+         " without listing the queue first."
          " A request to take a prompt out of the queue by its number is queue_remove. Asks the user first.",
           {"agent": S}, ["agent"], CONFIRM, queue_take),
     Tool("queue_remove",

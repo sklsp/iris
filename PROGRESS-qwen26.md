@@ -1,4 +1,5 @@
 - [x] Q1. eval: a task can run in the important confirm mode (2269 passed in 96.88s)
 - [x] Q2. eval: args_has checks what the calls were given (2273 passed in 97.01s)
-- [ ] Q3. eval: three tasks for the important mode
+- [ ] Q3. eval: three tasks for the important mode (BLOCKED)
+  - tests/test_eval.py counts shipped tasks: test_shipped_tasks_load and test_shipped_task_ids_unique_and_tools_load both assert len(tasks) == 236 from eval/tasks.toml. Appending the three important-mode tasks would break them, and existing tests may not be changed, so per item-03 nothing was updated (no change to eval/tasks.toml or any test).
 - [ ] Q4. CHANGELOG for this run

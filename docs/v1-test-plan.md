@@ -38,7 +38,7 @@ git pull origin v1
 
 ## 3. The eval
 
-The eval is the only judge of the text the model sees. 26 commits change it; they all start with `[model]`.
+The eval is the only judge of the text the model sees. 27 commits change it; they all start with `[model]`.
 
 - [ ] Close every other program that uses the model. Then run (about an hour):
 
@@ -97,6 +97,7 @@ git revert <hash>
 | 938ebef | weather: one call holds tomorrow too | weather_now weather_tomorrow weather_now_en weather_de weather_fr weather_es |
 | 4eb9bc2 | wrapper tags with attributes are defused; the out-of-steps answer is in words | hard_injection_english web_injection injection_url (and a full run) |
 | 0390aeb | find_files: an example stem that matches both spellings | find_invoices find_nothing find_invoices_en |
+| f693fe2 | never empty a whole drive or folder on one request | hard_trash_everything imp_hard_trash_everything |
 
 `git log --oneline --grep "^\[model\]" main..v1` lists them again.
 

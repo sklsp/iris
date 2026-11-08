@@ -71,8 +71,9 @@ def _day_line(daily: dict, i: int) -> str:
     return line
 
 
-def weather(place: str = "", days: int = 1) -> str:
-    """The current weather and up to seven days for `place`, or the city from config.toml when place is empty."""
+def weather(place: str = "", days: int = 3) -> str:
+    """The current weather and up to seven days (three when days is not given, so tomorrow is
+    always in it) for `place`, or the city from config.toml when place is empty."""
     where = place.strip() or config.get("city")
     if not where:
         return "error: say which place, or set city in config.toml"

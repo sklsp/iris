@@ -1,2 +1,2 @@
 - [x] Q1. [model] request_capability: keep the plan to six short lines (2253 passed in 100.39s (0:01:40))
-- [ ] Q2. CHANGELOG for this run
+- [x] Q2. CHANGELOG for this run (2253 passed in 99.31s (0:01:39))

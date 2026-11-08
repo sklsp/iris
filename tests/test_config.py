@@ -2,6 +2,7 @@
 
 import os
 import tomllib
+from pathlib import Path
 
 import pytest
 
@@ -357,3 +358,23 @@ def test_settings_write_forgets_the_cached_config(tmp_path, monkeypatch):
     assert config.load()["name"] == "A"  # fills the cache
     settings.write({"city": "Rotterdam"}, path)
     assert config._cache is None
+
+
+def test_a_crash_log_over_the_limit_moves_to_crash_log_1(tmp_path, monkeypatch):
+    # a crash.log bigger than CRASH_LOG_MAX_BYTES moves to crash.log.1 so the new entry starts fresh
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setattr(config, "CRASH_LOG_MAX_BYTES", 10)
+    path = config.log_crash("first", ValueError("boom"))
+    path.write_bytes(b"x" * 50)
+    config.log_crash("second", ValueError("again"))
+    assert (path.parent / "crash.log.1").read_bytes() == b"x" * 50
+    text = path.read_text(encoding="utf-8")
+    assert "second" in text and "first" not in text
+
+
+def test_a_crash_log_that_can_not_be_written_does_not_raise(tmp_path, monkeypatch):
+    # a file where the logs folder would go makes mkdir fail; log_crash swallows it and still returns the path
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    (tmp_path / "logs").write_text("a file where the logs folder would go", encoding="utf-8")
+    path = config.log_crash("somewhere", ValueError("boom"))
+    assert isinstance(path, Path) and path.name == "crash.log"

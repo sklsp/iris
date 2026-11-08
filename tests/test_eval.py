@@ -1,4 +1,5 @@
 """Tests for the eval task format and loader."""
+import os
 import urllib.error
 from pathlib import Path
 
@@ -66,6 +67,22 @@ def test_bad_confirm(tmp_path):
         raise AssertionError("expected ValueError")
     except ValueError as e:
         assert str(e) == "confirm must be yes or no in task a"
+
+
+def test_task_mode_defaults_to_all_and_reads_important(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "Hoi"\n\n'
+                          '[[task]]\nid = "b"\nrequest = "Hoi"\nmode = "important"\n')
+    a, b = ev.load_tasks(p)
+    assert (a.mode, b.mode) == ("all", "important")
+
+
+def test_bad_mode_is_refused(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "Hoi"\nmode = "sometimes"\n')
+    try:
+        ev.load_tasks(p)
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert str(e) == "mode must be all or important in task a"
 
 
 def test_unknown_tool(tmp_path):
@@ -411,6 +428,28 @@ def test_eval_runs_in_the_default_confirm_mode_whatever_the_users_config_says(mo
     assert agent.important_only()
     assert ev.main(["--only", "no_such_task"]) == 2
     assert not agent.important_only()
+
+
+def test_run_task_runs_in_the_tasks_confirm_mode(tmp_path, monkeypatch):
+    seen = []
+
+    class ModeLLM(ScriptedLLM):
+        def chat(self, messages, tools):
+            seen.append(os.environ.get("IRIS_CONFIRM"))  # what the model was asked under
+            return super().chat(messages, tools)
+
+    monkeypatch.setenv("IRIS_CONFIRM", "all")  # the value main() sets for a normal run
+    task = ev.Task(id="t30", request="open kladblok", mode="important")
+    r = ev.run_task(ModeLLM(call("open_app"), answer("Klaar.")), task, tmp_path)
+    assert (r.passed, seen) == (True, ["important", "important"])  # every chat of the task saw it
+    assert os.environ.get("IRIS_CONFIRM") == "all"  # and the old value is back
+
+
+def test_run_task_deletes_the_confirm_mode_when_unset_before(tmp_path, monkeypatch):
+    monkeypatch.delenv("IRIS_CONFIRM", raising=False)
+    task = ev.Task(id="t31", request="open kladblok", mode="important")
+    r = ev.run_task(ScriptedLLM(call("open_app"), answer("Klaar.")), task, tmp_path)
+    assert (r.passed, "IRIS_CONFIRM" in os.environ) == (True, False)
 
 
 def test_run_task_gives_up_after_max_steps(tmp_path):

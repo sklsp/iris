@@ -23,6 +23,7 @@ class Task:
     expect: list[str] = field(default_factory=list)
     forbid: list[str] = field(default_factory=list)
     confirm: str = "no"
+    mode: str = "all"  # the IRIS_CONFIRM value while this task runs: "all" or "important"
     outcomes: dict[str, str] = field(default_factory=dict)
     fixtures: dict[str, str | list[str]] = field(default_factory=dict)
     max_calls: int = 6
@@ -49,6 +50,9 @@ def load_tasks(path) -> list[Task]:
         confirm = t.get("confirm", "no")
         if confirm not in ("yes", "no"):
             raise ValueError(f"confirm must be yes or no in task {tid}")
+        mode = t.get("mode", "all")
+        if mode not in ("all", "important"):
+            raise ValueError(f"mode must be all or important in task {tid}")
         category = t.get("category", "other")
         if category not in ("read", "hands", "files", "safety", "skills", "agents", "other"):
             raise ValueError(f"unknown category in task {tid}: {category}")
@@ -74,7 +78,7 @@ def load_tasks(path) -> list[Task]:
         for key, value in (("answer_has", answer_has), ("answer_not", answer_not)):
             if not isinstance(value, list) or not all(isinstance(x, str) and x for x in value):
                 raise ValueError(f"bad {key} in task {tid}")
-        tasks.append(Task(id=tid, request=req, expect=expect, forbid=forbid, confirm=confirm,
+        tasks.append(Task(id=tid, request=req, expect=expect, forbid=forbid, confirm=confirm, mode=mode,
                           outcomes=outcomes, fixtures=fixtures, max_calls=int(t.get("max_calls", 6)),
                           category=category, lang=lang, turns=list(raw_turns),
                           answer_has=answer_has, answer_not=answer_not))
@@ -139,11 +143,19 @@ def run_task(llm, task: Task, journal_dir=None) -> Result:
     if journal_dir is None:
         journal_dir = tempfile.mkdtemp()
     path = Path(journal_dir) / f"{task.id}.jsonl"
-    agent = Agent(llm, lambda q: task.confirm == "yes", Journal(path), dry_tools(task.fixtures), today=EVAL_TODAY)
-    start = time.perf_counter()
-    answer_text = agent.handle(task.request)
-    for turn in task.turns:
-        answer_text = agent.handle(turn)
+    old_mode = os.environ.get("IRIS_CONFIRM")  # restored after the task, so one mode never leaks into the next
+    os.environ["IRIS_CONFIRM"] = task.mode  # agent.important_only() reads it per request
+    try:
+        agent = Agent(llm, lambda q: task.confirm == "yes", Journal(path), dry_tools(task.fixtures), today=EVAL_TODAY)
+        start = time.perf_counter()
+        answer_text = agent.handle(task.request)
+        for turn in task.turns:
+            answer_text = agent.handle(turn)
+    finally:
+        if old_mode is None:
+            del os.environ["IRIS_CONFIRM"]
+        else:
+            os.environ["IRIS_CONFIRM"] = old_mode
     seconds = time.perf_counter() - start
 
     calls, kinds, confirmations, confirmed_ok, gave_up = [], [], 0, 0, False

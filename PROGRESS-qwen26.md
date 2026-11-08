@@ -1,0 +1,4 @@
+- [x] Q1. eval: a task can run in the important confirm mode (2269 passed in 96.88s)
+- [ ] Q2. eval: args_has checks what the calls were given
+- [ ] Q3. eval: three tasks for the important mode
+- [ ] Q4. CHANGELOG for this run

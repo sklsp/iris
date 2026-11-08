@@ -963,6 +963,11 @@ def test_request_capability_description_covers_smart_devices_and_online_services
     assert phrase in desc
 
 
+def test_request_capability_description_keeps_the_plan_to_six_short_lines():
+    desc = tools.TOOLS["request_capability"].description
+    assert "at most six short lines" in desc
+
+
 # --- weather description --------------------------------------------------------
 def test_weather_description_says_one_call_holds_tomorrow_too():
     desc = tools.TOOLS["weather"].description

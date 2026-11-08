@@ -2,6 +2,7 @@
 
 import builtins
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -463,4 +464,46 @@ def test_voxcpm_fail_work_fail_fail_stays_on_voxcpm(monkeypatch):
 def test_speaker_initializes_failure_counts():
     s = voice.Speaker(engine="sapi")  # SAPI loads nothing in __init__, so no processes start
     assert s._failures == {} and s.engine == "sapi"
+
+
+class _StubStdin:
+    def close(self):
+        raise OSError("the pipe will not close")
+
+
+class _StubWorker:
+    """A speech worker that ignores stdin close; wait raises TimeoutExpired for its first `timeouts` calls."""
+
+    def __init__(self, timeouts: int):
+        self.stdin = _StubStdin()
+        self.timeouts = timeouts
+        self.waited = 0
+        self.terminated = 0
+        self.killed = 0
+
+    def wait(self, timeout=None):
+        self.waited += 1
+        if self.waited <= self.timeouts:
+            raise subprocess.TimeoutExpired("w", timeout)
+        return None
+
+    def terminate(self):
+        self.terminated += 1
+
+    def kill(self):
+        self.killed += 1
+
+
+def test_a_worker_that_will_not_stop_is_terminated_then_killed():
+    # a worker that ignores stdin close and terminate must be killed, without raising out of _stop_process
+    fake = _StubWorker(timeouts=2)
+    voice._stop_process(fake, 0.01)
+    assert fake.terminated == 1 and fake.killed == 1
+
+
+def test_a_worker_that_stops_after_terminate_is_not_killed():
+    # a worker that quits after terminate must not be killed
+    fake = _StubWorker(timeouts=1)
+    voice._stop_process(fake, 0.01)
+    assert fake.terminated == 1 and fake.killed == 0
 

@@ -61,6 +61,10 @@ disallow_untyped_defs = true
 module = ["iris.policy", "iris.registry", "iris.eval"]
 disallow_untyped_defs = false
 
+[tool.pytest.ini_options]
+# a deprecated call in Iris's own code fails now, not when a new Python removes it
+filterwarnings = ["error::DeprecationWarning:iris", "error::PendingDeprecationWarning:iris"]
+
 [tool.coverage.run]
 source = ["iris"]
 

@@ -33,6 +33,18 @@ class RaisingLLM:
         return r
 
 
+class CountingLLM(RaisingLLM):
+    """RaisingLLM that also counts how often chat was called, so a test can see whether a request was retried."""
+
+    def __init__(self, *replies):
+        super().__init__(*replies)
+        self.calls = 0
+
+    def chat(self, messages, tools):
+        self.calls += 1
+        return super().chat(messages, tools)
+
+
 def call(name, **args):
     c = ToolCall(f"id-{name}", name, args)
     return Reply("", [c], {"role": "assistant", "content": "", "tool_calls": [
@@ -338,6 +350,48 @@ def test_llm_error_after_a_tool_call_removes_the_whole_turn(tmp_path):
     assert a.handle("check").startswith("The model server turned this request down; the journal says why.")
     assert a.messages == before
     assert len(ran) == 1
+
+
+def test_a_refused_request_drops_the_older_turns_and_tries_once_more(tmp_path):
+    ran = []
+    http_400 = urllib.error.HTTPError("http://127.0.0.1:1234", 400, "context full", None, None)
+    llm = RaisingLLM(answer("one."), answer("two."), http_400, answer("three."))
+    a = agent(tmp_path, llm, ran)
+    assert a.handle("first") == "one."
+    assert a.handle("second") == "two."
+    assert a.handle("third") == "three."
+    users = [m["content"] for m in a.messages if m["role"] == "user"]
+    assert users == ["third"]
+    roles = [m["role"] for m in a.messages]
+    assert roles == ["system", "user", "assistant"]
+    trimmed = [e for e in journal(tmp_path) if e["event"] == "trimmed" and e.get("reason") == "refused"]
+    assert len(trimmed) == 1 and trimmed[0]["turns"] == 2
+
+
+def test_a_refused_request_is_retried_once_and_then_gives_up(tmp_path):
+    ran = []
+    http_400 = urllib.error.HTTPError("http://127.0.0.1:1234", 400, "context full", None, None)
+    llm = CountingLLM(answer("one."), http_400, http_400)
+    a = agent(tmp_path, llm, ran)
+    assert a.handle("first") == "one."
+    llm.calls = 0
+    out = a.handle("second")
+    assert out.startswith("The model server turned this request down; the journal says why.")
+    assert llm.calls == 2
+    users = [m["content"] for m in a.messages if m["role"] == "user"]
+    assert users == []
+
+
+def test_a_refused_request_without_older_turns_is_not_retried(tmp_path):
+    ran = []
+    http_400 = urllib.error.HTTPError("http://127.0.0.1:1234", 400, "context full", None, None)
+    llm = CountingLLM(http_400)
+    a = agent(tmp_path, llm, ran)
+    before = [dict(m) for m in a.messages]
+    out = a.handle("only")
+    assert out.startswith("The model server turned this request down; the journal says why.")
+    assert llm.calls == 1
+    assert a.messages == before
 
 
 def test_a_refusal_from_the_server_is_journaled_with_its_reason(tmp_path):

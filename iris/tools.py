@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import time
+import urllib.error
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -546,6 +547,13 @@ def web_read(url: str) -> str:
 
     try:
         text = _web.read_text(url, get=get)
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 410):
+            return (f"error: {e}. This address does not exist: do not guess another one. Use web_search to find "
+                    "the real link, then web_read a link from its results.")
+        if e.code == 429:
+            return f"error: {e}. This site is limiting requests: do not try it again now, read another result."
+        return f"error: {e}"
     except (OSError, ValueError) as e:
         return f"error: {e}"
     return f"Source: {seen['final']}\n{text}"

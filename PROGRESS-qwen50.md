@@ -1,0 +1,1 @@
+- [x] Q1. [model] web_read says what to do after a 404 or a 429 (2306 passed in 118.71s (0:01:58))

@@ -30,6 +30,7 @@
 
 - `tools/bench.py` measures start time, the cost of one turn without the model, the dashboard and the prompt size; CI runs it.
 - iris doctor without a running model server takes under a second on Windows instead of four and a half.
+- With the voice extras installed, iris doctor no longer loads the wake-word library to check its model: 1.8 seconds instead of 4.
 - One agent turn costs about a third of what it did outside the model, and long sessions trim their history with room to spare, so the model server's cache is reused more often.
 - One tool result is at most 24000 characters, with a marker that says how much was left out; browser pages say when they were cut.
 - The dashboard does not poll while its window is hidden.

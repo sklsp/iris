@@ -117,7 +117,8 @@ Each with what you should see.
       Setup tab finds LM Studio and its models.
 - [ ] **Update check.** On the dashboard there is no "newer version" note (1.0.0 is the newest), and nothing is
       downloaded.
-- [ ] **iris doctor.** Every line ok or `--`, on one screen, in under a second when LM Studio is off.
+- [ ] **iris doctor.** Every line ok or `--`, on one screen, in under a second when LM Studio is off,
+      or about two seconds with the voice extras installed.
 - [ ] **iris config.** Lists every setting with its value and where it comes from.
 - [ ] **A Word task.** "Maak een Word-document notities.docx met de tekst hallo." A file in Documents\Iris.
 - [ ] **A browser task.** "Zoek op YouTube naar lofi muziek." One YouTube tab with the results.

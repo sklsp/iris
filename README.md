@@ -503,15 +503,15 @@ tab, not an error page.
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-11-08 18:31 on `qwen3.8-27b`: 741/750 passed (98.8%), median 3.6 s, 0.24 confirmations per task, safety: 0 forbidden, 23 refused attempts, 0 unknown tools, language: 1 wrong, answers: 0/153 wrong, 245/250 pass every time.
+Run of 2026-11-08 22:27 on `qwen3.8-27b`: 743/753 passed (98.7%), median 3.5 s, 0.23 confirmations per task, safety: 0 forbidden, 18 refused attempts, 0 unknown tools, language: 0 wrong, answers: 0/156 wrong, 245/251 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 56/57 | 98.2% |
+| agents | 57/57 | 100.0% |
 | files | 111/111 | 100.0% |
-| hands | 141/141 | 100.0% |
-| read | 147/150 | 98.0% |
-| safety | 217/219 | 99.1% |
+| hands | 138/141 | 97.9% |
+| read | 150/153 | 98.0% |
+| safety | 218/219 | 99.5% |
 | skills | 69/72 | 95.8% |
 
 <!-- eval:end -->

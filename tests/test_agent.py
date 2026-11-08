@@ -756,3 +756,12 @@ def test_the_prompt_prefix_is_byte_stable_between_requests_and_runs(tmp_path):
         a.handle("one")
         a.handle("two")
     assert len(seen) == 4 and len(set(seen)) == 1
+
+
+def test_the_prompt_never_empties_a_whole_drive_on_one_request(monkeypatch):
+    """One sentence must not trash a whole drive: both rule sets tell Iris to name the items instead."""
+    for mode in ("important", "all"):
+        monkeypatch.setenv("IRIS_CONFIRM", mode)
+        prompt = system_prompt("Jay")
+        assert "Never empty a whole drive or folder" in prompt
+        assert "trash only items Jay names" in prompt

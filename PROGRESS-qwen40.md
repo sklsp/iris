@@ -1,0 +1,2 @@
+- [x] Q1. [model] never empty a whole drive or folder tree on one request (89 passed in 8.69s)
+- [ ] Q2. docs: the test plan counts 27 [model] commits and lists the new one

@@ -1,1 +1,0 @@
-- [x] Q1. docs: the test plan quotes the latest eval run and test count (2310 passed in 119.68s (0:01:59))

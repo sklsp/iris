@@ -29,7 +29,8 @@
 - settings.json is read once until it changes, and two dashboard polls of one route fetch once.
 - In voice mode Iris says "One moment." once when a request runs past 8 seconds, so a long think no longer
   sounds like she did not hear you. The panel keeps showing that she is thinking.
-- Closing a window and searching for files take one tool call where the model used to make up to four.
+- Closing a window, searching for files and taking the next queued prompt take one tool call where the model
+  used to make up to four.
 
 
 ### Skills

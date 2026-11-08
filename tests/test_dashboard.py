@@ -1654,7 +1654,8 @@ def test_a_body_that_is_not_an_object_gets_400_not_a_dropped_connection(srv, pat
 
 def test_odd_bodies_get_an_answer(srv):
     assert _raw_post(srv, "/api/settings", b"[" * 200_000)[0] == 400  # nested too deep for json
-    assert _raw_post(srv, "/api/settings", b"{}", {"Content-Length": "-1"})[0] == 400
+    # no body: the server closes without reading it, and unread bytes make Windows reset the reply
+    assert _raw_post(srv, "/api/settings", b"", {"Content-Length": "-1"})[0] == 400
     assert _raw_post(srv, "/api/settings", b"", {"Content-Length": str(2_000_000)})[0] == 413
     status, data = _raw_post(srv, "/api/setup/done", b"", {"Transfer-Encoding": "chunked"})
     assert status == 411 and "Content-Length" in data["error"]

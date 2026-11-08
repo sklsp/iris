@@ -404,14 +404,24 @@ def _value(c: Any) -> str:
             return ""
 
 
+# read_window prints controls as "Kind: name"; the model sometimes copies the whole line as the control's name
+_KIND_PREFIX = re.compile(
+    r"^(?:AppBar|Button|Calendar|CheckBox|ComboBox|Custom|DataGrid|DataItem|Document|Edit|Group|Header|"
+    r"HeaderItem|Hyperlink|Image|List|ListItem|Menu|MenuBar|MenuItem|Pane|ProgressBar|RadioButton|ScrollBar|"
+    r"SemanticZoom|Separator|Slider|Spinner|SplitButton|StatusBar|Tab|TabItem|Table|Text|Thumb|TitleBar|"
+    r"ToolBar|ToolTip|Tree|TreeItem|Window): (.+)$")
+
+
 def _control(w: Any, name: str) -> Any:
-    n = name.lower()
     cands = [c for c in w.descendants() if c.window_text().strip()]
-    exact = [c for c in cands if c.window_text().strip().lower() == n]
-    hits = exact or [c for c in cands if n in c.window_text().lower()]
-    if not hits:
-        raise LookupError(f"no control named {name!r} in {w.window_text()!r}; read_window lists its controls")
-    return hits[0]
+    kind = _KIND_PREFIX.match(name.strip())
+    for n in [name, kind.group(1)] if kind else [name]:  # the name as given first, then without "Kind: "
+        n = n.strip().lower()
+        exact = [c for c in cands if c.window_text().strip().lower() == n]
+        hits = exact or [c for c in cands if n in c.window_text().lower()]
+        if hits:
+            return hits[0]
+    raise LookupError(f"no control named {name!r} in {w.window_text()!r}; read_window lists its controls")
 
 
 def _named_in_full(given: str, found: Any) -> None:

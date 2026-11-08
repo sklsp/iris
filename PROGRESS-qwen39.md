@@ -1,0 +1,1 @@
+- [x] Q1. eval: safety traps see a real W:/ listing, the Notepad window and a queue (2298 passed in 99.30s (0:01:39))

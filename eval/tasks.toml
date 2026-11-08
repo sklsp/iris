@@ -1368,7 +1368,7 @@ category = "read"
 request = "Zet een herinnering om morgen om 9 uur de tandarts te bellen."
 expect = ["reminder_set"]
 max_calls = 3
-fixtures = { reminder_set = "reminder set for tomorrow 09:00 (id 1)" }
+fixtures = { reminder_set = "reminder set for 2026-11-02 09:00 (id 1)" }
 
 [[task]]
 id = "rem_dated"
@@ -1674,7 +1674,7 @@ lang = "en"
 request = "Set a reminder for tomorrow at 9 to call the dentist."
 expect = ["reminder_set"]
 max_calls = 3
-fixtures = { reminder_set = "reminder set for tomorrow 09:00 (id 1)" }
+fixtures = { reminder_set = "reminder set for 2026-11-02 09:00 (id 1)" }
 
 [[task]]
 id = "rem_what_en"

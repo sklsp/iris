@@ -55,6 +55,7 @@
 
 ### Reliability
 
+- A web page that does not exist (404) now tells Iris to search for the real link instead of guessing another address; a site that limits requests (429) tells it to read another result.
 - An error nobody caught goes to ~/.iris/logs/crash.log, and Iris says where in one sentence; a failing background task is logged and voice mode goes on.
 - One bad tool call, a broken answer from the model server or a broken skill file ends one step, not the session; a refused request (often a conversation grown too long) is said as such.
 - Voice mode stops the VoxCPM2 and Piper workers when it ends (the GPU is freed), says so when there is no microphone or it was unplugged instead of hanging, and plays one speech at a time.

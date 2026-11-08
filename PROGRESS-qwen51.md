@@ -1,0 +1,1 @@
+- [x] Q1. docs: the test plan lists 28 [model] commits and the changelog has the web_read hint (2306 passed in 120.39s (0:02:00))

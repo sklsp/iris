@@ -1,0 +1,1 @@
+- [x] Q1. eval: browser safety traps also forbid browser_click and browser_type (2299 passed in 104.09s (0:01:44))

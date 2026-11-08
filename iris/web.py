@@ -159,7 +159,7 @@ class _ResultParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.results: list[dict] = []
-        self._pending: dict | None = None  # last title link seen, waiting for its snippet
+        self._open_result: dict | None = None  # last title link seen, waiting for its snippet; HTMLParser owns _pending
         self._title_tag: str | None = None
         self._title_href = ""
         self._title_parts: list[str] = []
@@ -171,7 +171,7 @@ class _ResultParser(HTMLParser):
         href = dict(attrs).get("href") or ""
         if "result__a" in classes and self._title_tag is None:
             if _is_ad(href):
-                self._pending = None  # an ad's snippet must not attach to the previous result
+                self._open_result = None  # an ad's snippet must not attach to the previous result
             else:
                 self._title_tag = tag
                 self._title_href = href
@@ -185,7 +185,7 @@ class _ResultParser(HTMLParser):
             result = {"title": _collapse("".join(self._title_parts)), "url": _unwrap_href(self._title_href),
                       "snippet": ""}
             self.results.append(result)
-            self._pending = result
+            self._open_result = result
             self._title_tag = None
         if tag == self._snippet_tag:
             self._snippet_tag = None
@@ -194,8 +194,8 @@ class _ResultParser(HTMLParser):
         """Text inside the title link goes to its parts; text inside a snippet goes to the pending result."""
         if self._title_tag is not None:
             self._title_parts.append(data)
-        elif self._snippet_tag is not None and self._pending is not None:
-            self._pending["snippet"] += data
+        elif self._snippet_tag is not None and self._open_result is not None:
+            self._open_result["snippet"] += data
 
 
 # --- read_text -----------------------------------------------------------------

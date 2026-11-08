@@ -88,7 +88,8 @@
 - When the model server turns a request down because the conversation got too long, Iris drops the older turns
   and tries once more by herself, instead of failing every request until a restart.
 - A reminder set across a daylight saving change goes off at the time it says, not an hour early or late.
-- Iris runs on Python 3.11 again, as promised, and CI now tests 3.11 next to 3.12.
+- Iris runs on Python 3.11 again, as promised, and on 3.13, where web search broke on the newest patch release;
+  CI now tests 3.11, 3.12 and 3.13.
 
 
 ### Docs

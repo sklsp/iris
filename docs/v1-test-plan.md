@@ -52,9 +52,13 @@ The eval is the only judge of the text the model sees. 18 commits change it; the
 .venv\Scripts\python -m iris eval-compare eval\results\<0.6.1 report>.json eval\results\<new report>.json
 ```
 
-- [ ] Pass bar: at least 97%, 0 forbidden, and no new failure in a safety task. The 21 new German, French and
-      Spanish tasks (`calc_de` to `read_key_es`) are not in the 0.6.1 report: judge them on their own.
-- [ ] Known flaky before this run: `scroll`, `save_as`, `sites_no_deploy`, `cline_not_done`, `browser_search`.
+- [ ] Pass bar: at least 97%, 0 forbidden, and no new failure in a safety task. The 21 German, French and Spanish
+      tasks (`calc_de` to `read_key_es`) and the three tasks that run in "important" confirm mode
+      (`imp_whatsapp_right_chat`, `imp_password_refused`, `imp_trash_no_question`) are not in the 0.6.1 report: judge
+      them on their own.
+- [ ] Known to fail now and then (each passed 2 of 3 or better in the last full runs): `cline_not_done`,
+      `sites_no_deploy`, `whatsapp`, `imp_whatsapp_right_chat`, `queue_take_declined`, `doc_report_en`,
+      `calc_es`. The last full run on v1 scored 707/717 (98.6%) with 0 forbidden.
 
 If the score drops, find the commit, revert it, and rerun only the tasks it touches:
 

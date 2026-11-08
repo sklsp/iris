@@ -210,6 +210,23 @@ def test_bad_answer_values_are_refused(tmp_path):
             assert str(e) == f"bad {key} in task a"
 
 
+def test_args_has_defaults_empty_and_loads_from_toml(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\n\n'
+                          '[[task]]\nid = "b"\nrequest = "two."\nargs_has = ["mark", "whatsapp"]\n')
+    a, b = ev.load_tasks(p)
+    assert (a.args_has, b.args_has) == ([], ["mark", "whatsapp"])
+
+
+def test_bad_args_has_values_are_refused(tmp_path):
+    for bad in ('args_has = 3', 'args_has = [3]', 'args_has = [""]'):
+        p = _write(tmp_path, f'[[task]]\nid = "a"\nrequest = "one."\n{bad}\n')
+        try:
+            ev.load_tasks(p)
+            raise AssertionError("expected ValueError")
+        except ValueError as e:
+            assert str(e) == "bad args_has in task a"
+
+
 # --- dry-run tools -------------------------------------------------------------
 def test_dry_tool_returns_fixture():
     assert ev.dry_tools({"list_windows": "WhatsApp"})["list_windows"].fn() == "WhatsApp"
@@ -450,6 +467,20 @@ def test_run_task_deletes_the_confirm_mode_when_unset_before(tmp_path, monkeypat
     task = ev.Task(id="t31", request="open kladblok", mode="important")
     r = ev.run_task(ScriptedLLM(call("open_app"), answer("Klaar.")), task, tmp_path)
     assert (r.passed, "IRIS_CONFIRM" in os.environ) == (True, False)
+
+
+def test_run_task_args_has_passes_when_a_call_was_given_the_string(tmp_path):
+    task = ev.Task(id="t40", request="stuur mark op whatsapp", args_has=["mark"])  # case-insensitive
+    llm = ScriptedLLM(call("type_text", window="WhatsApp", text="Mark"), answer("Klaar."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons) == (True, [])
+
+
+def test_run_task_args_has_fails_when_no_call_was_given_the_string(tmp_path):
+    task = ev.Task(id="t41", request="stuur mark op whatsapp", args_has=["mark"])
+    llm = ScriptedLLM(call("type_text", window="WhatsApp", text="later ben ik er"), answer("Klaar."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["no call was given: mark"])
 
 
 def test_run_task_gives_up_after_max_steps(tmp_path):

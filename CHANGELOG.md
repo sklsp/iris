@@ -33,6 +33,7 @@
 - Closing a window, searching for files and taking the next queued prompt take one tool call where the model
   used to make up to four.
 - Asking for a skill Iris does not have yet answers faster: the plan for the coding agent is six lines at most.
+- Ending voice mode while VoxCPM2 is still loading takes half a second instead of five.
 
 
 ### Skills

@@ -719,6 +719,20 @@ def test_the_session_stops_every_speech_worker_when_it_ends(tmp_path):
     assert spk._vox is None and spk._piper == {}
 
 
+def test_a_voxcpm_worker_still_loading_is_stopped_without_the_long_wait():
+    import subprocess
+
+    from iris import voice
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.PIPE)
+    vox = object.__new__(voice.VoxProcess)
+    vox.proc = child  # a worker still loading its model: it does not read stdin yet
+    vox.ready = threading.Event()  # not set, so close must not wait the full five seconds
+    t0 = time.perf_counter()
+    vox.close()
+    assert child.poll() is not None and time.perf_counter() - t0 < 2.5
+
+
 def test_no_microphone_is_one_sentence_and_still_stops_the_workers(monkeypatch):
     closed = []
 

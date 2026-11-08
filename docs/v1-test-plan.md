@@ -188,6 +188,9 @@ Ideas that need a tier change in policy.py and tier_lock.json, or a new dependen
   steps on long pages. Needs a tier entry.
 - **volume_set(percent)**, safe: sets the system volume to a number instead of pressing volume keys N times. Needs a
   tier entry; the Windows API is in pycaw (a dependency) or ctypes.
+- **browser_media_volume(percent, tab)**, safe: sets the volume of the audio and video playing in one browser tab
+  through the browser connection (it already runs scripts in a tab). In real use, "the SoundCloud tab to maximum" took
+  15 minutes of clicking on the screen. Needs a tier entry.
 - **file_info(path)**, safe: size, dates and type of one file, so the model does not list a whole folder. Needs a
   tier entry.
 - **The stricter policy rules** of section 6, each with an eval trap.

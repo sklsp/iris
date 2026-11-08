@@ -376,7 +376,8 @@ def _raw_post(srv, path, body: bytes, headers=None):
 def test_a_content_length_that_is_not_a_number_is_refused(srv):
     # int() raises ValueError on "abc"; the handler answers 400 like a negative
     # length instead of dropping the connection
-    status, data = _raw_post(srv, "/api/settings", b"{}", {"Content-Length": "abc"})
+    # no body: the server closes without reading it, and unread bytes make Windows reset the reply
+    status, data = _raw_post(srv, "/api/settings", b"", {"Content-Length": "abc"})
     assert status == 400
     assert "JSON object" in data["error"]
 

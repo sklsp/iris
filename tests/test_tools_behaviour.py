@@ -440,3 +440,41 @@ def test_concept_sites_reports_timeout(tmp_path, monkeypatch):
     monkeypatch.setattr(tools.subprocess, "run", boom)
     monkeypatch.setenv("IRIS_CONCEPTKIT_DIR", str(tmp_path))
     assert tools.concept_sites() == "error: conceptkit took longer than 2 minutes; try again later"
+
+
+# --- _control kind prefix ---------------------------------------------------------
+def test_control_accepts_a_name_copied_with_its_kind_from_read_window(monkeypatch):
+    item = FakeControl(text="Blank document", kind="ListItem")
+    win = FakeWindow("Word", [item])
+    _install_desktop(monkeypatch, FakeDesktop([win]))
+
+    assert tools._control(win, "ListItem: Blank document") is item
+    assert tools.click("word", "ListItem: Blank document") == "clicked ListItem 'Blank document'"
+
+
+def test_a_name_that_really_starts_with_a_kind_word_still_matches_first(monkeypatch):
+    labeled = FakeControl(text="Text: Arial", kind="Text")
+    plain = FakeControl(text="Arial", kind="ComboBox")
+    win = FakeWindow("Word", [labeled, plain])
+    _install_desktop(monkeypatch, FakeDesktop([win]))
+
+    assert tools._control(win, "Text: Arial") is labeled  # the name as given wins
+
+
+def test_an_unknown_prefix_is_not_stripped(monkeypatch):
+    item = FakeControl(text="Blank document", kind="ListItem")
+    win = FakeWindow("Word", [item])
+    _install_desktop(monkeypatch, FakeDesktop([win]))
+
+    with pytest.raises(LookupError):
+        tools._control(win, "Foo: Blank document")
+
+
+def test_a_kind_prefix_never_hides_a_send_control(monkeypatch):
+    send = FakeControl(text="Send", kind="Button")
+    _install_desktop(monkeypatch, FakeDesktop([FakeWindow("Mail", [send])]))
+
+    with pytest.raises(LookupError, match="use its full name"):
+        tools.click("mail", "Button: Sen")  # the stripped name would press Send; the tier saw only "Sen"
+    assert send.invoke_calls == 0 and send.click_input_calls == 0
+    assert tools.click("mail", "Button: Send") == "clicked Button 'Send'"

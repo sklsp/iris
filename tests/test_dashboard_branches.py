@@ -379,3 +379,36 @@ def test_a_content_length_that_is_not_a_number_is_refused(srv):
     status, data = _raw_post(srv, "/api/settings", b"{}", {"Content-Length": "abc"})
     assert status == 400
     assert "JSON object" in data["error"]
+
+
+# --- lmstudio_payload when nothing answers ---------------------------------------
+
+
+def test_nothing_listening_on_the_port_is_not_reachable_and_fetches_nothing(monkeypatch):
+    # the probe says the port is closed, so no HTTP request may be made at all
+    fetched = []
+
+    def fake_fetch(url):
+        fetched.append(url)
+        return {}
+
+    monkeypatch.setattr(d, "_nothing_listens", lambda url, timeout=0.5: True)
+    monkeypatch.setattr(d, "_fetch_json", fake_fetch)
+    assert d.lmstudio_payload() == {"reachable": False}
+    assert fetched == []  # neither the v0 nor the plain list was ever asked
+
+
+def test_bad_v0_json_and_a_failing_v1_list_is_not_reachable(monkeypatch):
+    # bad JSON on v0 falls through to the plain list; when that fails too, nothing is reachable
+    fetched = []
+
+    def fake_fetch(url):
+        fetched.append(url)
+        if url == d.V0_MODELS_URL:
+            raise ValueError("bad json")
+        raise OSError("the connection died")
+
+    monkeypatch.setattr(d, "_fetch_json", fake_fetch)  # _nothing_listens already says the port is open (conftest)
+    assert d.lmstudio_payload() == {"reachable": False}
+    assert fetched == [d.V0_MODELS_URL, d.V1_MODELS_URL]  # v0 first, then the fallback
+

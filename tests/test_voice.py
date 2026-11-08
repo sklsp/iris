@@ -780,3 +780,21 @@ def test_a_microphone_that_stops_sending_ends_voice_mode_with_one_sentence(monke
     with pytest.raises(SystemExit, match="The microphone stopped sending sound"):
         s.next_request()
     assert time.perf_counter() - t0 < 3
+
+
+def test_speaker_kokoro_says_nothing_when_stopped_before_the_first_chunk(monkeypatch):
+    played = []
+    stop = threading.Event()
+    stop.set()  # Jay says the wake word before Iris starts speaking
+
+    def play(data, sr):
+        played.append(len(data))
+
+    fake_sd = types.ModuleType("sounddevice")
+    fake_sd.play = play
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    spk = Speaker(engine="kokoro")
+    spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(5)])
+    assert spk.speak("hello", stop_event=stop) is False
+    assert played == []  # not even the first chunk was started
+

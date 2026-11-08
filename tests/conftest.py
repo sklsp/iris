@@ -37,3 +37,36 @@ def _journal_in_tmp(tmp_path, monkeypatch):
         raise OSError("tests never ask GitHub for releases")
 
     monkeypatch.setattr(iris.update, "_fetch", offline)
+
+
+_BROWSER_WATCHERS: list = []  # (stop event, thread, interval) of every browser.watch a test started
+
+
+@pytest.fixture
+def browser_watchers():
+    """The watchers this test started; the autouse _stop_browser_watchers ends them all when it does."""
+    return _BROWSER_WATCHERS
+
+
+@pytest.fixture(autouse=True)
+def _stop_browser_watchers(monkeypatch):
+    """Every browser watcher a test starts is stopped when the test ends: main() in voice mode calls
+    browser.watch with no stop event, and a leaked watcher would touch later tests' fakes."""
+    import threading
+
+    import iris.browser
+
+    real_watch = iris.browser.watch
+    _BROWSER_WATCHERS.clear()
+
+    def watch(announce=None, every=5, ask_after=3, stop=None):
+        if stop is None:
+            stop = threading.Event()  # the test ends before the browser ever allows it; end it here
+        thread = real_watch(announce, every, ask_after, stop)
+        _BROWSER_WATCHERS.append((stop, thread, every))
+        return thread
+
+    monkeypatch.setattr(iris.browser, "watch", watch)
+    yield
+    for stop, _thread, _every in _BROWSER_WATCHERS:
+        stop.set()  # no join: a stopped watcher checks stop first when it wakes, so it never touches _conn again

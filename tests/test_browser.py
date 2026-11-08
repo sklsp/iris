@@ -360,6 +360,19 @@ def test_a_stopped_watcher_never_publishes_a_connection_whose_handshake_finishes
     assert closed == made and len(closed) == 1  # the late connection was closed, not kept
 
 
+def test_a_watcher_started_without_a_stop_is_remembered_so_the_test_can_end_it(browser_watchers, monkeypatch):
+    """main() in voice mode calls browser.watch with no stop; conftest remembers it so the test can end."""
+
+    def no_browser():
+        raise browser.BrowserError("the browser does not allow remote control yet")
+
+    monkeypatch.setattr(browser, "_ws_url", no_browser)
+    watcher = browser.watch(None, every=0.01)
+    assert len(browser_watchers) == 1
+    stop, thread = browser_watchers[0][0], browser_watchers[0][1]
+    assert thread is watcher and not stop.is_set()
+
+
 def test_a_second_page_on_the_same_site_reuses_the_tab_iris_opened(fake, monkeypatch):
     monkeypatch.setattr(browser.time, "sleep", lambda s: None)
     tools.open_url("https://www.netflix.com/search?q=weapons")

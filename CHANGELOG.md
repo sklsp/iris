@@ -16,6 +16,7 @@
 - The dashboard only answers at 127.0.0.1 or localhost, so a site that points its own name at your PC can not read it.
 - The web fetch refuses every address that is not public, also old forms such as 127.1.
 - Clearer muted text, a visible keyboard focus, and labelled tabs and fields on the dashboard.
+- The test suite stops every browser watcher a test starts, which removes a CI failure that came and went.
 
 
 ### Speed

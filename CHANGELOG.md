@@ -76,6 +76,7 @@
 - Review fixes: a failing fallback voice no longer replaces VoxCPM2 for good and a dropped VoxCPM2 frees its GPU,
   Kokoro no longer pauses between sentences, a hold line ignores the wake word, config reads are deep copies, and
   an answer after the last step is asked for in words.
+- Ending voice mode while the browser still asks Allow no longer leaves a stray browser connection behind.
 
 
 ### Docs

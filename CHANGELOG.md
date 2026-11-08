@@ -34,6 +34,7 @@
   used to make up to four.
 - Asking for a skill Iris does not have yet answers faster: the plan for the coding agent is six lines at most.
 - Ending voice mode while VoxCPM2 is still loading takes half a second instead of five.
+- Asking about tomorrow's weather takes one weather call: without a number of days it now returns three.
 
 
 ### Skills

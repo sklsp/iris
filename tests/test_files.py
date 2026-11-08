@@ -612,3 +612,19 @@ def test_one_unreadable_entry_never_hides_the_rest_of_a_folder(tmp_path, monkeyp
 def test_utf16_and_utf8_bom_files_read_as_text(tmp_path, name, data):
     (tmp_path / name).write_bytes(data)
     assert files.read_file(str(tmp_path / name)) == "dir > out.txt\ncafé"
+
+
+def test_a_folder_windows_will_not_open_says_access_denied(tmp_path, monkeypatch):
+    # a folder whose entries Windows will not show must come back as an error, not an exception
+    folder = tmp_path / "locked"
+    folder.mkdir()
+    real = Path.iterdir
+
+    def iterdir(self, *a, **kw):
+        if self == folder:
+            raise PermissionError(13, "Access is denied")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+    out = files.list_folder(str(folder))
+    assert out.startswith("error:") and "access denied" in out

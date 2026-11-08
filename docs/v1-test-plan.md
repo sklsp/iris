@@ -157,11 +157,6 @@ Each with the options and a recommendation in one line.
 
 - `lmstudio_load` refuses on a PC without nvidia-smi; a test pins that. Recommendation: let LM Studio decide when
   there is no NVIDIA GPU to measure.
-- A journal write that fails after a tool ran is reported to the model as a tool error, so it may run the tool
-  again. Recommendation: stop the turn when the journal can not be written (nothing runs unlogged).
-- Cline from npm is `cline.cmd`; `subprocess.run(["cline", ...])` does not find it, and running a .cmd with the
-  prompt as an argument would go through cmd.exe parsing (command injection). Recommendation: pass the prompt in a
-  file if the Cline CLI allows it, else point `cline_cli` at node plus Cline's script.
 - Policy changes this run did not make (they are yours): Enter in a chat window has more spellings (`~`,
   `{ENTER 2}`, `{VK_RETURN}`); type_text with a newline presses Enter; open_url opens local addresses; `id_ecdsa`,
   `id_dsa`, `.npmrc`, `.pypirc`, `.netrc` read without a question. Recommendation: make all four stricter in
@@ -172,12 +167,13 @@ Each with the options and a recommendation in one line.
   it on in the repository settings.
 - The branch `v1-bench-base` (a benchmark baseline) and the merged `v1-p*` branches could not be deleted from this
   session. Recommendation: delete them after the merge.
-- Not done in this run (robustness, in V1-PROGRESS's backlog): the 60 s speech limit not stopping the speech, the
-  chime with no time limit, push-to-talk without stdin, one Piper or VoxCPM failure switching voices for the rest of
-  the run, Piper's stdin encoding, Settings' wrong-typed fields, the Setup tab's custom URL, pack installs without a
-  time limit, packs reading old settings, the tray failing to start, browser connection retries, ASP.NET pages
-  that read empty, click's double activation, a config cache, HEAD answers with a body. Recommendation: one PR each
-  for 1.0.1.
+- Fixed since this list was first written (see CHANGELOG.md, 1.0.0): a journal that can not be written now stops the
+  turn, a cline_cli that is a .cmd or .bat file is refused, and the whole robustness backlog (speech limit, chime,
+  push-to-talk, voice fallback, Piper encoding, Settings types, Setup URL, pack timeouts, tray, browser retries,
+  ASP.NET pages, double clicks, config cache, HEAD answers) is done. Nothing to decide.
+- Before 1.0.0's test fix, the test suite put 668 removed test skills (`*_skill_say_hello`) into your real
+  `~\.iris\trash`. The tests no longer touch it. Recommendation: delete the folders whose names end in
+  _skill_say_hello in that trash folder.
 
 ## 7. Proposals for later (2.x)
 

@@ -208,6 +208,7 @@ class Agent:
         self.journal.log(event="request", text=request)
         schemas = [t.schema() for t in self.tools.values()]
         pages: list[tuple[dict, str]] = []  # browser results of this request, so older ones can be shortened
+        retried = False  # a refused request drops the older turns once and tries again before giving up
         for _ in range(MAX_STEPS):
             if self.cancel.is_set():
                 return self._cancelled()
@@ -217,10 +218,20 @@ class Agent:
                 # LM Studio is down or full: end this turn only and keep the voice loop alive
                 self.journal.log(event="llm_error", error=_llm_error(exc))
                 starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
+                refused = (400 <= int(getattr(exc, "code", 0) or 0) < 500 and "ran out of tokens" not in str(exc))
+                if refused and not retried and len(starts) > 1:
+                    # the server turned this down (context too long): drop every older turn once and try again,
+                    # so a small model context does not lock the session until Iris restarts
+                    for m in self.messages[starts[0]:starts[-1]]:
+                        self._sizes.pop(id(m), None)
+                    del self.messages[starts[0]:starts[-1]]
+                    self.journal.log(event="trimmed", turns=len(starts) - 1, reason="refused")
+                    retried = True
+                    continue
                 del self.messages[starts[-1]:]
                 if "ran out of tokens" in str(exc):  # LM Studio answered, the model just thought too long
                     return _sorry("slow", request)
-                if 400 <= int(getattr(exc, "code", 0) or 0) < 500:  # it answered, and refused (context too long)
+                if refused:  # it answered, and refused (context too long), with nothing left to drop
                     return _sorry("refused", request)
                 return _sorry("down", request)
             if self.cancel.is_set():  # cancelled while the model was thinking: its reply is dropped

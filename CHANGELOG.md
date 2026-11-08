@@ -81,6 +81,8 @@
 - Ending voice mode while the browser still asks Allow no longer leaves a stray browser connection behind.
 - A setting saved on the Settings tab, or a fresh config from iris init, is read at once, even when the new file is
   exactly as long as the old one.
+- When the model server turns a request down because the conversation got too long, Iris drops the older turns
+  and tries once more by herself, instead of failing every request until a restart.
 
 
 ### Docs

@@ -54,6 +54,12 @@ def test_the_urls_ask_for_now_and_seven_days(monkeypatch):
         assert part in url
 
 
+def test_a_call_without_days_asks_for_three_days_so_tomorrow_is_in_it(monkeypatch):
+    seen = _fake_http_get(monkeypatch)
+    w.weather("Rotterdam")
+    assert "forecast_days=3" in seen[1]
+
+
 def test_place_is_quoted_in_the_geocode_url(monkeypatch):
     seen = _fake_http_get(monkeypatch)
     w.weather("New York")

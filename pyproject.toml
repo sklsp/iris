@@ -9,6 +9,8 @@ keywords = ["voice agent", "ui automation", "local llm", "windows", "agents"]
 classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: Microsoft :: Windows",
     "License :: OSI Approved :: MIT License",
 ]
@@ -53,10 +55,20 @@ files = ["iris"]
 python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["iris.policy", "iris.registry", "iris.eval"]
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+# a deprecated call in Iris's own code fails now, not when a new Python removes it
+filterwarnings = ["error::DeprecationWarning:iris", "error::PendingDeprecationWarning:iris"]
 
 [tool.coverage.run]
 source = ["iris"]
+patch = ["subprocess"]
 
 [tool.coverage.report]
-fail_under = 94
+fail_under = 99
 show_missing = true

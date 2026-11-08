@@ -80,6 +80,13 @@ def test_missing_window_error_tells_the_model_to_stop_retrying(monkeypatch):
         "then tell the user instead of retrying.")
 
 
+def test_focus_window_description_says_not_open_is_not_retried():
+    desc = tools.TOOLS["focus_window"].description
+    phrase = ("When it answers that the window is not open, check list_windows at most once and tell"
+              " the user; do not retry or open the app unless they asked to open it.")
+    assert phrase in desc
+
+
 # --- scroll -------------------------------------------------------------------
 def test_scroll_down_sends_negative_delta(monkeypatch, fake_window):
     calls = []
@@ -118,6 +125,12 @@ def test_open_url_allows_http_and_https(url, monkeypatch):
     assert started == [url]
 
 
+def test_open_url_description_says_answer_from_the_search_result():
+    desc = tools.TOOLS["open_url"].description
+    assert "After a search URL the result already holds the results:" in desc
+    assert "do not read, scroll or search the page again" in desc
+
+
 # --- files (trash + undo) -----------------------------------------------------
 @pytest.fixture
 def home(tmp_path, monkeypatch):
@@ -137,6 +150,43 @@ def test_trash_then_restore_roundtrip(home):
     assert f.exists() and f.read_text() == "hello"
     assert out.startswith("restored")
     assert list((home / "trash").iterdir()) == []
+
+
+def test_a_trashed_json_file_can_be_restored(home):
+    f = home / "data.json"
+    f.write_text('{"a": 1}')
+    tools.trash_file(str(f))
+    assert tools.restore_trash("data").startswith("restored") and f.read_text() == '{"a": 1}'
+    assert list((home / "trash").iterdir()) == []
+
+
+def test_an_item_never_lands_in_the_trash_without_its_record(home, monkeypatch):
+    f = home / "report.txt"
+    f.write_text("hello")
+    real = Path.write_text
+
+    def full_disk(self, *a, **kw):
+        if self.name.endswith(".json"):
+            raise OSError(28, "No space left on device")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "write_text", full_disk)
+    with pytest.raises(OSError):
+        tools.trash_file(str(f))
+    assert f.read_text() == "hello"  # still in place: no trash item that restore_trash could not put back
+
+
+def test_a_failed_move_leaves_no_record_behind(home, monkeypatch):
+    f = home / "report.txt"
+    f.write_text("hello")
+
+    def stuck(src, dst):
+        raise PermissionError("the file is open in another program")
+
+    monkeypatch.setattr(tools.shutil, "move", stuck)
+    with pytest.raises(PermissionError):
+        tools.trash_file(str(f))
+    assert f.exists() and list((home / "trash").iterdir()) == []
 
 
 def test_restore_by_name_filter(home):
@@ -418,7 +468,8 @@ def test_comfy_queue_bad_name_never_touches_disk_or_network(tmp_path, monkeypatc
     monkeypatch.setattr(urllib.request, "urlopen", fake)
     # no workflows folder exists at all: a bad name must fail before any disk access
     for name in ("../evil", "a b", "a/b", "a.b", ""):
-        assert tools.comfy_queue(name) == "error: bad workflow name"
+        assert tools.comfy_queue(name) == ("error: a workflow name has only letters, digits, - and _; "
+                                           "comfy_workflows lists them")
 
 
 def test_comfy_queue_missing_workflow(tmp_path, monkeypatch):
@@ -457,7 +508,8 @@ def test_comfy_queue_without_gpu_room_does_not_post(tmp_path, monkeypatch):
 
     monkeypatch.setattr(tools, "system_data", lambda: tight)
     monkeypatch.setattr(urllib.request, "urlopen", fake)
-    assert tools.comfy_queue("anime") == "error: the GPU is busy or hot; try again later"
+    assert tools.comfy_queue("anime") == ("error: no GPU is free for it (only 3576 MiB free; 84 C, too hot); "
+                                          "try again later")
     assert calls == []
 
 
@@ -474,7 +526,8 @@ def test_comfy_queue_without_any_gpu_does_not_post(tmp_path, monkeypatch):
     monkeypatch.setattr(tools, "system_data", lambda: {"cpu_percent": 5.0, "ram_used_gb": 8.0,
                                                        "ram_total_gb": 32.0, "gpus": []})
     monkeypatch.setattr(urllib.request, "urlopen", fake)
-    assert tools.comfy_queue("anime") == "error: the GPU is busy or hot; try again later"
+    assert tools.comfy_queue("anime") == ("error: no NVIDIA GPU found (nvidia-smi listed none); ComfyUI workflows "
+                                          "need one")
     assert calls == []
 
 
@@ -511,7 +564,8 @@ def test_lmstudio_models_states_unknown(monkeypatch):
 
 def test_lmstudio_models_not_reachable(monkeypatch):
     monkeypatch.setattr("iris.dashboard.lmstudio_payload", lambda: {"reachable": False})
-    assert tools.lmstudio_models() == "LM Studio is not reachable."
+    assert tools.lmstudio_models() == ("LM Studio is not reachable; start LM Studio and its local server, then ask "
+                                       "again.")
 
 
 # --- lmstudio_load -------------------------------------------------------------
@@ -652,7 +706,8 @@ def test_followups_none_due(leadscan):
 
 def test_followups_without_crm(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_LEADSCAN_DIR", str(tmp_path))
-    assert tools.followups() == "No leadscan CRM found."
+    assert tools.followups() == (f"No leadscan CRM found at {tmp_path / 'out' / 'pipeline.csv'}; set leadscan_dir "
+                                 "in config.toml to its folder.")
 
 
 
@@ -876,6 +931,63 @@ def test_queue_take_and_remove_descriptions_point_to_the_right_tool():
     assert "call queue_list first" in remove
 
 
+def test_queue_take_points_numbered_removals_to_queue_remove():
+    take = tools.TOOLS["queue_take"].description
+    remove = tools.TOOLS["queue_remove"].description
+    assert "A request to take a prompt out of the queue by its number is queue_remove." in take
+    assert "take it out of the queue" in remove
+    assert "haal uit de wachtrij" in remove
+
+
+def test_queue_take_description_covers_fetching_the_next_prompt():
+    take = tools.TOOLS["queue_take"].description
+    assert "without listing the queue first" in take
+
+
+# --- make_presentation and make_spreadsheet descriptions -------------------------
+def test_make_office_descriptions_do_not_ask_what_to_put_in():
+    pres = tools.TOOLS["make_presentation"].description
+    sheet = tools.TOOLS["make_spreadsheet"].description
+    phrase = ("When the request gives no details and one quick look finds none,"
+              " make it anyway with sensible general content and say so in the answer; do not ask first.")
+    assert phrase in pres
+    assert phrase in sheet
+
+
+# --- request_capability description ---------------------------------------------
+def test_request_capability_description_covers_smart_devices_and_online_services():
+    desc = tools.TOOLS["request_capability"].description
+    phrase = ("A smart device or online service with no tool here (lamps, a thermostat, "
+              "a streaming account) is such a request: call this straight away, do not look"
+              " for an app or a window first.")
+    assert phrase in desc
+
+
+def test_request_capability_description_keeps_the_plan_to_six_short_lines():
+    desc = tools.TOOLS["request_capability"].description
+    assert "at most six short lines" in desc
+
+
+# --- weather description --------------------------------------------------------
+def test_weather_description_says_one_call_holds_tomorrow_too():
+    desc = tools.TOOLS["weather"].description
+    phrase = ("One call holds today and the coming days, and tomorrow is the first date after"
+              " today in it: answer from that result, do not call it again or search the web.")
+    assert phrase in desc
+
+
+# --- close_window description ---------------------------------------------------
+def test_close_window_description_says_call_it_directly():
+    desc = tools.TOOLS["close_window"].description
+    assert "no list_windows or focus_window first" in desc
+
+
+# --- find_files description -----------------------------------------------------
+def test_find_files_description_says_one_search_covers_variants():
+    desc = tools.TOOLS["find_files"].description
+    assert "do not repeat with variants" in desc
+
+
 # --- registry guards -----------------------------------------------------------
 def test_every_tool_is_documented():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
@@ -896,6 +1008,18 @@ def test_read_only_tools_are_safe():
 
 
 # --- calculate ---------------------------------------------------------------
+def test_calculate_never_shows_a_rounded_or_complex_result_as_exact():
+    assert tools.calculate("(-8)**(1/3)") == "error: no real answer (a negative number to a fractional power)"
+    assert tools.calculate("(-1)**0.5").startswith("error: no real answer")
+    assert tools.calculate("10**100/3") == "10**100/3 = 3.33333333333e+99"
+    assert tools.calculate("4e15/2") == "4e15/2 = 2e+15"
+    assert tools.calculate("10/2") == "10/2 = 5"
+
+
+def test_calculate_too_many_digits_to_print_is_an_error():
+    assert tools.calculate("*".join(["99**100"] * 23)) == "error: number too large"
+
+
 def test_calculate_multiplication():
     assert tools.calculate("17*23") == "17*23 = 391"
 
@@ -1157,3 +1281,32 @@ def test_restore_brings_back_the_last_trashed_not_the_newest_file(home):
         os.utime(f, (2_000_000_000 if "last-week" in f.name else 1_900_000_000,) * 2)
     tools.restore_trash()
     assert old.exists() and not new.exists()
+
+
+def test_every_tool_accepts_the_parameters_its_schema_offers():
+    """The model calls a tool with the names in its schema; a function whose parameter is named differently (rid
+    for id) fails on every real call, which the eval's dry tools never see."""
+    import inspect
+
+    for tool in tools.TOOLS.values():
+        sig = inspect.signature(tool.fn)
+        sample = {p: 1 for p in tool.params}
+        try:
+            sig.bind(**{p: sample[p] for p in tool.required})
+            sig.bind(**sample)
+        except TypeError as exc:
+            raise AssertionError(f"{tool.name}: {exc}") from None
+
+
+def test_comfy_queue_tells_a_refused_workflow_from_a_stopped_comfyui(tmp_path, monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    _queue_folder(tmp_path, monkeypatch)
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())
+
+    def refused(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 400, "Bad Request", None, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", refused)
+    assert tools.comfy_queue("anime") == "error: ComfyUI refused anime (HTTP 400); open it in ComfyUI to see why"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import json
 import os
 import re
@@ -21,16 +22,33 @@ def settings_path() -> Path:
     return Path(os.environ.get("IRIS_SETTINGS") or (Path.home() / ".iris" / "settings.json"))
 
 
-def read_settings() -> dict:
-    """The contents of settings.json, re-read on every call so edits apply at once.
+# ((path, file id, mtime_ns, size), parsed) until the file changes
+_cache: tuple[tuple[str, int, int, int], dict] | None = None
 
-    A missing file, a broken one and a non-object top level all mean "no user choice"."""
+
+def read_settings() -> dict:
+    """The contents of settings.json; re-read when the file changes (its path, file id, mtime or size).
+
+    A missing file, a broken one and a non-object top level all mean "no user choice"; the result is a deep copy,
+    so callers may change it."""
+    global _cache
+    path = settings_path()
     try:
-        with settings_path().open(encoding="utf-8") as f:
+        st = path.stat()
+    except OSError:
+        return {}
+    key = (str(path), st.st_ino, st.st_mtime_ns, st.st_size)
+    if _cache is not None and _cache[0] == key:
+        return copy.deepcopy(_cache[1])
+    try:
+        with path.open(encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    _cache = (key, data)
+    return copy.deepcopy(data)
 
 
 def resolve_model() -> tuple[str, str]:
@@ -88,10 +106,11 @@ class LMStudio:
             raise ValueError("the model ran out of tokens while thinking")
         calls = []
         for c in msg.get("tool_calls") or []:
-            try:
-                args = json.loads(c["function"].get("arguments") or "{}")
-            except json.JSONDecodeError:
-                args = {"_unparsed": c["function"].get("arguments")}
+            raw_args = c["function"].get("arguments") or "{}"
+            try:  # some servers send the arguments as an object instead of a JSON string
+                args = raw_args if isinstance(raw_args, dict) else json.loads(raw_args)
+            except (json.JSONDecodeError, TypeError):
+                args = {"_unparsed": raw_args}
             calls.append(ToolCall(c.get("id", ""), c["function"]["name"], args))
         raw = {"role": "assistant", "content": msg.get("content") or ""}
         if msg.get("tool_calls"):

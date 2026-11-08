@@ -6,9 +6,11 @@ sent and the exact Reply parsed back. No server, no model, no internet.
 """
 import io
 import json
+import os
 
 import pytest
 
+import iris.llm as llm
 from iris.llm import LMStudio, Reply, ToolCall, effective_model
 
 
@@ -60,6 +62,57 @@ def test_model_none_resolves_effective_model_but_explicit_wins(monkeypatch):
 def test_effective_model_returns_the_resolved_id(monkeypatch):
     monkeypatch.setenv("IRIS_MODEL", "abc-123")
     assert effective_model() == "abc-123"
+
+
+def test_read_settings_parses_once_until_the_file_changes(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"model": "first"}), encoding="utf-8")
+    monkeypatch.setenv("IRIS_SETTINGS", str(path))
+    llm._cache = None  # a previous test may have cached another file
+    real_load = json.load
+    calls = []
+
+    def counting(f):
+        calls.append(1)
+        return real_load(f)
+
+    monkeypatch.setattr(json, "load", counting)
+    first = llm.read_settings()
+    second = llm.read_settings()
+    assert first == {"model": "first"} and second is not first  # callers get a copy
+    assert calls == [1]  # the second call hit the cache
+
+
+def test_read_settings_reads_again_when_the_file_changes(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"model": "aaaa"}), encoding="utf-8")
+    monkeypatch.setenv("IRIS_SETTINGS", str(path))
+    llm._cache = None
+    assert llm.read_settings()["model"] == "aaaa"
+    path.write_text(json.dumps({"model": "bbbb"}), encoding="utf-8")  # same size...
+    st = path.stat()
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))  # ...so only the mtime changes
+    assert llm.read_settings()["model"] == "bbbb"
+
+
+def test_a_caller_changing_the_dict_does_not_change_the_next_result(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"model": "first"}), encoding="utf-8")
+    monkeypatch.setenv("IRIS_SETTINGS", str(path))
+    llm._cache = None
+    got = llm.read_settings()
+    got["model"] = "tampered"
+    assert llm.read_settings() == {"model": "first"}  # the cache holds its own dict
+
+
+def test_a_caller_changing_a_nested_value_does_not_change_the_next_result(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"model": "first", "extra": ["a"]}), encoding="utf-8")
+    monkeypatch.setenv("IRIS_SETTINGS", str(path))
+    llm._cache = None
+    got = llm.read_settings()
+    got["extra"].append("x")  # a caller may change what it gets...
+    assert llm.read_settings()["extra"] == ["a"]  # ...but the cache keeps its own list, so later reads are untouched
 
 
 def test_chat_sends_full_body_and_parses_plain_text_reply(monkeypatch):
@@ -165,3 +218,25 @@ def test_see_and_locate_send_the_image_and_parse_the_point(monkeypatch):
     seen = _fake_urlopen(monkeypatch, {"choices": [{"message": {"content": " Notepad is open. "}}]})
     assert llm.see(b"PNG", "what is open?") == "Notepad is open."
     assert json.loads(seen["request"].data)["messages"][0]["content"][0]["text"].endswith("Question: what is open?")
+
+
+def test_read_settings_reads_a_replaced_file_of_the_same_size_and_time(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"model": "aaaa"}), encoding="utf-8")
+    monkeypatch.setenv("IRIS_SETTINGS", str(path))
+    llm._cache = None
+    stamp = path.stat().st_mtime_ns
+    assert llm.read_settings() == {"model": "aaaa"}
+    tmp = tmp_path / "settings.json.tmp"  # the settings page saves through a temp file and os.replace
+    tmp.write_text(json.dumps({"model": "bbbb"}), encoding="utf-8")
+    os.replace(tmp, path)
+    os.utime(path, ns=(stamp, stamp))
+    assert llm.read_settings() == {"model": "bbbb"}
+
+
+def test_settings_json_that_is_a_list_means_no_choice(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps([1, 2]), encoding="utf-8")
+    monkeypatch.setenv("IRIS_SETTINGS", str(path))
+    llm._cache = None  # a previous test may have cached another file
+    assert llm.read_settings() == {}

@@ -1,0 +1,4 @@
+description = "Says hello to someone."
+required = ["who"]
+[params.who]
+type = "string"

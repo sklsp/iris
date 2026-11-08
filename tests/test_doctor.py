@@ -117,3 +117,11 @@ def test_piper_not_installed_says_what_to_install(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_TTS", "piper")
     rows = doctor.checks(payload={"reachable": False})
     assert (False, "speech: Piper not installed: pip install -e .[piper]") in rows
+
+
+def test_packs_line_when_every_available_pack_is_installed(monkeypatch):
+    from iris import packs
+
+    monkeypatch.setattr(packs, "packs", lambda: [{"id": "kokoro", "available": True, "installed": True},
+                                                  {"id": "x", "available": False, "installed": False}])
+    assert doctor._packs_line() == (True, "voice packs: kokoro")

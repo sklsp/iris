@@ -229,6 +229,31 @@ def test_cline_command_keeps_a_multiline_text_as_one_item(monkeypatch):
     assert argv[-1] == text
 
 
+@pytest.mark.parametrize("cli", ["C:/x/cline.cmd", "C:/x/CLINE.BAT", ' "C:/x/cline.cmd" '])
+def test_cline_command_refuses_cmd_and_bat_cli(monkeypatch, cli):
+    """A .cmd or .bat CLI would pass the prompt through cmd.exe and parse it again: refuse it."""
+    _clear_cli_env(monkeypatch)
+    monkeypatch.setenv("IRIS_CLINE_CLI", cli)
+    with pytest.raises(LookupError) as exc:
+        cline_command("fix & del /q *", "W:/Iris")
+    assert str(exc.value) == (
+        "cline_cli points at a .cmd or .bat file, which would pass the prompt through cmd.exe; "
+        "set cline_cli to Cline's .exe, or to node plus Cline's script"
+    )
+
+
+def test_cline_command_still_builds_the_argv_for_exe_and_bare_names(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    monkeypatch.setenv("IRIS_CLINE_CLI", "C:/x/cline.exe")
+    assert cline_command("go", "W:/Iris") == [
+        "C:/x/cline.exe", "-z", "-c", "W:/Iris", "-P", "lmstudio", "-m", "qwen3.8-27b", "go",
+    ]
+    monkeypatch.delenv("IRIS_CLINE_CLI")
+    assert cline_command("fix the bug", "W:/Iris") == [
+        "cline", "-z", "-c", "W:/Iris", "-P", "lmstudio", "-m", "qwen3.8-27b", "fix the bug",
+    ]
+
+
 def test_cline_sessions_returns_the_parsed_list_and_skips_non_dicts(monkeypatch):
     _clear_cli_env(monkeypatch)
 
@@ -808,6 +833,30 @@ def test_cline_start_starts_the_oldest_prompt_in_the_hub_and_shrinks_the_queue(t
     assert cline_start("cline") == "started Cline session abc in W:/Iris"
     assert started == [("first prompt", "W:/Iris")]  # the oldest waiting prompt was started in cline_cwd()
     assert _waiting(path) == ["second prompt"]  # the queue shrank by exactly one
+
+
+@pytest.mark.parametrize("meanwhile", ["move", "delete"])
+def test_cline_start_removes_the_prompt_it_started_even_when_the_queue_changed(tmp_path, monkeypatch, meanwhile):
+    import iris.autopilot as autopilot
+    from iris import prompt_queue
+
+    _clear_cli_env(monkeypatch)
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    started = []
+
+    def slow_start(text, cwd):  # the dashboard changes the queue while Cline starts
+        started.append(text)
+        first, second = prompt_queue.load()["prompts"][:2]
+        if meanwhile == "move":
+            prompt_queue.move(second["id"], -1)
+        else:
+            prompt_queue.remove(first["id"])
+        return "started Cline session abc"
+
+    monkeypatch.setattr(autopilot, "start_in_hub", slow_start)
+    cline_start("cline")
+    assert started == ["first prompt"] and _waiting(path) == ["second prompt"]  # never the one that did not run
 
 
 def test_cline_start_leaves_the_queue_when_the_cli_is_missing(tmp_path, monkeypatch):

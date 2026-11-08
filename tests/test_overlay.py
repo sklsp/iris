@@ -384,6 +384,29 @@ def test_an_interrupted_answer_does_not_idle():
     assert s.overlay.sent == [("answer", "Er was eens..."), "interrupted"]
 
 
+def test_a_hold_line_speaks_without_touching_the_panel():
+    s = _session("")
+    s.speak_async("One moment.", panel=False).join()
+    assert s.overlay.sent == []  # no "answer", no "idle": the panel keeps showing Thinking...
+    assert not s._answered  # left as it was: a hold line opens no follow-up window
+    assert s.speaker.said == ["One moment."]  # the mouth still spoke it
+
+
+def test_a_hold_line_does_not_watch_for_the_wake_word():
+    s = _session("")
+    s.wake = _Wake(True)  # Jay says the wake word while the hold line plays
+    s._frames.put(np.zeros(FRAME, dtype="float32"))
+
+    def speak(text, stop_event=None):
+        stop_event.wait(1.0)  # talk long enough for a watcher to hear it if there is one
+        return True
+
+    s.speaker.speak = speak  # type: ignore[method-assign]
+    s.speak_async("One moment.", panel=False).join()
+    assert not s._wake_seen  # no barge-in was recorded, so the next request still waits for a wake word
+    assert s.overlay.sent == []  # and the overlay never heard "interrupted" either
+
+
 def test_voice_mode_carries_on_with_a_dead_overlay():
     """The point of the separate process: whatever happened to it, the voice loop hears and answers as before."""
     proc = subprocess.Popen([sys.executable, "-c", "pass"], stdin=subprocess.PIPE, text=True, encoding="ascii")
@@ -567,6 +590,22 @@ def test_panel_without_win32_uses_tk_to_show_and_hide():
     p.step()
     assert not p.shown
     root.withdraw.assert_called()
+
+
+def test_a_frame_that_fails_never_stops_the_panel_from_seeing_iris_go(capsys):
+    tk, clock = _fake_tk(), Clock()
+    events: queue.Queue = queue.Queue()
+    p = Panel(tk, events, clock=clock)
+    root = tk.Tk.return_value
+    p.layout = lambda: (_ for _ in ()).throw(RuntimeError("bad font"))  # one frame breaks while drawing
+    events.put({"event": "listening"})
+    root.after.reset_mock()
+    p.step()
+    root.after.assert_called_once()  # the next frame is still scheduled
+    assert "bad font" in capsys.readouterr().err
+    events.put(None)  # Iris closed the pipe
+    p.step()
+    root.destroy.assert_called_once()
 
 
 def test_panel_replaces_characters_an_old_tk_cannot_draw():

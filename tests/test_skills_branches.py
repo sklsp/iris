@@ -94,3 +94,10 @@ def test_approved_tools_skips_an_approved_skill_with_a_broken_spec():
     skills._write(skills.skills_dir() / "approved.json", json.dumps({name: skills._digest(name, "safe")}) + "\n")
     assert skills._approved_ok(name)
     assert skills.approved_tools(set()) == []
+
+
+def test_trust_json_that_is_a_list_trusts_nothing():
+    d = skills.skills_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "trust.json").write_text(json.dumps([]), encoding="utf-8")
+    assert skills._trust() == {"tiers": {}, "checked": {}}

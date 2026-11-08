@@ -8,3 +8,4 @@ eval/results/
 .coverage
 build/
 dist/
+!tests/fixtures/**/*.jsonl

@@ -1,0 +1,5 @@
+{"event": "request", "text": "hoe laat is het", "t": "2026-10-31T09:00:00"}
+{"event": "tool", "tool": "clock", "args": {}, "tier": "safe", "outcome": "ok", "result": "09:00", "t": "2026-10-31T09:00:01"}
+{"event": "answer", "text": "Het is negen uur.", "t": "2026-10-31T09:00:02"}
+{"event": "tool", "tool": "click", "args": {"window": "Kladblok", "control": "Opslaan"}, "tier": "confirm", "granted": true, "outcome": "ok", "result": "clicked", "t": "2026-10-31T09:01:00"}
+{"event": "cancelled", "t": "2026-10-31T09:02:00"}

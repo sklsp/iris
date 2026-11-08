@@ -4,6 +4,7 @@ import sqlite3
 import threading
 import time
 import types
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -318,3 +319,97 @@ def test_serve_stops_on_ctrl_c_and_closes_the_server_once(monkeypatch, capsys):
 def test_default_port_falls_back_to_the_builtin_one_when_the_env_is_not_a_number(monkeypatch):
     monkeypatch.setenv("IRIS_DASHBOARD_PORT", "abc")
     assert d.default_port() == 8765
+
+
+# --- LM Studio model lists -------------------------------------------------------
+
+
+def test_a_server_without_the_v0_api_lists_models_without_states(monkeypatch):
+    # the server answers but has no v0 API (Ollama, llama.cpp, an older LM Studio)
+    # so the plain list is used; it gives ids only and carries no state
+    def fake_fetch(url):
+        if url == d.V0_MODELS_URL:
+            raise urllib.error.HTTPError(url, 404, "nf", None, None)
+        return {"data": [{"id": "m1"}]}
+
+    monkeypatch.setattr(d, "_fetch_json", fake_fetch)
+    payload = d.lmstudio_payload()
+    assert payload["reachable"] is True
+    assert payload["states_known"] is False
+    assert [m["id"] for m in payload["models"]] == ["m1"]
+
+
+def test_a_refused_connection_on_v0_is_not_reachable(monkeypatch):
+    # nothing answers at all: a refused connection on v0 means the plain list
+    # would fail the same way, so it is never asked
+    fetched = []
+
+    def fake_fetch(url):
+        fetched.append(url)
+        raise urllib.error.URLError(ConnectionRefusedError())
+
+    monkeypatch.setattr(d, "_fetch_json", fake_fetch)
+    assert d.lmstudio_payload() == {"reachable": False}
+    assert fetched == [d.V0_MODELS_URL]  # the v1 URL was never fetched
+
+
+# --- a POST with a lying Content-Length ------------------------------------------
+
+
+def _raw_post(srv, path, body: bytes, headers=None):
+    import http.client
+
+    port = srv.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.putrequest("POST", path)
+    for k, v in {"X-Iris-Token": srv.token, "Origin": f"http://127.0.0.1:{port}", **(headers or {})}.items():
+        conn.putheader(k, v)
+    if "Content-Length" not in (headers or {}) and "Transfer-Encoding" not in (headers or {}):
+        conn.putheader("Content-Length", str(len(body)))
+    conn.endheaders(body)
+    r = conn.getresponse()
+    out = r.status, json.loads(r.read().decode("utf-8") or "{}")
+    conn.close()
+    return out
+
+
+def test_a_content_length_that_is_not_a_number_is_refused(srv):
+    # int() raises ValueError on "abc"; the handler answers 400 like a negative
+    # length instead of dropping the connection
+    # no body: the server closes without reading it, and unread bytes make Windows reset the reply
+    status, data = _raw_post(srv, "/api/settings", b"", {"Content-Length": "abc"})
+    assert status == 400
+    assert "JSON object" in data["error"]
+
+
+# --- lmstudio_payload when nothing answers ---------------------------------------
+
+
+def test_nothing_listening_on_the_port_is_not_reachable_and_fetches_nothing(monkeypatch):
+    # the probe says the port is closed, so no HTTP request may be made at all
+    fetched = []
+
+    def fake_fetch(url):
+        fetched.append(url)
+        return {}
+
+    monkeypatch.setattr(d, "_nothing_listens", lambda url, timeout=0.5: True)
+    monkeypatch.setattr(d, "_fetch_json", fake_fetch)
+    assert d.lmstudio_payload() == {"reachable": False}
+    assert fetched == []  # neither the v0 nor the plain list was ever asked
+
+
+def test_bad_v0_json_and_a_failing_v1_list_is_not_reachable(monkeypatch):
+    # bad JSON on v0 falls through to the plain list; when that fails too, nothing is reachable
+    fetched = []
+
+    def fake_fetch(url):
+        fetched.append(url)
+        if url == d.V0_MODELS_URL:
+            raise ValueError("bad json")
+        raise OSError("the connection died")
+
+    monkeypatch.setattr(d, "_fetch_json", fake_fetch)  # _nothing_listens already says the port is open (conftest)
+    assert d.lmstudio_payload() == {"reachable": False}
+    assert fetched == [d.V0_MODELS_URL, d.V1_MODELS_URL]  # v0 first, then the fallback
+

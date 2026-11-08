@@ -137,6 +137,18 @@ def test_speaker_kokoro_streams_all_chunks_when_not_interrupted(monkeypatch):
     assert len(played) == 5
 
 
+def test_speaker_kokoro_lets_each_chunk_finish_before_the_next(monkeypatch):
+    starts = []
+    fake_sd = types.ModuleType("sounddevice")
+    fake_sd.play = lambda data, sr: starts.append(time.perf_counter())  # returns at once, like the real sd.play
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    spk = Speaker(engine="kokoro")
+    spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(3)])  # 0.1 s each at 24 kHz
+    assert spk.speak("hello", stop_event=threading.Event()) is True
+    gaps = [b - a for a, b in zip(starts, starts[1:], strict=False)]
+    assert len(starts) == 3 and min(gaps) >= 0.09  # a new play never cut the one before it off
+
+
 def test_speaker_kokoro_stops_between_chunks_on_interrupt(monkeypatch):
     played = []
     stop = threading.Event()
@@ -153,6 +165,29 @@ def test_speaker_kokoro_stops_between_chunks_on_interrupt(monkeypatch):
     spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(5)])
     assert spk.speak("hello", stop_event=stop) is False
     assert len(played) == 1
+
+
+def test_speaker_kokoro_waits_for_chunks_without_blocking_the_event_loop(monkeypatch):
+    said = []
+    _fake_pyttsx3(monkeypatch, said)  # records any SAPI fallback
+    played = []
+    fake_sd = types.ModuleType("sounddevice")
+    fake_sd.play = lambda data, sr: played.append(len(data))
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+
+    import iris.voice as v
+
+    def no_blocking_sleep(*a):
+        if threading.current_thread() is threading.main_thread():  # only Kokoro's loop runs there
+            raise AssertionError("the event loop must not be blocked with time.sleep")
+
+    monkeypatch.setattr(v.time, "sleep", no_blocking_sleep)  # a blocking wait fails the test at once
+
+    spk = Speaker(engine="kokoro")
+    spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(2)])  # two short chunks
+    assert spk.speak("hello", stop_event=threading.Event()) is True
+    assert played == [2400, 2400]  # Kokoro spoke both chunks...
+    assert said == []  # ...so SAPI was never asked to step in
 
 
 def test_speaker_kokoro_falls_back_to_sapi(monkeypatch, tmp_path):
@@ -236,9 +271,11 @@ def test_speaker_kokoro_without_model_files_falls_back_and_never_downloads(monke
 
     monkeypatch.setattr(socket.socket, "connect", no_network)
     spk = Speaker(engine="kokoro")
-    assert spk.speak("still talking") is True  # no Kokoro files, so SAPI speaks instead
-    assert said == ["still talking"]
-    assert spk.engine == "sapi"
+    # no Kokoro files, so SAPI speaks each answer; the voice only switches after three in a row
+    assert spk.speak("still talking") is True and spk.engine == "kokoro"  # one failure: still tries Kokoro
+    assert spk.speak("again") is True and spk.engine == "kokoro"  # two failures: not yet
+    assert spk.speak("third time") is True and spk.engine == "sapi"  # three in a row: switches for good
+    assert said == ["still talking", "again", "third time"]
 
 
 class _FakeWake:
@@ -289,6 +326,43 @@ def test_session_speak_async_does_not_block_the_loop():
     assert done == []  # not finished yet
     thread.join()
     assert done == ["the answer"]
+
+
+def test_speech_from_several_threads_never_overlaps():
+    active, peak = [], []
+
+    class Counting:
+        def speak(self, text, stop_event=None):
+            active.append(text)
+            peak.append(len(active))
+            time.sleep(0.05)
+            active.remove(text)
+            return True
+
+    s = VoiceSession(speaker=Counting())
+    s.wake = _FakeWake(False)
+    threads = [threading.Thread(target=s.speak_async, args=(f"timer {i}",)) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    s.wait_for_speech()
+    assert len(peak) == 4 and max(peak) == 1
+
+
+def test_a_timer_speaking_while_iris_listens_takes_no_frames_from_the_recording():
+    class Quick:
+        def speak(self, text, stop_event=None):
+            time.sleep(0.2)
+            return True
+
+    s = VoiceSession(speaker=Quick())
+    s.wake = _FakeWake(True)  # a watcher would stop at the first frame it took
+    for _ in range(5):
+        s._frames.put(np.zeros(FRAME, dtype="float32"))
+    s._listening.set()  # next_request is reading the frames
+    s.speak_async("your timer is done").join()
+    assert s._frames.qsize() == 5 and not s._wake_seen
 
 
 def test_session_barge_in_skips_the_wake_word_for_the_next_request():
@@ -451,13 +525,14 @@ def test_the_wake_phrase_is_not_part_of_the_request():
 def test_chime_plays_unless_muted(monkeypatch):
     played = []
     monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
-        play=lambda tone, rate, blocking=False: played.append((len(tone), rate, blocking))))
+        play=lambda tone, rate, blocking=False: played.append((len(tone), rate, blocking)),
+        wait=lambda: None, stop=lambda: None))
     s = VoiceSession.__new__(VoiceSession)
     s.chime()
     assert played == []  # the tests mute it
     monkeypatch.setenv("IRIS_CHIME", "1")
     s.chime()
-    assert played == [(int(0.12 * 22050), 22050, True)]
+    assert played == [(int(0.12 * 22050), 22050, False)]  # non-blocking: a stalled device must not hang listening
 
 
 def test_piper_picks_the_voice_by_language_and_follows_the_user_for_short_answers(tmp_path, monkeypatch):
@@ -492,9 +567,11 @@ def test_piper_missing_voice_falls_back_to_sapi(tmp_path, monkeypatch, capsys):
     spk.engine = "piper"
     monkeypatch.setitem(sys.modules, "pyttsx3", types.SimpleNamespace(init=lambda: types.SimpleNamespace(
         say=lambda t: None, runAndWait=lambda: None)))
-    assert spk.speak("Het is nu tien over twaalf.") is True
+    assert spk.speak("Het is nu tien over twaalf.") is True and spk.engine == "piper"  # one failure: still tries Piper
     out = capsys.readouterr().out
-    assert "python -m piper.download_voices nl_NL-ronnie-medium" in out and spk.engine == "sapi"
+    assert "python -m piper.download_voices nl_NL-ronnie-medium" in out
+    assert spk.speak("Het is nu tien over twaalf.") is True and spk.engine == "piper"  # two failures: not yet
+    assert spk.speak("Het is nu tien over twaalf.") is True and spk.engine == "sapi"  # three in a row: switches
 
 
 def test_whisper_uses_turbo_on_the_gpu_and_small_on_the_cpu(monkeypatch):
@@ -620,3 +697,104 @@ def test_a_stuck_speech_thread_does_not_freeze_the_session(monkeypatch, capsys):
     s.speak("Klikken op het vergrootglas?")
     assert time.monotonic() - t0 < 2 and "speech got stuck" in capsys.readouterr().out
     release.set()
+
+
+def test_the_session_stops_every_speech_worker_when_it_ends(tmp_path):
+    import subprocess
+
+    from iris import voice
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.PIPE)
+    vox = object.__new__(voice.VoxProcess)
+    vox.proc = child  # a worker still loading its model: it does not read stdin yet
+    piper = object.__new__(voice.PiperProcess)
+    piper.proc = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE)
+    piper.dir = tmp_path / "iris-piper-x"
+    piper.dir.mkdir()
+    spk = Speaker(engine="sapi")
+    spk._vox, spk._piper = vox, {"nl": piper}
+    s = VoiceSession(speaker=spk)
+    s.__exit__(None, None, None)
+    assert child.poll() is not None and piper.proc.poll() is not None and not piper.dir.exists()
+    assert spk._vox is None and spk._piper == {}
+
+
+def test_a_voxcpm_worker_still_loading_is_stopped_without_the_long_wait():
+    import subprocess
+
+    from iris import voice
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.PIPE)
+    vox = object.__new__(voice.VoxProcess)
+    vox.proc = child  # a worker still loading its model: it does not read stdin yet
+    vox.ready = threading.Event()  # not set, so close must not wait the full five seconds
+    t0 = time.perf_counter()
+    vox.close()
+    assert child.poll() is not None and time.perf_counter() - t0 < 2.5
+
+
+def test_no_microphone_is_one_sentence_and_still_stops_the_workers(monkeypatch):
+    closed = []
+
+    class NoMic:
+        def __init__(self, **kw):
+            raise OSError("Error querying device -1")
+
+    fake_sd = types.ModuleType("sounddevice")
+    fake_sd.InputStream = NoMic
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+
+    class Spk:
+        def close(self):
+            closed.append(True)
+
+    s = VoiceSession(speaker=Spk())
+    with pytest.raises(SystemExit, match="No microphone could be opened .*Windows Sound settings"):
+        s.__enter__()
+    s.__exit__(None, None, None)  # __main__ always calls this in its finally
+    assert closed == [True]
+
+
+def test_a_missing_custom_wake_model_is_an_error_not_a_download_of_every_model(monkeypatch, tmp_path):
+    from iris import voice
+
+    downloads = []
+    fake = types.ModuleType("openwakeword")
+    fake.MODELS = {"hey_jarvis": {"model_path": str(tmp_path / "hey_jarvis.tflite")}}
+    fake.utils = types.SimpleNamespace(download_models=lambda names: downloads.append(names))
+    fake.Model = lambda **kw: object()
+    monkeypatch.setitem(sys.modules, "openwakeword", fake)
+    missing = str(tmp_path / "my_wake.onnx")
+    with pytest.raises(FileNotFoundError, match="no wake word model at .*my_wake.onnx"):
+        voice.WakeWord(missing)._model()
+    assert downloads == []
+    voice.WakeWord("hey_jarvis")._model()
+    assert downloads == [["hey_jarvis"]]  # a built-in name still fetches only itself on first use
+
+
+def test_a_microphone_that_stops_sending_ends_voice_mode_with_one_sentence(monkeypatch):
+    s = VoiceSession(speaker=Speaker(engine="sapi"))
+    monkeypatch.setattr(VoiceSession, "MIC_SILENT_SECONDS", 0.3)
+    s.wake = _FakeWake(False)
+    t0 = time.perf_counter()
+    with pytest.raises(SystemExit, match="The microphone stopped sending sound"):
+        s.next_request()
+    assert time.perf_counter() - t0 < 3
+
+
+def test_speaker_kokoro_says_nothing_when_stopped_before_the_first_chunk(monkeypatch):
+    played = []
+    stop = threading.Event()
+    stop.set()  # Jay says the wake word before Iris starts speaking
+
+    def play(data, sr):
+        played.append(len(data))
+
+    fake_sd = types.ModuleType("sounddevice")
+    fake_sd.play = play
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    spk = Speaker(engine="kokoro")
+    spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(5)])
+    assert spk.speak("hello", stop_event=stop) is False
+    assert played == []  # not even the first chunk was started
+

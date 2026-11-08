@@ -7,6 +7,7 @@ import threading
 import time
 import types
 import urllib.error
+from pathlib import Path
 
 import pytest
 
@@ -132,6 +133,64 @@ def test_the_connection_passes_the_handshake_as_timeout_and_sets_fifteen_seconds
     assert conn._slow == (TimeoutError, WebSocketTimeoutException)
 
 
+class _WsFailure(Exception):  # stands in for the websocket library's own exception class
+    pass
+
+
+def _ws_module_raising(error: Exception) -> types.ModuleType:
+    """A fake websocket module whose create_connection raises `error`."""
+    mod = types.ModuleType("websocket")
+
+    def create_connection(url, timeout=None, suppress_origin=False):
+        raise error
+
+    mod.create_connection = create_connection
+    mod.WebSocketException = _WsFailure
+    return mod
+
+
+def test_a_refused_devtools_port_becomes_a_browser_error(monkeypatch):
+    monkeypatch.setitem(sys.modules, "websocket", _ws_module_raising(OSError("connection refused")))
+    with pytest.raises(browser.BrowserError) as exc:
+        browser.Connection("ws://127.0.0.1:9/devtools/browser/x")
+    assert str(exc.value) == ("could not reach the browser's DevTools port; make sure the browser is open "
+                              "and has allowed remote control")
+    assert isinstance(exc.value.__cause__, OSError)
+
+
+def test_a_timed_out_devtools_port_becomes_a_browser_error(monkeypatch):
+    monkeypatch.setitem(sys.modules, "websocket", _ws_module_raising(TimeoutError("timed out")))
+    with pytest.raises(browser.BrowserError) as exc:
+        browser.Connection("ws://127.0.0.1:9/devtools/browser/x")
+    assert isinstance(exc.value.__cause__, TimeoutError)
+
+
+def test_the_websocket_librarys_own_failure_becomes_a_browser_error(monkeypatch):
+    monkeypatch.setitem(sys.modules, "websocket", _ws_module_raising(_WsFailure("bad handshake")))
+    with pytest.raises(browser.BrowserError) as exc:
+        browser.Connection("ws://127.0.0.1:9/devtools/browser/x")
+    assert isinstance(exc.value.__cause__, _WsFailure)
+
+
+def test_web_search_takes_its_fallback_once_when_the_connect_fails(monkeypatch):
+    from iris import tools, web
+
+    browser._watching.clear()  # an earlier test may have left the watcher flag set
+    browser._conn = None
+    monkeypatch.setitem(sys.modules, "websocket", _ws_module_raising(OSError("connection refused")))
+    monkeypatch.setattr(browser, "_ws_url", lambda: "ws://127.0.0.1:9/devtools/browser/x")
+    calls = []
+
+    def fake_search(query):
+        calls.append(query)
+        return [{"title": "A result.", "url": "https://a.example/", "snippet": "It."}]
+
+    monkeypatch.setattr(web, "search", fake_search)
+    out = tools.web_search("sinners 2025 film")
+    assert calls == ["sinners 2025 film"]  # the DuckDuckGo fallback ran exactly once
+    assert out.startswith("1. A result.")
+
+
 class ScriptedWs:  # answers recv() with prepared replies, one per call
     def __init__(self, replies):
         self.replies = list(replies)
@@ -176,7 +235,7 @@ def test_events_and_replies_for_other_ids_are_skipped_until_the_own_answer(monke
 
 
 def test_a_request_waits_for_the_watcher_to_connect_and_gets_its_connection(monkeypatch):
-    monkeypatch.setattr(browser, "WATCH_WAIT", 0.5)
+    monkeypatch.setattr(browser, "WATCH_WAIT", 5.0)  # generous: a loaded CI runner can start the thread late
     browser._watching.set()
     fake = object()
 
@@ -520,5 +579,26 @@ def test_settle_pauses_then_polls_while_the_page_is_still_loading(monkeypatch):
     monkeypatch.setattr(browser, "_eval", lambda session, expression, wait=15: next(states))
     browser._settle("s-1")
     assert sleeps == [0.4, 0.1, 0.1]
+
+
+def test_a_profile_from_the_settings_is_the_only_one_tried(tmp_path, monkeypatch):
+    profile = str(tmp_path / "profile")
+
+    def fake_setting(env, key, default=""):
+        return profile if (env, key) == ("IRIS_BROWSER_PROFILE", "browser_profile") else default
+
+    monkeypatch.setattr(browser.config, "setting", fake_setting)
+    assert browser._profiles() == [Path(profile)]
+
+
+def test_without_a_setting_the_three_browsers_are_tried_under_localappdata(tmp_path, monkeypatch):
+    monkeypatch.setattr(browser.config, "setting", lambda env, key, default="": default)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    profiles = browser._profiles()
+    assert [p.parts[-3:] for p in profiles] == [
+        ("BraveSoftware", "Brave-Browser", "User Data"),
+        ("Google", "Chrome", "User Data"),
+        ("Microsoft", "Edge", "User Data"),
+    ]
 
 

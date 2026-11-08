@@ -1,5 +1,6 @@
 """Tests for iris.web.http_get with a fake urlopen (no network)."""
 
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -147,6 +148,10 @@ def test_non_http_schemes_refused(url):
         "http://10.0.0.5/",
         "http://169.254.16.4/",
         "https://[::1]/",
+        "http://localhost./",
+        "http://100.64.0.1/",
+        "http://[ff02::1]/",
+        "http://0.0.0.0:8765/",
     ],
 )
 def test_local_hosts_refused(url):
@@ -234,6 +239,21 @@ def test_search_encodes_the_query():
     assert seen == ["https://html.duckduckgo.com/html/?q=a+b+%26+c"]
 
 
+def test_parsers_never_shadow_htmlparser_internals():
+    # Python 3.13.17's HTMLParser keeps its own state in _pending, _pending_len and _parse_threshold; a subclass
+    # attribute with one of those names broke every web search there
+    import ast
+    import inspect
+    from html.parser import HTMLParser
+
+    taken = set(vars(HTMLParser())) | {"_pending", "_pending_len", "_parse_threshold"}
+    for cls in (web._ResultParser, web._TextExtractor):
+        tree = ast.parse(inspect.getsource(cls))
+        own = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)
+               and n.value.id == "self" and isinstance(n.ctx, ast.Store)}
+        assert not own & taken, (cls.__name__, own & taken)
+
+
 
 # --- web_search tool -----------------------------------------------------------
 def test_web_search_tool_lists_numbered_results(monkeypatch):
@@ -264,7 +284,8 @@ def test_web_search_tool_error_text(monkeypatch, exc):
         raise exc
 
     monkeypatch.setattr(web, "search", boom)
-    assert tools.web_search("test query") == f"error: search failed: {exc}"
+    assert tools.web_search("test query") == (f"error: search failed ({exc}); try again, or open a site's search "
+                                              "page with open_url")
 
 
 def test_web_search_is_a_safe_tool():
@@ -317,6 +338,34 @@ def test_read_text_skips_nav_footer_script_style():
     for gone in ("Home", "About", "Contact", "Harbour Notes", "Search the archive",
                  "Related:", "visitor number 48213", "font-family", "Privacy", "Terms"):
         assert gone not in out, f"{gone!r} should have been skipped"
+
+
+def test_read_text_returns_the_paragraphs_of_an_aspnet_form_page():
+    def get(url):
+        return url, "text/html", (
+            "<html><head><title>Harbour report</title></head>"
+            '<body><form id="aspnetForm" method="post">'
+            "<h1>The harbour report</h1>"
+            "<p>The tide turned at noon.</p>"
+            "<p>Two ferries are due this evening.</p>"
+            "</form></body></html>")
+
+    out = web.read_text("http://example.com/aspnet", get=get)
+    assert out == ("Title: Harbour report\nThe harbour report\n"
+                   "The tide turned at noon.\nTwo ferries are due this evening.")
+
+
+def test_read_text_does_not_return_the_options_of_a_select():
+    def get(url):
+        return url, "text/html", (
+            "<html><head><title>Filter</title></head>"
+            "<body><p>Pick a month.</p>"
+            "<select><option>One</option></select>"
+            "</body></html>")
+
+    out = web.read_text("http://example.com/select", get=get)
+    assert "One" not in out
+    assert "Pick a month." in out
 
 
 def test_read_text_title_first_and_order():
@@ -400,4 +449,97 @@ def test_web_read_is_a_safe_tool():
     tool = TOOLS["web_read"]
     assert tool.tier == SAFE
     assert tool.required == ["url"]
+
+
+
+@pytest.mark.parametrize("host,address", [("127.1", "127.0.0.1"), ("2130706433", "127.0.0.1"),
+                                          ("0x7f000001", "127.0.0.1"), ("0", "0.0.0.0"),
+                                          ("rebind.example", "192.168.1.1"), ("v6.example", "fe80::1%3")])
+def test_a_name_or_old_form_that_resolves_locally_is_refused(monkeypatch, fake_urlopen, host, address):
+    monkeypatch.setattr(web, "_resolve", lambda h: ["93.184.215.14", address] if h == host else [])
+    with pytest.raises(ValueError, match="refusing a local address"):
+        web.http_get(f"http://{host}:8765/api/journal")
+    assert fake_urlopen.calls == []
+
+
+def test_a_name_that_does_not_resolve_is_left_to_urlopen(monkeypatch, fake_urlopen):
+    def nothing(host):
+        raise OSError("no such name")
+
+    monkeypatch.setattr(web, "_resolve", nothing)
+    web.http_get("https://example.com/")
+    assert len(fake_urlopen.calls) == 1
+
+
+def test_read_text_keeps_the_page_after_options_without_end_tags():
+    html = "<html><title>T</title><body><select><option>One<option>Two</select><p>After the menu</p></body></html>"
+    assert web.read_text("u", get=lambda u: (200, "text/html", html)) == "Title: T\nAfter the menu"
+
+
+_REAL_RESOLVE = web._resolve  # captured at import time, before conftest fakes it for the other tests
+
+
+def test_resolve_returns_every_address_the_resolver_gives(monkeypatch):
+    import socket
+
+    calls = []
+
+    def fake_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        calls.append((host, port, type))
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.215.14", 0)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:21f:cb07:6820:80da:af6b:8b2c", 0, 0, 0)),
+        ]
+
+    monkeypatch.setattr(web, "_resolve", _REAL_RESOLVE)  # the real resolver, not conftest's fake
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    assert web._resolve("example.com") == ["93.184.215.14", "2606:2800:21f:cb07:6820:80da:af6b:8b2c"]
+    assert calls == [("example.com", None, socket.SOCK_STREAM)]  # the host and stream type were passed through
+
+
+def test_web_read_after_a_404_says_to_search_instead_of_guessing(monkeypatch):
+    from iris import tools
+
+    def boom(url, max_bytes=1024 * 1024, timeout=15.0):
+        raise urllib.error.HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
+
+    monkeypatch.setattr(web, "http_get", boom)
+    result = tools.web_read("https://www.justwatch.com/nl/film/the-shining-1980")
+    assert result.startswith("error: HTTP Error 404: Not Found.")
+    assert "web_search" in result
+    assert "do not guess" in result
+
+
+def test_web_read_after_a_410_says_the_same(monkeypatch):
+    from iris import tools
+
+    def boom(url, max_bytes=1024 * 1024, timeout=15.0):
+        raise urllib.error.HTTPError(url, 410, "Gone", hdrs=None, fp=None)
+
+    monkeypatch.setattr(web, "http_get", boom)
+    result = tools.web_read("http://example.com/gone")
+    assert result.startswith("error: HTTP Error 410: Gone.")
+    assert "web_search" in result
+
+
+def test_web_read_after_a_429_says_to_read_another_result(monkeypatch):
+    from iris import tools
+
+    def boom(url, max_bytes=1024 * 1024, timeout=15.0):
+        raise urllib.error.HTTPError(url, 429, "Too Many Requests", hdrs=None, fp=None)
+
+    monkeypatch.setattr(web, "http_get", boom)
+    result = tools.web_read("http://example.com/busy")
+    assert result.startswith("error: HTTP Error 429: Too Many Requests.")
+    assert "another result" in result
+
+
+def test_web_read_other_http_errors_are_plain(monkeypatch):
+    from iris import tools
+
+    def boom(url, max_bytes=1024 * 1024, timeout=15.0):
+        raise urllib.error.HTTPError(url, 500, "Server Error", hdrs=None, fp=None)
+
+    monkeypatch.setattr(web, "http_get", boom)
+    assert tools.web_read("http://example.com/broken") == "error: HTTP Error 500: Server Error"
 

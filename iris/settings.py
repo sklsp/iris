@@ -102,6 +102,20 @@ def payload() -> dict:
     fields = []
     for f in FIELDS:
         row = {**f, "value": data.get(f["key"], f["default"]), "set": f["key"] in data}
+        if row["set"]:  # a hand-edited file may hold the wrong type; repair it so the page can show and save it
+            value = row["value"]
+            if f["type"] in ("list", "plugins") and isinstance(value, str):
+                row["value"] = [value]  # one line is one item; the page joins lists into lines
+            elif f["type"] in ("number", "int", "gpu"):
+                if isinstance(value, str):  # whisper_gpu = "1" works at runtime (config.number parses it)
+                    try:
+                        number = float(value)
+                        if number == number and abs(number) != float("inf"):
+                            row["value"] = value = int(number) if number == int(number) else number
+                    except ValueError:
+                        pass
+                if not isinstance(value, int | float) or isinstance(value, bool):  # a bool is not a number
+                    row["value"], row["invalid"] = f["default"], str(value)  # show the default; keep the text visible
         if f.get("env") and os.environ.get(f["env"], "").strip():
             row["overridden_by"] = f"{f['env']}={os.environ[f['env']]}"
         if f["type"] == "plugins":
@@ -166,6 +180,8 @@ def validate(values: dict) -> tuple[dict, dict]:
                 clean[key] = value
             elif kind in ("number", "int", "gpu"):
                 number = float(value)
+                if number != number or abs(number) == float("inf"):  # nan, inf: int() of them raises OverflowError
+                    raise ValueError("must be a number")
                 if kind in ("int", "gpu"):
                     if number != int(number) or number < 0:
                         raise ValueError("must be a whole number, 0 or more")
@@ -223,7 +239,7 @@ def write(updates: dict, path: Path | None = None) -> None:
     """Set (or with None, remove) top-level keys in config.toml. Comment lines, other keys and [tables] stay as they
     are; a replaced key loses a comment on its own line. Written aside, checked, then swapped in."""
     path = path or config.config_path()
-    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    text = path.read_text(encoding="utf-8-sig") if path.exists() else ""  # a BOM is dropped on save
     lines = text.splitlines()
     for key, value in updates.items():
         end_of_top = next((i for i, line in enumerate(lines) if line.lstrip().startswith("[")), len(lines))
@@ -252,6 +268,7 @@ def write(updates: dict, path: Path | None = None) -> None:
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(out, encoding="utf-8")
     os.replace(tmp, path)
+    config.forget()  # a rewrite of the same size within one tick would keep the old cache key
 
 
 def save(values: dict) -> dict:

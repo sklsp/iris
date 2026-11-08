@@ -82,10 +82,10 @@ def test_wake_word_model_unknown_missing_path_downloads_nothing(tmp_path, monkey
     _fake_openwakeword(monkeypatch, {}, downloads)
 
     w = WakeWord(name=str(tmp_path / "missing.onnx"))
-    m = w._model()
+    with pytest.raises(FileNotFoundError, match="no wake word model at"):
+        w._model()
 
-    assert m.wakeword_models == [str(tmp_path / "missing.onnx")]
-    assert downloads == [[]]  # not a built-in name, so the downloader gets no names
+    assert downloads == []  # download_models([]) would fetch every official model
 
 
 def test_wake_word_model_is_loaded_once(tmp_path, monkeypatch):
@@ -476,6 +476,90 @@ def test_speaker_sapi_survives_a_broken_pyttsx3(monkeypatch):
     monkeypatch.setitem(sys.modules, "pyttsx3", fake)
 
     assert Speaker(engine="sapi").speak("hello") is True  # printed instead of spoken
+
+
+# --- Speaker engine switching --------------------------------------------------
+
+
+class _FakeVoxProcess:
+    """Stands in for the VoxCPM2 worker; stream() can be made to fail on demand."""
+
+    def __init__(self, ready=True):
+        self.ready = threading.Event()
+        if ready:
+            self.ready.set()
+        self.stream_boom = False
+        self.close_calls = 0
+
+    def close(self):
+        self.close_calls += 1
+
+    def stream(self, text, timeout=30):
+        if self.stream_boom:
+            raise RuntimeError("voxcpm worker died")
+        return iter(())
+
+
+class _FakePiperProcess:
+    """Stands in for one running Piper; wav() can be made to fail on demand."""
+
+    def __init__(self, boom=False):
+        self.boom = boom
+
+    def wav(self, text, timeout=20):
+        if self.boom:
+            raise RuntimeError("piper stopped")
+        return "unused.wav"
+
+
+def _fake_pyttsx3(monkeypatch):
+    fake = types.ModuleType("pyttsx3")
+
+    class Engine:
+        def say(self, t):
+            pass
+
+        def runAndWait(self):
+            pass
+
+    fake.init = lambda: Engine()
+    monkeypatch.setitem(sys.modules, "pyttsx3", fake)
+
+
+def test_speaker_keeps_voxcpm_when_piper_fails_while_it_is_loading(monkeypatch):
+    import iris.voice as v
+
+    _fake_pyttsx3(monkeypatch)
+    vox = _FakeVoxProcess(ready=False)  # still loading: Piper says the answers meanwhile
+    monkeypatch.setattr(v, "VoxProcess", lambda: vox)
+    spk = Speaker(engine="voxcpm")
+    spk._piper["en"] = _FakePiperProcess(boom=True)
+
+    for _ in range(3):  # three Piper failures while VoxCPM is still loading
+        assert spk.speak("hello") is True
+
+    assert spk.engine == "voxcpm"  # the chosen engine must not be switched away from
+    assert spk._failures["piper"] == 3  # the streak is still counted...
+    assert vox.close_calls == 0  # ...and the loading worker keeps running
+
+
+def test_speaker_stops_the_vox_worker_after_three_failures(monkeypatch):
+    import iris.voice as v
+
+    _fake_pyttsx3(monkeypatch)
+    vox = _FakeVoxProcess(ready=True)
+    vox.stream_boom = True  # the stream dies on every answer
+    monkeypatch.setattr(v, "VoxProcess", lambda: vox)
+    spk = Speaker(engine="voxcpm")
+    spk._piper["en"] = _FakePiperProcess()  # Piper takes over and speaks fine
+    monkeypatch.setattr(v, "_play_wav", lambda path, stop_event, slack=3.0: True)
+
+    for _ in range(3):
+        assert spk.speak("hello") is True
+
+    assert spk.engine == "piper"  # switched after three VoxCPM failures
+    assert vox.close_calls == 1  # the worker is stopped, so its GPU memory is freed
+    assert spk._vox is None
 
 
 # --- module level speak() --------------------------------------------------------

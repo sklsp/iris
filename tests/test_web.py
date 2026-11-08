@@ -238,6 +238,21 @@ def test_search_encodes_the_query():
     assert seen == ["https://html.duckduckgo.com/html/?q=a+b+%26+c"]
 
 
+def test_parsers_never_shadow_htmlparser_internals():
+    # Python 3.13.17's HTMLParser keeps its own state in _pending, _pending_len and _parse_threshold; a subclass
+    # attribute with one of those names broke every web search there
+    import ast
+    import inspect
+    from html.parser import HTMLParser
+
+    taken = set(vars(HTMLParser())) | {"_pending", "_pending_len", "_parse_threshold"}
+    for cls in (web._ResultParser, web._TextExtractor):
+        tree = ast.parse(inspect.getsource(cls))
+        own = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)
+               and n.value.id == "self" and isinstance(n.ctx, ast.Store)}
+        assert not own & taken, (cls.__name__, own & taken)
+
+
 
 # --- web_search tool -----------------------------------------------------------
 def test_web_search_tool_lists_numbered_results(monkeypatch):

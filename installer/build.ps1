@@ -87,8 +87,16 @@ try {
     New-Item -ItemType Directory -Force -Path $Tools | Out-Null
     $Rcedit = Join-Path $Tools "rcedit-x64.exe"
     if (-not (Test-Path $Rcedit)) {
-        Invoke-WebRequest -UseBasicParsing -OutFile $Rcedit `
-            -Uri "https://github.com/electron/rcedit/releases/download/$RceditVersion/rcedit-x64.exe"
+        foreach ($Try in 1..3) {  # GitHub's download host answers 504 now and then
+            try {
+                Invoke-WebRequest -UseBasicParsing -OutFile $Rcedit `
+                    -Uri "https://github.com/electron/rcedit/releases/download/$RceditVersion/rcedit-x64.exe"
+                break
+            } catch {
+                if ($Try -eq 3) { throw }
+                Start-Sleep -Seconds 20
+            }
+        }
     }
     $Hash = (Get-FileHash $Rcedit -Algorithm SHA256).Hash.ToLower()
     if ($Hash -ne $RceditSha256) {

@@ -1105,7 +1105,9 @@ TOOLS = {t.name: t for t in [
     Tool("capability_remove", "Remove a skill Iris built (it goes to Iris's trash). Asks first.",
          {"tool_name": S}, ["tool_name"], CONFIRM, capability_remove),
     Tool("find_files",
-         "Files and folders whose name contains `name`, in home plus configured folders; newest first.",
+         "Files and folders whose name contains `name` (case does not matter), in home plus configured"
+         " folders; newest first. Search once with the shortest shared stem (factur finds factuur and facturen);"
+         " do not repeat with variants of the same word.",
          {"name": S, "folder": S}, ["name"], SAFE, find_files),
     Tool("list_folder",
          "The entries of a folder: folders first with a trailing /, then files with their size in KB.",
@@ -1187,7 +1189,9 @@ TOOLS = {t.name: t for t in [
          {"target": S, "window": S}, ["target"], CONFIRM, click_on_screen, _click_on_screen_tier),
     Tool("close_window",
          "Close the first window whose title contains the given text (WM_CLOSE, so the app can still ask to save);"
-         " use it when the user asks to close an app or window.",
+         " use it when the user asks to close an app or window."
+         " The title match is a substring, so call it directly with the app name; no list_windows or focus_window"
+         " first.",
          {"title": S}, ["title"], CONFIRM, close_window),
     Tool("clock",
          "The local date and time, weekday and ISO week; use it when the user asks what time or day it is.",

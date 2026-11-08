@@ -1,0 +1,2 @@
+- [x] Q1. browser: a stopped watcher never publishes its connection (2254 passed in 99.39s (0:01:39))
+- [ ] Q2. CHANGELOG for this run

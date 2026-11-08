@@ -328,6 +328,38 @@ def test_the_watcher_connects_says_the_question_is_waiting_and_reconnects_after_
     assert len(made) >= 2 and not watcher.is_alive()
 
 
+def test_a_stopped_watcher_never_publishes_a_connection_whose_handshake_finishes_late(monkeypatch):
+    import threading
+
+    entered, release = threading.Event(), threading.Event()
+    made, closed = [], []
+
+    class Waiting:  # a handshake that blocks until the user clicks Allow (here: release)
+        def __init__(self, url, handshake=60):
+            entered.set()
+            release.wait(5)
+            made.append(self)
+
+        def close(self):
+            closed.append(self)
+
+    monkeypatch.setattr(browser, "_watching", threading.Event())
+    monkeypatch.setattr(browser, "_ws_url", lambda: "ws://127.0.0.1:1/devtools/browser/x")
+    monkeypatch.setattr(browser, "Connection", Waiting)
+    stop = threading.Event()
+    watcher = browser.watch(None, every=0.01, ask_after=5, stop=stop)
+    deadline = time.perf_counter() + 5
+    while not entered.is_set() and time.perf_counter() < deadline:
+        time.sleep(0.01)
+    assert entered.is_set()
+    stop.set()  # voice mode ends while Brave is still asking Allow
+    release.set()  # the click arrives late, after the watcher should already be gone
+    watcher.join(5)
+    assert not watcher.is_alive()
+    assert browser._conn is None  # a stopped watcher must never publish its connection
+    assert closed == made and len(closed) == 1  # the late connection was closed, not kept
+
+
 def test_a_second_page_on_the_same_site_reuses_the_tab_iris_opened(fake, monkeypatch):
     monkeypatch.setattr(browser.time, "sleep", lambda s: None)
     tools.open_url("https://www.netflix.com/search?q=weapons")

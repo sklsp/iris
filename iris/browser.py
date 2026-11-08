@@ -157,6 +157,14 @@ def watch(announce: Callable[[str], object] | None = None, every: float = 5, ask
                         conn = Connection(url, handshake=600)
                     finally:
                         asking.cancel()
+                    if stop and stop.is_set():  # voice mode ended while Allow was still being asked
+                        close = getattr(conn, "close", None)
+                        if callable(close):
+                            try:
+                                close()
+                            except Exception:  # noqa: BLE001 - a dead socket on the way out is fine
+                                pass
+                        return  # a stopped watcher never publishes its connection
                     _sessions.clear()
                     _conn = conn
                 else:

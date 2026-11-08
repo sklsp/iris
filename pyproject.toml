@@ -67,7 +67,8 @@ filterwarnings = ["error::DeprecationWarning:iris", "error::PendingDeprecationWa
 
 [tool.coverage.run]
 source = ["iris"]
+patch = ["subprocess"]
 
 [tool.coverage.report]
-fail_under = 94
+fail_under = 99
 show_missing = true

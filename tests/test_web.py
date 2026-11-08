@@ -473,3 +473,25 @@ def test_a_name_that_does_not_resolve_is_left_to_urlopen(monkeypatch, fake_urlop
 def test_read_text_keeps_the_page_after_options_without_end_tags():
     html = "<html><title>T</title><body><select><option>One<option>Two</select><p>After the menu</p></body></html>"
     assert web.read_text("u", get=lambda u: (200, "text/html", html)) == "Title: T\nAfter the menu"
+
+
+_REAL_RESOLVE = web._resolve  # captured at import time, before conftest fakes it for the other tests
+
+
+def test_resolve_returns_every_address_the_resolver_gives(monkeypatch):
+    import socket
+
+    calls = []
+
+    def fake_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        calls.append((host, port, type))
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.215.14", 0)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:21f:cb07:6820:80da:af6b:8b2c", 0, 0, 0)),
+        ]
+
+    monkeypatch.setattr(web, "_resolve", _REAL_RESOLVE)  # the real resolver, not conftest's fake
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    assert web._resolve("example.com") == ["93.184.215.14", "2606:2800:21f:cb07:6820:80da:af6b:8b2c"]
+    assert calls == [("example.com", None, socket.SOCK_STREAM)]  # the host and stream type were passed through
+

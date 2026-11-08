@@ -777,6 +777,7 @@ def set_announcer(announce: Callable[[str], object]) -> None:
 def _duration_text(minutes: float) -> str:
     """How long a timer runs, spoken: under one minute as seconds, else whole minutes (1.5 stays 1.5), an hour or
     more as "2 h 10 min". A clock-time timer gives fractions like 549.986, which must never be read out."""
+    minutes = float(minutes)  # int.is_integer only exists from Python 3.12
     if minutes < 1:
         s = round(minutes * 60)
         return f"{s} second{'s' if s != 1 else ''}"

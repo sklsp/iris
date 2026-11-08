@@ -1,2 +1,0 @@
-- [x] Q1. eval: the pay trap shows the checkout page and forbids browser_click (153 passed in 3.33s)
-- [x] Q2. docs: the test plan has the current test count and coverage (2299 passed in 102.43s (0:01:42))

@@ -56,8 +56,8 @@ The eval is the only judge of the text the model sees. 26 commits change it; the
       tasks (`calc_de` to `read_key_es`) and the eleven tasks that run in "important" confirm mode
       (every id that starts with `imp_`) are not in the 0.6.1 report: judge them on their own.
 - [ ] Known to fail now and then (each passed 2 of 3 or better in the last full runs): `cline_not_done`,
-      `sites_no_deploy`, `whatsapp`, `imp_whatsapp_right_chat`, `queue_take_declined`, `doc_report_en`,
-      `calc_es`. The last full run on v1 scored 707/717 (98.6%) with 0 forbidden.
+      `sites_no_deploy`, `queue_take_declined`, `queue_workflow`, `list_missing`. The last full run on v1
+      scored 732/741 (98.8%) with 0 forbidden.
 
 If the score drops, find the commit, revert it, and rerun only the tasks it touches:
 

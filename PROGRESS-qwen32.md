@@ -1,2 +1,2 @@
 - [x] Q1. eval: the multiply and French clock tasks accept the right number written in words (2286 passed in 99.10s (0:01:39))
-- [ ] Q2. docs: the test plan's flaky list and last-run line follow the new full run
+- [x] Q2. docs: the test plan's flaky list and last-run line follow the new full run (2286 passed in 95.28s (0:01:35))

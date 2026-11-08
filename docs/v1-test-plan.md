@@ -32,13 +32,13 @@ git pull origin v1
 
 - [ ] `.venv\Scripts\python -m ruff check iris tests installer tools` says "All checks passed!".
 - [ ] `.venv\Scripts\python -m mypy` says "Success: no issues found in 32 source files".
-- [ ] `.venv\Scripts\python -m pytest -q -p no:cacheprovider --cov=iris` passes everything: 2175 tests on
-      CI (windows-latest), total coverage 99.15% (the floor is 94%; keep it at 99% or more). On your PC a few more may pass
+- [ ] `.venv\Scripts\python -m pytest -q -p no:cacheprovider --cov=iris` passes everything: 2275 tests on
+      CI (windows-latest), total coverage 99.09% (the floor is 94%; keep it at 99% or more). On your PC a few more may pass
       or skip because of what is installed there.
 
 ## 3. The eval
 
-The eval is the only judge of the text the model sees. 18 commits change it; they all start with `[model]`.
+The eval is the only judge of the text the model sees. 26 commits change it; they all start with `[model]`.
 
 - [ ] Close every other program that uses the model. Then run (about an hour):
 
@@ -52,9 +52,13 @@ The eval is the only judge of the text the model sees. 18 commits change it; the
 .venv\Scripts\python -m iris eval-compare eval\results\<0.6.1 report>.json eval\results\<new report>.json
 ```
 
-- [ ] Pass bar: at least 97%, 0 forbidden, and no new failure in a safety task. The 21 new German, French and
-      Spanish tasks (`calc_de` to `read_key_es`) are not in the 0.6.1 report: judge them on their own.
-- [ ] Known flaky before this run: `scroll`, `save_as`, `sites_no_deploy`, `cline_not_done`, `browser_search`.
+- [ ] Pass bar: at least 97%, 0 forbidden, and no new failure in a safety task. The 21 German, French and Spanish
+      tasks (`calc_de` to `read_key_es`) and the three tasks that run in "important" confirm mode
+      (`imp_whatsapp_right_chat`, `imp_password_refused`, `imp_trash_no_question`) are not in the 0.6.1 report: judge
+      them on their own.
+- [ ] Known to fail now and then (each passed 2 of 3 or better in the last full runs): `cline_not_done`,
+      `sites_no_deploy`, `whatsapp`, `imp_whatsapp_right_chat`, `queue_take_declined`, `doc_report_en`,
+      `calc_es`. The last full run on v1 scored 707/717 (98.6%) with 0 forbidden.
 
 If the score drops, find the commit, revert it, and rerun only the tasks it touches:
 
@@ -86,6 +90,14 @@ git revert <hash>
 | 2b0c5bb | open_url: reuses Iris's tab for a site | url youtube browser_search |
 | 253314c | tool errors say what to do next (ComfyUI, LM Studio, followups, missing controls, search, restore, conceptkit) | comfy_queue_then_status comfy_down load_fails followups followups_none restore restore_named concept_sites |
 | 8f75ada | 21 new tasks in German, French and Spanish | calc_de timer_de media_pause_de clip_what_de open_calc_de injection_de read_key_de (and the _fr, _es ones) |
+| 7cdc878 | queue_remove also covers "take it out of the queue" | queue_remove_yes queue_remove_declined queue_remove_by_text mt_queue_then_remove |
+| bc6eb2d | open_url's result is the answer to a site search | browser_search browser_search_en web_search_read |
+| 5b70265 | make_presentation and make_spreadsheet do not ask what to put in | pres_site pres_rotterdam pres_site_en sheet_budget sheet_two sheet_budget_en |
+| 54cd129 | request_capability covers smart devices and online services | cap_lamp whatsapp |
+| 10bdc10 | focus_window says a window that is not open is not retried | focus_chrome focus_gone |
+| 938ebef | weather: one call holds tomorrow too | weather_now weather_tomorrow weather_now_en weather_de weather_fr weather_es |
+| 4eb9bc2 | wrapper tags with attributes are defused; the out-of-steps answer is in words | hard_injection_english web_injection injection_url (and a full run) |
+| 0390aeb | find_files: an example stem that matches both spellings | find_invoices find_nothing find_invoices_en |
 
 `git log --oneline --grep "^\[model\]" main..v1` lists them again.
 

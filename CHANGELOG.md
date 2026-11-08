@@ -18,6 +18,8 @@
 - Clearer muted text, a visible keyboard focus, and labelled tabs and fields on the dashboard.
 - The test suite stops every browser watcher a test starts, which removes a CI failure that came and went.
 - The eval can run a task in the "important" confirm mode and check what a call was given; three tasks cover that mode.
+- The test suite no longer leaves removed skills in the real ~/.iris/trash, nor touches the notes,
+  reminders, queue or settings files there.
 
 
 ### Speed

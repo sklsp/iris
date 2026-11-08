@@ -1,0 +1,3 @@
+- [x] Q1. v1-test-plan: the gates section has today's numbers (2275 passed in 98.95s (0:01:38))
+- [ ] Q2. v1-test-plan: the eval section names the new tasks and today's flaky ones
+- [ ] Q3. v1-test-plan: the commit table lists all 26 [model] commits

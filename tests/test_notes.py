@@ -422,3 +422,8 @@ def test_a_reminder_months_ahead_waits_in_steps_and_can_be_cancelled(monkeypatch
     long.cancel()
     long.join(2)
     assert not long.is_alive() and fired == [1] and waits and max(waits) <= 0.05 <= threading.TIMEOUT_MAX
+
+
+def test_a_line_that_is_not_a_note_is_skipped(notes_file):
+    notes_file.write_text("- 2026-10-31 09:05 buy milk\njust some text\n", encoding="utf-8")
+    assert notes._read(notes_file) == [(datetime(2026, 10, 31, 9, 5), "buy milk")]

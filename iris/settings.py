@@ -268,6 +268,7 @@ def write(updates: dict, path: Path | None = None) -> None:
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(out, encoding="utf-8")
     os.replace(tmp, path)
+    config.forget()  # a rewrite of the same size within one tick would keep the old cache key
 
 
 def save(values: dict) -> dict:

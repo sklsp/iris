@@ -336,3 +336,24 @@ def test_a_recreated_config_of_the_same_size_and_time_is_read_again(tmp_path, mo
     path.write_text('name = "Bart"\n', encoding="utf-8")  # same size, and the same clock tick below
     os.utime(path, ns=(stamp, stamp))
     assert config.load()["name"] == "Bart"
+
+
+def test_init_main_forgets_the_cached_config(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    monkeypatch.setenv("IRIS_CONFIG", str(path))
+    path.write_text('name = "A"\n', encoding="utf-8")
+    assert config.load()["name"] == "A"  # fills the cache
+    path.unlink()
+    rc = config.init_main(ask=lambda q: "Bart")
+    assert rc == 0 and config._cache is None
+
+
+def test_settings_write_forgets_the_cached_config(tmp_path, monkeypatch):
+    from iris import settings
+
+    path = tmp_path / "config.toml"
+    monkeypatch.setenv("IRIS_CONFIG", str(path))
+    path.write_text('name = "A"\n', encoding="utf-8")
+    assert config.load()["name"] == "A"  # fills the cache
+    settings.write({"city": "Rotterdam"}, path)
+    assert config._cache is None

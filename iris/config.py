@@ -54,6 +54,13 @@ def raw() -> dict:
     return copy.deepcopy(data)
 
 
+def forget() -> None:
+    """Drop the cached config.toml: call it after Iris writes the file itself, because a rewrite of the same size
+    within one clock tick keeps the cache key."""
+    global _cache
+    _cache = None
+
+
 def error() -> str | None:
     """Why config.toml can not be read, or None when it is fine or simply not there (iris doctor shows this)."""
     path = config_path()
@@ -182,5 +189,6 @@ def init_main(ask: Callable[[str], str] = input) -> int:
     text = TEMPLATE.format(name=json.dumps(name, ensure_ascii=False),
                            city=f"city = {json.dumps(city, ensure_ascii=False)}" if city else '# city = "Utrecht"')
     path.write_text(text, encoding="utf-8")
+    forget()  # a rewrite of the same size within one tick would keep the old cache key
     print(f"wrote {path}. Next: iris doctor")
     return 0

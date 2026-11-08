@@ -83,6 +83,7 @@
   exactly as long as the old one.
 - When the model server turns a request down because the conversation got too long, Iris drops the older turns
   and tries once more by herself, instead of failing every request until a restart.
+- A reminder set across a daylight saving change goes off at the time it says, not an hour early or late.
 
 
 ### Docs

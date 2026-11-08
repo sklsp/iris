@@ -1,2 +1,2 @@
 - [x] Q1. reminders: the wait is right across a daylight saving change (2264 passed in 95.93s (0:01:35))
-- [ ] Q2. CHANGELOG for this run
+- [x] Q2. CHANGELOG for this run (2264 passed in 93.93s (0:01:33))

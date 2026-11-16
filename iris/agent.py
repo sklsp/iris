@@ -93,6 +93,8 @@ def _older_page(result: str) -> str:
 
 
 class Journal:
+    MAX_BYTES = 5 * 1024 * 1024  # rotate at this size; the dashboard re-reads the whole file every few seconds
+
     def __init__(self, path: Path):
         self.path = path
 
@@ -100,8 +102,18 @@ class Journal:
         """Append one event as a timestamped JSON line to the journal file the dashboard reads."""
         entry["t"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         self.path.parent.mkdir(parents=True, exist_ok=True)  # a fresh PC has no ~/.iris yet
+        self._rotate()  # keep the file small; a failure here must not lose this entry
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def _rotate(self) -> None:
+        """Move the journal to <name>.1 when it reaches MAX_BYTES, so nothing re-reads megabytes. Only one old
+        file is kept; a failed size check or move must never lose an entry, so log on as before."""
+        try:
+            if self.path.exists() and self.path.stat().st_size >= self.MAX_BYTES:
+                os.replace(self.path, self.path.with_name(self.path.name + ".1"))
+        except OSError:  # the entry matters more than a small file; append to the current one instead
+            pass
 
 
 # what a model call can raise: the server is down or answers badly (OSError, HTTPException such as IncompleteRead),

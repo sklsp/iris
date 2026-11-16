@@ -15,6 +15,7 @@ import pytest
 import iris.__main__ as imain
 import iris.dashboard as idash
 import iris.eval as ieval
+import iris.timings as itimings
 import iris.tools as itools
 import iris.voice as ivoice
 
@@ -185,6 +186,21 @@ def test_dashboard_without_port_serves_default(monkeypatch):
     imain.main()
 
     assert calls == [{"port": None}]
+
+
+def test_timings_subcommand_delegates_and_propagates_exit_code(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["iris", "timings", "--last", "25"])
+    seen = {}
+
+    def fake_timings_main(argv):
+        seen["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(itimings, "timings_main", fake_timings_main)
+    with pytest.raises(SystemExit) as exc:
+        imain.main()
+    assert exc.value.code == 0
+    assert seen["argv"] == ["--last", "25"]
 
 
 

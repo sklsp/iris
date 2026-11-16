@@ -1,2 +1,0 @@
-- [x] Q1. journal: rotate at a size limit (2371 passed in 111.88s (0:01:51))
-- [x] Q2. docs: the journal size (2371 passed in 111.37s (0:01:51))

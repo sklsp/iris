@@ -85,15 +85,42 @@ def format_summary(summary: dict) -> list[str]:
     return lines
 
 
+def tool_stats(entries: list[dict]) -> list[tuple[str, int, float]]:
+    """(tool, calls, median ms) per tool from its tool_timing entries; slowest first, then name."""
+    by_tool: dict[str, list[float]] = {}
+    for e in entries:
+        by_tool.setdefault(e["tool"], []).append(float(e["ms"]))
+    return sorted(((name, len(ms), median(ms)) for name, ms in by_tool.items()), key=lambda row: (-row[2], row[0]))
+
+
+def format_tool_stats(stats: list[tuple[str, int, float]]) -> list[str]:
+    """One line per tool from tool_stats; seconds with one decimal."""
+    if not stats:
+        return ["no timed tool calls yet"]
+    return [f"{name}: {calls} {'call' if calls == 1 else 'calls'}, median {ms / 1000:.1f} s"
+            for name, calls, ms in stats]
+
+
 def timings_main(argv: list[str]) -> int:
-    """`iris timings [--last N] [--journal PATH] [--json]`: how long recent requests took, from the journal."""
+    """`iris timings [--last N] [--journal PATH] [--json] [--by-tool]`: how long recent requests took,
+    from the journal."""
     from iris.dashboard import journal_path  # IRIS_JOURNAL, the same file the dashboard reads
 
     ap = argparse.ArgumentParser(prog="iris timings")
     ap.add_argument("--last", type=int, default=50)
     ap.add_argument("--journal", type=Path, default=journal_path())
     ap.add_argument("--json", action="store_true")  # machine-readable summary for scripts and bug reports
+    ap.add_argument("--by-tool", action="store_true")  # per-tool medians from the tool_timing entries
     a = ap.parse_args(argv)
+    if a.by_tool:
+        stats = tool_stats(read_timings(a.journal, last=a.last, event="tool_timing"))
+        if a.json:
+            print(json.dumps([{"tool": name, "calls": calls, "median_ms": ms} for name, calls, ms in stats],
+                             indent=2, sort_keys=True))
+        else:
+            for line in format_tool_stats(stats):
+                print(line)
+        return 0
     stt = read_timings(a.journal, last=a.last, event="stt")  # the voice loop's speech-recognition times
     tts = read_timings(a.journal, last=a.last, event="tts")  # when each answer's first sound started
     summary = summarize(read_timings(a.journal, last=a.last), stt=stt, tts=tts)

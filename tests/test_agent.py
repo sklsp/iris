@@ -542,7 +542,7 @@ def test_a_no_grants_nothing_and_never_words_stay_refused(tmp_path):
     a.confirm = lambda q: asked.append(q) or True
     a.handle("Zoek een film op Netflix")
     assert [kw["control"] for _, kw in ran] == ["Zoeken"]  # the pay button is NEVER, grant or not
-    assert journal(tmp_path)[-3]["outcome"] == "refused"  # answer and timing follow it
+    assert journal(tmp_path)[-4]["outcome"] == "refused"  # its timing, then answer and timing follow it
 
 
 def test_grant_keys():

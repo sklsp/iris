@@ -297,6 +297,8 @@ class Agent:
                     self._tools_ms += elapsed
                     if elapsed > self._slowest_tool_ms:
                         self._slowest_tool, self._slowest_tool_ms = call.name, elapsed
+                    # one entry per call; the request's timing keeps only its slowest, so this makes each tool visible
+                    self.journal.log(event="tool_timing", tool=call.name, ms=round(elapsed * 1000))
                 msg = {"role": "tool", "tool_call_id": call.id, "content": _wrap(result)}
                 if call.name.startswith("browser_"):
                     for old, text in pages:

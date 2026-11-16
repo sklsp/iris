@@ -1,4 +1,5 @@
 """Summarise the timing entries the agent writes to its journal, one per request."""
+import argparse
 import json
 import math
 from pathlib import Path
@@ -64,3 +65,16 @@ def format_summary(summary: dict) -> list[str]:
         slow = ", ".join(f"{name} {ms / 1000:.1f} s" for name, ms in summary["slowest_tools"])
         lines.append("slowest tools: " + slow)
     return lines
+
+
+def timings_main(argv: list[str]) -> int:
+    """`iris timings [--last N] [--journal PATH]`: how long recent requests took, from the journal."""
+    from iris.dashboard import journal_path  # IRIS_JOURNAL, the same file the dashboard reads
+
+    ap = argparse.ArgumentParser(prog="iris timings")
+    ap.add_argument("--last", type=int, default=50)
+    ap.add_argument("--journal", type=Path, default=journal_path())
+    a = ap.parse_args(argv)
+    for line in format_summary(summarize(read_timings(a.journal, last=a.last))):
+        print(line)
+    return 0

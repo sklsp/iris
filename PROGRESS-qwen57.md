@@ -1,4 +1,4 @@
 - [x] Q1. agent: time every request (2314 passed in 109.92s (0:01:49))
 - [x] Q2. timings: summarise the journal (2320 passed in 111.56s (0:01:51))
-- [ ] Q3. cli: `iris timings`
+- [x] Q3. cli: `iris timings` (2324 passed in 110.62s (0:01:50))
 - [ ] Q4. docs: how fast is Iris

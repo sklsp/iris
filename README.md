@@ -124,6 +124,7 @@ From source, for development and for the command line.
    .venv\Scripts\iris dashboard     # status, activity, eval and skill review at http://127.0.0.1:8765
    .venv\Scripts\iris shortcut      # an Iris.cmd on your desktop: double-click to start voice mode
    .venv\Scripts\iris app           # the desktop app (install the .[app] extra): dashboard window, tray, voice mode
+   .venv\Scripts\iris timings       # how long recent requests took: median and p90, model share, slowest tools
    ```
 
 ## Upgrading from 0.x

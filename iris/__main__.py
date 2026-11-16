@@ -5,6 +5,7 @@ python -m iris dashboard       read-only status page at http://127.0.0.1:8765 (a
 python -m iris app             the desktop app: the dashboard in a window, a tray icon, voice mode supervised
                                (pip install -e .[app]; --background starts in the tray only)
 python -m iris autopilot       wait for a run in --repo to finish, then ask before starting the next queued prompt
+python -m iris timings         how long recent requests took: median and p90, model share, slowest tools (--last N)
 python -m iris init            write a starter ~/.iris/config.toml (asks your name and city)
 python -m iris doctor          check the setup (LM Studio, model, config, plugins, voice) and say what to fix
 python -m iris eval            run the eval tasks against the model (--repeat N, --only ID, --category NAME;
@@ -182,6 +183,10 @@ def _main() -> None:
         from iris.autopilot import autopilot_main
 
         raise SystemExit(autopilot_main(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "timings":
+        from iris.timings import timings_main
+
+        raise SystemExit(timings_main(sys.argv[2:]))
     ap = argparse.ArgumentParser(prog="iris", description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--version", action="version", version=f"iris {__version__}")
     ap.add_argument("--voice", action="store_true")

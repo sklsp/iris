@@ -1,6 +1,6 @@
 import json
 
-from iris.timings import format_summary, read_timings, summarize
+from iris.timings import format_summary, read_timings, summarize, timings_main
 
 
 def e(ms, llm=0, tools=0, tool=None, tool_ms=0):
@@ -63,3 +63,25 @@ def test_format_summary_lines_for_one_fixed_input():
                                        "model: median 2.9 s (85% of all time)",
                                        "tools: median 0.3 s",
                                        "slowest tools: browser_open 6.2 s, web_search 2.1 s"]
+
+
+def test_timings_main_prints_the_summary_lines(tmp_path, capsys):
+    path = write(tmp_path, [e(1000, llm=900), e(2000, llm=1500, tools=600, tool="click", tool_ms=600)])
+    assert timings_main(["--journal", str(path)]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "2 requests: median 1.5 s, p90 2.0 s",
+        "model: median 1.2 s (80% of all time)",
+        "tools: median 0.3 s",
+        "slowest tools: click 0.6 s"]
+
+
+def test_timings_main_last_uses_only_the_last_entries(tmp_path, capsys):
+    path = write(tmp_path, [e(100), e(200), e(300), e(500)])
+    assert timings_main(["--last", "2", "--journal", str(path)]) == 0
+    first = capsys.readouterr().out.splitlines()[0]
+    assert first == "2 requests: median 0.4 s, p90 0.5 s"  # the last two entries only (300 and 500)
+
+
+def test_timings_main_missing_journal_says_no_timed_requests(tmp_path, capsys):
+    assert timings_main(["--journal", str(tmp_path / "missing.jsonl")]) == 0
+    assert capsys.readouterr().out.splitlines() == ["no timed requests yet"]

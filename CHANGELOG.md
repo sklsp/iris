@@ -8,6 +8,7 @@
 - The dashboard's Activity tab shows the same summary in a Speed panel, fed by `/api/timings`.
 - `iris doctor` ends with a speed line from the journal (median turn time and model share), and `python -m iris timings --json` prints the summary as JSON for scripts and bug reports.
 - Each tool call writes a `tool_timing` line to the journal, and `python -m iris timings --by-tool` summarises them per tool (call count and median time, slowest first).
+- The dashboard's Speed panel also lists the five slowest tools from their `tool_timing` lines.
 - The journal rotates at 5 MB into `journal.jsonl.1`, so the dashboard, `iris timings` and `iris doctor` read the recent part only.
 
 ## 1.0.0 (release date): steady, safer and measured

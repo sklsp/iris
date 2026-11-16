@@ -14,9 +14,10 @@ can interrupt speech even while Iris is talking.
    `hey_jarvis`, set by `wakeword` in config.toml or IRIS_WAKEWORD). The alternative `NameWake` wakes
    on the spoken name through a tiny Whisper hotword check instead of a trained model. A short chime
    plays right after the wake word so you hear that Iris is listening (IRIS_CHIME=0 mutes it).
-2. **Recording and speech recognition.** After the wake word, `_record` records until 1.2 s of silence
-   follows speech (or a hard cap), faster-whisper transcribes the audio, and `_strip_wake` removes the
-   wake phrase from the transcript. The loop writes an `stt` journal line with how long recognition took.
+2. **Recording and speech recognition.** After the wake word, `_record` records until silence follows
+   speech (1.8 s by default: `SILENCE_SECONDS`, set with `silence` in config.toml or IRIS_SILENCE) or a
+   hard cap, faster-whisper transcribes the audio, and `_strip_wake` removes the wake phrase from the
+   transcript. The loop writes an `stt` journal line with how long recognition took.
 3. **The agent loop.** The transcript goes to `Agent.handle` in `iris/agent.py`, which runs up to 30
    steps (`MAX_STEPS`). Each step sends the conversation and the tool schemas from
    `registry.active_tools()` to the model through `llm.chat`. When the model stops calling tools, its
@@ -41,7 +42,7 @@ sequenceDiagram
     participant M as LM Studio model
     participant T as Tools (tools.py)
     U->>V: wake word, then a request
-    V->>V: record until 1.2 s of silence, transcribe with faster-whisper
+    V->>V: record until silence, transcribe with faster-whisper
     V->>A: Agent.handle(request)
     loop up to 30 steps
         A->>M: conversation plus tool schemas (registry.active_tools)

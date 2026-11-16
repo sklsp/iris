@@ -1,2 +1,0 @@
-- [x] Q1. docs: ARCHITECTURE.md from the code (2390 passed in 111.58s)
-- [x] Q2. docs: link the architecture from the README (2390 passed in 111.37s)

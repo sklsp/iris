@@ -368,6 +368,17 @@ def test_timings_payload_tools_covers_only_the_last_fifty_calls(tmp_path, monkey
     assert data["tools"] == [{"tool": "click", "calls": 50, "median_ms": 265.0}]
 
 
+def test_timings_payload_returns_an_error_when_reading_the_journal_fails(monkeypatch):
+    """A journal that cannot be read gives the page one plain error, not a broken endpoint."""
+
+    def broken(*args, **kwargs):
+        raise OSError("disk gone")
+
+    monkeypatch.setattr("iris.timings.read_timings", broken)
+
+    assert timings_payload() == {"error": "disk gone"}
+
+
 def test_page_renders_autopilot_events_in_the_activity_panel(server):
     status, _headers, page = get(server + "/")
     assert status == 200

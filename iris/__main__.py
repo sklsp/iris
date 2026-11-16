@@ -130,6 +130,14 @@ def main() -> None:
         raise SystemExit(1) from None
 
 
+def log_stt(journal: Journal, session: object) -> None:
+    """The speech-recognition time of the turn just heard (stt event), so a timing summary can show it; text mode
+    has no session and logs nothing."""
+    ms = getattr(session, "last_stt_ms", None)
+    if isinstance(ms, int):
+        journal.log(event="stt", ms=ms)
+
+
 def _main() -> None:
     """Dispatch a subcommand such as dashboard or doctor; without one, run the request loop in text, push-to-talk
     or wake-word mode."""
@@ -268,6 +276,7 @@ def _main() -> None:
             if request:
                 if session is not None:
                     hold_timer[0] = start_hold(partial(session.speak_async, panel=False), request)
+                log_stt(agent.journal, session)  # where speech recognition spent its time; text mode has no session
                 try:
                     answer = agent.handle(request)
                 finally:

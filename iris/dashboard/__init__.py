@@ -417,10 +417,13 @@ def timings_payload() -> dict:
         entries = timings.read_timings(journal_path())
         stt = timings.read_timings(journal_path(), event="stt")
         tts = timings.read_timings(journal_path(), event="tts")
+        tools = timings.read_timings(journal_path(), event="tool_timing")  # the last 50 timed tool calls
     except OSError as exc:
         return {"error": str(exc)}
     summary = timings.summarize(entries, stt=stt, tts=tts)
-    return {"summary": summary, "lines": timings.format_summary(summary)}
+    stats = timings.tool_stats(tools)
+    return {"summary": summary, "lines": timings.format_summary(summary),
+            "tools": [{"tool": name, "calls": calls, "median_ms": ms} for name, calls, ms in stats]}
 
 
 def tools_payload() -> dict:

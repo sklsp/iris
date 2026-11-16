@@ -1,11 +1,15 @@
 import json
 
-from iris.timings import format_summary, read_timings, summarize, timings_main
+from iris.timings import format_summary, format_tool_stats, read_timings, summarize, timings_main, tool_stats
 
 
 def e(ms, llm=0, tools=0, tool=None, tool_ms=0):
     return {"event": "timing", "ms": ms, "llm_ms": llm, "tools_ms": tools,
             "slowest_tool": tool, "slowest_tool_ms": tool_ms}
+
+
+def tt(tool, ms):
+    return {"event": "tool_timing", "tool": tool, "ms": ms}
 
 
 def write(tmp_path, entries, extra_lines=()):
@@ -239,4 +243,59 @@ def test_timings_main_json_on_a_missing_journal_prints_count_zero(tmp_path, caps
     out = capsys.readouterr().out
     assert json.loads(out) == {"count": 0}
     assert out == '{\n  "count": 0\n}\n'  # the same indent=2, sort_keys=True formatting as a real summary
+
+
+def test_tool_stats_groups_by_tool_and_sorts_median_desc_then_name():
+    entries = [tt("browser_open", 2300), tt("click", 500), tt("type_text", 900),
+               tt("browser_open", 100), tt("type_text", 800), tt("web_search", 1200)]
+
+    assert tool_stats(entries) == [("browser_open", 2, 1200.0), ("web_search", 1, 1200.0),
+                                   ("type_text", 2, 850.0), ("click", 1, 500.0)]
+
+
+def test_tool_stats_on_no_entries_is_empty():
+    assert tool_stats([]) == []
+
+
+def test_format_tool_stats_lines_with_the_singular_form():
+    stats = [("browser_open", 12, 2300.0), ("click", 1, 120.0)]
+
+    assert format_tool_stats(stats) == ["browser_open: 12 calls, median 2.3 s", "click: 1 call, median 0.1 s"]
+
+
+def test_format_tool_stats_empty_says_no_timed_tool_calls_yet():
+    assert format_tool_stats([]) == ["no timed tool calls yet"]
+
+
+def test_timings_main_by_tool_prints_one_line_per_tool(tmp_path, capsys):
+    path = write(tmp_path, [e(1000)], extra_lines=(json.dumps(tt("browser_open", 2300)), json.dumps(tt("click", 500))))
+
+    assert timings_main(["--by-tool", "--journal", str(path)]) == 0
+
+    # the plain "timing" entry is ignored: only tool_timing entries count
+    assert capsys.readouterr().out.splitlines() == ["browser_open: 1 call, median 2.3 s", "click: 1 call, median 0.5 s"]
+
+
+def test_timings_main_by_tool_respects_last(tmp_path, capsys):
+    path = write(tmp_path, [tt("click", 500), tt("click", 1500)])
+
+    assert timings_main(["--by-tool", "--last", "1", "--journal", str(path)]) == 0
+
+    assert capsys.readouterr().out.splitlines() == ["click: 1 call, median 1.5 s"]
+
+
+def test_timings_main_by_tool_on_a_missing_journal_says_no_timed_tool_calls(tmp_path, capsys):
+    assert timings_main(["--by-tool", "--journal", str(tmp_path / "missing.jsonl")]) == 0
+
+    assert capsys.readouterr().out.splitlines() == ["no timed tool calls yet"]
+
+
+def test_timings_main_by_tool_json_prints_the_objects(tmp_path, capsys):
+    path = write(tmp_path, [tt("browser_open", 2300), tt("browser_open", 100), tt("click", 500)])
+
+    assert timings_main(["--by-tool", "--json", "--journal", str(path)]) == 0
+
+    assert json.loads(capsys.readouterr().out) == [
+        {"tool": "browser_open", "calls": 2, "median_ms": 1200.0},
+        {"tool": "click", "calls": 1, "median_ms": 500.0}]
 

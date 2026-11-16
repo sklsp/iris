@@ -342,6 +342,32 @@ def test_timings_payload_reads_tts_entries_from_the_journal(tmp_path, monkeypatc
     assert "speech output: first sound median 0.4 s, p90 0.5 s" in data["lines"]
 
 
+def test_timings_payload_includes_the_per_tool_stats(tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    lines = [json.dumps({"event": "timing", "ms": 1200, "llm_ms": 800, "tools_ms": 400}),
+             json.dumps({"event": "tool_timing", "tool": "browser_open", "ms": 2300}),
+             json.dumps({"event": "tool_timing", "tool": "click", "ms": 500})]
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = timings_payload()
+
+    assert data["tools"] == [{"tool": "browser_open", "calls": 1, "median_ms": 2300.0},
+                             {"tool": "click", "calls": 1, "median_ms": 500.0}]
+
+
+def test_timings_payload_tools_covers_only_the_last_fifty_calls(tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    lines = [json.dumps({"event": "tool_timing", "tool": "click", "ms": i * 10}) for i in range(1, 52)]
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = timings_payload()
+
+    # the oldest entry (ms=10) falls out of the last 50: median of 20..510 is 265
+    assert data["tools"] == [{"tool": "click", "calls": 50, "median_ms": 265.0}]
+
+
 def test_page_renders_autopilot_events_in_the_activity_panel(server):
     status, _headers, page = get(server + "/")
     assert status == 200

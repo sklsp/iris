@@ -1,0 +1,4 @@
+- [x] Q1. voice: the speaker records when sound starts (2351 passed in 112.90s)
+- [ ] Q2. voice + main: log the first-sound time of each answer
+- [ ] Q3. timings: include speech output
+- [ ] Q4. docs: the whole voice turn

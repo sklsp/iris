@@ -552,7 +552,7 @@ def test_speaker_stops_the_vox_worker_after_three_failures(monkeypatch):
     monkeypatch.setattr(v, "VoxProcess", lambda: vox)
     spk = Speaker(engine="voxcpm")
     spk._piper["en"] = _FakePiperProcess()  # Piper takes over and speaks fine
-    monkeypatch.setattr(v, "_play_wav", lambda path, stop_event, slack=3.0: True)
+    monkeypatch.setattr(v, "_play_wav", lambda path, stop_event, slack=3.0, on_start=None: True)
 
     for _ in range(3):
         assert spk.speak("hello") is True

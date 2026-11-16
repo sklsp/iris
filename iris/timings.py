@@ -18,7 +18,7 @@ def read_timings(path: Path, last: int = 50) -> list[dict]:
             continue
         if isinstance(entry, dict) and entry.get("event") == "timing":
             entries.append(entry)
-    return entries[-last:]
+    return entries[-last:] if last > 0 else []  # entries[-0:] would be all of them
 
 
 def _p90(values: list[float]) -> float:
@@ -52,7 +52,7 @@ def summarize(entries: list[dict]) -> dict:
 
 
 def format_summary(summary: dict) -> list[str]:
-    """Short plain-English lines for the overlay; seconds with one decimal."""
+    """Short plain-English lines for `iris timings`; seconds with one decimal."""
     if summary["count"] == 0:
         return ["no timed requests yet"]
     n = summary["count"]

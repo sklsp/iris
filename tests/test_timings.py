@@ -85,3 +85,9 @@ def test_timings_main_last_uses_only_the_last_entries(tmp_path, capsys):
 def test_timings_main_missing_journal_says_no_timed_requests(tmp_path, capsys):
     assert timings_main(["--journal", str(tmp_path / "missing.jsonl")]) == 0
     assert capsys.readouterr().out.splitlines() == ["no timed requests yet"]
+
+
+def test_read_timings_with_last_zero_reads_nothing(tmp_path):
+    path = tmp_path / "journal.jsonl"
+    path.write_text('{"event": "timing", "ms": 100, "llm_ms": 80, "tools_ms": 0}\n', encoding="utf-8")
+    assert read_timings(path, last=0) == []

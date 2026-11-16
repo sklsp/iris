@@ -340,6 +340,14 @@ def test_page_renders_model_error_text_in_the_activity_panel(server):
     assert 'truncate(String(ev.error), 160)' in page   # errored rows show their error text via textContent
 
 
+def test_page_serves_a_speed_panel_with_its_renderer(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    assert 'id="timings-body"' in page               # the Speed panel's body on the Activity tab
+    assert "function renderTimings" in page          # one div per line, built with el() — never innerHTML
+    assert '"/api/timings": renderTimings' in page   # refreshed by tick() alongside the other feeds
+
+
 def test_api_agents_stuck_rows_first(tmp_path, monkeypatch):
     import iris.agents as agents_mod
     from tests.test_agents import make_repo, write_config

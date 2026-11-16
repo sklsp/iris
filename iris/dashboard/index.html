@@ -349,6 +349,10 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
         <h2>Activity<span class="chips" id="counters"></span></h2>
         <div id="journal-body" class="scroll"><div class="empty">loading...</div></div>
       </section>
+      <section class="panel wide">
+        <h2>Speed</h2>
+        <div id="timings-body"><div class="empty">loading...</div></div>
+      </section>
     </div>
   </section>
 
@@ -803,6 +807,17 @@ function renderJournal(d){
     ans.appendChild(el("span", "t-text", t.answer || (t.gave_up ? "(stopped: too many steps)" : "(no answer)")));
     turn.appendChild(ans);
     body.appendChild(turn);
+  }
+}
+function renderTimings(d){
+  const body = $("timings-body");
+  body.textContent = "";
+  if (!d || !Array.isArray(d.lines)){
+    body.appendChild(el("div", "empty", d && d.error ? d.error : "no data yet"));
+    return;
+  }
+  for (const line of d.lines){
+    body.appendChild(el("div", "num", line));
   }
 }
 function renderTools(d){
@@ -1325,6 +1340,7 @@ const RENDERERS = {
   "/api/lmstudio": renderLM,
   "/api/iris/model": renderIrisModel,
   "/api/journal": renderJournal,
+  "/api/timings": renderTimings,
   "/api/tools": renderTools,
   "/api/sessions": renderSessions,
   "/api/claude": renderClaude

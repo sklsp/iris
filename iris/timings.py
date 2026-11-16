@@ -86,15 +86,20 @@ def format_summary(summary: dict) -> list[str]:
 
 
 def timings_main(argv: list[str]) -> int:
-    """`iris timings [--last N] [--journal PATH]`: how long recent requests took, from the journal."""
+    """`iris timings [--last N] [--journal PATH] [--json]`: how long recent requests took, from the journal."""
     from iris.dashboard import journal_path  # IRIS_JOURNAL, the same file the dashboard reads
 
     ap = argparse.ArgumentParser(prog="iris timings")
     ap.add_argument("--last", type=int, default=50)
     ap.add_argument("--journal", type=Path, default=journal_path())
+    ap.add_argument("--json", action="store_true")  # machine-readable summary for scripts and bug reports
     a = ap.parse_args(argv)
     stt = read_timings(a.journal, last=a.last, event="stt")  # the voice loop's speech-recognition times
     tts = read_timings(a.journal, last=a.last, event="tts")  # when each answer's first sound started
-    for line in format_summary(summarize(read_timings(a.journal, last=a.last), stt=stt, tts=tts)):
-        print(line)
+    summary = summarize(read_timings(a.journal, last=a.last), stt=stt, tts=tts)
+    if a.json:
+        print(json.dumps(summary, indent=2, sort_keys=True))
+    else:
+        for line in format_summary(summary):
+            print(line)
     return 0

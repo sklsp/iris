@@ -207,3 +207,36 @@ def test_timings_main_prints_the_speech_output_line_from_a_journal_with_all_thre
         "speech output: first sound median 0.4 s, p90 0.9 s",
         "slowest tools: click 0.6 s"]
 
+
+def test_timings_main_json_prints_the_summary_dict(tmp_path, capsys):
+    path = write(tmp_path, [e(1000, llm=900), e(2000, llm=1500, tools=600, tool="click", tool_ms=600)],
+                 extra_lines=(json.dumps(s(500)), json.dumps(s(640)), json.dumps(s(700)),
+                              json.dumps(t(300)), json.dumps(t(400)), json.dumps(t(900))))
+
+    assert timings_main(["--json", "--journal", str(path)]) == 0
+
+    assert json.loads(capsys.readouterr().out) == {
+        "count": 2,
+        "ms_median": 1500.0,
+        "ms_p90": 2000,
+        "llm_ms_median": 1200.0,
+        "llm_ms_p90": 1500,
+        "tools_ms_median": 300.0,
+        "tools_ms_p90": 600,
+        "llm_share": 0.8,
+        "slowest_tools": [["click", 600]],
+        "stt_count": 3,
+        "stt_ms_median": 640,
+        "stt_ms_p90": 700,
+        "tts_count": 3,
+        "tts_ms_median": 400,
+        "tts_ms_p90": 900}
+
+
+def test_timings_main_json_on_a_missing_journal_prints_count_zero(tmp_path, capsys):
+    assert timings_main(["--json", "--journal", str(tmp_path / "missing.jsonl")]) == 0
+
+    out = capsys.readouterr().out
+    assert json.loads(out) == {"count": 0}
+    assert out == '{\n  "count": 0\n}\n'  # the same indent=2, sort_keys=True formatting as a real summary
+

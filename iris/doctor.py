@@ -12,7 +12,8 @@ from iris import config
 from iris.registry import PLUGINS
 
 # Iris runs without these; everything else must pass
-OPTIONAL = ("voice", "config", "skill builder", "vision", "hearing", "speech", "browser", "overlay", "shortcut")
+OPTIONAL = ("voice", "config", "skill builder", "vision", "hearing", "speech", "browser", "overlay", "shortcut",
+            "speed")
 
 
 def bundled() -> bool:
@@ -138,6 +139,7 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
         have = (desktop_dir() / "Iris.cmd").exists()
         out.append((have, "shortcut: Iris.cmd on the desktop" if have else
                     "shortcut: none on the desktop; iris shortcut puts one there (optional)"))
+    out.append(_speed_line())
     return out
 
 
@@ -152,6 +154,22 @@ def _packs_line() -> tuple[bool, str]:
         return True, f"voice packs: {', '.join(have) or 'none needed'}"
     return False, (f"voice packs: {', '.join(have) or 'none'} installed; not yet {', '.join(missing)} (the Setup tab "
                    "shows each with its size and license)")
+
+
+def _speed_line() -> tuple[bool, str]:
+    """How long recent requests took, from the journal through iris.timings; optional, so a broken journal only
+    marks this line."""
+    from iris.dashboard import journal_path
+    from iris.timings import read_timings, summarize
+
+    try:
+        summary = summarize(read_timings(journal_path(), last=50))
+    except Exception as err:  # a torn or unreadable journal must not fail doctor
+        return False, f"speed: could not read the journal ({err})"
+    if summary["count"] == 0:
+        return True, "speed: no timed requests yet"
+    return (True, f"speed: last {summary['count']} requests, median {summary['ms_median'] / 1000:.1f} s "
+                  f"(model {round(summary['llm_share'] * 100)}%)")
 
 
 def main() -> int:

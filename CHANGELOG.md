@@ -6,6 +6,7 @@
 - Voice mode logs how long speech recognition took for each request (`stt` lines in the journal), and `python -m iris timings` summarises those too.
 - Voice mode also logs how long each answer takes to start sounding (`tts` lines in the journal); `python -m iris timings` and the dashboard's Speed panel show them, so the whole voice turn is covered: speech recognition, model, tools, first sound.
 - The dashboard's Activity tab shows the same summary in a Speed panel, fed by `/api/timings`.
+- `iris doctor` ends with a speed line from the journal (median turn time and model share), and `python -m iris timings --json` prints the summary as JSON for scripts and bug reports.
 
 ## 1.0.0 (release date): steady, safer and measured
 

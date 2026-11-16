@@ -10,6 +10,7 @@
 - Each tool call writes a `tool_timing` line to the journal, and `python -m iris timings --by-tool` summarises them per tool (call count and median time, slowest first).
 - The dashboard's Speed panel also lists the five slowest tools from their `tool_timing` lines.
 - The journal rotates at 5 MB into `journal.jsonl.1`, so the dashboard, `iris timings` and `iris doctor` read the recent part only.
+- docs/ARCHITECTURE.md explains how Iris works inside, written from the code (the voice turn, every module, the safety rules, where the time goes); the README links to it near the top.
 
 ## 1.0.0 (release date): steady, safer and measured
 

@@ -351,6 +351,7 @@ class VoiceSession:
         self.speaker = speaker or Speaker()
         self.clock = clock  # time source for the transcription timing; tests pass a stepping fake
         self.last_stt_ms: int | None = None  # milliseconds of the last _transcribe, model load included
+        self.on_spoken: Callable[[int | None], None] | None = None  # set by main to log the first-sound time
         self._frames: queue.Queue[np.ndarray] = queue.Queue(maxsize=1024)  # ~80 s, drops oldest when full
         self._stream: Any = None  # sounddevice.InputStream; opened in __enter__ (no type stubs)
         self._whisper: Any = None  # faster_whisper.WhisperModel; loaded lazily (no type stubs)
@@ -603,6 +604,11 @@ class VoiceSession:
             finished = self.speaker.speak(text, stop_event=stop)
         finally:
             stop.set()  # release the watcher whether or not it was interrupted
+        if panel and self.on_spoken is not None:
+            try:
+                self.on_spoken(getattr(self.speaker, "last_first_sound_ms", None))
+            except Exception:  # a logging hook must never break speech or the overlay
+                pass
         if watch:
             watcher.join(timeout=1.0)
         self._interrupted = not finished

@@ -138,6 +138,13 @@ def log_stt(journal: Journal, session: object) -> None:
         journal.log(event="stt", ms=ms)
 
 
+def log_tts(journal: Journal, ms: int | None) -> None:
+    """The time from an answer being ready until its first sound (a tts event); nothing when the speaker never
+    reported one."""
+    if isinstance(ms, int):
+        journal.log(event="tts", ms=ms)
+
+
 def _main() -> None:
     """Dispatch a subcommand such as dashboard or doctor; without one, run the request loop in text, push-to-talk
     or wake-word mode."""
@@ -259,6 +266,8 @@ def _main() -> None:
         browser.watch(say)  # the browser's Allow question comes now, once, not in the middle of a request
 
     agent = Agent(LMStudio(), confirm, Journal(Path(a.journal)))
+    if session is not None:
+        session.on_spoken = partial(log_tts, agent.journal)  # each answer's first-sound time goes to the journal
     cancelled = getattr(session, "cancelled", None)  # set by the overlay's cancel button, see VoiceSession.cancel
     if cancelled is not None:
         agent.cancel = cancelled  # one flag: the agent checks it before every model and tool call

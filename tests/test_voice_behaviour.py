@@ -336,6 +336,62 @@ def test_session_enter_survives_a_race_between_drop_and_reput(monkeypatch):
         assert q.qsize() == 1024  # the new frame was dropped; nothing raised
 
 
+# --- _speak_and_watch: reporting the first sound ------------------------------
+
+
+class _SpokenSpeaker:
+    """A Speaker that reports when its first sound started, in ms."""
+
+    def __init__(self):
+        self.last_first_sound_ms = 300
+
+    def speak(self, text, stop_event=None):
+        return True
+
+
+class _Recorder:
+    """Stands in for Overlay in a VoiceSession so no subprocess is started."""
+
+    def send(self, event, text=""):
+        pass
+
+
+def test_speak_and_watch_reports_the_first_sound_when_panel_is_on():
+    s = VoiceSession(speaker=_SpokenSpeaker())
+    s.overlay = _Recorder()  # no subprocess in a test
+    calls = []
+    s.on_spoken = calls.append
+
+    s._speak_and_watch("The answer.", panel=True)
+
+    assert calls == [300]
+
+
+def test_speak_and_watch_does_not_report_without_a_panel():
+    s = VoiceSession(speaker=_SpokenSpeaker())
+    s.overlay = _Recorder()
+    calls = []
+    s.on_spoken = calls.append
+
+    s._speak_and_watch("One moment.", panel=False)
+
+    assert calls == []
+
+
+def test_a_raising_on_spoken_never_breaks_the_speech():
+    s = VoiceSession(speaker=_SpokenSpeaker())
+    s.overlay = _Recorder()
+
+    def boom(ms):
+        raise RuntimeError("the journal is gone")
+
+    s.on_spoken = boom
+
+    s._speak_and_watch("The answer.", panel=True)  # must not raise
+
+    assert s._interrupted is False
+
+
 # --- next_request / next_command ----------------------------------------------
 
 

@@ -1,0 +1,105 @@
+import json
+
+from iris.agent import Agent, Journal
+from iris.llm import Reply, ToolCall
+from iris.tools import SAFE, Tool
+
+
+class FakeClock:
+    """Steps by a fixed amount on every read; 0.125 is an exact binary fraction, so the ms values are literal."""
+
+    def __init__(self, step=0.125):
+        self.step = step
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        t = self.now
+        self.now += self.step
+        return t
+
+
+class ScriptedLLM:
+    """Plays back replies in order; an exception entry is raised instead of returned."""
+
+    def __init__(self, *replies):
+        self.replies = list(replies)
+
+    def chat(self, messages, tools):
+        r = self.replies.pop(0)
+        if isinstance(r, BaseException):
+            raise r
+        return r
+
+
+def call(name, **args):
+    c = ToolCall(f"id-{name}", name, args)
+    return Reply("", [c], {"role": "assistant", "content": "", "tool_calls": [
+        {"id": c.id, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}]})
+
+
+def answer(text):
+    return Reply(text, [], {"role": "assistant", "content": text})
+
+
+def fake_tools(ran=None):
+    ran = [] if ran is None else ran
+
+    def rec(name):
+        return lambda **kw: ran.append((name, kw)) or f"{name} done"
+    return {"status": Tool("status", "", {}, [], SAFE, rec("status"))}
+
+
+def agent(tmp_path, llm, clock, ran=None):
+    return Agent(llm, lambda q: True, Journal(tmp_path / "j.jsonl"), fake_tools(ran), clock=clock)
+
+
+def timing_entries(tmp_path):
+    """Every event="timing" line of the journal, without its timestamp."""
+    entries = []
+    for line in (tmp_path / "j.jsonl").read_text(encoding="utf-8").splitlines():
+        entry = json.loads(line)
+        if entry["event"] == "timing":
+            entries.append({k: v for k, v in entry.items() if k != "t"})
+    return entries
+
+
+def test_a_plain_answer_times_the_model_call_only(tmp_path):
+    a = agent(tmp_path, ScriptedLLM(answer("All fine.")), FakeClock())
+    assert a.handle("how is my pc") == "All fine."
+    assert timing_entries(tmp_path) == [{"event": "timing", "ms": 375, "llm_ms": 125, "llm_calls": 1,
+                                         "tools_ms": 0, "tool_calls": 0, "slowest_tool": None,
+                                         "slowest_tool_ms": 0}]
+
+
+def test_one_tool_call_times_the_tool_and_names_it_slowest(tmp_path):
+    ran = []
+    a = agent(tmp_path, ScriptedLLM(call("status"), answer("Done.")), FakeClock(), ran=ran)
+    assert a.handle("check the status") == "Done."
+    assert ran == [("status", {})]  # the tool really ran once, so its time is real
+    assert timing_entries(tmp_path) == [{"event": "timing", "ms": 875, "llm_ms": 250, "llm_calls": 2,
+                                         "tools_ms": 125, "tool_calls": 1, "slowest_tool": "status",
+                                         "slowest_tool_ms": 125}]
+
+
+def test_a_model_error_still_writes_the_timing_entry(tmp_path):
+    a = agent(tmp_path, ScriptedLLM(OSError("connection refused")), FakeClock())
+    assert a.handle("how is my pc") == "I can't reach the model in LM Studio right now. Try again in a moment."
+    assert timing_entries(tmp_path) == [{"event": "timing", "ms": 375, "llm_ms": 125, "llm_calls": 1,
+                                         "tools_ms": 0, "tool_calls": 0, "slowest_tool": None,
+                                         "slowest_tool_ms": 0}]
+
+
+def test_a_cancelled_request_still_writes_the_timing_entry(tmp_path):
+    box = {}
+
+    class CancellingLLM:
+        def chat(self, messages, tools):
+            box["agent"].cancel.set()  # the overlay's cancel button, pressed while the model was thinking
+            return answer("too late.")
+
+    a = Agent(CancellingLLM(), lambda q: True, Journal(tmp_path / "j.jsonl"), fake_tools(), clock=FakeClock())
+    box["agent"] = a
+    assert a.handle("do the thing") == ""
+    assert timing_entries(tmp_path) == [{"event": "timing", "ms": 375, "llm_ms": 125, "llm_calls": 1,
+                                         "tools_ms": 0, "tool_calls": 0, "slowest_tool": None,
+                                         "slowest_tool_ms": 0}]

@@ -13,7 +13,7 @@ README = Path(__file__).resolve().parent.parent / "README.md"
 
 EXPECTED_COMMANDS = {
     "eval", "eval-compare", "dashboard", "app", "init", "doctor", "config",
-    "startup", "shortcut", "skill", "autopilot",
+    "startup", "shortcut", "skill", "autopilot", "timings",
 }
 
 

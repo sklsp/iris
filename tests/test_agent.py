@@ -138,7 +138,7 @@ def test_out_of_steps_answers_with_what_was_found(tmp_path):
     assert a.handle("zoek een horrorfilm") == found
     assert "Do not call tools" in llm.seen[-1][-1]["content"]
     assert a.messages[-1]["content"].startswith("Psycho") and "Do not call tools" not in a.messages[-2]["content"]
-    assert [e["event"] for e in journal(tmp_path)][-2:] == ["gave_up", "answer"]
+    assert [e["event"] for e in journal(tmp_path)][-3:-1] == ["gave_up", "answer"]  # timing follows, one per request
 
 
 def test_the_last_call_keeps_the_tool_list_so_the_cached_prompt_is_reused(tmp_path):
@@ -168,7 +168,7 @@ def test_out_of_steps_tool_call_gets_one_wordless_retry(tmp_path):
     a = agent(tmp_path, llm, ran)
     assert a.handle("zoek een horrorfilm") == found
     assert len(tool_lists) == MAX_STEPS + 2 and tool_lists[-1] == 0  # one extra call, without any tools
-    assert [e["event"] for e in journal(tmp_path)][-2:] == ["gave_up", "answer"]
+    assert [e["event"] for e in journal(tmp_path)][-3:-1] == ["gave_up", "answer"]  # timing follows, one per request
 
 
 def test_older_browser_views_keep_their_text_but_lose_their_numbers(tmp_path):
@@ -542,7 +542,7 @@ def test_a_no_grants_nothing_and_never_words_stay_refused(tmp_path):
     a.confirm = lambda q: asked.append(q) or True
     a.handle("Zoek een film op Netflix")
     assert [kw["control"] for _, kw in ran] == ["Zoeken"]  # the pay button is NEVER, grant or not
-    assert journal(tmp_path)[-2]["outcome"] == "refused"
+    assert journal(tmp_path)[-3]["outcome"] == "refused"  # answer and timing follow it
 
 
 def test_grant_keys():
@@ -619,7 +619,7 @@ def test_a_cancel_stops_the_agent_before_its_next_step(tmp_path):
     a.tools["status"] = Tool("status", "", {}, [], SAFE, lambda: a.cancel.set() or "fine")  # clicked meanwhile
     assert a.handle("check my pc") == ""
     assert len(llm.seen) == 1  # no second call to the model
-    assert [e["event"] for e in journal(tmp_path)][-1] == "cancelled"
+    assert [e["event"] for e in journal(tmp_path)][-2] == "cancelled"  # timing follows, one per request
     assert _tool_ids_are_answered(a.messages)
     assert a.messages[-1] == {"role": "assistant", "content": "(cancelled by the user)"}
 

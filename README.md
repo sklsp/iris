@@ -124,6 +124,7 @@ From source, for development and for the command line.
    .venv\Scripts\iris dashboard     # status, activity, eval and skill review at http://127.0.0.1:8765
    .venv\Scripts\iris shortcut      # an Iris.cmd on your desktop: double-click to start voice mode
    .venv\Scripts\iris app           # the desktop app (install the .[app] extra): dashboard window, tray, voice mode
+   .venv\Scripts\iris timings       # how long recent requests took: median and p90, model share, slowest tools
    ```
 
 ## Upgrading from 0.x
@@ -500,6 +501,12 @@ Agents, LM Studio, Claude and runs data are cached for 30 seconds so the page do
 sessions database is small enough to read fresh on every poll. A missing or unreadable source shows an empty list in its
 tab, not an error page.
 
+## How fast is Iris?
+
+Every request writes one timing line to the journal (`~/.iris/journal.jsonl`), with how long it took in all, how much of that was model calls and how much tools. `python -m iris timings` reads those lines (the last 50 by default) and prints the median and p90 turn time, the model's share of all the time, and the slowest tools.
+
+This exists to measure before optimizing: almost all of a turn's time is the language model, speech recognition and speech output, not Python. That is why rewriting Iris in another language would not make it much faster; when something feels slow, look at what the numbers say first.
+
 ## Eval
 
 <!-- eval:start -->
@@ -660,7 +667,8 @@ shows with its own badge.
 From 1.0 on, these stay as they are within a major version:
 
 - the commands and flags: `iris`, `--voice`, `--push-to-talk`, `--journal`, `--version`, and `iris app`,
-  `autopilot`, `config`, `dashboard`, `doctor`, `eval`, `eval-compare`, `init`, `shortcut`, `skill`, `startup`;
+  `autopilot`, `config`, `dashboard`, `doctor`, `eval`, `eval-compare`, `init`, `shortcut`, `skill`, `startup`,
+  `timings`;
 - the keys of `config.toml` and what they mean (see [Configuration](#configuration));
 - the files Iris keeps in `~/.iris`: `config.toml`, `journal.jsonl`, `notes.md`, `reminders.json`, `queue.json`,
   `settings.json`, `setup.json`, `update.json` and the `skills`, `trash` and `logs` folders;

@@ -185,9 +185,11 @@ def start_hold(say: Callable[[str], object], request: str, after: float | None =
 
 class Agent:
     def __init__(self, llm: LMStudio, confirm: Callable[[str], bool], journal: Journal,
-                 tools: dict[str, Tool] | Callable[[], dict[str, Tool]] = active_tools, today: str | None = None):
+                 tools: dict[str, Tool] | Callable[[], dict[str, Tool]] = active_tools, today: str | None = None,
+                 clock: Callable[[], float] = time.perf_counter):
         # a callable is asked again on every request, so a newly enabled plugin or approved skill needs no restart
         self.llm, self.confirm, self.journal, self._tools = llm, confirm, journal, tools
+        self.clock = clock  # perf_counter in real use; tests pass a fake that steps by fixed amounts
         self._lang = "en"
         self._granted: set[str] = set()
         self.today = today  # a fixed date for the eval, whose fixtures are written for one day; None is the real date
@@ -195,9 +197,34 @@ class Agent:
         self.messages: list[dict] = [{"role": "system", "content": system_prompt(today=self.today)}]
         self.cancel = threading.Event()  # set from another thread (the overlay's cancel button) to stop this request
         self._sizes: dict[int, tuple[str, int]] = {}  # id(message) -> (its content, its JSON size), for _trim
+        # where one request spent its time; _handle resets them, handle writes the timing entry from them
+        self._llm_calls = 0
+        self._llm_ms = 0.0
+        self._tool_calls = 0
+        self._tools_ms = 0.0
+        self._slowest_tool: str | None = None
+        self._slowest_tool_ms = 0.0
 
     def handle(self, request: str) -> str:
         """Run a request through model and tools until it is answered, refused or cancelled; returns what Iris says."""
+        start = self.clock()
+        try:
+            return self._handle(request)
+        finally:
+            # one timing entry per request, even when the model errors or the user cancels: it shows where time went
+            total_ms = round((self.clock() - start) * 1000)
+            self.journal.log(event="timing", ms=total_ms, llm_ms=round(self._llm_ms * 1000), llm_calls=self._llm_calls,
+                             tools_ms=round(self._tools_ms * 1000), tool_calls=self._tool_calls,
+                             slowest_tool=self._slowest_tool, slowest_tool_ms=round(self._slowest_tool_ms * 1000))
+
+    def _handle(self, request: str) -> str:
+        """The loop itself; handle wraps it with the per-request timing entry."""
+        self._llm_calls = 0
+        self._llm_ms = 0.0
+        self._tool_calls = 0
+        self._tools_ms = 0.0
+        self._slowest_tool = None
+        self._slowest_tool_ms = 0.0
         if callable(self._tools):
             self.tools = self._tools()
         self._sizes.pop(id(self.messages[0]), None)
@@ -214,9 +241,12 @@ class Agent:
         for _ in range(MAX_STEPS):
             if self.cancel.is_set():
                 return self._cancelled()
+            t0 = self.clock()
+            self._llm_calls += 1
             try:
                 reply = self.llm.chat(self.messages, schemas)
             except _LLM_ERRORS as exc:
+                self._llm_ms += self.clock() - t0  # a failed call still cost model time
                 # LM Studio is down or full: end this turn only and keep the voice loop alive
                 self.journal.log(event="llm_error", error=_llm_error(exc))
                 starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
@@ -236,6 +266,7 @@ class Agent:
                 if refused:  # it answered, and refused (context too long), with nothing left to drop
                     return _sorry("refused", request)
                 return _sorry("down", request)
+            self._llm_ms += self.clock() - t0
             if self.cancel.is_set():  # cancelled while the model was thinking: its reply is dropped
                 return self._cancelled()
             self.messages.append(reply.raw)
@@ -244,7 +275,16 @@ class Agent:
                 self._trim()
                 return reply.text
             for call in reply.calls:
-                result = "cancelled by the user" if self.cancel.is_set() else self._run(call)
+                if self.cancel.is_set():
+                    result = "cancelled by the user"  # cancelled while tools were running: none of them run
+                else:
+                    t0 = self.clock()
+                    result = self._run(call)
+                    elapsed = self.clock() - t0
+                    self._tool_calls += 1
+                    self._tools_ms += elapsed
+                    if elapsed > self._slowest_tool_ms:
+                        self._slowest_tool, self._slowest_tool_ms = call.name, elapsed
                 msg = {"role": "tool", "tool_call_id": call.id, "content": _wrap(result)}
                 if call.name.startswith("browser_"):
                     for old, text in pages:

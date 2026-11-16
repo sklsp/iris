@@ -167,9 +167,11 @@ def test_a_second_speak_resets_the_value(tmp_path, monkeypatch):
     class RecordingPiper(_FakePiperProcess):
         def wav(self, text, timeout=20):
             seen_during.append(spk.last_first_sound_ms)  # between speak() and the first sound
-            return super().wav(text)
+            # a fresh file per answer, like real Piper: _play_wav deletes the file it played, and a missing one
+            # would fall back to SAPI (which CI runners cannot speak with)
+            return _wav(tmp_path / f"{len(seen_during)}.wav")
 
-    spk._piper["en"] = RecordingPiper(_wav(tmp_path / "a.wav"))
+    spk._piper["en"] = RecordingPiper(None)
     assert spk.speak("first answer") is True
     assert spk.last_first_sound_ms == 250
     assert spk.speak("second answer") is True

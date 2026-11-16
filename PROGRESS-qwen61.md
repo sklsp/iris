@@ -1,3 +1,3 @@
 - [x] Q1. timings: --json (2364 passed in 116.56s (0:01:56))
 - [x] Q2. doctor: a speed line (2367 passed in 112.35s (0:01:52))
-- [ ] Q3. docs: doctor and --json
+- [x] Q3. docs: doctor and --json (2367 passed in 111.03s (0:01:51))

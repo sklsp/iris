@@ -461,7 +461,7 @@ A mostly read-only status page for Iris and the machine it runs on:
 set IRIS_DASHBOARD_PORT=9000                        # same, via environment variable
 ```
 
-The server binds to loopback only. Every data endpoint answers GET; the writes are the two model actions,
+The server binds to loopback only. Every data endpoint answers GET (the Activity tab's Speed panel reads `/api/timings`); the writes are the two model actions,
 `POST /api/models/load` and `POST /api/models/unload`, the queue edits, `POST /api/queue/add`, `/delete` and `/move`,
 `POST /api/cline/start`, approving or removing a skill (`POST /api/skills/approve` and `/remove`), saving settings
 (`POST /api/settings`), the Setup tab's steps (`POST /api/setup/...`), starting a voice pack download
@@ -503,7 +503,7 @@ tab, not an error page.
 
 ## How fast is Iris?
 
-Every request writes one timing line to the journal (`~/.iris/journal.jsonl`), with how long it took in all, how much of that was model calls and how much tools. `python -m iris timings` reads those lines (the last 50 by default) and prints the median and p90 turn time, the model's share of all the time, and the slowest tools. In voice mode each request also writes an `stt` line with how long speech recognition took, and `python -m iris timings` shows those times too (median and p90).
+Every request writes one timing line to the journal (`~/.iris/journal.jsonl`), with how long it took in all, how much of that was model calls and how much tools. `python -m iris timings` reads those lines (the last 50 by default) and prints the median and p90 turn time, the model's share of all the time, and the slowest tools. In voice mode each request also writes an `stt` line with how long speech recognition took, and `python -m iris timings` shows those times too (median and p90). The dashboard's Activity tab shows the same summary in a Speed panel, so you can check it without leaving the page.
 
 This exists to measure before optimizing: almost all of a turn's time is the language model, speech recognition and speech output, not Python. That is why rewriting Iris in another language would not make it much faster; when something feels slow, look at what the numbers say first.
 

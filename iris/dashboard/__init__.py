@@ -410,15 +410,16 @@ def journal_payload() -> dict:
 
 
 def timings_payload() -> dict:
-    """The timing summary of the last 50 requests and their speech-recognition times; iris.timings does the math."""
+    """The timing summary of the last 50 requests, with speech recognition and output; iris.timings does the math."""
     from iris import timings
 
     try:
         entries = timings.read_timings(journal_path())
         stt = timings.read_timings(journal_path(), event="stt")
+        tts = timings.read_timings(journal_path(), event="tts")
     except OSError as exc:
         return {"error": str(exc)}
-    summary = timings.summarize(entries, stt=stt)
+    summary = timings.summarize(entries, stt=stt, tts=tts)
     return {"summary": summary, "lines": timings.format_summary(summary)}
 
 

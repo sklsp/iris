@@ -27,9 +27,9 @@ def _p90(values: list[float]) -> float:
     return ordered[math.ceil(0.9 * len(ordered)) - 1]
 
 
-def summarize(entries: list[dict], stt: list[dict] | None = None) -> dict:
+def summarize(entries: list[dict], stt: list[dict] | None = None, tts: list[dict] | None = None) -> dict:
     """Medians and p90s of request, model and tool time, the model's share of all time, the slowest tools - and, when
-    given, the speech-recognition times that preceded those requests."""
+    given, the speech-recognition times that preceded those requests and the first-sound times of their answers."""
     result: dict[str, object]
     if not entries:
         result = {"count": 0}
@@ -56,6 +56,10 @@ def summarize(entries: list[dict], stt: list[dict] | None = None) -> dict:
         result["stt_ms_median"] = median([e["ms"] for e in stt])
         result["stt_ms_p90"] = _p90([e["ms"] for e in stt])
         result["stt_count"] = len(stt)
+    if tts:  # the voice loop logs one of these when an answer's first sound starts
+        result["tts_ms_median"] = median([e["ms"] for e in tts])
+        result["tts_ms_p90"] = _p90([e["ms"] for e in tts])
+        result["tts_count"] = len(tts)
     return result
 
 
@@ -72,6 +76,9 @@ def format_summary(summary: dict) -> list[str]:
     if summary.get("stt_count"):
         lines.insert(1, f"speech recognition: median {summary['stt_ms_median'] / 1000:.1f} s, "
                         f"p90 {summary['stt_ms_p90'] / 1000:.1f} s")
+    if summary.get("tts_count"):
+        lines.append(f"speech output: first sound median {summary['tts_ms_median'] / 1000:.1f} s, "
+                     f"p90 {summary['tts_ms_p90'] / 1000:.1f} s")
     if summary["slowest_tools"]:
         slow = ", ".join(f"{name} {ms / 1000:.1f} s" for name, ms in summary["slowest_tools"])
         lines.append("slowest tools: " + slow)
@@ -87,6 +94,7 @@ def timings_main(argv: list[str]) -> int:
     ap.add_argument("--journal", type=Path, default=journal_path())
     a = ap.parse_args(argv)
     stt = read_timings(a.journal, last=a.last, event="stt")  # the voice loop's speech-recognition times
-    for line in format_summary(summarize(read_timings(a.journal, last=a.last), stt=stt)):
+    tts = read_timings(a.journal, last=a.last, event="tts")  # when each answer's first sound started
+    for line in format_summary(summarize(read_timings(a.journal, last=a.last), stt=stt, tts=tts)):
         print(line)
     return 0

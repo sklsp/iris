@@ -819,6 +819,14 @@ function renderTimings(d){
   for (const line of d.lines){
     body.appendChild(el("div", "num", line));
   }
+  if (Array.isArray(d.tools) && d.tools.length){
+    // the last 50 timed tool calls, slowest first: only the top 5 fit in this panel
+    body.appendChild(el("div", "empty sub-note", "Slowest tools"));
+    for (const t of d.tools.slice(0, 5)){
+      const unit = t.calls === 1 ? "call" : "calls";
+      body.appendChild(el("div", "num", `${t.tool}: ${t.calls} ${unit}, median ${(t.median_ms / 1000).toFixed(1)} s`));
+    }
+  }
 }
 function renderTools(d){
   const body = $("tools-body");

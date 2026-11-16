@@ -13,6 +13,8 @@ IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by th
                   (llm/vlm/embeddings) from the v0 API; falls back to the OpenAI-style
                   list labelled "available (state unknown)"; cached 30 s
     /api/journal  the last 50 journal entries, newest first, plus today's counters
+    /api/timings  the timing summary of the last 50 requests and their speech-recognition times,
+                  the same numbers `iris timings` prints
     /api/tools    every tool with its risk tier, straight from iris.tools.TOOLS
     /api/sessions rows of Cline's ~/.cline/data/db/sessions.db: running sessions (ended_at NULL and a
                   live pid) first, then history; subagents grouped under their parent
@@ -405,6 +407,19 @@ def journal_payload() -> dict:
             elif outcome == "error":
                 counts["errors"] += 1
     return {"entries": [_activity_entry(e) for e in entries[-JOURNAL_LIMIT:]][::-1], "today": counts}
+
+
+def timings_payload() -> dict:
+    """The timing summary of the last 50 requests and their speech-recognition times; iris.timings does the math."""
+    from iris import timings
+
+    try:
+        entries = timings.read_timings(journal_path())
+        stt = timings.read_timings(journal_path(), event="stt")
+    except OSError as exc:
+        return {"error": str(exc)}
+    summary = timings.summarize(entries, stt=stt)
+    return {"summary": summary, "lines": timings.format_summary(summary)}
 
 
 def tools_payload() -> dict:
@@ -879,6 +894,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True, "rows": _cached("claude", lambda: claude_projects())})
         elif path == "/api/journal":
             self._json(journal_payload())
+        elif path == "/api/timings":
+            self._json(timings_payload())
         elif path == "/api/tools":
             self._json(tools_payload())
         elif path == "/api/eval":

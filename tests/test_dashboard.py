@@ -16,7 +16,15 @@ from pathlib import Path
 import pytest
 
 import iris.dashboard as d
-from iris.dashboard import HOST, agents_payload, journal_payload, lmstudio_payload, make_server, system_payload
+from iris.dashboard import (
+    HOST,
+    agents_payload,
+    journal_payload,
+    lmstudio_payload,
+    make_server,
+    system_payload,
+    timings_payload,
+)
 from iris.llm import DEFAULT_MODEL
 
 
@@ -67,7 +75,8 @@ def fake_v0(monkeypatch, models):
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 @pytest.mark.parametrize(
-    "path", ["/", "/api/system", "/api/agents", "/api/lmstudio", "/api/journal", "/api/tools", "/api/eval"]
+    "path", ["/", "/api/system", "/api/agents", "/api/lmstudio", "/api/journal", "/api/timings",
+             "/api/tools", "/api/eval"]
 )
 def test_non_get_methods_are_refused_with_405(server, method, path):
     req = urllib.request.Request(server + path, data=b"{}", method=method)
@@ -297,6 +306,25 @@ def test_api_journal_shows_model_errors_like_errored_calls(tmp_path, monkeypatch
          "error": "URLError('connection refused')", "t": err_t},
     ]
     assert data["today"] == {"requests": 1, "confirmations": 0, "refusals": 0, "errors": 0}
+
+
+def test_timings_payload_empty_journal_says_no_requests_yet(tmp_path, monkeypatch):
+    """No journal file at all means no timed requests; the lines say so in plain words."""
+    monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "nope.jsonl"))
+    data = timings_payload()
+    assert data["lines"] == ["no timed requests yet"]
+    assert data["summary"]["count"] == 0
+
+
+def test_timings_payload_two_entries_gives_the_literal_first_line(tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    lines = [json.dumps({"event": "timing", "ms": 1200, "llm_ms": 800, "tools_ms": 400}),
+             json.dumps({"event": "timing", "ms": 3000, "llm_ms": 2500, "tools_ms": 500})]
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = timings_payload()
+    assert data["lines"][0] == "2 requests: median 2.1 s, p90 3.0 s"
 
 
 def test_page_renders_autopilot_events_in_the_activity_panel(server):

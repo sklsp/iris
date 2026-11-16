@@ -278,6 +278,16 @@ def test_the_journal_route_serves_the_fake_payload(server, monkeypatch):
     assert body == {"fake": "journal"}
 
 
+def test_the_timings_route_returns_the_same_json_as_the_function(server, tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    entry = json.dumps({"event": "timing", "ms": 1500, "llm_ms": 900, "tools_ms": 600})
+    journal.write_text(entry + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    status, body = get_json(server + "/api/timings")
+    assert status == 200
+    assert body == json.loads(json.dumps(d.timings_payload()))
+
+
 # --- serve() and default_port ----------------------------------------------------
 
 

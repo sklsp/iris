@@ -37,6 +37,13 @@ def call(name, **args):
         {"id": c.id, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}]})
 
 
+def calls(*names):
+    """A reply that asks for several tools at once; the raw messages are shaped like the server's."""
+    cs = [ToolCall(f"id-{n}", n, {}) for n in names]
+    return Reply("", cs, {"role": "assistant", "content": "", "tool_calls": [
+        {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": "{}"}} for c in cs]})
+
+
 def answer(text):
     return Reply(text, [], {"role": "assistant", "content": text})
 
@@ -46,7 +53,8 @@ def fake_tools(ran=None):
 
     def rec(name):
         return lambda **kw: ran.append((name, kw)) or f"{name} done"
-    return {"status": Tool("status", "", {}, [], SAFE, rec("status"))}
+    return {"status": Tool("status", "", {}, [], SAFE, rec("status")),
+            "click": Tool("click", "", {}, [], SAFE, rec("click"))}
 
 
 def agent(tmp_path, llm, clock, ran=None):
@@ -61,6 +69,12 @@ def timing_entries(tmp_path):
         if entry["event"] == "timing":
             entries.append({k: v for k, v in entry.items() if k != "t"})
     return entries
+
+
+def journal_events(tmp_path):
+    """Every line of the journal, in order, without its timestamp."""
+    return [{k: v for k, v in json.loads(line).items() if k != "t"}
+            for line in (tmp_path / "j.jsonl").read_text(encoding="utf-8").splitlines()]
 
 
 def test_a_plain_answer_times_the_model_call_only(tmp_path):
@@ -103,3 +117,23 @@ def test_a_cancelled_request_still_writes_the_timing_entry(tmp_path):
     assert timing_entries(tmp_path) == [{"event": "timing", "ms": 375, "llm_ms": 125, "llm_calls": 1,
                                          "tools_ms": 0, "tool_calls": 0, "slowest_tool": None,
                                          "slowest_tool_ms": 0}]
+
+
+def test_two_tool_calls_write_one_entry_each_before_the_request_timing(tmp_path):
+    ran = []
+    a = agent(tmp_path, ScriptedLLM(calls("status", "click"), answer("Done.")), FakeClock(), ran=ran)
+    assert a.handle("do both") == "Done."
+    assert ran == [("status", {}), ("click", {})]  # both really ran, so their times are real
+    events = journal_events(tmp_path)
+    assert [e for e in events if e["event"] == "tool_timing"] == [
+        {"event": "tool_timing", "tool": "status", "ms": 125},
+        {"event": "tool_timing", "tool": "click", "ms": 125}]
+    assert events[-1]["event"] == "timing"  # the request's entry comes after both tool entries
+
+
+def test_a_cancelled_tool_call_writes_no_entry(tmp_path):
+    a = agent(tmp_path, ScriptedLLM(calls("status", "click")), FakeClock())
+    a.tools["status"] = Tool("status", "", {}, [], SAFE, lambda: a.cancel.set() or "fine")  # clicked meanwhile
+    assert a.handle("do both") == ""
+    events = journal_events(tmp_path)
+    assert [e for e in events if e["event"] == "tool_timing"] == [{"event": "tool_timing", "tool": "status", "ms": 125}]

@@ -11,6 +11,7 @@
 - The dashboard's Speed panel also lists the five slowest tools from their `tool_timing` lines.
 - The journal rotates at 5 MB into `journal.jsonl.1`, so the dashboard, `iris timings` and `iris doctor` read the recent part only.
 - docs/ARCHITECTURE.md explains how Iris works inside, written from the code (the voice turn, every module, the safety rules, where the time goes); the README links to it near the top.
+- `test_docs_truth.py` checks that every command and environment variable named in `docs/` exists.
 
 ## 1.0.0 (release date): steady, safer and measured
 

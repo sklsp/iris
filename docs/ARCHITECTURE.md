@@ -144,7 +144,8 @@ The pytest suite in `tests/` covers the agent loop and the journal (`test_agent.
 the tools' behaviour (`test_tools*.py`), the voice pipeline (`test_voice*.py`, `test_voxcpm*.py`), the
 dashboard routes (`test_dashboard*.py`), the skills lifecycle (`test_skills*.py`) and the eval grading
 (`test_eval*.py`). A few files keep the documentation in sync with the code: `test_readme.py`,
-`test_commands_documented.py` and `test_settings_documented.py`.
+`test_commands_documented.py` and `test_settings_documented.py`. `test_docs_truth.py` checks that every
+command and environment variable named in `docs/` exists.
 
 The eval (`python -m iris eval`, `iris/eval.py`) measures how well the model behind Iris picks tools.
 Every task in `eval/tasks.toml` is a spoken request plus what should happen: which tools must be called,

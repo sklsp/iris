@@ -551,7 +551,7 @@ def test_piper_picks_the_voice_by_language_and_follows_the_user_for_short_answer
     spk = Speaker(engine="sapi")
     spk.engine = "piper"
     monkeypatch.setattr(spk, "_piper_voice", lambda lang: FakeVoice(lang))
-    monkeypatch.setattr(v, "_play_wav", lambda path, stop: True)
+    monkeypatch.setattr(v, "_play_wav", lambda path, stop, on_start=None: True)
     assert spk.speak("Het is nu tien over twaalf, neem een paraplu mee.")
     assert spk.speak("It is ten past twelve, take an umbrella with you.")
     spk.heard("Hoe laat is het nu eigenlijk?")

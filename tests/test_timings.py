@@ -147,3 +147,63 @@ def test_timings_main_prints_the_speech_line_from_a_journal_with_both(tmp_path, 
         "tools: median 0.3 s",
         "slowest tools: click 0.6 s"]
 
+
+def t(ms):
+    return {"event": "tts", "ms": ms}
+
+
+def test_read_timings_reads_tts_entries_with_the_event_keyword(tmp_path):
+    path = write(tmp_path, [e(1000)], extra_lines=(json.dumps(t(420)), json.dumps(t(900))))
+    assert read_timings(path) == [e(1000)]  # the default is unchanged: timing entries only
+    assert read_timings(path, event="tts") == [{"event": "tts", "ms": 420}, {"event": "tts", "ms": 900}]
+
+
+def test_summarize_with_tts_entries_adds_their_medians_and_count():
+    entries = [e(1000, llm=900), e(2000, llm=1500)]
+    tts = [t(420), t(900), t(300)]
+
+    summary = summarize(entries, tts=tts)
+
+    assert summary["count"] == 2
+    assert summary["tts_count"] == 3
+    assert summary["tts_ms_median"] == 420
+    assert summary["tts_ms_p90"] == 900  # nearest rank: sorted[ceil(0.9 * 3) - 1] = sorted[2]
+
+
+def test_summarize_without_tts_has_no_tts_keys():
+    summary = summarize([e(1000, llm=900)])
+
+    assert "tts_count" not in summary and "tts_ms_median" not in summary and "tts_ms_p90" not in summary
+
+
+def test_format_summary_puts_the_speech_output_line_after_tools_before_slowest():
+    summary = {"count": 2, "ms_median": 1500.0, "ms_p90": 2000.0,
+               "llm_ms_median": 1200.0, "llm_ms_p90": 1500.0,
+               "tools_ms_median": 300.0, "tools_ms_p90": 600.0,
+               "llm_share": 0.8, "slowest_tools": [("click", 600)],
+               "stt_count": 3, "stt_ms_median": 640.0, "stt_ms_p90": 700.0,
+               "tts_count": 2, "tts_ms_median": 400.0, "tts_ms_p90": 900.0}
+
+    assert format_summary(summary) == ["2 requests: median 1.5 s, p90 2.0 s",
+                                       "speech recognition: median 0.6 s, p90 0.7 s",
+                                       "model: median 1.2 s (80% of all time)",
+                                       "tools: median 0.3 s",
+                                       "speech output: first sound median 0.4 s, p90 0.9 s",
+                                       "slowest tools: click 0.6 s"]
+
+
+def test_timings_main_prints_the_speech_output_line_from_a_journal_with_all_three(tmp_path, capsys):
+    path = write(tmp_path, [e(1000, llm=900), e(2000, llm=1500, tools=600, tool="click", tool_ms=600)],
+                 extra_lines=(json.dumps(s(500)), json.dumps(s(640)), json.dumps(s(700)),
+                              json.dumps(t(300)), json.dumps(t(400)), json.dumps(t(900))))
+
+    assert timings_main(["--journal", str(path)]) == 0
+
+    assert capsys.readouterr().out.splitlines() == [
+        "2 requests: median 1.5 s, p90 2.0 s",
+        "speech recognition: median 0.6 s, p90 0.7 s",
+        "model: median 1.2 s (80% of all time)",
+        "tools: median 0.3 s",
+        "speech output: first sound median 0.4 s, p90 0.9 s",
+        "slowest tools: click 0.6 s"]
+

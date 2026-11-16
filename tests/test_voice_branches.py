@@ -333,6 +333,9 @@ def test_piper_env_is_utf8_with_and_without_a_runtime_folder(tmp_path, monkeypat
 def _bare_speaker(engine):
     s = voice.Speaker.__new__(voice.Speaker)  # no model loading in __init__
     s.engine = engine
+    s.clock = time.perf_counter  # the production default; these tests don't assert on timing
+    s.last_first_sound_ms = None
+    s._speak_t0 = 0.0
     s._kokoro = None
     s._piper = {}
     s._vox = None
@@ -373,7 +376,7 @@ def test_piper_one_failure_keeps_the_engine(monkeypatch):
     s = _bare_speaker("piper")
     s._piper["en"] = _ScriptedPiper([False, True])  # the first answer fails, the next works
     _fake_pyttsx3(monkeypatch)
-    monkeypatch.setattr(voice, "_play_wav", lambda path, stop_event, slack=3.0: True)  # no real audio
+    monkeypatch.setattr(voice, "_play_wav", lambda path, stop_event, slack=3.0, on_start=None: True)  # no real audio
 
     s.speak("one")   # Piper fails once: SAPI says this one answer only
     s.speak("two")   # Piper works again
@@ -384,7 +387,7 @@ def test_piper_three_failures_in_a_row_switch_to_sapi(monkeypatch, capsys):
     s = _bare_speaker("piper")
     s._piper["en"] = _ScriptedPiper([False, False, False])  # keeps failing
     _fake_pyttsx3(monkeypatch)
-    monkeypatch.setattr(voice, "_play_wav", lambda path, stop_event, slack=3.0: True)
+    monkeypatch.setattr(voice, "_play_wav", lambda path, stop_event, slack=3.0, on_start=None: True)
 
     for i in range(3):
         s.speak(f"answer {i}")
@@ -397,7 +400,7 @@ def test_piper_fail_work_fail_fail_stays_on_piper(monkeypatch):
     s = _bare_speaker("piper")
     s._piper["en"] = _ScriptedPiper([False, True, False, False])  # the success breaks the streak
     _fake_pyttsx3(monkeypatch)
-    monkeypatch.setattr(voice, "_play_wav", lambda path, stop_event, slack=3.0: True)
+    monkeypatch.setattr(voice, "_play_wav", lambda path, stop_event, slack=3.0, on_start=None: True)
 
     for i in range(4):
         s.speak(f"answer {i}")
@@ -411,7 +414,7 @@ class _ScriptedStream:
         self.outcomes = list(outcomes)
         self.calls = 0
 
-    def __call__(self, chunks, rate, expected, stop_event, slack=3.0):
+    def __call__(self, chunks, rate, expected, stop_event, slack=3.0, on_start=None):
         ok = self.outcomes[self.calls] if self.calls < len(self.outcomes) else True
         self.calls += 1
         if not ok:
@@ -434,7 +437,7 @@ def _vox_speaker(monkeypatch, outcomes):
     s._vox = _FakeVox()
     s._piper["en"] = _ScriptedPiper([True] * 10)  # the Piper fallback always works here
     monkeypatch.setattr(voice, "_play_stream", _ScriptedStream(outcomes))  # no real audio
-    monkeypatch.setattr(voice, "_play_wav", lambda path, stop_event, slack=3.0: True)
+    monkeypatch.setattr(voice, "_play_wav", lambda path, stop_event, slack=3.0, on_start=None: True)
     return s
 
 

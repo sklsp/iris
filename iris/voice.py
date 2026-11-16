@@ -351,6 +351,7 @@ class VoiceSession:
         self.speaker = speaker or Speaker()
         self.clock = clock  # time source for the transcription timing; tests pass a stepping fake
         self.last_stt_ms: int | None = None  # milliseconds of the last _transcribe, model load included
+        self.on_spoken: Callable[[int | None], None] | None = None  # set by main to log the first-sound time
         self._frames: queue.Queue[np.ndarray] = queue.Queue(maxsize=1024)  # ~80 s, drops oldest when full
         self._stream: Any = None  # sounddevice.InputStream; opened in __enter__ (no type stubs)
         self._whisper: Any = None  # faster_whisper.WhisperModel; loaded lazily (no type stubs)
@@ -603,6 +604,11 @@ class VoiceSession:
             finished = self.speaker.speak(text, stop_event=stop)
         finally:
             stop.set()  # release the watcher whether or not it was interrupted
+        if panel and self.on_spoken is not None:
+            try:
+                self.on_spoken(getattr(self.speaker, "last_first_sound_ms", None))
+            except Exception:  # a logging hook must never break speech or the overlay
+                pass
         if watch:
             watcher.join(timeout=1.0)
         self._interrupted = not finished
@@ -798,10 +804,11 @@ def _lead_needed(expected: float, speed: float, margin: float = VOXCPM_MARGIN) -
 
 
 def _play_stream(chunks: Iterable[np.ndarray], rate: int, expected: float, stop_event: threading.Event | None,
-                 slack: float = 3.0) -> bool:
+                 slack: float = 3.0, on_start: Callable[[], None] | None = None) -> bool:
     """Play streamed float32 audio of about `expected` seconds once enough is made that the rest arrives in time (see
     _lead_needed). If it still runs dry, it pauses until REBUFFER_SECONDS are ready instead of stuttering. Like
-    _play_wav it stops for a wake word and never hangs on a stalled sound device."""
+    _play_wav it stops for a wake word and never hangs on a stalled sound device. on_start fires when the output
+    stream starts, so the caller can note the moment the user first hears something."""
     import numpy as np
     import sounddevice as sd
 
@@ -843,9 +850,13 @@ def _play_stream(chunks: Iterable[np.ndarray], rate: int, expected: float, stop_
             work = time.perf_counter() - t0
             if stream is None and work > 0 and made / rate >= _lead_needed(expected, made / rate / work):
                 stream = start()
+                if on_start is not None:
+                    on_start()
         finished.set()
         if stream is None:
             stream = start()
+            if on_start is not None:
+                on_start()
         deadline = time.monotonic() + made / rate + slack
         while not pending.empty() or len(left):
             if stopped():
@@ -870,8 +881,11 @@ class Speaker:
     cut it short. SAPI cannot be interrupted mid-utterance, so barge-in only lands between chunks
     in Kokoro mode (which streams)."""
 
-    def __init__(self, engine: str | None = None):
+    def __init__(self, engine: str | None = None, clock: Callable[[], float] = time.perf_counter):
         self.engine = engine or os.environ.get("IRIS_TTS") or config.get("tts", "sapi")
+        self.clock = clock  # the time source for first-sound timing; tests pass a stepping fake
+        self.last_first_sound_ms: int | None = None  # ms from speak() to the first sound of the last answer
+        self._speak_t0: float = 0.0  # when the current speak() started, in clock time
         self._kokoro: Any = None  # kokoro_onnx.Kokoro; loaded lazily (no type stubs)
         self._piper: dict[str, PiperProcess] = {}
         self._vox: VoxProcess | None = None
@@ -919,6 +933,8 @@ class Speaker:
     def speak(self, text: str, stop_event: threading.Event | None = None) -> bool:
         """Print the answer and speak it with the best engine available; True unless a wake word cut it short."""
         print(f"Iris: {text}")
+        self.last_first_sound_ms = None  # this answer's first sound is not known yet
+        self._speak_t0 = self.clock()
         if self.engine == "voxcpm" and self._vox is not None:
             return self._speak_voxcpm(self._vox, text, stop_event)
         if self.engine == "piper":
@@ -927,12 +943,18 @@ class Speaker:
             return self._speak_kokoro(text, stop_event)
         return self._speak_sapi(text)
 
+    def _sounding(self) -> None:
+        """Note when the user first hears this answer; only the first call after speak() records anything."""
+        if self.last_first_sound_ms is None:
+            self.last_first_sound_ms = round((self.clock() - self._speak_t0) * 1000)
+
     def _speak_sapi(self, text: str) -> bool:
         """Windows SAPI. Speech is a nicety, so any failure just means the printed line stands."""
         try:
             import pyttsx3
 
             engine = pyttsx3.init()
+            self._sounding()  # SAPI gives no better signal than the moment say() is asked for
             engine.say(text)
             engine.runAndWait()
         except Exception:  # noqa: BLE001 - speech is a nicety; the printed line is the answer
@@ -964,7 +986,7 @@ class Speaker:
             self._lang = lang
         try:
             path = self._piper_voice(self._lang).wav(text)
-            ok = _play_wav(path, stop_event)
+            ok = _play_wav(path, stop_event, on_start=self._sounding)
             if ok:
                 self._note_success("piper")  # a fully spoken answer resets Piper's failure streak
             return ok
@@ -977,7 +999,8 @@ class Speaker:
         if not vox.ready.is_set():  # still loading (a minute or more): Piper says this one rather than keep you waiting
             return self._speak_piper(text, stop_event)
         try:
-            ok = _play_stream(vox.stream(text), vox.rate, len(text) / CHARS_PER_SECOND, stop_event)
+            ok = _play_stream(vox.stream(text), vox.rate, len(text) / CHARS_PER_SECOND, stop_event,
+                              on_start=self._sounding)
             if ok:
                 self._note_success("voxcpm")  # a fully spoken answer resets VoxCPM's failure streak
             return ok
@@ -1012,9 +1035,13 @@ class Speaker:
             async def play() -> bool:
                 import sounddevice as sd
 
+                first = True
                 async for chunk, sr in model.create_stream(text, voice=KOKORO_VOICE):
                     if stop_event is not None and stop_event.is_set():
                         return False
+                    if first:  # the moment the user hears something
+                        self._sounding()
+                        first = False
                     # sd.play returns at once and the next play would cut this chunk off: wait for its end,
                     # stopping at once for a wake word. asyncio.sleep keeps the loop free so create_stream can
                     # make the next chunk while this one plays
@@ -1037,10 +1064,11 @@ class Speaker:
             return self._speak_sapi(text)
 
 
-def _play_wav(path: Path, stop_event: threading.Event | None, slack: float = 3.0) -> bool:
+def _play_wav(path: Path, stop_event: threading.Event | None, slack: float = 3.0,
+              on_start: Callable[[], None] | None = None) -> bool:
     """Play a 16-bit mono WAV in the background and wait for it, stopping when a wake word sets stop_event. Playback
     never blocks Iris: if the sound device stalls (another app holding it), it is cut off `slack` seconds after the
-    audio should have ended. The file is removed after."""
+    audio should have ended. The file is removed after. on_start fires right before playback starts."""
     import numpy as np
     import sounddevice as sd
 
@@ -1050,6 +1078,8 @@ def _play_wav(path: Path, stop_event: threading.Event | None, slack: float = 3.0
             audio = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype("float32") / 32768
     finally:
         path.unlink(missing_ok=True)
+    if on_start is not None:
+        on_start()
     sd.play(audio, rate)
     deadline = time.monotonic() + len(audio) / rate + slack
     try:

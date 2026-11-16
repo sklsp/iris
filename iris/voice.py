@@ -341,13 +341,16 @@ class VoiceSession:
 
     def __init__(self, whisper_model: str | None = None, wake_word: str | None = None,
                  vad_threshold: float | None = None, silence_seconds: float = SILENCE_SECONDS,
-                 max_record_seconds: float = 30, speaker: Speaker | None = None):
+                 max_record_seconds: float = 30, speaker: Speaker | None = None,
+                 clock: Callable[[], float] = time.perf_counter):
         self.whisper_name = whisper_model or WHISPER_MODEL
         self.wake = make_wake(wake_word, vad_threshold)
         self.vad_threshold = vad_threshold
         self.silence_seconds = silence_seconds
         self.max_record_seconds = max_record_seconds
         self.speaker = speaker or Speaker()
+        self.clock = clock  # time source for the transcription timing; tests pass a stepping fake
+        self.last_stt_ms: int | None = None  # milliseconds of the last _transcribe, model load included
         self._frames: queue.Queue[np.ndarray] = queue.Queue(maxsize=1024)  # ~80 s, drops oldest when full
         self._stream: Any = None  # sounddevice.InputStream; opened in __enter__ (no type stubs)
         self._whisper: Any = None  # faster_whisper.WhisperModel; loaded lazily (no type stubs)
@@ -619,11 +622,16 @@ class VoiceSession:
                 stop.set()
 
     def _transcribe(self, audio: np.ndarray) -> str:
+        """Speech to text. The whole call is timed into last_stt_ms (the first one includes loading the model,
+        which is real waiting time too), so a turn's journal can show where speech recognition spent its time."""
 
+        t0 = self.clock()
         if self._whisper is None:
             self._whisper = _whisper_model(self.whisper_name, WHISPER_DEVICE)
         segments, _ = self._whisper.transcribe(audio, vad_filter=True)
-        return " ".join(s.text.strip() for s in segments).strip()
+        text = " ".join(s.text.strip() for s in segments).strip()
+        self.last_stt_ms = round((self.clock() - t0) * 1000)
+        return text
 
 
 def _stop_process(proc: subprocess.Popen, seconds: float) -> None:

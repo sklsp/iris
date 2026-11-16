@@ -1,0 +1,4 @@
+- [x] Q1. voice: time the transcription (2328 passed in 112.11s (0:01:52))
+- [ ] Q2. main: log the transcription time
+- [ ] Q3. timings: include speech recognition
+- [ ] Q4. docs: the voice part

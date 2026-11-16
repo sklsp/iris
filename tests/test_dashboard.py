@@ -389,6 +389,16 @@ def test_page_serves_a_speed_panel_with_its_renderer(server):
     assert '"/api/timings": renderTimings' in page   # refreshed by tick() alongside the other feeds
 
 
+def test_speed_panel_lists_the_slowest_tools(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    fn = page.split("function renderTimings", 1)[1].split("\n}", 1)[0]
+    assert "d.tools" in fn                    # the per-tool numbers /api/timings already returns
+    assert "Slowest tools" in fn              # the small heading above the tool rows
+    assert ".slice(0, 5)" in fn               # only the five slowest fit in this panel
+    assert "innerHTML" not in fn              # every row is built with el(), never innerHTML
+
+
 def test_api_agents_stuck_rows_first(tmp_path, monkeypatch):
     import iris.agents as agents_mod
     from tests.test_agents import make_repo, write_config

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Every request now writes a `timing` line to the journal with its total time, model time and tool time; `python -m iris timings` summarises them (median and p90 turn time, the model's share of all the time, the slowest tools).
+
 ## 1.0.0 (release date): steady, safer and measured
 
 ### Quality

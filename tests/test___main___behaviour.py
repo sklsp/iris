@@ -620,7 +620,7 @@ def test_ctrl_c_while_busy_dumps_every_thread_and_reraises(tmp_path, monkeypatch
         """Its handle raises KeyboardInterrupt, like a Ctrl+C pressed while the agent works."""
 
         def __init__(self, llm, confirm, journal):
-            pass
+            self.journal = journal  # as in the real Agent; log_stt reads it before handle
 
         def handle(self, request):
             raise KeyboardInterrupt

@@ -503,7 +503,7 @@ tab, not an error page.
 
 ## How fast is Iris?
 
-Every request writes one timing line to the journal (`~/.iris/journal.jsonl`), with how long it took in all, how much of that was model calls and how much tools. `python -m iris timings` reads those lines (the last 50 by default) and prints the median and p90 turn time, the model's share of all the time, and the slowest tools.
+Every request writes one timing line to the journal (`~/.iris/journal.jsonl`), with how long it took in all, how much of that was model calls and how much tools. `python -m iris timings` reads those lines (the last 50 by default) and prints the median and p90 turn time, the model's share of all the time, and the slowest tools. In voice mode each request also writes an `stt` line with how long speech recognition took, and `python -m iris timings` shows those times too (median and p90).
 
 This exists to measure before optimizing: almost all of a turn's time is the language model, speech recognition and speech output, not Python. That is why rewriting Iris in another language would not make it much faster; when something feels slow, look at what the numbers say first.
 

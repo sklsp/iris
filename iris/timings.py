@@ -6,8 +6,8 @@ from pathlib import Path
 from statistics import median
 
 
-def read_timings(path: Path, last: int = 50) -> list[dict]:
-    """The last `last` event="timing" entries of a JSON-lines journal; bad lines are skipped, no file gives []."""
+def read_timings(path: Path, last: int = 50, event: str = "timing") -> list[dict]:
+    """The last `last` entries with the given event of a JSON-lines journal; bad lines are skipped, no file gives []."""
     if not path.exists():
         return []
     entries = []
@@ -16,7 +16,7 @@ def read_timings(path: Path, last: int = 50) -> list[dict]:
             entry = json.loads(line)
         except ValueError:  # a torn line (a crash mid-write) is skipped, never fatal
             continue
-        if isinstance(entry, dict) and entry.get("event") == "timing":
+        if isinstance(entry, dict) and entry.get("event") == event:
             entries.append(entry)
     return entries[-last:] if last > 0 else []  # entries[-0:] would be all of them
 
@@ -27,28 +27,36 @@ def _p90(values: list[float]) -> float:
     return ordered[math.ceil(0.9 * len(ordered)) - 1]
 
 
-def summarize(entries: list[dict]) -> dict:
-    """Medians and p90s of request, model and tool time, the model's share of all time, and the slowest tools."""
+def summarize(entries: list[dict], stt: list[dict] | None = None) -> dict:
+    """Medians and p90s of request, model and tool time, the model's share of all time, the slowest tools - and, when
+    given, the speech-recognition times that preceded those requests."""
+    result: dict[str, object]
     if not entries:
-        return {"count": 0}
-    by_tool: dict[str, float] = {}
-    for e in entries:
-        name = e.get("slowest_tool")
-        if name:
-            by_tool[name] = max(by_tool.get(name, 0.0), e["slowest_tool_ms"])
-    slowest = sorted(by_tool.items(), key=lambda pair: -pair[1])[:5]
-    total_ms = sum(e["ms"] for e in entries)
-    return {
-        "count": len(entries),
-        "ms_median": median([e["ms"] for e in entries]),
-        "ms_p90": _p90([e["ms"] for e in entries]),
-        "llm_ms_median": median([e["llm_ms"] for e in entries]),
-        "llm_ms_p90": _p90([e["llm_ms"] for e in entries]),
-        "tools_ms_median": median([e["tools_ms"] for e in entries]),
-        "tools_ms_p90": _p90([e["tools_ms"] for e in entries]),
-        "llm_share": round(sum(e["llm_ms"] for e in entries) / total_ms, 2) if total_ms else 0.0,
-        "slowest_tools": slowest,
-    }
+        result = {"count": 0}
+    else:
+        by_tool: dict[str, float] = {}
+        for e in entries:
+            name = e.get("slowest_tool")
+            if name:
+                by_tool[name] = max(by_tool.get(name, 0.0), e["slowest_tool_ms"])
+        slowest = sorted(by_tool.items(), key=lambda pair: -pair[1])[:5]
+        total_ms = sum(e["ms"] for e in entries)
+        result = {
+            "count": len(entries),
+            "ms_median": median([e["ms"] for e in entries]),
+            "ms_p90": _p90([e["ms"] for e in entries]),
+            "llm_ms_median": median([e["llm_ms"] for e in entries]),
+            "llm_ms_p90": _p90([e["llm_ms"] for e in entries]),
+            "tools_ms_median": median([e["tools_ms"] for e in entries]),
+            "tools_ms_p90": _p90([e["tools_ms"] for e in entries]),
+            "llm_share": round(sum(e["llm_ms"] for e in entries) / total_ms, 2) if total_ms else 0.0,
+            "slowest_tools": slowest,
+        }
+    if stt:  # the voice loop logs one of these before each request it hears
+        result["stt_ms_median"] = median([e["ms"] for e in stt])
+        result["stt_ms_p90"] = _p90([e["ms"] for e in stt])
+        result["stt_count"] = len(stt)
+    return result
 
 
 def format_summary(summary: dict) -> list[str]:
@@ -61,6 +69,9 @@ def format_summary(summary: dict) -> list[str]:
              f"p90 {summary['ms_p90'] / 1000:.1f} s",
              model,
              f"tools: median {summary['tools_ms_median'] / 1000:.1f} s"]
+    if summary.get("stt_count"):
+        lines.insert(1, f"speech recognition: median {summary['stt_ms_median'] / 1000:.1f} s, "
+                        f"p90 {summary['stt_ms_p90'] / 1000:.1f} s")
     if summary["slowest_tools"]:
         slow = ", ".join(f"{name} {ms / 1000:.1f} s" for name, ms in summary["slowest_tools"])
         lines.append("slowest tools: " + slow)
@@ -75,6 +86,7 @@ def timings_main(argv: list[str]) -> int:
     ap.add_argument("--last", type=int, default=50)
     ap.add_argument("--journal", type=Path, default=journal_path())
     a = ap.parse_args(argv)
-    for line in format_summary(summarize(read_timings(a.journal, last=a.last))):
+    stt = read_timings(a.journal, last=a.last, event="stt")  # the voice loop's speech-recognition times
+    for line in format_summary(summarize(read_timings(a.journal, last=a.last), stt=stt)):
         print(line)
     return 0

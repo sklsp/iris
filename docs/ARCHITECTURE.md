@@ -122,7 +122,7 @@ deletes permanently; it opens the draft or the page and you take the last step.
 
 Every request writes one `timing` line to the journal (`~/.iris/journal.jsonl`, rotated at 5 MB into
 `journal.jsonl.1` by `Journal` in `iris/agent.py`): total time, model time and call count, tool time,
-and the slowest tool of the request. Each individual tool call writes its own `tool_timing` line with
+the slowest tool of the request, and the name of the model that handled it. Each individual tool call writes its own `tool_timing` line with
 that one call's time.
 
 In voice mode the loop in `iris/__main__.py` adds two more lines per turn: an `stt` line with how long

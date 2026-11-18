@@ -1,3 +1,0 @@
-- [x] Q1. tests: why the slow unprotected tests are slow (2414 passed in 120.13s (0:02:00))
-- [x] Q2. tests: make them fast, nothing weakened (2414 passed in 111.63s (0:01:51))
-- [x] Q3. docs: the suite time (2414 passed in 116.23s (0:01:56))

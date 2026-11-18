@@ -62,8 +62,9 @@ def test_agent_asks_for_its_tools_on_every_request(tmp_path):
 
 
 def test_doctor_reports_what_to_fix(tmp_path, monkeypatch):
-    from iris import doctor
+    from iris import doctor, packs
 
+    monkeypatch.setattr(packs, "packs", lambda: [])  # no probing of nvidia-smi or the model cache in a unit test
     monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
     (tmp_path / "config.toml").write_text('plugins = ["comfyui", "nope"]', encoding="utf-8")
     monkeypatch.setenv("IRIS_MODEL", "qwen-x")
@@ -142,8 +143,9 @@ def test_doctor_marks_optional_misses_and_exits_on_required_ones(capsys, monkeyp
 
 
 def test_doctor_says_whether_the_model_reads_images(tmp_path, monkeypatch):
-    from iris import doctor
+    from iris import doctor, packs
 
+    monkeypatch.setattr(packs, "packs", lambda: [])  # no probing of nvidia-smi or the model cache in a unit test
     monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
     monkeypatch.setenv("IRIS_MODEL", "qwen-x")
 
@@ -186,9 +188,10 @@ def test_doctor_reads_the_speech_engine_from_config_and_names_missing_voices(tmp
 def test_doctor_in_the_installed_app_points_to_the_setup_tab(tmp_path, monkeypatch):
     import importlib.util
 
-    from iris import doctor
+    from iris import doctor, packs
     from iris import voice as v
 
+    monkeypatch.setattr(packs, "packs", lambda: [])  # no probing of nvidia-smi or the model cache in a unit test
     monkeypatch.delenv("IRIS_TTS", raising=False)
     monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
     monkeypatch.setattr(v, "PIPER_DIR", tmp_path)

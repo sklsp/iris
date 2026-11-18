@@ -453,14 +453,17 @@ def test_api_agents_stuck_rows_first(tmp_path, monkeypatch):
     assert rows[0]["uncommitted"] == 1 and rows[0]["branch"] == "main"
 
 
-def _runs_repos(tmp_path):
-    """alpha and zeta are not done, beta is done, gamma has no PROGRESS file at all."""
+@pytest.fixture(scope="module")
+def runs_repos(tmp_path_factory):
+    """alpha and zeta are not done, beta is done, gamma has no PROGRESS file at all. Built once for both /api/runs
+    tests: they only read them, so paying for the four git repos twice would be time no assertion needs."""
     from tests.test_autopilot import checklist, make_repo
 
-    alpha = make_repo(tmp_path, "alpha", checklist(open_at=(4, 9)))   # two items open: not done
-    zeta = make_repo(tmp_path, "zeta", checklist(open_at=(7,)))       # one item open: not done
-    beta = make_repo(tmp_path, "beta", checklist())                   # all ticked, old commit: done
-    gamma = make_repo(tmp_path, "gamma", None)                        # no PROGRESS file at all
+    root = tmp_path_factory.mktemp("runs")
+    alpha = make_repo(root, "alpha", checklist(open_at=(4, 9)))   # two items open: not done
+    zeta = make_repo(root, "zeta", checklist(open_at=(7,)))       # one item open: not done
+    beta = make_repo(root, "beta", checklist())                   # all ticked, old commit: done
+    gamma = make_repo(root, "gamma", None)                        # no PROGRESS file at all
     return alpha, zeta, beta, gamma
 
 
@@ -473,8 +476,8 @@ def _watch_only(monkeypatch, tmp_path, repos):
                         write_config(tmp_path, repos=[str(r) for r in repos], worktrees=[]))
 
 
-def test_api_runs_lists_progress_repos_not_done_first_then_by_name(tmp_path, monkeypatch):
-    alpha, zeta, beta, gamma = _runs_repos(tmp_path)
+def test_api_runs_lists_progress_repos_not_done_first_then_by_name(tmp_path, monkeypatch, runs_repos):
+    alpha, zeta, beta, gamma = runs_repos
     _watch_only(monkeypatch, tmp_path, [alpha, zeta, beta, gamma])
 
     data = d.runs_payload()
@@ -499,8 +502,8 @@ def test_api_runs_lists_progress_repos_not_done_first_then_by_name(tmp_path, mon
     }
 
 
-def test_api_runs_route_returns_200_and_the_same_json(server, tmp_path, monkeypatch):
-    alpha, zeta, beta, gamma = _runs_repos(tmp_path)
+def test_api_runs_route_returns_200_and_the_same_json(server, tmp_path, monkeypatch, runs_repos):
+    alpha, zeta, beta, gamma = runs_repos
     _watch_only(monkeypatch, tmp_path, [alpha, zeta, beta, gamma])
 
     with d._lock:  # drop any cached runs payload so the route recomputes against these repos
@@ -511,8 +514,10 @@ def test_api_runs_route_returns_200_and_the_same_json(server, tmp_path, monkeypa
 
 
 def test_api_lmstudio_unreachable_reports_false(monkeypatch):
-    monkeypatch.setattr(d, "V0_MODELS_URL", "http://127.0.0.1:9/api/v0/models")  # port 9: nothing listens
-    monkeypatch.setattr(d, "V1_MODELS_URL", "http://127.0.0.1:9/v1/models")
+    def refused(url, timeout=None):  # nothing answered; a real closed port would cost ~2s on Windows
+        raise d.urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+
+    monkeypatch.setattr(d.urllib.request, "urlopen", refused)
     assert lmstudio_payload() == {"reachable": False}
 
 

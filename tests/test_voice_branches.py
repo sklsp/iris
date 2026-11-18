@@ -68,7 +68,7 @@ def test_chime_stops_when_the_sound_device_stalls(monkeypatch):
     monkeypatch.setenv("IRIS_CHIME", "1")  # conftest mutes it for the whole run
     s = voice.VoiceSession.__new__(voice.VoiceSession)
     t0 = time.monotonic()
-    s.chime()
+    s.chime(stall=0.05)
     assert time.monotonic() - t0 < 1.5  # a stalled device must never hold listening forever
     assert stopped == [1]
 

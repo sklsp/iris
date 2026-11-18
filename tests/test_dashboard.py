@@ -368,6 +368,23 @@ def test_timings_payload_tools_covers_only_the_last_fifty_calls(tmp_path, monkey
     assert data["tools"] == [{"tool": "click", "calls": 50, "median_ms": 265.0}]
 
 
+def test_timings_payload_lists_one_row_per_model(tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    lines = [json.dumps({"event": "timing", "model": "qwen3.8-27b", "ms": 1000, "llm_ms": 900, "tools_ms": 100}),
+             json.dumps({"event": "timing", "model": "qwen3.8-27b", "ms": 2000, "llm_ms": 1500, "tools_ms": 500}),
+             json.dumps({"event": "timing", "model": "gpt-mini", "ms": 4000, "llm_ms": 3800, "tools_ms": 200})]
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = timings_payload()
+
+    # slowest median first: gpt-mini (4.0 s) before qwen3.8-27b (1.5 s)
+    assert data["models"] == [
+        {"model": "gpt-mini", "requests": 1, "median_ms": 4000.0, "llm_share": 0.95},
+        {"model": "qwen3.8-27b", "requests": 2, "median_ms": 1500.0, "llm_share": 0.8},
+    ]
+
+
 def test_timings_payload_returns_an_error_when_reading_the_journal_fails(monkeypatch):
     """A journal that cannot be read gives the page one plain error, not a broken endpoint."""
 
@@ -407,6 +424,16 @@ def test_speed_panel_lists_the_slowest_tools(server):
     assert "d.tools" in fn                    # the per-tool numbers /api/timings already returns
     assert "Slowest tools" in fn              # the small heading above the tool rows
     assert ".slice(0, 5)" in fn               # only the five slowest fit in this panel
+    assert "innerHTML" not in fn              # every row is built with el(), never innerHTML
+
+
+def test_speed_panel_compares_models_when_there_are_two(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    fn = page.split("function renderTimings", 1)[1].split("\n}", 1)[0]
+    assert "d.models" in fn                   # the per-model numbers /api/timings returns
+    assert "By model" in fn                   # the small heading above the model rows
+    assert "length >= 2" in fn                # one or zero models leaves the panel unchanged
     assert "innerHTML" not in fn              # every row is built with el(), never innerHTML
 
 

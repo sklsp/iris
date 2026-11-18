@@ -827,6 +827,15 @@ function renderTimings(d){
       body.appendChild(el("div", "num", `${t.tool}: ${t.calls} ${unit}, median ${(t.median_ms / 1000).toFixed(1)} s`));
     }
   }
+  if (Array.isArray(d.models) && d.models.length >= 2){
+    // two or more models in the last 50 requests: compare them side by side, slowest first
+    body.appendChild(el("div", "empty sub-note", "By model"));
+    for (const m of d.models){
+      const unit = m.requests === 1 ? "request" : "requests";
+      const text = `${m.model}: ${m.requests} ${unit}, median ${(m.median_ms / 1000).toFixed(1)} s`;
+      body.appendChild(el("div", "num", `${text} (model ${Math.round(m.llm_share * 100)}%)`));
+    }
+  }
 }
 function renderTools(d){
   const body = $("tools-body");

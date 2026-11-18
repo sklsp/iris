@@ -1,3 +1,0 @@
-- [x] Q1. agent: the timing entry names the model (2400 passed in 121.29s (0:02:01))
-- [x] Q2. timings: --since, --model and --by-model (2412 passed in 112.16s (0:01:52))
-- [x] Q3. docs: comparing models (2412 passed in 113.45s (0:01:53))

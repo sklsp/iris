@@ -258,7 +258,7 @@ def test_a_stuck_overlay_process_never_blocks_sending_and_is_killed_on_close():
     for _ in range(5000):  # far more than a pipe buffer: the writer blocks, send() must not
         o.send("answer", "x" * 200)
     assert time.monotonic() - t0 < 1
-    o.close()
+    o.close(wait=0.1)  # a real hang would cost two seconds of waiting; the kill path is what this test checks
     assert proc.poll() is not None
 
 
@@ -398,7 +398,7 @@ def test_a_hold_line_does_not_watch_for_the_wake_word():
     s._frames.put(np.zeros(FRAME, dtype="float32"))
 
     def speak(text, stop_event=None):
-        stop_event.wait(1.0)  # talk long enough for a watcher to hear it if there is one
+        stop_event.wait(0.2)  # talk long enough for a watcher to hear it if there is one
         return True
 
     s.speaker.speak = speak  # type: ignore[method-assign]

@@ -178,8 +178,8 @@ class Overlay:
         except (OSError, ValueError):  # the pipe broke or was closed
             pass
 
-    def close(self) -> None:
-        """Let the overlay go: end of input makes it quit; one that hangs is killed after two seconds."""
+    def close(self, wait: float = 2) -> None:
+        """Let the overlay go: end of input makes it quit; one that hangs is killed after `wait` seconds."""
         proc, self._proc = self._proc, None
         if proc is None:
             return
@@ -190,7 +190,7 @@ class Overlay:
         # in a thread: a writer stuck on a full pipe holds its lock, and close() would wait for it forever
         threading.Thread(target=_close_quietly, args=(proc.stdin,), daemon=True).start()
         try:
-            proc.wait(timeout=2)
+            proc.wait(timeout=wait)
         except subprocess.TimeoutExpired:
             try:
                 proc.kill()  # which also frees a stuck writer: its pipe breaks

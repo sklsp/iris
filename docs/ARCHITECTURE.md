@@ -145,7 +145,8 @@ the tools' behaviour (`test_tools*.py`), the voice pipeline (`test_voice*.py`, `
 dashboard routes (`test_dashboard*.py`), the skills lifecycle (`test_skills*.py`) and the eval grading
 (`test_eval*.py`). A few files keep the documentation in sync with the code: `test_readme.py`,
 `test_commands_documented.py` and `test_settings_documented.py`. `test_docs_truth.py` checks that every
-command and environment variable named in `docs/` exists.
+command and environment variable named in `docs/` exists. The suite has 2414 tests, and a full run takes
+about a minute and a half on a quiet machine.
 
 The eval (`python -m iris eval`, `iris/eval.py`) measures how well the model behind Iris picks tools.
 Every task in `eval/tasks.toml` is a spoken request plus what should happen: which tools must be called,

@@ -422,8 +422,11 @@ def timings_payload() -> dict:
         return {"error": str(exc)}
     summary = timings.summarize(entries, stt=stt, tts=tts)
     stats = timings.tool_stats(tools)
+    models = timings.model_stats(entries)   # the same last 50 timing entries, grouped per model
     return {"summary": summary, "lines": timings.format_summary(summary),
-            "tools": [{"tool": name, "calls": calls, "median_ms": ms} for name, calls, ms in stats]}
+            "tools": [{"tool": name, "calls": calls, "median_ms": ms} for name, calls, ms in stats],
+            "models": [{"model": name, "requests": n, "median_ms": ms, "llm_share": share}
+                       for name, n, ms, share in models]}
 
 
 def tools_payload() -> dict:

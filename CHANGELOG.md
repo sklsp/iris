@@ -13,6 +13,7 @@
 - `python -m iris timings` can compare models and narrow the window: each timing line names its model, `--by-model` prints one line per model (request count, median turn time, share of all the time), `--since YYYY-MM-DD` keeps entries from a date on and `--model NAME` keeps one model's lines.
 - docs/ARCHITECTURE.md explains how Iris works inside, written from the code (the voice turn, every module, the safety rules, where the time goes); the README links to it near the top.
 - `test_docs_truth.py` checks that every command and environment variable named in `docs/` exists.
+- The dashboard's Speed panel lists the models side by side (request count, median turn time and share of all the time) when more than one model handled the recent requests.
 
 ## 1.0.0 (release date): steady, safer and measured
 

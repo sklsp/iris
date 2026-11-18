@@ -82,7 +82,7 @@ def test_a_plain_answer_times_the_model_call_only(tmp_path):
     assert a.handle("how is my pc") == "All fine."
     assert timing_entries(tmp_path) == [{"event": "timing", "ms": 375, "llm_ms": 125, "llm_calls": 1,
                                          "tools_ms": 0, "tool_calls": 0, "slowest_tool": None,
-                                         "slowest_tool_ms": 0}]
+                                         "slowest_tool_ms": 0, "model": None}]
 
 
 def test_one_tool_call_times_the_tool_and_names_it_slowest(tmp_path):
@@ -92,7 +92,7 @@ def test_one_tool_call_times_the_tool_and_names_it_slowest(tmp_path):
     assert ran == [("status", {})]  # the tool really ran once, so its time is real
     assert timing_entries(tmp_path) == [{"event": "timing", "ms": 875, "llm_ms": 250, "llm_calls": 2,
                                          "tools_ms": 125, "tool_calls": 1, "slowest_tool": "status",
-                                         "slowest_tool_ms": 125}]
+                                         "slowest_tool_ms": 125, "model": None}]
 
 
 def test_a_model_error_still_writes_the_timing_entry(tmp_path):
@@ -100,7 +100,7 @@ def test_a_model_error_still_writes_the_timing_entry(tmp_path):
     assert a.handle("how is my pc") == "I can't reach the model in LM Studio right now. Try again in a moment."
     assert timing_entries(tmp_path) == [{"event": "timing", "ms": 375, "llm_ms": 125, "llm_calls": 1,
                                          "tools_ms": 0, "tool_calls": 0, "slowest_tool": None,
-                                         "slowest_tool_ms": 0}]
+                                         "slowest_tool_ms": 0, "model": None}]
 
 
 def test_a_cancelled_request_still_writes_the_timing_entry(tmp_path):
@@ -116,7 +116,7 @@ def test_a_cancelled_request_still_writes_the_timing_entry(tmp_path):
     assert a.handle("do the thing") == ""
     assert timing_entries(tmp_path) == [{"event": "timing", "ms": 375, "llm_ms": 125, "llm_calls": 1,
                                          "tools_ms": 0, "tool_calls": 0, "slowest_tool": None,
-                                         "slowest_tool_ms": 0}]
+                                         "slowest_tool_ms": 0, "model": None}]
 
 
 def test_two_tool_calls_write_one_entry_each_before_the_request_timing(tmp_path):
@@ -137,3 +137,33 @@ def test_a_cancelled_tool_call_writes_no_entry(tmp_path):
     assert a.handle("do both") == ""
     events = journal_events(tmp_path)
     assert [e for e in events if e["event"] == "tool_timing"] == [{"event": "tool_timing", "tool": "status", "ms": 125}]
+
+
+def test_the_timing_entry_names_the_model(tmp_path):
+    class ModelLLM(ScriptedLLM):
+        def _model(self) -> str:
+            return "qwen-test"
+
+    a = agent(tmp_path, ModelLLM(answer("All fine.")), FakeClock())
+    assert a.handle("how is my pc") == "All fine."
+    assert timing_entries(tmp_path) == [{"event": "timing", "ms": 375, "llm_ms": 125, "llm_calls": 1,
+                                         "tools_ms": 0, "tool_calls": 0, "slowest_tool": None,
+                                         "slowest_tool_ms": 0, "model": "qwen-test"}]
+
+
+def test_the_timing_entry_has_no_model_when_the_llm_does_not_say(tmp_path):
+    a = agent(tmp_path, ScriptedLLM(answer("All fine.")), FakeClock())
+    assert a.handle("how is my pc") == "All fine."
+    entries = timing_entries(tmp_path)
+    assert len(entries) == 1 and entries[0]["model"] is None
+
+
+def test_a_broken_model_reader_gives_none_and_the_request_still_answers(tmp_path):
+    class BrokenModelLLM(ScriptedLLM):
+        def _model(self) -> str:
+            raise RuntimeError("no model")
+
+    a = agent(tmp_path, BrokenModelLLM(answer("All fine.")), FakeClock())
+    assert a.handle("how is my pc") == "All fine."
+    entries = timing_entries(tmp_path)
+    assert len(entries) == 1 and entries[0]["model"] is None

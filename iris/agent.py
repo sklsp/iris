@@ -220,6 +220,12 @@ class Agent:
     def handle(self, request: str) -> str:
         """Run a request through model and tools until it is answered, refused or cancelled; returns what Iris says."""
         start = self.clock()
+        # the id of the model this request used, so timing entries can be compared after switching models;
+        # None when the LLM has no _model(), and a failure in the read gives None too
+        try:
+            model = self.llm._model() if hasattr(self.llm, "_model") else None
+        except Exception:  # a broken _model must never break the request or its timing entry
+            model = None
         try:
             return self._handle(request)
         finally:
@@ -227,7 +233,8 @@ class Agent:
             total_ms = round((self.clock() - start) * 1000)
             self.journal.log(event="timing", ms=total_ms, llm_ms=round(self._llm_ms * 1000), llm_calls=self._llm_calls,
                              tools_ms=round(self._tools_ms * 1000), tool_calls=self._tool_calls,
-                             slowest_tool=self._slowest_tool, slowest_tool_ms=round(self._slowest_tool_ms * 1000))
+                             slowest_tool=self._slowest_tool, slowest_tool_ms=round(self._slowest_tool_ms * 1000),
+                             model=model)
 
     def _handle(self, request: str) -> str:
         """The loop itself; handle wraps it with the per-request timing entry."""

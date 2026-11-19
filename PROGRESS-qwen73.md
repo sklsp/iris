@@ -1,0 +1,4 @@
+- [x] Q1. typing: dashboard (2424 passed in 104.71s (0:01:44))
+- [ ] Q2. typing: app, agent, tools, overlay, prompt_queue
+- [ ] Q3. typing: the rest
+- [ ] Q4. typing: strict by default

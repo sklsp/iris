@@ -1346,3 +1346,15 @@ def test_comfy_queue_tells_a_refused_workflow_from_a_stopped_comfyui(tmp_path, m
 
     monkeypatch.setattr(urllib.request, "urlopen", refused)
     assert tools.comfy_queue("anime") == "error: ComfyUI refused anime (HTTP 400); open it in ComfyUI to see why"
+
+
+def test_journal_today_for_a_past_day_ignores_later_days(tmp_path, monkeypatch):
+    lines = [
+        {"event": "timing", "ms": 2000, "llm_ms": 1000, "tools_ms": 1000, "t": "2026-10-17T09:00:00"},
+        {"event": "timing", "ms": 8000, "llm_ms": 8000, "tools_ms": 0, "t": "2026-10-18T09:00:00"},  # a later day
+    ]
+    p = tmp_path / "journal.jsonl"
+    p.write_text("\n".join(json.dumps(e) for e in lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(p))
+    assert tools.journal_today("2026-10-17").endswith(
+        "Median answer time today: 2.0 s over 1 requests, 50% of it in the model.")

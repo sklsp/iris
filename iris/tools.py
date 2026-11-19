@@ -347,7 +347,9 @@ def journal_today(today: str = "") -> str:
         text += f" {model_errors} model errors."
     try:
         # 10**9 means all of today's entries; read_timings only knows how many most recent to take
-        summary = summarize(read_timings(path, last=10**9, event="timing", since=day))
+        entries = read_timings(path, last=10**9, event="timing", since=day)
+        # since= keeps that day AND later ones; a past `today` (tests, the eval) must count that day only
+        summary = summarize([e for e in entries if str(e.get("t", "")).startswith(day)])
         if summary["count"]:
             text += (f" Median answer time today: {summary['ms_median'] / 1000:.1f} s over "
                      f"{summary['count']} requests, {round(summary['llm_share'] * 100)}% of it in the model.")

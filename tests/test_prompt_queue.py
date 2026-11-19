@@ -30,6 +30,15 @@ def test_broken_json_raises_value_error(tmp_path):
         load(p)
 
 
+def test_load_of_valid_json_that_is_not_an_object_raises_and_leaves_the_file(tmp_path):
+    p = tmp_path / "q.json"
+    p.write_text("[1, 2]", encoding="utf-8")
+    with pytest.raises(ValueError) as exc_info:
+        load(p)
+    assert str(exc_info.value) == f"the queue file is broken: {p}"
+    assert p.read_text(encoding="utf-8") == "[1, 2]"
+
+
 def test_load_rejects_a_file_whose_shape_is_wrong(tmp_path):
     p = tmp_path / "q.json"
     p.write_text('{"prompts": [], "next_id": "one"}', encoding="utf-8")

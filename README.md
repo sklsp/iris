@@ -8,7 +8,7 @@ skills it is missing.**
 
 Windows 10/11 . an installer or Python 3.11+ . runs on a local model in LM Studio . no cloud, no cost per command
 
-How Iris works inside: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+[Install](#install) . [How Iris works inside](docs/ARCHITECTURE.md) . [More docs](docs/)
 
 ```
 You:  Hey Jarvis, maak een presentatie van vijf slides over de geschiedenis van Rotterdam.

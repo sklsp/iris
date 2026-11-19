@@ -1,2 +1,0 @@
-- [x] Q1. speed: lazy urllib imports on the cold path (2425 passed in 103.66s (0:01:43))
-- [x] Q2. docs: no stale numbers in the test plan (2425 passed in 102.78s (0:01:42))

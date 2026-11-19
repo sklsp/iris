@@ -16,6 +16,7 @@
 - The dashboard's Speed panel lists the models side by side (request count, median turn time and share of all the time) when more than one model handled the recent requests.
 - The README split: Voice, Plugins in detail and Environment variables moved to docs/voice.md, docs/plugins.md and docs/environment.md; the README keeps a short summary of each section.
 - You can ask Iris what it did today (`journal_today`); its answer now also includes the median answer time of the day from the journal's timing lines.
+- mypy now runs in strict mode for every module except policy, registry, eval and skills.
 
 ## 1.0.0 (release date): steady, safer and measured
 

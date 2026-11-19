@@ -7,6 +7,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 from iris import config
 from iris.registry import PLUGINS
@@ -21,7 +22,7 @@ def bundled() -> bool:
     return (Path(sys.prefix) / "Iris.exe").exists()
 
 
-def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
+def checks(payload: dict[str, Any] | None = None) -> list[tuple[bool, str]]:
     """(ok, line) per check; payload is the LM Studio model list (tests pass one in)."""
     from iris.dashboard import lmstudio_payload
     from iris.llm import effective_model

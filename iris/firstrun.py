@@ -50,7 +50,7 @@ def probe(url: str, timeout: float = 1.5) -> list[str] | None:
         return None
 
 
-def servers(probe_fn: Callable[[str], list[str] | None] = probe) -> list[dict]:
+def servers(probe_fn: Callable[[str], list[str] | None] = probe) -> list[dict[str, Any]]:
     """The configured server first, then the usual local ones, each probed (in parallel, about a second)."""
     current = config.setting("IRIS_LLM_URL", "llm_url", DEFAULT_URL)
     rows = [("Configured", current)] + [(n, u) for n, u in SERVERS if u.rstrip("/") != current.rstrip("/")]
@@ -60,7 +60,7 @@ def servers(probe_fn: Callable[[str], list[str] | None] = probe) -> list[dict]:
             for (n, u), m in zip(rows, found, strict=True)]
 
 
-def use_server(body: dict, probe_fn: Callable[[str], list[str] | None] = probe) -> dict:
+def use_server(body: dict[str, Any], probe_fn: Callable[[str], list[str] | None] = probe) -> dict[str, Any]:
     """Save the server (llm_url) and the model (settings.json); an empty model takes the first one the server lists."""
     from iris import settings
     from iris.llm import read_settings, settings_path
@@ -85,7 +85,7 @@ def use_server(body: dict, probe_fn: Callable[[str], list[str] | None] = probe) 
     return {"ok": True, "url": url, "model": model}
 
 
-def mic_test(record: Callable[[float], Any] | None = None) -> dict:
+def mic_test(record: Callable[[float], Any] | None = None) -> dict[str, Any]:
     """Record MIC_SECONDS from the default microphone and say how loud it was. Nothing is kept or sent."""
     try:
         import numpy as np
@@ -115,7 +115,7 @@ def mic_test(record: Callable[[float], Any] | None = None) -> dict:
                                                     "Sound settings (the default input device and its level)."}
 
 
-def speaker_test(say: Callable[[str], object] | None = None) -> dict:
+def speaker_test(say: Callable[[str], object] | None = None) -> dict[str, Any]:
     """Say one sentence with the Windows voice, which is always there; the chosen engine speaks when Iris listens."""
     try:
         if say is None:
@@ -128,7 +128,7 @@ def speaker_test(say: Callable[[str], object] | None = None) -> dict:
     return {"ok": True, "message": "Played. If you heard nothing, check the default output device in Windows."}
 
 
-def checks() -> list[dict]:
+def checks() -> list[dict[str, Any]]:
     """iris doctor's checks, marked ok, optional or to fix."""
     from iris import doctor
     from iris.dashboard import lmstudio_payload
@@ -137,7 +137,7 @@ def checks() -> list[dict]:
             for ok, line in doctor.checks(lmstudio_payload())]
 
 
-def payload() -> dict:
+def payload() -> dict[str, Any]:
     """Everything the Setup tab shows in one go: servers to pick from, doctor's checks and the update-check choice."""
     from iris import update
 
@@ -145,7 +145,7 @@ def payload() -> dict:
             "update_check": update.enabled()}
 
 
-def finish(body: dict) -> dict:
+def finish(body: dict[str, Any]) -> dict[str, Any]:
     """Store the update-check choice, mark setup done, and in the app start listening."""
     from iris import settings
     from iris.dashboard import APP_HOOKS

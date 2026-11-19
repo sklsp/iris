@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from iris import config
@@ -55,7 +55,7 @@ def _ws_url() -> str:
             continue
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=1) as r:
-                return json.load(r)["webSocketDebuggerUrl"]
+                return cast("str", json.load(r)["webSocketDebuggerUrl"])
         except urllib.error.HTTPError as exc:
             if exc.code == 403:
                 raise BrowserError("the browser is waiting for you to click Allow on its remote debugging "
@@ -89,7 +89,8 @@ class Connection:
         self._slow = (TimeoutError, websocket.WebSocketTimeoutException)
         self._lock = threading.Lock()  # the watcher's check and a request can send at the same moment
 
-    def send(self, method: str, params: dict | None = None, session: str | None = None, wait: float = 15) -> dict:
+    def send(self, method: str, params: dict[str, Any] | None = None, session: str | None = None,
+             wait: float = 15) -> dict[str, Any]:
         """Send one DevTools command and wait for the reply with its id, skipping events in between."""
         with self._lock:
             self._id += 1
@@ -108,12 +109,12 @@ class Connection:
                 if reply.get("id") == self._id:  # events and other replies are skipped
                     if "error" in reply:
                         raise BrowserError(f"{method} failed: {reply['error'].get('message', reply['error'])}")
-                    return reply.get("result", {})
+                    return cast("dict[str, Any]", reply.get("result", {}))
 
 
 _conn: Connection | None = None
 _sessions: dict[str, str] = {}  # targetId -> sessionId, so a tab is attached once
-_last: dict[int, dict] = {}  # number -> item of the last list Iris read, for tiers and confirm questions
+_last: dict[int, dict[str, str]] = {}  # number -> item of the last list Iris read, for tiers and confirm questions
 _last_tab: list[str] = []  # the DevTools session of the tab that list came from; empty when it came from text
 _watching = threading.Event()  # voice mode: watch() connects, so a request never waits on the browser's question
 WATCH_WAIT = 5.0  # seconds a request waits for watch() to have the connection
@@ -183,7 +184,8 @@ def watch(announce: Callable[[str], object] | None = None, every: float = 5, ask
     return thread
 
 
-def _call(method: str, params: dict | None = None, session: str | None = None, wait: float = 15) -> dict:
+def _call(method: str, params: dict[str, Any] | None = None, session: str | None = None,
+          wait: float = 15) -> dict[str, Any]:
     """A command, with one reconnect when the browser was restarted since the last one."""
     global _conn
     try:
@@ -283,7 +285,7 @@ return JSON.stringify({title: document.title, url: location.href, items, more, t
 })()""".replace("MAX_ITEMS", str(MAX_ITEMS)).replace("MAX_TEXT", str(MAX_TEXT))
 
 
-def _format(snap: dict) -> str:
+def _format(snap: dict[str, Any]) -> str:
     lines = [f"Tab: {snap.get('title', '')} ({snap.get('url', '')})"]
     for i, it in enumerate(snap.get("items", []), 1):
         line = f'[{i}] {it["role"]} "{it["name"]}"'
@@ -314,7 +316,7 @@ def remember(text: str) -> None:
                                 "type": "password" if "password" in m[3].lower() else ""}
 
 
-def item(index: int) -> dict:
+def item(index: int) -> dict[str, str]:
     """What number `index` was in the last list, or {} when Iris has not read it."""
     try:
         return _last.get(int(index), {})
@@ -509,7 +511,7 @@ _RESULTS = r"""(() => {
 })()"""
 
 
-def search(query: str, max_results: int = 5, wait: float = 8) -> list[dict]:
+def search(query: str, max_results: int = 5, wait: float = 8) -> list[dict[str, str]]:
     """Search the web in a background tab of the user's own browser and return [{title, url, snippet}]. The tab is
     closed afterwards. A search engine that asks for a human check raises BrowserError: Iris never solves those."""
     from urllib.parse import quote_plus
@@ -519,7 +521,7 @@ def search(query: str, max_results: int = 5, wait: float = 8) -> list[dict]:
     try:
         session = _call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
         deadline = time.perf_counter() + wait
-        found: dict = {"human": False, "results": []}
+        found: dict[str, Any] = {"human": False, "results": []}
         while time.perf_counter() < deadline:  # the results are often drawn after the page itself has loaded
             time.sleep(0.25)
             try:

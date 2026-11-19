@@ -10,6 +10,7 @@ import re
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from iris import config
 
@@ -23,10 +24,10 @@ def settings_path() -> Path:
 
 
 # ((path, file id, mtime_ns, size), parsed) until the file changes
-_cache: tuple[tuple[str, int, int, int], dict] | None = None
+_cache: tuple[tuple[str, int, int, int], dict[str, Any]] | None = None
 
 
-def read_settings() -> dict:
+def read_settings() -> dict[str, Any]:
     """The contents of settings.json; re-read when the file changes (its path, file id, mtime or size).
 
     A missing file, a broken one and a non-object top level all mean "no user choice"; the result is a deep copy,
@@ -74,14 +75,14 @@ def effective_model() -> str:
 class ToolCall:
     id: str
     name: str
-    args: dict
+    args: dict[str, Any]
 
 
 @dataclass
 class Reply:
     text: str = ""
     calls: list[ToolCall] = field(default_factory=list)
-    raw: dict = field(default_factory=dict)  # the assistant message, to append to the history as-is
+    raw: dict[str, Any] = field(default_factory=dict)  # the assistant message, to append to the history as-is
 
 
 class LMStudio:
@@ -93,7 +94,7 @@ class LMStudio:
     def _model(self) -> str:
         return self.model if self.model is not None else effective_model()
 
-    def chat(self, messages: list[dict], tools: list[dict]) -> Reply:
+    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> Reply:
         """One round trip with the model; its text and any tool calls come back as a Reply."""
         # Qwen reasons before it acts: 1500 to 2500 tokens on an open request, so 4096 cut some replies off.
         body = {"model": self._model(), "messages": messages, "tools": tools, "temperature": 0.3, "max_tokens": 8192}

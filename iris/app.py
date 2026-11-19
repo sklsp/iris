@@ -45,7 +45,7 @@ def log_dir() -> Path:
 # --- Windows: named mutexes, the window of a running app, Job Objects ---------------------------------------------
 
 def _kernel32() -> Any:
-    k = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
     k.CreateMutexW.restype = k.OpenMutexW.restype = k.CreateJobObjectW.restype = wintypes.HANDLE
     k.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
     k.OpenMutexW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
@@ -69,7 +69,7 @@ def take_mutex(name: str) -> int | None:
     if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
         k.CloseHandle(handle)
         return None
-    return handle
+    return int(handle)
 
 
 def mutex_exists(name: str) -> bool:
@@ -100,10 +100,9 @@ def show_running(title: str = TITLE) -> bool:
     """Bring the window of the app that is already running forward (also when it is hidden in the tray).
 
     Matches the title and a WinForms window class, so a console titled Iris (`iris shortcut`) is never picked."""
-    user32 = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
     found: list[int] = []
 
-    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     def each(hwnd: int, _lparam: int) -> bool:
         text, cls = ctypes.create_unicode_buffer(256), ctypes.create_unicode_buffer(256)
         user32.GetWindowTextW(hwnd, text, 256)
@@ -113,7 +112,8 @@ def show_running(title: str = TITLE) -> bool:
             return False
         return True
 
-    user32.EnumWindows(each, 0)
+    callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(each)
+    user32.EnumWindows(callback, 0)
     for hwnd in found:
         user32.ShowWindow(hwnd, 9)  # SW_RESTORE: shows a hidden or minimized window
         user32.SetForegroundWindow(hwnd)  # allowed: the user just started this process
@@ -149,7 +149,7 @@ class Job:
         limits.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         self._k.SetInformationJobObject(self.handle, 9, ctypes.byref(limits), ctypes.sizeof(limits))  # Extended
 
-    def add(self, proc: subprocess.Popen) -> None:
+    def add(self, proc: subprocess.Popen[bytes]) -> None:
         """Put a process in the job so it dies with it; safe because the child starts no processes of its own yet."""
         # ponytail: the child runs a moment before it joins; it starts no process of its own that early
         self._k.AssignProcessToJobObject(self.handle, int(proc._handle))  # type: ignore[attr-defined]
@@ -186,14 +186,14 @@ class VoiceLoop:
     """`python -m iris --voice --supervised` as one child. Setting its stop event asks for a clean stop (the session
     closes the mic, overlay and speech worker); after STOP_SECONDS the job ends whatever is left."""
 
-    def __init__(self, on_exit: Callable[[int, str], None] | None = None, popen: Callable = subprocess.Popen,
+    def __init__(self, on_exit: Callable[[int, str], None] | None = None, popen: Callable[..., Any] = subprocess.Popen,
                  job: Callable[[], Any] = Job, event: Callable[[], Any] = StopEvent,
                  voice_mutex: str = VOICE_MUTEX, cmd: list[str] | None = None) -> None:
         self.on_exit = on_exit  # (exit code, last log lines) when it stops without being asked to
         self._popen, self._job_factory, self._event_factory = popen, job, event
         self.voice_mutex = voice_mutex
         self.cmd = cmd or [sys.executable, "-m", "iris", "--voice", "--supervised"]
-        self.proc: subprocess.Popen | None = None
+        self.proc: subprocess.Popen[bytes] | None = None
         self._event: Any = None
         self._watcher: threading.Thread | None = None
         self._stopping = False
@@ -246,7 +246,7 @@ class VoiceLoop:
             proc.kill()  # the watcher then ends the rest of the job
             watcher.join(seconds)
 
-    def _watch(self, proc: subprocess.Popen, job: Any, event: Any) -> None:
+    def _watch(self, proc: subprocess.Popen[bytes], job: Any, event: Any) -> None:
         code = proc.wait()
         job.kill()  # whatever the voice loop left behind (a speech worker, the overlay)
         job.close()
@@ -265,14 +265,14 @@ class VoiceLoop:
 
 def winforms() -> SimpleNamespace:  # pragma: no cover - needs .NET through pythonnet; tests pass a fake
     """The WinForms classes the tray needs. pywebview loads pythonnet and WinForms on Windows anyway."""
-    import clr  # type: ignore[import-not-found]
+    import clr
 
     clr.AddReference("System.Windows.Forms")
     clr.AddReference("System.Drawing")
-    from System import Action  # type: ignore[import-not-found]
-    from System.Drawing import Icon  # type: ignore[import-not-found]
-    from System.Threading import ApartmentState, Thread, ThreadStart  # type: ignore[import-not-found]
-    from System.Windows.Forms import (  # type: ignore[import-not-found]
+    from System import Action
+    from System.Drawing import Icon
+    from System.Threading import ApartmentState, Thread, ThreadStart
+    from System.Windows.Forms import (
         Application,
         ContextMenuStrip,
         NotifyIcon,
@@ -472,7 +472,7 @@ class App:
 
 def _set_app_id() -> None:
     """Group the window under Iris on the taskbar instead of under python."""
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)  # type: ignore[attr-defined]
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
 
 
 def log_when_windowless() -> Path | None:
@@ -495,7 +495,7 @@ def main(argv: list[str]) -> int:
     log_when_windowless()
     background = "--background" in argv
     try:
-        import webview  # type: ignore[import-not-found]
+        import webview
     except ImportError:
         print('The desktop app needs pywebview: pip install -e ".[app]"', file=sys.stderr)
         return 1

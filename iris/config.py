@@ -19,8 +19,9 @@ import os
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-DEFAULTS: dict = {"name": "the user", "plugins": [], "builder": [], "folders": []}
+DEFAULTS: dict[str, Any] = {"name": "the user", "plugins": [], "builder": [], "folders": []}
 
 
 def config_path() -> Path:
@@ -29,10 +30,10 @@ def config_path() -> Path:
 
 
 # ((path, file id, mtime_ns, size), parsed) until the file changes
-_cache: tuple[tuple[str, int, int, int], dict] | None = None
+_cache: tuple[tuple[str, int, int, int], dict[str, Any]] | None = None
 
 
-def raw() -> dict:
+def raw() -> dict[str, Any]:
     """The file as parsed; {} when it is missing or broken (error() says why). A UTF-8 BOM, which Notepad and
     PowerShell write, is fine. The result is a deep copy, so callers may change it. Parsed once per
     (path, file id, mtime_ns, size); a changed, removed or new file is read again, also a new file of the same
@@ -141,7 +142,7 @@ def log_crash(where: str, exc: BaseException) -> Path:
     return path
 
 
-def load() -> dict:
+def load() -> dict[str, Any]:
     """DEFAULTS overlaid with the file's keys; a key with the wrong type keeps its default."""
     out = dict(DEFAULTS)
     data = raw()

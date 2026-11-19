@@ -17,6 +17,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 MAX_DAYS_AHEAD = 366  # a reminder is at most a year away
 MAX_TEXT = 200  # the same cap as a timer message: it will be spoken out loud
@@ -77,7 +78,7 @@ _announce: Callable[[str], object] | None = None
 _schedule: Callable[[float, Callable[[], None]], object] = _start_thread
 
 
-def _read(path: Path | None = None) -> list[dict]:
+def _read(path: Path | None = None) -> list[dict[str, Any]]:
     """The pending reminders; a missing or unreadable file is an empty list, never fatal."""
     p = path or _path()
     if not p.exists():
@@ -86,7 +87,7 @@ def _read(path: Path | None = None) -> list[dict]:
         rows = json.loads(p.read_text(encoding="utf-8-sig"))
     except (ValueError, OSError):  # broken JSON or not UTF-8; _write keeps such a file aside before replacing it
         return []
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for row in rows if isinstance(rows, list) else []:
         if not (isinstance(row, dict) and isinstance(row.get("id"), int)
                 and isinstance(row.get("due"), str) and isinstance(row.get("text"), str)):
@@ -114,7 +115,7 @@ def _keep_unreadable(p: Path) -> None:
     os.replace(p, p.with_name(f"{p.name}.unreadable-{datetime.now():%Y%m%d-%H%M%S}"))
 
 
-def _write(path: Path | None, rows: list[dict]) -> None:
+def _write(path: Path | None, rows: list[dict[str, Any]]) -> None:
     p = path or _path()
     p.parent.mkdir(parents=True, exist_ok=True)  # a fresh PC has no ~/.iris yet
     _keep_unreadable(p)
@@ -229,7 +230,7 @@ def start_reminders(announce: Callable[[str], object], now: Callable[[], datetim
         _announce = announce
         _schedule = schedule or _start_thread
         rows = _read()
-        kept: list[dict] = []
+        kept: list[dict[str, Any]] = []
         for row in rows:
             due = datetime.fromisoformat(row["due"])  # _read only keeps rows whose time parses
             t = clock()

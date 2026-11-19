@@ -206,7 +206,7 @@ class Agent:
         self._granted: set[str] = set()
         self.today = today  # a fixed date for the eval, whose fixtures are written for one day; None is the real date
         self.tools = tools() if callable(tools) else tools
-        self.messages: list[dict] = [{"role": "system", "content": system_prompt(today=self.today)}]
+        self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt(today=self.today)}]
         self.cancel = threading.Event()  # set from another thread (the overlay's cancel button) to stop this request
         self._sizes: dict[int, tuple[str, int]] = {}  # id(message) -> (its content, its JSON size), for _trim
         # where one request spent its time; _handle resets them, handle writes the timing entry from them
@@ -255,7 +255,7 @@ class Agent:
         self._trim()
         self.journal.log(event="request", text=request)
         schemas = [t.schema() for t in self.tools.values()]
-        pages: list[tuple[dict, str]] = []  # browser results of this request, so older ones can be shortened
+        pages: list[tuple[dict[str, Any], str]] = []  # browser results of this request, so older ones can be shortened
         retried = False  # a refused request drops the older turns once and tries again before giving up
         for _ in range(MAX_STEPS):
             if self.cancel.is_set():
@@ -327,7 +327,7 @@ class Agent:
         self._trim()
         return ""
 
-    def _out_of_steps(self, schemas: list[dict]) -> str:
+    def _out_of_steps(self, schemas: list[dict[str, Any]]) -> str:
         """One last call that asks for an answer without tools, so the user hears what was found instead of nothing.
         The same tool list goes along: the server keeps the whole conversation so far cached (its start holds the
         tools), and this call comes after the most steps, when that cache is largest. When the model answers with a
@@ -354,7 +354,7 @@ class Agent:
         self.journal.log(event="answer", text=reply.text)
         return reply.text
 
-    def _size(self, m: dict) -> int:
+    def _size(self, m: dict[str, Any]) -> int:
         """A message's JSON size, measured once per content (older browser pages are shortened in place)."""
         content = m.get("content") or ""
         known = self._sizes.get(id(m))
@@ -460,7 +460,7 @@ _CREDENTIALS = re.compile(r"(password|wachtwoord|passw[oö]rt|kennw[oö]rt|contr
                           r"inlog|aanmeld|anmeld|iniciar sesi)", re.I)
 
 
-def _important_tier(name: str, args: dict, tier: str) -> tuple[str, bool]:
+def _important_tier(name: str, args: dict[str, Any], tier: str) -> tuple[str, bool]:
     """(tier, sensitive) under confirm = "important"."""
     if tier == NEVER:
         credential = (name == "type_text" and _CREDENTIALS.search(str(args.get("into", "")))) or \
@@ -473,7 +473,7 @@ def _important_tier(name: str, args: dict, tier: str) -> tuple[str, bool]:
     return tier, False
 
 
-def _browser_credential(args: dict) -> bool:
+def _browser_credential(args: dict[str, Any]) -> bool:
     """A password field, or one labelled as a password or login field: never typed into, in any mode."""
     from iris import browser
 
@@ -499,7 +499,7 @@ _GRANTED_TOOLS = ("click", "type_text", "press_keys", "click_on_screen", "browse
 _ALWAYS_ASK_KEYS = re.compile(r"\{(DEL|DELETE)\}|%\{F4\}", re.I)
 
 
-def _grant_key(name: str, args: dict) -> str | None:
+def _grant_key(name: str, args: dict[str, Any]) -> str | None:
     """The window a yes to this call may cover, or None when the call must always ask."""
     if name not in _GRANTED_TOOLS:
         return None
@@ -512,7 +512,7 @@ def _grant_key(name: str, args: dict) -> str | None:
     return str(args.get("window") or "").strip().lower() or "the screen"
 
 
-def _grant_note(args: dict, lang: str) -> str:
+def _grant_note(args: dict[str, Any], lang: str) -> str:
     w = args.get("window")
     if "index" in args:  # a browser call: the yes covers the site
         from iris import browser
@@ -528,7 +528,7 @@ def _grant_note(args: dict, lang: str) -> str:
     return notes.get(lang, notes["en"])
 
 
-def _describe(name: str, args: dict, lang: str = "en") -> str:
+def _describe(name: str, args: dict[str, Any], lang: str = "en") -> str:
     """The question Iris asks out loud before a confirm tool runs, in the language of the request (en, nl, de, fr or
     es). A tool with only an English question is asked in English."""
     def say(en: str, nl: str = "", de: str = "", fr: str = "", es: str = "") -> str:

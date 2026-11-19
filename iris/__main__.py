@@ -66,7 +66,7 @@ def desktop_dir() -> Path:
     import ctypes
 
     buf = ctypes.create_unicode_buffer(260)
-    ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, buf)  # type: ignore[attr-defined]  # DESKTOPDIRECTORY
+    ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, buf)  # DESKTOPDIRECTORY
     return Path(buf.value or Path.home() / "Desktop")
 
 

@@ -17,8 +17,6 @@ import os
 import re
 import threading
 import time
-import urllib.error
-import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -45,6 +43,9 @@ def _profiles() -> list[Path]:
 
 def _ws_url() -> str:
     """The browser's DevTools websocket, from the DevToolsActivePort file it writes when remote debugging is on."""
+    import urllib.error
+    import urllib.request
+
     for base in _profiles():
         try:
             lines = (base / "DevToolsActivePort").read_text(encoding="utf-8", errors="replace").splitlines()

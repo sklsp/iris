@@ -55,7 +55,6 @@ import threading
 import time
 import urllib.error
 import urllib.parse
-import urllib.request
 from collections import deque
 from collections.abc import Callable
 from datetime import datetime
@@ -157,6 +156,8 @@ def runs_payload() -> dict[str, Any]:
 
 
 def _fetch_json(url: str) -> Any:
+    import urllib.request
+
     with urllib.request.urlopen(url, timeout=5) as resp:
         return json.loads(resp.read().decode("utf-8"))
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import http.client
 import inspect
 import json
 import os
@@ -118,7 +117,11 @@ class Journal:
 
 # what a model call can raise: the server is down or answers badly (OSError, HTTPException such as IncompleteRead),
 # or its JSON lacks what a reply needs (KeyError, IndexError, TypeError, ValueError)
-_LLM_ERRORS = (OSError, http.client.HTTPException, KeyError, IndexError, TypeError, ValueError)
+def _llm_errors() -> tuple[type[BaseException], ...]:
+    """Those error types; built on each use so importing iris never loads http.client."""
+    import http.client
+
+    return (OSError, http.client.HTTPException, KeyError, IndexError, TypeError, ValueError)
 
 
 def _llm_error(exc: BaseException) -> str:
@@ -264,7 +267,7 @@ class Agent:
             self._llm_calls += 1
             try:
                 reply = self.llm.chat(self.messages, schemas)
-            except _LLM_ERRORS as exc:
+            except _llm_errors() as exc:
                 self._llm_ms += self.clock() - t0  # a failed call still cost model time
                 # LM Studio is down or full: end this turn only and keep the voice loop alive
                 self.journal.log(event="llm_error", error=_llm_error(exc))
@@ -335,14 +338,14 @@ class Agent:
         self.messages.append({"role": "user", "content": OUT_OF_STEPS})
         try:
             reply = self.llm.chat(self.messages, schemas)
-        except _LLM_ERRORS as exc:
+        except _llm_errors() as exc:
             self.journal.log(event="llm_error", error=_llm_error(exc))
             reply = None
         if reply is not None and reply.calls and not reply.text.strip():
             # it answered "do not call tools" with a tool call, which can not be used; ask once more without any tools
             try:
                 retry = self.llm.chat(self.messages, [])
-            except _LLM_ERRORS as exc:
+            except _llm_errors() as exc:
                 self.journal.log(event="llm_error", error=_llm_error(exc))
                 retry = None
             if retry is not None:

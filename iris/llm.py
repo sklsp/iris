@@ -7,7 +7,6 @@ import copy
 import json
 import os
 import re
-import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -96,6 +95,8 @@ class LMStudio:
 
     def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> Reply:
         """One round trip with the model; its text and any tool calls come back as a Reply."""
+        import urllib.request
+
         # Qwen reasons before it acts: 1500 to 2500 tokens on an open request, so 4096 cut some replies off.
         body = {"model": self._model(), "messages": messages, "tools": tools, "temperature": 0.3, "max_tokens": 8192}
         req = urllib.request.Request(self.url, json.dumps(body).encode(), {"Content-Type": "application/json"})
@@ -142,6 +143,8 @@ def locate(png: bytes, target: str, base_url: str = BASE_URL, timeout: float = 3
 
 
 def _vision(png: bytes, text: str, base_url: str, timeout: float) -> str:
+    import urllib.request
+
     image = "data:image/png;base64," + base64.b64encode(png).decode()
     body = {"model": effective_model(), "temperature": 0.2, "max_tokens": 8192,
             "messages": [{"role": "user", "content": [{"type": "text", "text": text},

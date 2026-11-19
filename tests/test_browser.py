@@ -197,9 +197,9 @@ def test_the_connection_comes_from_devtoolsactiveport(tmp_path, monkeypatch):
             raise urllib.error.HTTPError(url, code, "x", None, None)
         return urlopen
 
-    monkeypatch.setattr(browser.urllib.request, "urlopen", http(404))
+    monkeypatch.setattr("urllib.request.urlopen", http(404))
     assert browser._ws_url() == "ws://127.0.0.1:9555/devtools/browser/abc"
-    monkeypatch.setattr(browser.urllib.request, "urlopen", http(403))
+    monkeypatch.setattr("urllib.request.urlopen", http(403))
     with pytest.raises(browser.BrowserError, match="click Allow"):
         browser._ws_url()
 

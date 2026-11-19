@@ -12,6 +12,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 MAX_SECONDS = 24 * 60 * 60  # a timer runs at most one day
 
@@ -55,7 +56,7 @@ class Timers:
         self._next_id = 1
         self._lock = threading.Lock()
 
-    def add(self, seconds: float, label: str = "", message: str = "") -> dict:
+    def add(self, seconds: float, label: str = "", message: str = "") -> dict[str, Any]:
         """Start a timer for `seconds` (0 < seconds <= 24 hours); returns its id, label and seconds.
 
         With a non-empty `message`, Iris says that sentence out loud when the timer fires instead of
@@ -93,7 +94,7 @@ class Timers:
             _cancel_handle(entry.handle)
         return len(entries)
 
-    def list(self) -> list[dict]:
+    def list(self) -> list[dict[str, Any]]:
         """The running timers as id, label and left_seconds (rounded up, never negative), soonest first."""
         with self._lock:
             now = self._now()

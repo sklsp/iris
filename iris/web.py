@@ -113,7 +113,7 @@ def _charset_from_header(content_type_header: str) -> str | None:
 
 
 # --- search --------------------------------------------------------------------
-def search(query: str, max_results: int = 5, get: Callable[[str], tuple[str, str, str]] = http_get) -> list[dict]:
+def search(query: str, max_results: int = 5, get: Callable[[str], tuple[str, str, str]] = http_get) -> list[dict[str, str]]:
     """Search DuckDuckGo (html endpoint) and return up to max_results dicts with title, url and snippet."""
     page_url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote_plus(query)
     _, _, html_text = get(page_url)
@@ -158,8 +158,8 @@ class _ResultParser(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__()
-        self.results: list[dict] = []
-        self._open_result: dict | None = None  # last title link seen, waiting for its snippet; HTMLParser owns _pending
+        self.results: list[dict[str, str]] = []
+        self._open_result: dict[str, str] | None = None  # last title link seen, waiting for its snippet; HTMLParser owns _pending
         self._title_tag: str | None = None
         self._title_href = ""
         self._title_parts: list[str] = []

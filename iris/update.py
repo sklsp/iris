@@ -14,6 +14,7 @@ import time
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 from iris import __version__, config
 
@@ -32,7 +33,7 @@ def enabled() -> bool:
     return config.raw().get("update_check", True) is not False
 
 
-def _state() -> dict:
+def _state() -> dict[str, Any]:
     try:
         data = json.loads(state_path().read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
@@ -40,7 +41,7 @@ def _state() -> dict:
         return {}
 
 
-def _save(data: dict) -> None:
+def _save(data: dict[str, Any]) -> None:
     path = state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -72,7 +73,7 @@ def newer(latest: str, current: str) -> bool:
     return bool(version_tuple(latest)) and version_key(latest) > version_key(current)
 
 
-def status() -> dict:
+def status() -> dict[str, Any]:
     """What the last check found; no network."""
     s = _state()
     latest = s.get("latest") or ""
@@ -81,14 +82,15 @@ def status() -> dict:
             "url": s.get("url") or RELEASES_URL, "checked_at": s.get("checked_at")}
 
 
-def _fetch() -> dict:
+def _fetch() -> dict[str, Any]:
     req = urllib.request.Request(LATEST_URL, headers={"Accept": "application/vnd.github+json",
                                                       "User-Agent": f"Iris/{__version__}"})
     with urllib.request.urlopen(req, timeout=10) as r:
-        return json.load(r)
+        # the releases API answers with an object; a non-object body is handled by check() as before
+        return cast("dict[str, Any]", json.load(r))
 
 
-def check(now: float | None = None, fetch: Callable[[], dict] | None = None) -> dict:
+def check(now: float | None = None, fetch: Callable[[], dict[str, Any]] | None = None) -> dict[str, Any]:
     """Ask GitHub when the last answer is a day old (and checks are on); then the status."""
     if not enabled():
         return status()

@@ -1,0 +1,2 @@
+- [x] Q1. tools: journal_today also says how fast today was (2423 passed in 104.20s (0:01:44))
+- [ ] Q2. docs: the speed is a question you can ask

@@ -56,7 +56,7 @@ def test_the_ws_url_comes_from_the_json_version_answer(tmp_path, monkeypatch):
         asked.append((url, timeout))
         return VersionReply("ws://127.0.0.1:9222/devtools/browser/abc")
 
-    monkeypatch.setattr(browser.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     assert browser._ws_url() == "ws://127.0.0.1:9222/devtools/browser/abc"
     assert asked == [("http://127.0.0.1:9222/json/version", 1)]
 
@@ -68,7 +68,7 @@ def test_a_403_says_the_browser_is_waiting_for_the_allow_click(tmp_path, monkeyp
     def fake_urlopen(url, timeout=1):
         raise _http_error(403)
 
-    monkeypatch.setattr(browser.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     with pytest.raises(browser.BrowserError) as exc:
         browser._ws_url()
     assert str(exc.value) == "the browser is waiting for you to click Allow on its remote debugging question"
@@ -81,7 +81,7 @@ def test_a_404_falls_back_to_the_ws_path_from_the_port_file(tmp_path, monkeypatc
     def fake_urlopen(url, timeout=1):
         raise _http_error(404)
 
-    monkeypatch.setattr(browser.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     assert browser._ws_url() == "ws://127.0.0.1:9222/devtools/browser/abc"
 
 
@@ -92,7 +92,7 @@ def test_a_stale_port_file_whose_request_fails_is_skipped(tmp_path, monkeypatch)
     def fake_urlopen(url, timeout=1):
         raise OSError("connection refused")  # the browser wrote the file and closed since
 
-    monkeypatch.setattr(browser.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     with pytest.raises(browser.BrowserError, match="does not allow remote control yet"):
         browser._ws_url()
 

@@ -206,11 +206,13 @@ def _main() -> None:
     ap.add_argument("--version", action="version", version=f"iris {__version__}")
     ap.add_argument("--voice", action="store_true")
     ap.add_argument("--push-to-talk", action="store_true")
-    from iris.dashboard import journal_path  # IRIS_JOURNAL, the same file the dashboard reads
-
-    ap.add_argument("--journal", default=str(journal_path()))
+    ap.add_argument("--journal", default=None)  # resolved after parsing: importing iris.dashboard loads http.server
     ap.add_argument("--supervised", action="store_true", help=argparse.SUPPRESS)  # started by `iris app`
     a = ap.parse_args()
+    if a.journal is None:  # the default lives in iris.dashboard, imported only when it is needed
+        from iris.dashboard import journal_path
+
+        a.journal = str(journal_path())
     Path(a.journal).parent.mkdir(parents=True, exist_ok=True)
     if a.voice:
         from iris.app import VOICE_MUTEX, quit_when_set, take_mutex

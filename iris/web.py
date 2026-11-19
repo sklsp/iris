@@ -12,11 +12,13 @@ import ipaddress
 import re
 import socket
 import urllib.parse
-import urllib.request
 from collections.abc import Callable
 from html.parser import HTMLParser
-from http.client import HTTPMessage
-from typing import IO
+from typing import IO, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import urllib.request
+    from http.client import HTTPMessage
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -35,7 +37,7 @@ def http_get(url: str, timeout: float = 15, max_bytes: int = 2_000_000) -> tuple
     _refuse_local_host((parsed.hostname or "").lower())
 
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with _OPENER.open(request, timeout=timeout) as response:
+    with _opener().open(request, timeout=timeout) as response:
         data = response.read(max_bytes + 1)
         if len(data) > max_bytes:
             raise ValueError("page too large")
@@ -55,22 +57,38 @@ def http_get(url: str, timeout: float = 15, max_bytes: int = 2_000_000) -> tuple
     return final_url, content_type, text
 
 
-class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
-    """Follow a redirect only to another http(s) address that is not local: a public page that redirects to
-    127.0.0.1 must not reach this PC's own services."""
+def _redirect_handler() -> type[urllib.request.HTTPRedirectHandler]:
+    """The redirect handler class; built on first use so importing iris never loads urllib.request."""
+    import urllib.request
 
-    def redirect_request(
-        self, req: urllib.request.Request, fp: IO[bytes], code: int, msg: str, headers: HTTPMessage, newurl: str,
-    ) -> urllib.request.Request | None:
-        """Only http and https redirects to a non-local address are followed; anything else raises."""
-        target = urllib.parse.urlsplit(newurl)
-        if target.scheme not in ("http", "https"):
-            raise ValueError("only http and https links")
-        _refuse_local_host((target.hostname or "").lower())
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+    class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
+        """Follow a redirect only to another http(s) address that is not local: a public page that redirects to
+        127.0.0.1 must not reach this PC's own services."""
+
+        def redirect_request(
+            self, req: urllib.request.Request, fp: IO[bytes], code: int, msg: str, headers: HTTPMessage, newurl: str,
+        ) -> urllib.request.Request | None:
+            """Only http and https redirects to a non-local address are followed; anything else raises."""
+            target = urllib.parse.urlsplit(newurl)
+            if target.scheme not in ("http", "https"):
+                raise ValueError("only http and https links")
+            _refuse_local_host((target.hostname or "").lower())
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    return _CheckedRedirects
 
 
-_OPENER = urllib.request.build_opener(_CheckedRedirects)
+_OPENER = None  # the shared opener; built by _opener() on first use so importing iris never loads urllib.request
+
+
+def _opener() -> urllib.request.OpenerDirector:
+    """The shared opener for http_get."""
+    global _OPENER
+    if _OPENER is None:
+        import urllib.request
+
+        _OPENER = urllib.request.build_opener(_redirect_handler())
+    return _OPENER
 
 
 def _resolve(host: str) -> list[str]:

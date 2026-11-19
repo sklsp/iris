@@ -52,7 +52,7 @@ def fake_urlopen(monkeypatch):
 
 @pytest.mark.parametrize("target", ["http://127.0.0.1:8765/api/journal", "http://localhost/", "file:///C:/x"])
 def test_a_redirect_to_a_local_address_is_refused(target):
-    handler = web._CheckedRedirects()
+    handler = web._redirect_handler()()  # _redirect_handler returns the lazily built class; this is an instance of it
     req = urllib.request.Request("https://example.com/")
     with pytest.raises(ValueError):
         handler.redirect_request(req, None, 302, "Found", {}, target)
@@ -60,7 +60,7 @@ def test_a_redirect_to_a_local_address_is_refused(target):
 
 def test_a_redirect_to_a_public_address_is_followed():
     req = urllib.request.Request("https://example.com/")
-    new = web._CheckedRedirects().redirect_request(req, None, 302, "Found", {}, "https://example.org/page")
+    new = web._redirect_handler()().redirect_request(req, None, 302, "Found", {}, "https://example.org/page")
     assert new is not None and new.full_url == "https://example.org/page"
 
 

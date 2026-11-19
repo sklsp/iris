@@ -89,7 +89,8 @@ class Connection:
         self._slow = (TimeoutError, websocket.WebSocketTimeoutException)
         self._lock = threading.Lock()  # the watcher's check and a request can send at the same moment
 
-    def send(self, method: str, params: dict[str, Any] | None = None, session: str | None = None, wait: float = 15) -> dict[str, Any]:
+    def send(self, method: str, params: dict[str, Any] | None = None, session: str | None = None,
+             wait: float = 15) -> dict[str, Any]:
         """Send one DevTools command and wait for the reply with its id, skipping events in between."""
         with self._lock:
             self._id += 1
@@ -183,7 +184,8 @@ def watch(announce: Callable[[str], object] | None = None, every: float = 5, ask
     return thread
 
 
-def _call(method: str, params: dict[str, Any] | None = None, session: str | None = None, wait: float = 15) -> dict[str, Any]:
+def _call(method: str, params: dict[str, Any] | None = None, session: str | None = None,
+          wait: float = 15) -> dict[str, Any]:
     """A command, with one reconnect when the browser was restarted since the last one."""
     global _conn
     try:

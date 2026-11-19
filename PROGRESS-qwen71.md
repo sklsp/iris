@@ -1,2 +1,0 @@
-- [x] Q1. docs: move Voice, Plugins in detail and Environment variables to docs/ (2420 passed in 109.39s)
-- [x] Q2. docs: the README's first screen (2420 passed in 102.05s)

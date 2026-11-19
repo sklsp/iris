@@ -9,6 +9,7 @@ import pytest
 
 from iris import tools
 from tests.doc_text import doc_text
+from tests.test_agent_timing import FakeClock
 from tests.test_timers import make_timers
 
 
@@ -772,10 +773,12 @@ def test_journal_today_counts_a_returned_error(tmp_path, monkeypatch):
         def chat(self, messages, tools):
             return replies.pop(0)
 
-    Agent(LLM(), lambda q: True, Journal(p), {"boom": boom}).handle("do it")
+    Agent(LLM(), lambda q: True, Journal(p), {"boom": boom}, clock=FakeClock()).handle("do it")
     day = json.loads(p.read_text(encoding="utf-8").splitlines()[0])["t"][:10]
+    # the agent writes one timing entry per request; with the fixed clock its values are literal (Q1)
     assert tools.journal_today(today=day) == (
-        "Today: 1 requests, 1 tool calls (0 ok, 0 refused, 0 declined, 1 errors).")
+        "Today: 1 requests, 1 tool calls (0 ok, 0 refused, 0 declined, 1 errors). "
+        "Median answer time today: 0.9 s over 1 requests, 29% of it in the model.")
 
 
 def test_journal_today_counts_model_errors(tmp_path, monkeypatch):
@@ -803,6 +806,38 @@ def test_journal_today_ignores_model_errors_from_other_days(tmp_path, monkeypatc
     assert tools.journal_today("2026-10-17") == (
         "Today: 1 requests, 0 tool calls (0 ok, 0 refused, 0 declined, 0 errors).")
 
+
+def test_journal_today_adds_the_speed_sentence(tmp_path, monkeypatch):
+    lines = [
+        {"event": "timing", "ms": 1500, "llm_ms": 900, "tools_ms": 600, "t": "2026-10-17T09:00:00"},
+        {"event": "timing", "ms": 2500, "llm_ms": 1500, "tools_ms": 1000, "t": "2026-10-17T10:00:00"},
+        {"event": "timing", "ms": 3500, "llm_ms": 2500, "tools_ms": 1000, "t": "2026-10-17T11:00:00"},
+        {"event": "timing", "ms": 9999, "llm_ms": 9999, "tools_ms": 0, "t": "2026-10-16T09:00:00"},
+    ]
+    p = tmp_path / "journal.jsonl"
+    p.write_text("\n".join(json.dumps(e) for e in lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(p))
+    assert tools.journal_today("2026-10-17") == (
+        "Today: 0 requests, 0 tool calls (0 ok, 0 refused, 0 declined, 0 errors). "
+        "Median answer time today: 2.5 s over 3 requests, 65% of it in the model.")
+
+
+def test_journal_today_without_timing_entries_gives_the_old_text(tmp_path, monkeypatch):
+    _write_journal(tmp_path, monkeypatch)
+    assert tools.journal_today("2026-10-17") == (
+        "Today: 2 requests, 4 tool calls (1 ok, 1 refused, 1 declined, 1 errors).")
+
+
+def test_journal_today_survives_a_broken_timing_entry(tmp_path, monkeypatch):
+    lines = [
+        {"event": "request", "text": "open notepad", "t": "2026-10-17T09:00:00"},
+        {"event": "timing", "llm_ms": 500, "t": "2026-10-17T09:00:01"},  # no ms field
+    ]
+    p = tmp_path / "journal.jsonl"
+    p.write_text("\n".join(json.dumps(e) for e in lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(p))
+    assert tools.journal_today("2026-10-17") == (
+        "Today: 1 requests, 0 tool calls (0 ok, 0 refused, 0 declined, 0 errors).")
 
 
 # --- concept_sites ---------------------------------------------------------------
@@ -1311,3 +1346,15 @@ def test_comfy_queue_tells_a_refused_workflow_from_a_stopped_comfyui(tmp_path, m
 
     monkeypatch.setattr(urllib.request, "urlopen", refused)
     assert tools.comfy_queue("anime") == "error: ComfyUI refused anime (HTTP 400); open it in ComfyUI to see why"
+
+
+def test_journal_today_for_a_past_day_ignores_later_days(tmp_path, monkeypatch):
+    lines = [
+        {"event": "timing", "ms": 2000, "llm_ms": 1000, "tools_ms": 1000, "t": "2026-10-17T09:00:00"},
+        {"event": "timing", "ms": 8000, "llm_ms": 8000, "tools_ms": 0, "t": "2026-10-18T09:00:00"},  # a later day
+    ]
+    p = tmp_path / "journal.jsonl"
+    p.write_text("\n".join(json.dumps(e) for e in lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(p))
+    assert tools.journal_today("2026-10-17").endswith(
+        "Median answer time today: 2.0 s over 1 requests, 50% of it in the model.")

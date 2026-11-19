@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from iris import tools
+from tests.doc_text import doc_text
 from tests.test_timers import make_timers
 
 
@@ -250,14 +251,14 @@ def test_readme_documents_every_tool_with_its_tier():
         assert rows[tool.name] == tool.tier, f"{tool.name} is {rows[tool.name]} in the README, {tool.tier} in code"
 
 
-def test_readme_documents_the_wake_word_and_how_to_run():
-    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
-    assert "hey_jarvis" in readme and "IRIS_WAKEWORD" in readme  # the wake word and how to change it
+def test_docs_document_the_wake_word_and_how_to_run():
+    text = doc_text()  # the wake word text moved to docs/voice.md with the Voice section
+    assert "hey_jarvis" in text and "IRIS_WAKEWORD" in text  # the wake word and how to change it
     for cmd in ("python -m iris", "--voice", "--push-to-talk"):
-        assert cmd in readme
+        assert cmd in text
     for var in ("IRIS_TTS", "IRIS_LLM_URL", "IRIS_WHISPER_DEVICE", "IRIS_TRASH_DIR", "IRIS_AGENTS_TOML",
                 "IRIS_REPOS", "IRIS_TRASH_ROOTS"):
-        assert var in readme
+        assert var in text
 
 
 

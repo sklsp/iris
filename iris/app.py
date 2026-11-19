@@ -490,9 +490,20 @@ def log_when_windowless() -> Path | None:
     return path
 
 
+def share_hidden_console() -> None:  # pragma: no cover - opens a real console; tests patch it out
+    """pythonw has no console, so every console program the app starts (git, nvidia-smi, powershell) opens a window
+    of its own that flashes on screen. One hidden console here is inherited by all of them instead."""
+    k = ctypes.windll.kernel32
+    k.GetConsoleWindow.restype = wintypes.HWND
+    if k.GetConsoleWindow() or not k.AllocConsole():
+        return
+    ctypes.windll.user32.ShowWindow(k.GetConsoleWindow(), 0)  # SW_HIDE
+
+
 def main(argv: list[str]) -> int:
     """Start the app: log to a file when there is no console, and bring an already running Iris forward instead."""
-    log_when_windowless()
+    if log_when_windowless() is not None:
+        share_hidden_console()
     background = "--background" in argv
     try:
         import webview

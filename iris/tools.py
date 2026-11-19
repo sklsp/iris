@@ -81,7 +81,7 @@ psutil.cpu_percent(interval=None)  # prime; the first result is meaningless, lat
 
 # Re-exported from iris.policy so existing imports of these names from iris.tools keep working; tools.py
 # itself only uses some of them, and __all__ marks the rest as deliberate re-exports.
-__all__ = ["NEVER", "_MAIL_CHAT", "_NEVER_WORDS", "_SYSTEM_DIRS", "_trash_roots", "_under"]
+__all__ = ["CONFIRM", "NEVER", "SAFE", "_MAIL_CHAT", "_NEVER_WORDS", "_SYSTEM_DIRS", "_trash_roots", "_under"]
 
 MAX_CONTROLS = 120
 
@@ -90,18 +90,18 @@ MAX_CONTROLS = 120
 class Tool:
     name: str
     description: str
-    params: dict  # JSON schema "properties"
+    params: dict[str, Any]  # JSON schema "properties"
     required: list[str]
     tier: str
     fn: Callable[..., str]
-    tier_for: Callable[[dict], str] | None = None  # argument-dependent escalation
+    tier_for: Callable[[dict[str, Any]], str] | None = None  # argument-dependent escalation
     pure: bool = False  # only computes, touches nothing on the PC; the eval runs it for real
 
-    def tier_of(self, args: dict) -> str:
+    def tier_of(self, args: dict[str, Any]) -> str:
         """The risk tier for these arguments; argument-dependent tools can escalate above their base tier."""
         return self.tier_for(args) if self.tier_for else self.tier
 
-    def schema(self) -> dict:
+    def schema(self) -> dict[str, Any]:
         """The JSON function-calling entry for the model, with the tier in front of the description."""
         return {"type": "function", "function": {
             "name": self.name, "description": f"[{self.tier}] {self.description}",
@@ -109,7 +109,7 @@ class Tool:
 
 
 # --- senses -------------------------------------------------------------------
-def system_data() -> dict:
+def system_data() -> dict[str, Any]:
     """The same numbers as system_status, as data instead of text (the dashboard uses this)."""
     vm = psutil.virtual_memory()
     d = {"cpu_percent": psutil.cpu_percent(interval=None),  # non-blocking; primed at import
@@ -142,7 +142,7 @@ def system_status() -> str:
     return "\n".join(lines)
 
 
-def gpu_guard(data: dict, min_free_mib: float = 8000, max_temp_c: float = 80) -> list[dict]:
+def gpu_guard(data: dict[str, Any], min_free_mib: float = 8000, max_temp_c: float = 80) -> list[dict[str, Any]]:
     """Whether each GPU has enough free VRAM and is cool enough for heavy work. Pure function."""
     out = []
     for g in data["gpus"]:
@@ -171,7 +171,7 @@ def gpu_check(min_free_mib: int = 8000) -> str:
     return "\n".join(lines)
 
 
-def _get_json(url: str) -> dict:
+def _get_json(url: str) -> Any:
     import urllib.request
 
     with urllib.request.urlopen(url, timeout=3) as r:
@@ -365,7 +365,7 @@ def _desktop() -> Any:
     return Desktop(backend="uia")
 
 
-def _windows() -> list:
+def _windows() -> list[Any]:
     """The open top-level windows, without Iris's own overlay: it is no window to read, click or type into."""
     from iris.overlay import TITLE
 
@@ -410,7 +410,7 @@ def _value(c: Any) -> str:
         return c.iface_value.CurrentValue or ""
     except Exception:  # noqa: BLE001 - controls without the Value pattern
         try:
-            return c.window_text()
+            return str(c.window_text())
         except Exception:  # noqa: BLE001
             return ""
 

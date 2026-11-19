@@ -55,7 +55,7 @@ def tail(text: str, chars: int, lines: int = 3) -> str:
     return "…" + out if cut else out
 
 
-def parse(line: str) -> dict | None:
+def parse(line: str) -> dict[str, Any] | None:
     """One event from one line, or None for anything that is not a known event."""
     try:
         event = json.loads(line)
@@ -80,7 +80,7 @@ class View:
         """Whether the panel is up at all."""
         return self.mode != "hidden"
 
-    def apply(self, event: dict, now: float) -> None:
+    def apply(self, event: dict[str, Any], now: float) -> None:
         """Fold one event into the view: a new request clears the old one, and idle starts the fade-out clock."""
         kind, text = event.get("event"), str(event.get("text") or "")
         if kind in ("listening", "interrupted"):  # a new request starts: the old one goes
@@ -137,7 +137,7 @@ class Overlay:
     process. When that process is missing, dead or stuck, events go nowhere and the voice loop never notices.
     Another daemon thread reads what the overlay writes back: a click on its cancel button calls on_cancel."""
 
-    def __init__(self, proc: subprocess.Popen | None = None, on_cancel: Callable[[], None] | None = None):
+    def __init__(self, proc: subprocess.Popen[str] | None = None, on_cancel: Callable[[], None] | None = None):
         self._proc = proc
         self.on_cancel = on_cancel
         self._queue: queue.Queue[str | None] = queue.Queue(maxsize=64)
@@ -155,7 +155,7 @@ class Overlay:
         except queue.Full:
             pass  # the overlay stopped reading; drop events rather than wait for it
 
-    def _write(self, proc: subprocess.Popen) -> None:
+    def _write(self, proc: subprocess.Popen[str]) -> None:
         pipe = proc.stdin
         while pipe is not None and (line := self._queue.get()) is not None:
             try:
@@ -235,7 +235,7 @@ def launch() -> Overlay:
 
 
 # --- the overlay process ---------------------------------------------------------------------------------------------
-def read_events(stream: IO[str], out: queue.Queue) -> None:
+def read_events(stream: IO[str], out: queue.Queue[dict[str, Any] | None]) -> None:
     """Every known event from stream into out, then None once Iris closes the pipe (or dies)."""
     try:
         for line in stream:
@@ -290,7 +290,7 @@ class Win32:
         def on_message(hwnd: int | None, msg: int, w: int, lp: int) -> int:
             if msg == self.WM_MOUSEACTIVATE:
                 return self.MA_NOACTIVATE
-            return call(previous, hwnd, msg, w, lp)
+            return int(call(previous, hwnd, msg, w, lp))
 
         self._wndproc = wndproc(on_message)
         previous = set_proc(self.hwnd, self.GWLP_WNDPROC, ctypes.cast(self._wndproc, ctypes.c_void_p).value)
@@ -318,7 +318,7 @@ def _user32() -> Any:
     try:
         import ctypes
 
-        return ctypes.windll.user32  # type: ignore[attr-defined]
+        return ctypes.windll.user32
     except (ImportError, AttributeError):  # not Windows
         return None
 
@@ -449,8 +449,8 @@ class Panel:
 
     WIDTH, MARGIN, PAD, INDENT, RADIUS, POLL_MS = 560, 10, 18, 54, 20, 40  # WIDTH: the window, glow margin included
 
-    def __init__(self, tk: Any, events: queue.Queue, clock: Callable[[], float] = time.monotonic, user32: Any = None,
-                 out: IO[str] | None = None) -> None:
+    def __init__(self, tk: Any, events: queue.Queue[dict[str, Any] | None], user32: Any = None,
+                 out: IO[str] | None = None, clock: Callable[[], float] = time.monotonic) -> None:
         self.tk, self.events, self.clock, self.view, self.tint = tk, events, clock, View(), Tint()
         self.out, self.hover = out, False
         if user32 is not None:
@@ -482,7 +482,7 @@ class Panel:
         self._outer: list[Any] = []
         self._inner: list[Any] = []
         self._edge: list[Any] = []
-        self._drawn: dict[tuple[str, int], tuple] = {}  # what each outline item shows now, so a frame skips the rest
+        self._drawn: dict[tuple[str, int], tuple[Any, ...]] = {}  # what an outline item shows now; skips redrawing
         self.win: Win32 | None = None
         if user32 is not None:
             # Tk makes the real top-level window only when it is first mapped, so map it once, see-through, give it
@@ -714,7 +714,7 @@ def main(stdin: IO[str] | None = None, tk: Any = None, user32: Any = None) -> in
             print("no tkinter in this Python; the overlay needs it", file=sys.stderr)
             return 1
         user32 = _user32()
-    events: queue.Queue = queue.Queue()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     threading.Thread(target=read_events, args=(stdin or sys.stdin, events), daemon=True).start()
     Panel(tk, events, user32=user32, out=sys.stdout).run()
     return 0

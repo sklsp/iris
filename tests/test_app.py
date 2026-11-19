@@ -590,3 +590,12 @@ def test_main_logs_to_a_file_first(monkeypatch):
     monkeypatch.setitem(sys.modules, "webview", None)  # not installed: main says so and stops
     assert app.main([]) == 1
     assert calls == ["log"]
+
+
+def test_main_shares_a_hidden_console_when_windowless(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(app, "log_when_windowless", lambda: tmp_path / "app.log")
+    monkeypatch.setattr(app, "share_hidden_console", lambda: calls.append("console"))
+    monkeypatch.setitem(sys.modules, "webview", None)
+    assert app.main([]) == 1
+    assert calls == ["console"]

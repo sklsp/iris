@@ -145,7 +145,7 @@ def _voxcpm_installed() -> bool:
 
 # --- the packs -------------------------------------------------------------------------------------------------------
 
-def packs() -> list[dict]:
+def packs() -> list[dict[str, Any]]:
     """Every pack with what it is, its size and license, whether it applies to this PC and whether it is there."""
     from iris import voice
 
@@ -235,7 +235,7 @@ def _fetch_uv(job: Job, url: str = UV_URL, sha256: str = UV_SHA256) -> None:
     job.say(f"uv {UV_VERSION} checked and unpacked")
 
 
-def child_env(pack_id: str = "") -> dict:
+def child_env(pack_id: str = "") -> dict[str, str]:
     """What a pack command runs with: plain output, and for the Piper pack only, Piper's own folder on its path.
 
     HF_HOME is inherited, not set here: the app puts it under ~/.iris for itself and its children, while under
@@ -263,7 +263,7 @@ class Job:
         with self.log.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         """What the dashboard shows about this install: pack, state and its last lines."""
         return {"pack": self.pack, "state": self.state, "lines": list(self.lines)}
 
@@ -272,7 +272,7 @@ _job: Job | None = None
 _lock = threading.Lock()
 
 
-def run(job: Job, popen: Callable = subprocess.Popen) -> None:
+def run(job: Job, popen: Callable[..., subprocess.Popen[str]] = subprocess.Popen) -> None:
     """Run the pack's steps in order; the first failure stops it. The .installing marker is written before the
     first step and removed only when every step succeeded, so an interrupted install never counts as installed."""
     try:
@@ -293,7 +293,7 @@ def run(job: Job, popen: Callable = subprocess.Popen) -> None:
         job.state = "failed"
 
 
-def _run_step(job: Job, title: str, command: list[str], popen: Callable) -> None:
+def _run_step(job: Job, title: str, command: list[str], popen: Callable[..., subprocess.Popen[str]]) -> None:
     """One subprocess step: its output streams to the job and it is killed when STEP_TIMEOUT passes.
 
     The pipe is read in a thread so a silent hang (a pip stuck on the network) still hits the deadline; the main
@@ -304,6 +304,7 @@ def _run_step(job: Job, title: str, command: list[str], popen: Callable) -> None
     finished: queue.Queue[bool] = queue.Queue()
 
     def pump() -> None:
+        assert proc.stdout is not None  # stdout=PIPE above always gives a pipe
         for line in proc.stdout:  # stream the output to the log and the Setup tab as it happens
             if line.strip():
                 job.say(line.rstrip())
@@ -320,7 +321,7 @@ def _run_step(job: Job, title: str, command: list[str], popen: Callable) -> None
         raise RuntimeError(f"{title} failed (exit code {proc.returncode})")
 
 
-def start(pack_id: str, runner: Callable[[Job], None] = run) -> dict:
+def start(pack_id: str, runner: Callable[[Job], None] = run) -> dict[str, Any]:
     """Begin installing a pack, unless another install is still running."""
     global _job
     if pack_id not in {p["id"] for p in packs() if p["available"]}:
@@ -333,6 +334,6 @@ def start(pack_id: str, runner: Callable[[Job], None] = run) -> dict:
     return {"ok": True, "job": _job.as_dict()}
 
 
-def payload() -> dict:
+def payload() -> dict[str, Any]:
     """The Setup tab's view of the voice packs and the one running install."""
     return {"ok": True, "packs": packs(), "job": _job.as_dict() if _job is not None else None}

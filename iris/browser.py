@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from iris import config
@@ -55,7 +55,7 @@ def _ws_url() -> str:
             continue
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=1) as r:
-                return json.load(r)["webSocketDebuggerUrl"]
+                return cast("str", json.load(r)["webSocketDebuggerUrl"])
         except urllib.error.HTTPError as exc:
             if exc.code == 403:
                 raise BrowserError("the browser is waiting for you to click Allow on its remote debugging "
@@ -109,7 +109,7 @@ class Connection:
                 if reply.get("id") == self._id:  # events and other replies are skipped
                     if "error" in reply:
                         raise BrowserError(f"{method} failed: {reply['error'].get('message', reply['error'])}")
-                    return reply.get("result", {})
+                    return cast("dict[str, Any]", reply.get("result", {}))
 
 
 _conn: Connection | None = None

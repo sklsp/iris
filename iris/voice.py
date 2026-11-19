@@ -205,7 +205,7 @@ def _cuda_available() -> bool:
             return False
         _cuda_dlls()
         for dll in ("cublas64_12.dll", "cudnn64_9.dll"):
-            ctypes.WinDLL(dll)  # type: ignore[attr-defined]
+            ctypes.WinDLL(dll)
         return True
     except (ImportError, OSError, AttributeError, RuntimeError):
         return False
@@ -538,7 +538,7 @@ class VoiceSession:
         self._drain()  # drop the wake word itself so it does not end up in the transcript
         return self._record([])
 
-    def _record(self, chunks: list) -> str:
+    def _record(self, chunks: list[np.ndarray]) -> str:
         """Record until 1.2 s of silence follows speech (or a hard cap), then transcribe without the wake phrase."""
         import numpy as np
 
@@ -640,7 +640,7 @@ class VoiceSession:
         return text
 
 
-def _stop_process(proc: subprocess.Popen, seconds: float) -> None:
+def _stop_process(proc: subprocess.Popen[Any], seconds: float) -> None:
     """End a speech worker: close its input (it then quits on its own), and terminate or kill it if it does not."""
     try:
         if proc.stdin is not None:
@@ -731,7 +731,7 @@ class VoxProcess:
         self.rate = 0
         self.startup = startup  # loading and compiling the model takes 30 s to a few minutes the first time
         self.ready = threading.Event()
-        self._frames: queue.Queue = queue.Queue()
+        self._frames: queue.Queue[Any] = queue.Queue()
         self._behind = 0  # answers cut short whose rest is still coming back
         threading.Thread(target=self._read, daemon=True).start()
 
@@ -812,7 +812,7 @@ def _play_stream(chunks: Iterable[np.ndarray], rate: int, expected: float, stop_
     import numpy as np
     import sounddevice as sd
 
-    pending: queue.Queue = queue.Queue()
+    pending: queue.Queue[np.ndarray] = queue.Queue()
     left = np.zeros(0, dtype="float32")
     waiting, finished = False, threading.Event()
 

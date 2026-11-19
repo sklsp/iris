@@ -56,10 +56,24 @@ python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
 disallow_untyped_defs = true
+strict = true
 
 [[tool.mypy.overrides]]
 module = ["iris.policy", "iris.registry", "iris.eval"]
 disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+# the protected modules stay as written; strict-only flags are off for them
+module = ["iris.eval", "iris.policy", "iris.skills", "iris.registry"]
+disallow_any_generics = false
+warn_return_any = false
+warn_unused_ignores = false
+disallow_untyped_calls = false
+disallow_untyped_decorators = false
+disallow_incomplete_defs = false
+no_implicit_reexport = false
+strict_equality = false
+extra_checks = false
 
 [tool.pytest.ini_options]
 # a deprecated call in Iris's own code fails now, not when a new Python removes it

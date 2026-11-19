@@ -6,11 +6,12 @@ import math
 from datetime import date
 from pathlib import Path
 from statistics import median
+from typing import Any
 
 
 def read_timings(
     path: Path, last: int = 50, event: str = "timing", since: str | None = None, model: str | None = None
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """The last `last` entries with the given event of a JSON-lines journal; bad lines are skipped, no file gives [].
 
     Since keeps only entries whose t is on or after that date (a string compare on the first 10 characters is enough);
@@ -38,7 +39,8 @@ def _p90(values: list[float]) -> float:
     return ordered[math.ceil(0.9 * len(ordered)) - 1]
 
 
-def summarize(entries: list[dict], stt: list[dict] | None = None, tts: list[dict] | None = None) -> dict:
+def summarize(entries: list[dict[str, Any]], stt: list[dict[str, Any]] | None = None,
+              tts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Medians and p90s of request, model and tool time, the model's share of all time, the slowest tools - and, when
     given, the speech-recognition times that preceded those requests and the first-sound times of their answers."""
     result: dict[str, object]
@@ -74,7 +76,7 @@ def summarize(entries: list[dict], stt: list[dict] | None = None, tts: list[dict
     return result
 
 
-def format_summary(summary: dict) -> list[str]:
+def format_summary(summary: dict[str, Any]) -> list[str]:
     """Short plain-English lines for `iris timings`; seconds with one decimal."""
     if summary["count"] == 0:
         return ["no timed requests yet"]
@@ -103,7 +105,7 @@ def format_summary(summary: dict) -> list[str]:
     return lines
 
 
-def tool_stats(entries: list[dict]) -> list[tuple[str, int, float]]:
+def tool_stats(entries: list[dict[str, Any]]) -> list[tuple[str, int, float]]:
     """(tool, calls, median ms) per tool from its tool_timing entries; slowest first, then name."""
     by_tool: dict[str, list[float]] = {}
     for e in entries:
@@ -120,10 +122,10 @@ def format_tool_stats(stats: list[tuple[str, int, float]]) -> list[str]:
     ]
 
 
-def model_stats(entries: list[dict]) -> list[tuple[str, int, float, float]]:
+def model_stats(entries: list[dict[str, Any]]) -> list[tuple[str, int, float, float]]:
     """(model, requests, median ms, the model's share of all time in that group) per model from timing entries;
     slowest median first, then name. Entries without a model are grouped as unknown."""
-    groups: dict[str, list[dict]] = {}
+    groups: dict[str, list[dict[str, Any]]] = {}
     for e in entries:
         groups.setdefault(e.get("model") or "unknown", []).append(e)
     rows: list[tuple[str, int, float, float]] = []

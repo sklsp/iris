@@ -12,6 +12,7 @@ import os
 import re
 import tomllib
 from pathlib import Path
+from typing import Any
 
 from iris import config
 
@@ -21,7 +22,7 @@ WHISPER_MODELS = ("", "tiny", "base", "small", "medium", "large-v3", "large-v3-t
 
 # key, type, label, help, extra. Types: text, number, int, bool, choice, list (one per line), plugins, gpu.
 # restart: the voice loop reads it when it starts. env: the variable that wins over the file.
-FIELDS: list[dict] = [
+FIELDS: list[dict[str, Any]] = [
     {"key": "name", "type": "text", "group": "You", "label": "Your name", "default": "the user",
      "help": "How Iris refers to you in its instructions."},
     {"key": "city", "type": "text", "group": "You", "label": "City", "default": "",
@@ -85,7 +86,7 @@ BY_KEY = {f["key"]: f for f in FIELDS}
 READ_ONLY = ("builder",)  # a command line: edit it in the file, never from a web page
 
 
-def _gpus() -> list[dict]:
+def _gpus() -> list[dict[str, Any]]:
     try:
         from iris.tools import system_data
 
@@ -94,7 +95,7 @@ def _gpus() -> list[dict]:
         return []
 
 
-def payload() -> dict:
+def payload() -> dict[str, Any]:
     """Every field with its current value from the file, which ones an environment variable overrides, and the GPUs."""
     from iris.registry import PLUGINS
 
@@ -159,12 +160,12 @@ def config_main(argv: list[str]) -> int:
     return 0
 
 
-def validate(values: dict) -> tuple[dict, dict]:
+def validate(values: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     """(clean values, errors by key). A value of None or "" for an optional key removes it from the file."""
     from iris.registry import PLUGINS
 
-    clean: dict = {}
-    errors: dict = {}
+    clean: dict[str, Any] = {}
+    errors: dict[str, str] = {}
     for key, value in values.items():
         f = BY_KEY.get(key)
         if f is None:
@@ -235,7 +236,7 @@ def toml_value(value: object) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def write(updates: dict, path: Path | None = None) -> None:
+def write(updates: dict[str, Any], path: Path | None = None) -> None:
     """Set (or with None, remove) top-level keys in config.toml. Comment lines, other keys and [tables] stay as they
     are; a replaced key loses a comment on its own line. Written aside, checked, then swapped in."""
     path = path or config.config_path()
@@ -271,7 +272,7 @@ def write(updates: dict, path: Path | None = None) -> None:
     config.forget()  # a rewrite of the same size within one tick would keep the old cache key
 
 
-def save(values: dict) -> dict:
+def save(values: dict[str, Any]) -> dict[str, Any]:
     """Validate and write; the reply says which keys need voice mode to start again."""
     clean, errors = validate(values)
     if errors:

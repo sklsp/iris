@@ -18,6 +18,7 @@
 - You can ask Iris what it did today (`journal_today`); its answer now also includes the median answer time of the day from the journal's timing lines.
 - mypy now runs in strict mode for every module except policy, registry, eval and skills.
 - Every iris command starts faster: the modules that `iris --help` loads import urllib.request inside the functions that use it instead of at module level, so a cold start skips the whole chain (about 34 ms on Windows).
+- `iris startup on` now starts the tray app at login through an `Iris.vbs` in your Startup folder (pythonw, hidden), with no console window; it removes any older Iris.cmd or Iris.lnk from there.
 
 ## 1.0.0 (release date): steady, safer and measured
 

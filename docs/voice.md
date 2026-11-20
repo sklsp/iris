@@ -35,7 +35,7 @@ extra packages) and writes errors to `~/.iris/overlay.log`; if it fails or is cl
 ### Launcher and start at login
 
 `iris shortcut` puts an `Iris.cmd` on your desktop: double-click it and voice mode starts in its own window; close the
-window to stop Iris. `iris startup on` starts voice mode when you log in, in a minimized console window you can see and close;
+window to stop Iris. `iris startup on` starts the tray app at login through an `Iris.vbs`, with no console window;
 `iris startup off` stops that. Let LM Studio start its local server at login too (its settings have an option for
 it), or Iris has no model to talk to.
 

@@ -1,2 +1,0 @@
-- [x] Q1. lint: SIM, PIE, C4 and RET (2440 passed in 112.49s (0:01:52))
-- [x] Q2. lint: PERF (2440 passed in 108.18s (0:01:48))

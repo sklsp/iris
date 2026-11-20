@@ -99,6 +99,30 @@ def test_git_raises_the_last_stderr_line_when_a_command_fails(tmp_path, monkeypa
     assert str(excinfo.value) == "the last line"
 
 
+def test_git_never_takes_the_index_lock(tmp_path, monkeypatch):
+    """A read-only poll must not take the index lock; every git call carries --no-optional-locks."""
+    repo = tmp_path / "locked"
+    (repo / ".git").mkdir(parents=True)
+
+    class _Proc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    argvs = []
+
+    def spy(*args, **kwargs):
+        argvs.append(args[0])
+        return _Proc()
+
+    monkeypatch.setattr(agents.subprocess, "run", spy)
+    repo_status(repo)  # rev-parse, log and status: three git calls
+    assert len(argvs) == 3
+    for argv in argvs:
+        assert argv[:2] == ["git", "--no-optional-locks"]
+        assert argv[2:4] == ["-C", str(repo)]
+
+
 def test_repo_status_reports_git_failure_as_an_error(tmp_path, monkeypatch):
     repo = tmp_path / "broken"
     (repo / ".git").mkdir(parents=True)

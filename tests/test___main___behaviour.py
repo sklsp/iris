@@ -595,6 +595,24 @@ def test_shortcut_reports_a_powershell_error_and_keeps_the_old_cmd(tmp_path, mon
     assert old.exists()  # a failed write leaves the old launcher in place
 
 
+def test_shortcut_reports_a_powershell_timeout_and_keeps_the_old_cmd(tmp_path, monkeypatch, capsys):
+    import subprocess
+
+    from iris.__main__ import shortcut_main
+
+    def fake_run(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, 30)
+
+    desktop = tmp_path / "Desktop"
+    monkeypatch.setenv("IRIS_DESKTOP_DIR", str(desktop))
+    old = desktop / "Iris.cmd"
+    old.parent.mkdir(parents=True)
+    old.write_text("old", encoding="utf-8")
+    assert shortcut_main([], run=fake_run) == 1
+    assert "timed out" in capsys.readouterr().err
+    assert old.exists()
+
+
 def test_a_request_cancelled_from_the_overlay_is_not_spoken(tmp_path, monkeypatch):
     """The agent shares the session's cancel flag, and the main loop says nothing for a cancelled request."""
     _install_agent(monkeypatch)

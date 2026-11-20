@@ -1,0 +1,2 @@
+- [x] Q1. tests: cover web._opener again (2432 passed in 104.88s (0:01:44))
+- [ ] Q2. docs: the test plan says what run 75 built

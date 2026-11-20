@@ -13,7 +13,7 @@ python -m iris eval            run the eval tasks against the model (--repeat N,
 python -m iris eval-compare A B  what changed between two eval reports (eval/results/*.json)
 python -m iris config          print every setting, its value and where it comes from (file, default, environment)
 python -m iris startup on      start the tray app at login, with no console (off, status)
-python -m iris shortcut        put an Iris.cmd on the desktop that starts voice mode with a double-click
+python -m iris shortcut        put an Iris.lnk on the desktop that starts the app with a double-click
 python -m iris skill list      the skills Iris built; `skill export NAME` zips an approved one to share,
                                `skill import FILE [--tier safe]` adds a shared one for review (confirm by default)"""
 
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 import threading
 import zipfile
@@ -88,13 +89,29 @@ def desktop_dir() -> Path:
     return Path(buf.value or Path.home() / "Desktop")
 
 
-def shortcut_main(argv: list[str]) -> int:
-    """`iris shortcut`: an Iris.cmd on the desktop that starts voice mode in its own window; closing it stops Iris."""
-    cmd = desktop_dir() / "Iris.cmd"
-    cmd.parent.mkdir(parents=True, exist_ok=True)
-    cmd.write_text(f'@echo off\ntitle Iris\nset PYTHONUTF8=1\n"{sys.executable}" -m iris --voice\npause\n',
-                   encoding="utf-8")
-    print(f"Double-click {cmd} to start Iris in voice mode. Delete it to remove the shortcut.")
+def shortcut_main(argv: list[str], run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> int:
+    """`iris shortcut`: an Iris.lnk on the desktop that starts the app (no console, its own icon); a second start
+    just brings the running window forward."""
+    lnk = desktop_dir() / "Iris.lnk"
+    lnk.parent.mkdir(parents=True, exist_ok=True)
+    exe = startup_python(Path(sys.executable))  # pythonw when it is there: no console with the app either
+    icon = Path(__file__).parent / "assets" / "iris.ico"
+    # the paths go in through the environment (Windows passes it as Unicode), never into the script text
+    script = ("$w = New-Object -ComObject WScript.Shell; $s = $w.CreateShortcut($env:IRIS_LNK); "
+              "$s.TargetPath = $env:IRIS_EXE; $s.Arguments = '-m iris app'; "
+              "$s.IconLocation = $env:IRIS_ICON; $s.Description = 'Iris'; $s.Save()")
+    env = {**os.environ, "IRIS_LNK": str(lnk), "IRIS_EXE": str(exe), "IRIS_ICON": str(icon)}
+    try:
+        r = run(["powershell", "-NoProfile", "-Command", script], env=env, capture_output=True, text=True,
+                timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired:
+        print("could not write the shortcut: powershell timed out", file=sys.stderr)
+        return 1
+    if r.returncode != 0:
+        print(r.stderr, file=sys.stderr)
+        return 1
+    (desktop_dir() / "Iris.cmd").unlink(missing_ok=True)  # the old voice-mode launcher is replaced by this one
+    print(f"Double-click {lnk} to start Iris. Delete it to remove the shortcut.")
     return 0
 
 

@@ -63,9 +63,9 @@ def test_shortcut_missing_reports_the_none_line(tmp_path, monkeypatch):
 
 def test_shortcut_present_reports_found(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_DESKTOP_DIR", str(tmp_path))
-    (tmp_path / "Iris.cmd").touch()
+    (tmp_path / "Iris.lnk").touch()  # iris shortcut writes a .lnk now, not the old voice-mode Iris.cmd
     rows = doctor.checks(payload={"reachable": False})
-    assert (True, "shortcut: Iris.cmd on the desktop") in rows
+    assert (True, "shortcut: Iris.lnk on the desktop") in rows
 
 
 def test_the_installed_app_has_no_shortcut_check(tmp_path, monkeypatch):

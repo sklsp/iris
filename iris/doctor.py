@@ -137,8 +137,8 @@ def checks(payload: dict[str, Any] | None = None) -> list[tuple[bool, str]]:
     if not bundled():  # the installer makes its own Start menu and desktop shortcuts
         from iris.__main__ import desktop_dir
 
-        have = (desktop_dir() / "Iris.cmd").exists()
-        out.append((have, "shortcut: Iris.cmd on the desktop" if have else
+        have = (desktop_dir() / "Iris.lnk").exists()
+        out.append((have, "shortcut: Iris.lnk on the desktop" if have else
                     "shortcut: none on the desktop; iris shortcut puts one there (optional)"))
     out.append(_speed_line())
     return out

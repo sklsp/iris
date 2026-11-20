@@ -54,6 +54,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "PIE", "C4", "RET", "PERF"]
 "iris/eval.py" = ["C416", "PERF401", "PERF403"]  # protected file; fix by hand
 "iris/policy.py" = ["SIM112"]  # protected file; fix by hand
 "iris/skills.py" = ["SIM105"]  # protected file; fix by hand
+"installer/dlls.py" = ["PERF401"]  # protected file; fix by hand
 
 [tool.mypy]
 files = ["iris"]

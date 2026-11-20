@@ -24,7 +24,7 @@
 | `IRIS_VOXCPM_DIR` | `~/.iris/voxcpm` | where the VoxCPM2 voice pack (its own Python and model) lives |
 | `IRIS_VOXCPM_MODEL` | `openbmb/VoxCPM2` | the VoxCPM2 model the worker loads (a Hugging Face id or a folder) |
 | `IRIS_STARTUP_DIR` | the Windows Startup folder | where `iris startup on` writes Iris.vbs (tests point it elsewhere) |
-| `IRIS_DESKTOP_DIR` | the Windows desktop folder | where `iris shortcut` writes Iris.cmd (tests point it elsewhere) |
+| `IRIS_DESKTOP_DIR` | the Windows desktop folder | where `iris shortcut` writes Iris.lnk (tests point it elsewhere) |
 | `IRIS_PIPER_DIR` | `~/.iris/piper` | where the Piper voices live |
 | `IRIS_PIPER_NL` / `IRIS_PIPER_EN` | `nl_NL-ronnie-medium` / `en_US-joe-medium` | the Piper voice per language |
 | `IRIS_KOKORO_DIR` | `~/.iris` | where the Kokoro model files live |

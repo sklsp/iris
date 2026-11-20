@@ -9,7 +9,8 @@ from tests.doc_text import doc_text
 ROOT = Path(__file__).resolve().parent.parent
 
 # These names pass data to a child process; the user never sets them, so they stay out of the docs.
-INTERNAL = {"IRIS_CLIP", "IRIS_SHOT_PATH", "IRIS_SHOT_RECT", "IRIS_STOP_EVENT", "IRIS_TOKEN"}
+INTERNAL = {"IRIS_CLIP", "IRIS_EXE", "IRIS_ICON", "IRIS_LNK", "IRIS_SHOT_PATH",
+            "IRIS_SHOT_RECT", "IRIS_STOP_EVENT", "IRIS_TOKEN"}
 
 
 def _env_names():
@@ -27,7 +28,8 @@ def test_every_env_variable_is_in_the_docs():
 
 
 def test_internal_names_are_exactly_the_child_process_ones():
-    assert INTERNAL == {"IRIS_CLIP", "IRIS_SHOT_PATH", "IRIS_SHOT_RECT", "IRIS_STOP_EVENT", "IRIS_TOKEN"}
+    assert INTERNAL == {"IRIS_CLIP", "IRIS_EXE", "IRIS_ICON", "IRIS_LNK", "IRIS_SHOT_PATH",
+                        "IRIS_SHOT_RECT", "IRIS_STOP_EVENT", "IRIS_TOKEN"}
     source = "".join(path.read_text(encoding="utf-8") for path in (ROOT / "iris").rglob("*.py"))
     stale = sorted(name for name in INTERNAL if name not in source)
     assert not stale, "these internal names no longer appear in iris/: " + ", ".join(stale)

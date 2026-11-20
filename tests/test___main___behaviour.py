@@ -522,16 +522,95 @@ def test_startup_off_removes_vbs_cmd_and_lnk(tmp_path, monkeypatch, capsys):
         assert not (old / name).exists()
 
 
-def test_shortcut_puts_a_voice_mode_launcher_on_the_desktop(tmp_path, monkeypatch, capsys):
-    import sys
+def test_shortcut_writes_a_lnk_with_the_paths_in_the_environment(tmp_path, monkeypatch, capsys):
+    import subprocess
 
     from iris.__main__ import shortcut_main
 
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append((cmd, kw))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    desktop = tmp_path / "Desktop"
+    monkeypatch.setenv("IRIS_DESKTOP_DIR", str(desktop))
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    (tmp_path / "pythonw.exe").write_bytes(b"")  # the shortcut must point at pythonw: no console with the app
+    monkeypatch.setattr(sys, "executable", str(exe))
+    old = desktop / "Iris.cmd"
+    old.parent.mkdir(parents=True)
+    old.write_text("old", encoding="utf-8")
+    assert shortcut_main([], run=fake_run) == 0
+    cmd, kw = calls[0]
+    assert cmd[0] == "powershell" and cmd[1] == "-NoProfile" and cmd[-2] == "-Command"
+    script = cmd[-1]
+    for var in ("$env:IRIS_LNK", "$env:IRIS_EXE", "$env:IRIS_ICON"):  # paths never pasted into the text
+        assert var in script and str(desktop) not in script
+    env = kw["env"]
+    assert env["IRIS_LNK"] == str(desktop / "Iris.lnk")
+    assert env["IRIS_EXE"] == str(tmp_path / "pythonw.exe")
+    assert Path(env["IRIS_ICON"]).exists() and env["IRIS_ICON"].endswith("iris.ico")
+    assert kw["timeout"] == 30 and kw["capture_output"] is True and kw["text"] is True
+    assert not old.exists()  # the old voice-mode launcher goes away after a successful write
+    out = capsys.readouterr().out
+    assert str(desktop / "Iris.lnk") in out
+
+
+def test_shortcut_without_pythonw_points_at_the_interpreter(tmp_path, monkeypatch):
+    import subprocess
+
+    from iris.__main__ import shortcut_main
+
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append((cmd, kw))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
     monkeypatch.setenv("IRIS_DESKTOP_DIR", str(tmp_path / "Desktop"))
-    assert shortcut_main([]) == 0
-    text = (tmp_path / "Desktop" / "Iris.cmd").read_text(encoding="utf-8")
-    assert f'"{sys.executable}" -m iris --voice' in text and "title Iris" in text
-    assert "Double-click" in capsys.readouterr().out
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(exe))
+    assert shortcut_main([], run=fake_run) == 0
+    assert calls[0][1]["env"]["IRIS_EXE"] == str(exe)
+
+
+def test_shortcut_reports_a_powershell_error_and_keeps_the_old_cmd(tmp_path, monkeypatch, capsys):
+    import subprocess
+
+    from iris.__main__ import shortcut_main
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="no powershell here")
+
+    desktop = tmp_path / "Desktop"
+    monkeypatch.setenv("IRIS_DESKTOP_DIR", str(desktop))
+    old = desktop / "Iris.cmd"
+    old.parent.mkdir(parents=True)
+    old.write_text("old", encoding="utf-8")
+    assert shortcut_main([], run=fake_run) == 1
+    assert "no powershell here" in capsys.readouterr().err
+    assert old.exists()  # a failed write leaves the old launcher in place
+
+
+def test_shortcut_reports_a_powershell_timeout_and_keeps_the_old_cmd(tmp_path, monkeypatch, capsys):
+    import subprocess
+
+    from iris.__main__ import shortcut_main
+
+    def fake_run(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, 30)
+
+    desktop = tmp_path / "Desktop"
+    monkeypatch.setenv("IRIS_DESKTOP_DIR", str(desktop))
+    old = desktop / "Iris.cmd"
+    old.parent.mkdir(parents=True)
+    old.write_text("old", encoding="utf-8")
+    assert shortcut_main([], run=fake_run) == 1
+    assert "timed out" in capsys.readouterr().err
+    assert old.exists()
 
 
 def test_a_request_cancelled_from_the_overlay_is_not_spoken(tmp_path, monkeypatch):

@@ -19,6 +19,7 @@
 - mypy now runs in strict mode for every module except policy, registry, eval and skills.
 - Every iris command starts faster: the modules that `iris --help` loads import urllib.request inside the functions that use it instead of at module level, so a cold start skips the whole chain (about 34 ms on Windows).
 - `iris startup on` now starts the tray app at login through an `Iris.vbs` in your Startup folder (pythonw, hidden), with no console window; it removes any older Iris.cmd or Iris.lnk from there.
+- `iris shortcut` now puts an `Iris.lnk` on your desktop that starts the app with its icon and no console; a second start just brings the running window forward, and any older Iris.cmd is removed.
 
 ## 1.0.0 (release date): steady, safer and measured
 

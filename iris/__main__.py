@@ -50,6 +50,9 @@ def startup_python(exe: Path) -> Path:
 # The files `iris startup on` may leave in the Startup folder; doctor reports which one is there.
 STARTUP_NAMES = ("Iris.vbs", "Iris.cmd", "Iris.lnk")
 
+# The desktop file `iris shortcut` writes; doctor reports whether it is there.
+SHORTCUT_NAME = "Iris.lnk"
+
 
 def startup_main(argv: list[str]) -> int:
     """`iris startup on|off|status`: start the tray app at login, with no console window."""
@@ -95,7 +98,7 @@ def desktop_dir() -> Path:
 def shortcut_main(argv: list[str], run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> int:
     """`iris shortcut`: an Iris.lnk on the desktop that starts the app (no console, its own icon); a second start
     just brings the running window forward."""
-    lnk = desktop_dir() / "Iris.lnk"
+    lnk = desktop_dir() / SHORTCUT_NAME
     lnk.parent.mkdir(parents=True, exist_ok=True)
     exe = startup_python(Path(sys.executable))  # pythonw when it is there: no console with the app either
     icon = Path(__file__).parent / "assets" / "iris.ico"

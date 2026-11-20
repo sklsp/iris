@@ -125,7 +125,7 @@ From source, for development and for the command line.
    .venv\Scripts\iris --voice       # say "hey jarvis", then your request
    .venv\Scripts\iris dashboard     # status, activity, eval and skill review at http://127.0.0.1:8765
    .venv\Scripts\iris shortcut      # an Iris.lnk on your desktop: double-click to open the app, no console
-   .venv\Scripts\iris startup on    # start the tray app at login, no console (off, status)
+   .venv\Scripts\iris startup on    # an Iris.vbs in the Startup folder starts the tray app at login, no console
    .venv\Scripts\iris app           # the desktop app (install the .[app] extra): dashboard window, tray, voice mode
    .venv\Scripts\iris timings       # how long recent requests took: median and p90, model share, slowest tools
    ```

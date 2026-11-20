@@ -74,6 +74,19 @@ def test_the_installed_app_has_no_shortcut_check(tmp_path, monkeypatch):
     rows = doctor.checks(payload={"reachable": False})
     assert not any(line.startswith("shortcut") for _, line in rows)
 
+
+def test_start_at_login_off_when_the_startup_folder_is_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path))
+    rows = doctor.checks(payload={"reachable": False})
+    assert (True, "start at login: off; iris startup on starts the tray app at login (optional)") in rows
+
+
+def test_start_at_login_on_reports_the_file_it_found(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path))
+    (tmp_path / "Iris.vbs").write_text("", encoding="utf-8")
+    rows = doctor.checks(payload={"reachable": False})
+    assert (True, f"start at login: on ({tmp_path / 'Iris.vbs'})") in rows
+
 def _voice_extras(monkeypatch, missing=()):
     """Report the voice extras as installed (CI has none), so doctor reaches its speech check; `missing` stay absent."""
     import iris.voice as v

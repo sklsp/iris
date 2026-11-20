@@ -47,9 +47,12 @@ def startup_python(exe: Path) -> Path:
     return pythonw if pythonw.exists() else exe
 
 
+# The files `iris startup on` may leave in the Startup folder; doctor reports which one is there.
+STARTUP_NAMES = ("Iris.vbs", "Iris.cmd", "Iris.lnk")
+
+
 def startup_main(argv: list[str]) -> int:
     """`iris startup on|off|status`: start the tray app at login, with no console window."""
-    names = ("Iris.vbs", "Iris.cmd", "Iris.lnk")
     what = argv[0] if argv else "status"
     if what == "on":
         vbs = startup_dir() / "Iris.vbs"
@@ -57,15 +60,15 @@ def startup_main(argv: list[str]) -> int:
         exe = startup_python(Path(sys.executable))
         line = f'CreateObject("WScript.Shell").Run """{exe}"" -m iris app --background", 0, False\n'
         vbs.write_text(line, encoding="utf-8")
-        for name in names[1:]:
+        for name in STARTUP_NAMES[1:]:
             (startup_dir() / name).unlink(missing_ok=True)
         print(f"Iris starts in the tray at login ({vbs}). Let LM Studio start its server at login too.")
     elif what == "off":
-        for name in names:
+        for name in STARTUP_NAMES:
             (startup_dir() / name).unlink(missing_ok=True)
         print("Iris no longer starts at login.")
     elif what == "status":
-        for name in names:
+        for name in STARTUP_NAMES:
             path = startup_dir() / name
             if path.exists():
                 print(f"on ({path})")

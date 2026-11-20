@@ -140,6 +140,12 @@ def checks(payload: dict[str, Any] | None = None) -> list[tuple[bool, str]]:
         have = (desktop_dir() / "Iris.lnk").exists()
         out.append((have, "shortcut: Iris.lnk on the desktop" if have else
                     "shortcut: none on the desktop; iris shortcut puts one there (optional)"))
+    from iris.__main__ import STARTUP_NAMES, startup_dir
+
+    d = startup_dir()
+    hit = next((f for f in STARTUP_NAMES if (d / f).exists()), None)
+    out.append((True, f"start at login: on ({d / hit})" if hit else
+                "start at login: off; iris startup on starts the tray app at login (optional)"))
     out.append(_speed_line())
     return out
 

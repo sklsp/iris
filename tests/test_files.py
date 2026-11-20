@@ -490,7 +490,7 @@ def test_copy_tier_checks_only_the_destination(tmp_path, monkeypatch):
 
 def test_write_tier_never_in_system_dirs_even_when_configured(tmp_path, monkeypatch):
     _home(tmp_path, monkeypatch)
-    sysroot = os.environ.get("SystemRoot", "C:/Windows")
+    sysroot = os.environ.get("SYSTEMROOT", "C:/Windows")
     _cfg(tmp_path, monkeypatch, f'folders = ["{sysroot}"]\n')
     assert tools.TOOLS["write_file"].tier_of({"path": str(Path(sysroot) / "system32" / "x.txt")}) == tools.NEVER
 

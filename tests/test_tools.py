@@ -1326,7 +1326,7 @@ def test_every_tool_accepts_the_parameters_its_schema_offers():
 
     for tool in tools.TOOLS.values():
         sig = inspect.signature(tool.fn)
-        sample = {p: 1 for p in tool.params}
+        sample = dict.fromkeys(tool.params, 1)
         try:
             sig.bind(**{p: sample[p] for p in tool.required})
             sig.bind(**sample)

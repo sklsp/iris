@@ -20,6 +20,7 @@
 - Every iris command starts faster: the modules that `iris --help` loads import urllib.request inside the functions that use it instead of at module level, so a cold start skips the whole chain (about 34 ms on Windows).
 - `iris startup on` now starts the tray app at login through an `Iris.vbs` in your Startup folder (pythonw, hidden), with no console window; it removes any older Iris.cmd or Iris.lnk from there.
 - `iris shortcut` now puts an `Iris.lnk` on your desktop that starts the app with its icon and no console; a second start just brings the running window forward, and any older Iris.cmd is removed.
+- ruff now also checks the SIM, PIE, C4, RET and PERF rule sets on iris/ and tests/, and every finding was fixed without changing behaviour.
 
 ## 1.0.0 (release date): steady, safer and measured
 

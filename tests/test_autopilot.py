@@ -421,7 +421,7 @@ def test_start_in_hub_missing_cli_raises_lookup_error(monkeypatch):
         raise FileNotFoundError("no such file")
 
     with pytest.raises(LookupError) as exc:
-        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW)
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=list, now=lambda: HUB_NOW)
     assert str(exc.value) == "Cline CLI not found at cline"
 
 
@@ -433,7 +433,7 @@ def test_start_in_hub_error_carries_the_last_stderr_line(monkeypatch):
 
     with pytest.raises(RuntimeError) as exc:
         start_in_hub(
-            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=lambda s: None
+            "fix the bug", "W:/Iris", run=fake_run, sessions=list, now=lambda: HUB_NOW, sleep=lambda s: None
         )
     assert str(exc.value) == "Cline did not start a session after two tries: hub timed out after 120s"
 
@@ -446,7 +446,7 @@ def test_start_in_hub_error_says_no_output_when_stderr_is_empty(monkeypatch):
 
     with pytest.raises(RuntimeError) as exc:
         start_in_hub(
-            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=lambda s: None
+            "fix the bug", "W:/Iris", run=fake_run, sessions=list, now=lambda: HUB_NOW, sleep=lambda s: None
         )
     assert str(exc.value) == "Cline did not start a session after two tries: no output"
 
@@ -537,7 +537,7 @@ def test_start_in_hub_gives_up_after_the_polls(monkeypatch):
         sleeps.append(seconds)
 
     with pytest.raises(RuntimeError) as exc:
-        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=fake_sleep)
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=list, now=lambda: HUB_NOW, sleep=fake_sleep)
     assert str(exc.value) == "Cline did not start a session after two tries: hub timed out after 120s"
     assert calls == 2  # one retry after the first polls found nothing
     assert sleeps == [3, 3, 3, 3, 3, 3, 3, 3]  # five checks per dispatch, four waits between them
@@ -656,7 +656,7 @@ def test_start_in_hub_missing_cli_raises_lookup_error_without_a_retry(monkeypatc
 
     with pytest.raises(LookupError) as exc:
         start_in_hub(
-            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=lambda s: None
+            "fix the bug", "W:/Iris", run=fake_run, sessions=list, now=lambda: HUB_NOW, sleep=lambda s: None
         )
     assert str(exc.value) == "Cline CLI not found at cline"
     assert calls == 1

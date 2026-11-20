@@ -4,6 +4,7 @@ the VoiceSession stream lifecycle and the SAPI fallback paths.
 openwakeword, faster_whisper, sounddevice and pyttsx3 are all faked in sys.modules,
 so nothing is downloaded, no mic is opened and no audio device is touched."""
 
+import contextlib
 import queue
 import sys
 import threading
@@ -129,7 +130,7 @@ class _FakeStream:
     """Stands in for sounddevice.InputStream; records kwargs and the callback."""
 
     def __init__(self, samplerate=None, channels=None, dtype=None, blocksize=None, callback=None):
-        self.kwargs = dict(samplerate=samplerate, channels=channels, dtype=dtype, blocksize=blocksize)
+        self.kwargs = {"samplerate": samplerate, "channels": channels, "dtype": dtype, "blocksize": blocksize}
         self.callback = callback
         self.exit_calls = []
         self.raise_on_exit = False
@@ -453,10 +454,8 @@ def test_next_command_stops_at_the_hard_cap_even_while_speech_continues(monkeypa
 
     def feeder():  # the mic keeps delivering speech while recording runs (next_command drains first)
         while not stop.is_set():
-            try:
+            with contextlib.suppress(queue.Full):  # consumer is keeping up; nothing to drop on the test side
                 s._frames.put_nowait(np.full(FRAME, 0.3, dtype="float32"))
-            except queue.Full:  # consumer is keeping up; nothing to drop on the test side
-                pass
 
     t = threading.Thread(target=feeder, daemon=True)
     t.start()

@@ -3,6 +3,7 @@ Windows SAPI or Kokoro to speak."""
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import queue
@@ -373,14 +374,10 @@ class VoiceSession:
             try:
                 self._frames.put_nowait(frame)
             except queue.Full:
-                try:
+                with contextlib.suppress(queue.Empty):
                     self._frames.get_nowait()  # drop the oldest so memory stays bounded
-                except queue.Empty:
-                    pass
-                try:
+                with contextlib.suppress(queue.Full):
                     self._frames.put_nowait(frame)
-                except queue.Full:
-                    pass
 
         try:
             self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", blocksize=FRAME, callback=cb)
@@ -399,10 +396,8 @@ class VoiceSession:
         if callable(close):
             close()  # the VoxCPM2 worker and Piper: they hold the GPU and would outlive a voice mode run in a terminal
         if self._stream is not None:
-            try:
+            with contextlib.suppress(Exception):  # closing the mic must never mask a real error
                 self._stream.__exit__(*exc)
-            except Exception:  # noqa: BLE001 - closing the mic must never mask a real error
-                pass
 
     MIC_SILENT_SECONDS = 10.0  # no frame at all for this long: the microphone stopped (unplugged, taken away)
 
@@ -605,10 +600,8 @@ class VoiceSession:
         finally:
             stop.set()  # release the watcher whether or not it was interrupted
         if panel and self.on_spoken is not None:
-            try:
+            with contextlib.suppress(Exception):  # a logging hook must never break speech or the overlay
                 self.on_spoken(getattr(self.speaker, "last_first_sound_ms", None))
-            except Exception:  # a logging hook must never break speech or the overlay
-                pass
         if watch:
             watcher.join(timeout=1.0)
         self._interrupted = not finished
@@ -899,10 +892,9 @@ class Speaker:
                 self.engine = "piper"
         if self.engine == "piper":  # start the voices now: loading a model takes seconds, the first answer should not
             for lang in PIPER_VOICES:
-                try:
+                # speak() says what is missing when that language is needed
+                with contextlib.suppress(FileNotFoundError):
                     self._piper_voice(lang)
-                except FileNotFoundError:
-                    pass  # speak() says what is missing when that language is needed
 
     def close(self) -> None:
         """Stop every speech worker this speaker started (VoxCPM2, Piper)."""
@@ -911,10 +903,8 @@ class Speaker:
             workers.append(self._vox)
         self._piper, self._vox = {}, None
         for w in workers:
-            try:
+            with contextlib.suppress(Exception):  # stopping one worker must not keep the others running
                 w.close()
-            except Exception:  # noqa: BLE001 - stopping one worker must not keep the others running
-                pass
 
     def _note_failure(self, key: str, display: str, fallback: str) -> None:
         """Count one failure of engine `key`; after three in a row the voice switches to `fallback` for good. Only the
@@ -1008,10 +998,8 @@ class Speaker:
             print(f"VoxCPM failed ({exc}); using Piper instead.")
             self._note_failure("voxcpm", "VoxCPM", "piper")  # switches the voice only after three in a row
             if self.engine != "voxcpm" and self._vox is not None:  # switched away for good: free its GPU memory now
-                try:
+                with contextlib.suppress(Exception):  # stopping the worker must not hide the fallback
                     self._vox.close()
-                except Exception:  # noqa: BLE001 - stopping the worker must not hide the fallback
-                    pass
                 self._vox = None
             return self._speak_piper(text, stop_event)
 

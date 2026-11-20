@@ -503,13 +503,12 @@ def test_claim_takes_a_wav_only_once_piper_has_closed_it(tmp_path):
     from iris.voice import _claim
 
     path = tmp_path / "1.wav"
-    w = wave.open(str(path), "wb")
-    w.setnchannels(1)
-    w.setsampwidth(2)
-    w.setframerate(22050)
-    w.writeframes(bytes(20))  # the header already counts these frames, but Piper is still writing
-    assert _claim(path, tmp_path / "done") is None and path.exists()
-    w.close()
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(22050)
+        w.writeframes(bytes(20))  # the header already counts these frames, but Piper is still writing
+        assert _claim(path, tmp_path / "done") is None and path.exists()
     mine = _claim(path, tmp_path / "done")
     assert mine == tmp_path / "done" / "1.wav" and not path.exists()
 

@@ -228,8 +228,8 @@ def test_shortcuts_start_the_app_and_start_at_login_is_optional():
     assert '"{#AppArgs} --background"' in login and "Tasks: startatlogin" in login
     desktop = next(line for line in ISS.splitlines() if line.startswith('Name: "{userdesktop}'))
     assert "Tasks: desktopicon" in desktop
-    tasks = [line for line in ISS.splitlines() if line.startswith('Name: "desktopicon"') or
-             line.startswith('Name: "startatlogin"')]
+    wanted = ('Name: "desktopicon"', 'Name: "startatlogin"')
+    tasks = [line for line in ISS.splitlines() if line.startswith(wanted)]
     assert len(tasks) == 2 and all("Flags: unchecked" in t for t in tasks)  # both off unless the user ticks them
 
 

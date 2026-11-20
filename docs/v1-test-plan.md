@@ -174,6 +174,8 @@ Each with the options and a recommendation in one line.
   turn, a cline_cli that is a .cmd or .bat file is refused, and the whole robustness backlog (speech limit, chime,
   push-to-talk, voice fallback, Piper encoding, Settings types, Setup URL, pack timeouts, tray, browser retries,
   ASP.NET pages, double clicks, config cache, HEAD answers) is done. Nothing to decide.
+- The **lazy imports** of urllib.request proposed in section 7 are built (see CHANGELOG.md): a cold start skips the
+  whole chain (about 34 ms on Windows). Nothing to decide.
 - Before 1.0.0's test fix, the test suite put 668 removed test skills (`*_skill_say_hello`) into your real
   `~\.iris\trash`. The tests no longer touch it. Recommendation: delete the folders whose names end in
   _skill_say_hello in that trash folder.
@@ -194,8 +196,6 @@ Ideas that need a tier change in policy.py and tier_lock.json, or a new dependen
 - **file_info(path)**, safe: size, dates and type of one file, so the model does not list a whole folder. Needs a
   tier entry.
 - **The stricter policy rules** of section 6, each with an eval trap.
-- **Lazy imports** of urllib.request across the modules `iris --help` loads (about 145 ms on Windows), once a cold
-  start matters more than it does now (0.31 s).
 
 ## 8. Release steps after a pass
 

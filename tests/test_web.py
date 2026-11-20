@@ -64,6 +64,14 @@ def test_a_redirect_to_a_public_address_is_followed():
     assert new is not None and new.full_url == "https://example.org/page"
 
 
+def test_the_opener_is_built_on_first_use_and_then_reused(monkeypatch):
+    monkeypatch.setattr(web, "_OPENER", None)  # force the lazy build; building an opener opens no connection
+    first = web._opener()
+    second = web._opener()
+    assert isinstance(first, urllib.request.OpenerDirector)
+    assert first is second
+
+
 def test_an_unknown_charset_falls_back_to_utf8(fake_urlopen):
     fake_urlopen.install(FakeResponse("héllo".encode(), content_type="text/html; charset=x-made-up"))
     assert web.http_get("https://example.com/")[2] == "héllo"

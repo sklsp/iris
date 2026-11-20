@@ -134,9 +134,9 @@ def system_status() -> str:
     """CPU and RAM usage as text, with each GPU's load, VRAM and temperature on its own line."""
     d = system_data()
     lines = [f"CPU {d['cpu_percent']:.0f}%, RAM {d['ram_used_gb']:.1f}/{d['ram_total_gb']:.1f} GB"]
-    for g in d["gpus"]:
-        lines.append(f"GPU{g['index']} {g['name']}: {g['load_percent']:.0f}% load, "
-                     f"VRAM {g['vram_used_mib']:.0f}/{g['vram_total_mib']:.0f} MiB, {g['temp_c']:.0f} C")
+    lines.extend(f"GPU{g['index']} {g['name']}: {g['load_percent']:.0f}% load, "
+                 f"VRAM {g['vram_used_mib']:.0f}/{g['vram_total_mib']:.0f} MiB, {g['temp_c']:.0f} C"
+                 for g in d["gpus"])
     if not d["gpus"]:
         lines.append("GPU: nvidia-smi not available")
     return "\n".join(lines)

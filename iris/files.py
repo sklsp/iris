@@ -39,9 +39,8 @@ def find_files(name: str, folder: str = "") -> str:
                 continue
             dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _SKIP_DIRS]
             scanned += len(filenames) + len(dirnames)
-            for entry in (*filenames, *dirnames):
-                if q in entry.lower():
-                    hits.append((_mtime(current / entry), current / entry))
+            entries = (*filenames, *dirnames)
+            hits.extend((_mtime(current / e), current / e) for e in entries if q in e.lower())
             if len(hits) >= 30:
                 note = "\n[stopped after 30 hits]"
                 break

@@ -135,10 +135,10 @@ def checks(payload: dict[str, Any] | None = None) -> list[tuple[bool, str]]:
                 else "pip install -e .[browser]" if not ws else
                 "open brave://inspect/#remote-debugging and tick 'Allow remote debugging' for fast web pages")))
     if not bundled():  # the installer makes its own Start menu and desktop shortcuts
-        from iris.__main__ import desktop_dir
+        from iris.__main__ import SHORTCUT_NAME, desktop_dir
 
-        have = (desktop_dir() / "Iris.lnk").exists()
-        out.append((have, "shortcut: Iris.lnk on the desktop" if have else
+        have = (desktop_dir() / SHORTCUT_NAME).exists()
+        out.append((have, f"shortcut: {SHORTCUT_NAME} on the desktop" if have else
                     "shortcut: none on the desktop; iris shortcut puts one there (optional)"))
     from iris.__main__ import STARTUP_NAMES, startup_dir
 

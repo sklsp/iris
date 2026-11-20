@@ -1,2 +1,0 @@
-- [x] Q1. docs: the README quick start (2438 passed in 106.60s (0:01:46))
-- [x] Q2. docs: start at login and the shortcut in the desktop-app doc (2438 passed in 105.71s (0:01:45))

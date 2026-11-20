@@ -10,6 +10,7 @@ Events in: listening, heard (text), thinking, answer (text), idle, interrupted. 
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
@@ -150,10 +151,10 @@ class Overlay:
         """Queue an event for the overlay process; it returns at once, so a slow or dead panel never blocks Iris."""
         if self._proc is None:
             return
-        try:  # JSON's ASCII escapes: no console code page can garble Dutch or an emoji on the way
+        # JSON's ASCII escapes: no console code page can garble Dutch or an emoji on the way
+        # the overlay stopped reading; drop events rather than wait for it
+        with contextlib.suppress(queue.Full):
             self._queue.put_nowait(json.dumps({"event": event, "text": text}) + "\n")
-        except queue.Full:
-            pass  # the overlay stopped reading; drop events rather than wait for it
 
     def _write(self, proc: subprocess.Popen[str]) -> None:
         pipe = proc.stdin
@@ -183,10 +184,8 @@ class Overlay:
         proc, self._proc = self._proc, None
         if proc is None:
             return
-        try:
+        with contextlib.suppress(queue.Full):
             self._queue.put_nowait(None)
-        except queue.Full:
-            pass
         # in a thread: a writer stuck on a full pipe holds its lock, and close() would wait for it forever
         threading.Thread(target=_close_quietly, args=(proc.stdin,), daemon=True).start()
         try:
@@ -454,20 +453,16 @@ class Panel:
         self.tk, self.events, self.clock, self.view, self.tint = tk, events, clock, View(), Tint()
         self.out, self.hover = out, False
         if user32 is not None:
-            try:
+            with contextlib.suppress(Exception):  # blurry is better than no panel
                 user32.SetProcessDPIAware()  # sharp text; Tk then scales its point sizes to the real DPI
-            except Exception:  # noqa: BLE001 - blurry is better than no panel
-                pass
         root = self.root = tk.Tk()
         root.withdraw()
         root.title(TITLE)
         root.overrideredirect(True)
         root.configure(bg=KEY)
         root.attributes("-topmost", True)
-        try:
+        with contextlib.suppress(tk.TclError):
             root.attributes("-transparentcolor", KEY)  # Windows only: the panel gets round corners
-        except tk.TclError:
-            pass
         root.attributes("-alpha", 0.0)
         self.scale = max(1.0, float(root.winfo_fpixels("1i")) / 96)
         self.width, self.margin = int(self.WIDTH * self.scale), int(self.MARGIN * self.scale)

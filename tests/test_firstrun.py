@@ -175,7 +175,7 @@ def test_speaker_test_uses_the_windows_voice_when_no_say_is_given(monkeypatch):
 def test_payload_and_checks(monkeypatch):
     from iris import dashboard, doctor
 
-    monkeypatch.setattr(firstrun, "servers", lambda: [])
+    monkeypatch.setattr(firstrun, "servers", list)
     monkeypatch.setattr(dashboard, "lmstudio_payload", lambda: {"reachable": False})
     monkeypatch.setattr(doctor, "checks", lambda payload: [(True, "voice extras installed"), (False, "browser: x"),
                                                            (False, "model server not reachable")])

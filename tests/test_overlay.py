@@ -736,7 +736,7 @@ def test_the_glow_fades_away_from_the_edge_and_stays_in_the_margin(mode):
         for bands in ([c for c, _ in outer], inner):
             assert all(_far(a, base) > _far(b, base) for a, b in zip(bands, bands[1:], strict=False))
         assert all(0 < w <= full for (_, w), (full, _) in zip(outer, OUTER, strict=True))
-    assert Panel.MARGIN >= max(w for w, _ in OUTER) / 2  # the widest outer stroke still fits round the panel
+    assert max(w for w, _ in OUTER) / 2 <= Panel.MARGIN  # the widest outer stroke still fits round the panel
 
 
 def test_the_outline_is_one_colour_except_while_thinking():

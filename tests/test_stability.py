@@ -34,8 +34,8 @@ def test_every_command_and_flag_of_1_0_is_still_there():
     main = _source("__main__.py")
     commands = set(re.findall(r'sys\.argv\[1\] == "([a-z-]+)"', main))
     flags = set(re.findall(r'add_argument\("(--[a-z-]+)"', main))
-    assert COMMANDS <= commands, COMMANDS - commands
-    assert FLAGS <= flags, FLAGS - flags
+    assert commands >= COMMANDS, COMMANDS - commands
+    assert flags >= FLAGS, FLAGS - flags
 
 
 def test_every_config_key_of_1_0_is_still_read():
@@ -43,16 +43,16 @@ def test_every_config_key_of_1_0_is_still_read():
     read = set(re.findall(r'config\.(?:get|setting|number)\((?:"IRIS_[A-Z_]+", )?"([a-z_]+)"', code))
     read |= {f["key"] for f in settings.FIELDS} | set(re.findall(r'raw\(\)\.get\("([a-z_]+)"', code))
     read |= set(re.findall(r'(?:data|cfg)\.get\("([a-z_]+)"', _source("config.py")))
-    assert CONFIG_KEYS <= read, CONFIG_KEYS - read
+    assert read >= CONFIG_KEYS, CONFIG_KEYS - read
 
 
 def test_every_dashboard_route_of_1_0_is_still_served():
     code = _source("dashboard/__init__.py")
     served = set(re.findall(r'"(/(?:api/[a-z/_]+)?)"', code))
-    assert ROUTES <= served, ROUTES - served
+    assert served >= ROUTES, ROUTES - served
 
 
 def test_every_file_in_the_iris_folder_of_1_0_still_has_its_name():
     code = "".join(p.read_text(encoding="utf-8") for p in IRIS.rglob("*.py"))
     named = set(re.findall(r'"([a-z_]+(?:\.[a-z]+)?)"', code))
-    assert HOME_FILES <= named, HOME_FILES - named
+    assert named >= HOME_FILES, HOME_FILES - named

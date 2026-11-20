@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import json
 import os
@@ -129,10 +130,8 @@ def _llm_error(exc: BaseException) -> str:
     text = repr(exc)
     read = getattr(exc, "read", None)
     if callable(read):
-        try:
+        with contextlib.suppress(Exception):  # the body is a bonus, the status is already in text
             text += " " + read().decode("utf-8", "replace")
-        except Exception:  # noqa: BLE001 - the body is a bonus, the status is already in text
-            pass
     return text[:500]
 
 

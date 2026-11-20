@@ -8,6 +8,7 @@ for a few minutes. run_done only reads; cline_start starts a session through the
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import subprocess
@@ -217,10 +218,8 @@ def cline_start(agent: str, repo: str = "") -> str:
         return f"error: {exc}"  # the session did not start; the queue stays untouched
     # only after the hub started the session, so a failure leaves the queue unchanged; by id, because the dashboard
     # may have moved or deleted prompts while the session started (that can take minutes)
-    try:
+    with contextlib.suppress(LookupError):  # deleted meanwhile: nothing else is taken in its place
         prompt_queue.remove(waiting[0]["id"])
-    except LookupError:
-        pass  # deleted meanwhile: nothing else is taken in its place
     return result
 
 

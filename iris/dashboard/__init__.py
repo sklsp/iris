@@ -1030,7 +1030,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt: str, *args: object) -> None:  # keep the console quiet while it runs
         """No per-request logging; a running dashboard must not fill the console."""
-        pass
 
 
 class _Server(ThreadingHTTPServer):

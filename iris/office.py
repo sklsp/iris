@@ -62,7 +62,7 @@ def _add_content(doc: Document, content: str) -> int:
             flush()
             doc.add_heading(s[2:], 1)
             n += 1
-        elif s.startswith("- ") or s.startswith("* "):
+        elif s.startswith(("- ", "* ")):
             flush()
             _add_rich(doc.add_paragraph(style="List Bullet"), s[2:])
             n += 1

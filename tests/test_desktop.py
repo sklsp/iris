@@ -295,8 +295,8 @@ def test_start_menu_folders_come_from_the_env_var(tmp_path, monkeypatch):
 
 def test_start_menu_folders_default_to_the_two_real_windows_ones(tmp_path, monkeypatch):
     monkeypatch.delenv("IRIS_START_MENU")
-    monkeypatch.setenv("ProgramData", str(tmp_path / "pd"))
-    monkeypatch.setenv("AppData", str(tmp_path / "ad"))
+    monkeypatch.setenv("PROGRAMDATA", str(tmp_path / "pd"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "ad"))
     assert desktop._start_menu_folders() == [
         tmp_path / "pd" / "Microsoft/Windows/Start Menu/Programs",
         tmp_path / "ad" / "Microsoft/Windows/Start Menu/Programs",

@@ -12,6 +12,7 @@ asks once per run. Nothing here reaches the network: only the browser on this PC
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -162,10 +163,8 @@ def watch(announce: Callable[[str], object] | None = None, every: float = 5, ask
                     if stop and stop.is_set():  # voice mode ended while Allow was still being asked
                         close = getattr(conn, "close", None)
                         if callable(close):
-                            try:
+                            with contextlib.suppress(Exception):  # a dead socket on the way out is fine
                                 close()
-                            except Exception:  # noqa: BLE001 - a dead socket on the way out is fine
-                                pass
                         return  # a stopped watcher never publishes its connection
                     _sessions.clear()
                     _conn = conn
@@ -532,10 +531,8 @@ def search(query: str, max_results: int = 5, wait: float = 8) -> list[dict[str, 
             if found.get("human") or found.get("results"):
                 break
     finally:
-        try:
+        with contextlib.suppress(BrowserError):
             _call("Target.closeTarget", {"targetId": tid})
-        except BrowserError:
-            pass
     if found.get("human") and not found.get("results"):  # results that merely mention a captcha are results
         raise BrowserError("the search engine asks for a human check; Iris does not solve those")
     return found.get("results") or []

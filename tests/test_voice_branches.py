@@ -488,7 +488,6 @@ class _StubWorker:
         self.waited += 1
         if self.waited <= self.timeouts:
             raise subprocess.TimeoutExpired("w", timeout)
-        return None
 
     def terminate(self):
         self.terminated += 1

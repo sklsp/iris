@@ -1,1 +1,0 @@
-- [x] Q1. tests: the launcher file names in the docs follow the code (2440 passed in 105.78s (0:01:45))

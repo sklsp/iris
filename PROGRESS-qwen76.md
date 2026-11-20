@@ -1,2 +1,0 @@
-- [x] Q1. startup: start the tray app at login, with no console (2431 passed in 111.94s (0:01:51))
-- [x] Q2. docs: the new startup (2431 passed in 104.20s (0:01:44))

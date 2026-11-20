@@ -12,7 +12,7 @@ python -m iris eval            run the eval tasks against the model (--repeat N,
                                eval publish puts the latest score in the README, eval history shows the trend)
 python -m iris eval-compare A B  what changed between two eval reports (eval/results/*.json)
 python -m iris config          print every setting, its value and where it comes from (file, default, environment)
-python -m iris startup on      start voice mode at login in a minimized console (off, status)
+python -m iris startup on      start the tray app at login, with no console (off, status)
 python -m iris shortcut        put an Iris.cmd on the desktop that starts voice mode with a double-click
 python -m iris skill list      the skills Iris built; `skill export NAME` zips an approved one to share,
                                `skill import FILE [--tier safe]` adds a shared one for review (confirm by default)"""
@@ -40,19 +40,37 @@ def startup_dir() -> Path:
                 or Path(os.environ.get("APPDATA", Path.home())) / "Microsoft/Windows/Start Menu/Programs/Startup")
 
 
+def startup_python(exe: Path) -> Path:
+    """The interpreter for the login script: pythonw.exe next to exe when it exists (no console), else exe."""
+    pythonw = exe.with_name("pythonw.exe")
+    return pythonw if pythonw.exists() else exe
+
+
 def startup_main(argv: list[str]) -> int:
-    """`iris startup on|off|status`: start voice mode at login, in a minimized console you can see and close."""
-    cmd = startup_dir() / "Iris.cmd"
+    """`iris startup on|off|status`: start the tray app at login, with no console window."""
+    names = ("Iris.vbs", "Iris.cmd", "Iris.lnk")
     what = argv[0] if argv else "status"
     if what == "on":
-        cmd.parent.mkdir(parents=True, exist_ok=True)
-        cmd.write_text(f'@echo off\nstart "Iris" /min "{sys.executable}" -m iris --voice\n', encoding="utf-8")
-        print(f"Iris starts in voice mode at login ({cmd}). Let LM Studio start its server at login too.")
+        vbs = startup_dir() / "Iris.vbs"
+        vbs.parent.mkdir(parents=True, exist_ok=True)
+        exe = startup_python(Path(sys.executable))
+        line = f'CreateObject("WScript.Shell").Run """{exe}"" -m iris app --background", 0, False\n'
+        vbs.write_text(line, encoding="utf-8")
+        for name in names[1:]:
+            (startup_dir() / name).unlink(missing_ok=True)
+        print(f"Iris starts in the tray at login ({vbs}). Let LM Studio start its server at login too.")
     elif what == "off":
-        cmd.unlink(missing_ok=True)
+        for name in names:
+            (startup_dir() / name).unlink(missing_ok=True)
         print("Iris no longer starts at login.")
     elif what == "status":
-        print(f"on ({cmd})" if cmd.exists() else "off")
+        for name in names:
+            path = startup_dir() / name
+            if path.exists():
+                print(f"on ({path})")
+                break
+        else:
+            print("off")
     else:
         print("usage: iris startup on|off|status", file=sys.stderr)
         return 2

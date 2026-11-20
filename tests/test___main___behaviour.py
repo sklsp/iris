@@ -424,20 +424,102 @@ def test_main_installs_timers_that_speak_through_say(tmp_path, monkeypatch, caps
 
 
 
+def test_startup_python_prefers_pythonw_next_to_the_interpreter(tmp_path):
+    from iris.__main__ import startup_python
+
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    assert startup_python(exe) == exe  # no pythonw.exe next to it: fall back to the interpreter itself
+    (tmp_path / "pythonw.exe").write_bytes(b"")
+    assert startup_python(exe) == tmp_path / "pythonw.exe"
+
+
 def test_startup_on_status_off(tmp_path, monkeypatch, capsys):
     import sys
 
     from iris.__main__ import startup_main
 
     monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path / "Startup"))
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(exe))
     assert startup_main(["status"]) == 0 and capsys.readouterr().out.strip() == "off"
     assert startup_main(["on"]) == 0
-    text = (tmp_path / "Startup" / "Iris.cmd").read_text(encoding="utf-8")
-    assert f'start "Iris" /min "{sys.executable}" -m iris --voice' in text
-    assert startup_main([]) == 0 and capsys.readouterr().out.splitlines()[-1].startswith("on (")
-    assert startup_main(["off"]) == 0 and not (tmp_path / "Startup" / "Iris.cmd").exists()
+    vbs = tmp_path / "Startup" / "Iris.vbs"
+    expected = f'CreateObject("WScript.Shell").Run """{exe}"" -m iris app --background", 0, False\n'
+    assert vbs.read_text(encoding="utf-8") == expected
+    out = capsys.readouterr().out.splitlines()
+    assert out == [f"Iris starts in the tray at login ({vbs}). Let LM Studio start its server at login too."]
+    assert startup_main([]) == 0 and capsys.readouterr().out.strip() == f"on ({vbs})"
+    assert startup_main(["off"]) == 0 and not vbs.exists()
     assert startup_main(["off"]) == 0  # already off is fine
     assert startup_main(["sideways"]) == 2
+
+
+def test_startup_on_uses_pythonw_when_it_is_next_to_the_interpreter(tmp_path, monkeypatch, capsys):
+    import sys
+
+    from iris.__main__ import startup_main
+
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path / "Startup"))
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    (tmp_path / "pythonw.exe").write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(exe))
+    assert startup_main(["on"]) == 0
+    capsys.readouterr()
+    vbs = tmp_path / "Startup" / "Iris.vbs"
+    pythonw = tmp_path / "pythonw.exe"
+    expected = f'CreateObject("WScript.Shell").Run """{pythonw}"" -m iris app --background", 0, False\n'
+    assert vbs.read_text(encoding="utf-8") == expected
+
+
+def test_startup_on_removes_the_old_cmd_and_lnk(tmp_path, monkeypatch, capsys):
+    import sys
+
+    from iris.__main__ import startup_main
+
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path / "Startup"))
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(exe))
+    old = tmp_path / "Startup"
+    old.mkdir()
+    (old / "Iris.cmd").write_text("old", encoding="utf-8")
+    (old / "Iris.lnk").write_bytes(b"old")
+    assert startup_main(["on"]) == 0
+    capsys.readouterr()
+    assert not (old / "Iris.cmd").exists() and not (old / "Iris.lnk").exists()
+    assert (old / "Iris.vbs").exists()
+
+
+def test_startup_status_names_whichever_file_is_there(tmp_path, monkeypatch, capsys):
+    from iris.__main__ import startup_main
+
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path / "Startup"))
+    old = tmp_path / "Startup"
+    old.mkdir()
+    for name in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+        for other in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+            (old / other).unlink(missing_ok=True)
+        (old / name).write_text("x", encoding="utf-8")
+        assert startup_main(["status"]) == 0 and capsys.readouterr().out.strip() == f"on ({old / name})"
+    for other in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+        (old / other).unlink(missing_ok=True)
+    assert startup_main(["status"]) == 0 and capsys.readouterr().out.strip() == "off"
+
+
+def test_startup_off_removes_vbs_cmd_and_lnk(tmp_path, monkeypatch, capsys):
+    from iris.__main__ import startup_main
+
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path / "Startup"))
+    old = tmp_path / "Startup"
+    old.mkdir()
+    for name in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+        (old / name).write_text("x", encoding="utf-8")
+    assert startup_main(["off"]) == 0 and capsys.readouterr().out.strip() == "Iris no longer starts at login."
+    for name in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+        assert not (old / name).exists()
 
 
 def test_shortcut_puts_a_voice_mode_launcher_on_the_desktop(tmp_path, monkeypatch, capsys):

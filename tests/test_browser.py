@@ -9,7 +9,6 @@ import urllib.error
 from typing import ClassVar, cast
 
 import pytest
-import websocket
 
 from iris import browser, tools
 
@@ -115,8 +114,8 @@ def test_a_slow_answer_keeps_the_socket_so_the_browser_does_not_ask_allow_again(
             raise TimeoutError("timed out")
 
     c = object.__new__(browser.Connection)
-    slow = (TimeoutError, websocket.WebSocketTimeoutException)  # the real default in Connection.__init__
-    c.ws, c._id, c._slow, c._lock = SlowSocket(), 0, slow, threading.Lock()
+    # websocket is an optional extra (not in CI); a TimeoutError is all this test needs
+    c.ws, c._id, c._slow, c._lock = SlowSocket(), 0, (TimeoutError,), threading.Lock()  # type: ignore[assignment]
     monkeypatch.setattr(browser, "_conn", c)
     monkeypatch.setattr(browser, "_ws_url", lambda: pytest.fail("reconnected"))
     with pytest.raises(browser.BrowserError, match=r"did not answer Runtime.evaluate within 2 s"):

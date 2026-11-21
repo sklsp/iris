@@ -102,8 +102,6 @@ module = [
     "tests.test_agent",
     "tests.test_voice",
     "tests.test_app",
-    "tests.test_desktop",
-    "tests.test_overlay",
     "tests.test_voice_behaviour",
 ]
 ignore_errors = true

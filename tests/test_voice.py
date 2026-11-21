@@ -5,6 +5,7 @@ import threading
 import time
 import types
 from itertools import pairwise
+from typing import cast
 
 import pytest
 
@@ -64,16 +65,16 @@ class FakeModel:
         return {"hey_jarvis": self.score}
 
 
-def test_wake_word_detect_uses_threshold():
+def test_wake_word_detect_uses_threshold(monkeypatch):
     w = WakeWord()
-    w._m = FakeModel(0.9)
+    monkeypatch.setattr(w, "_m", FakeModel(0.9))
     assert w.detect(np.zeros(FRAME)) is True
     strict = WakeWord(threshold=0.95)
-    strict._m = FakeModel(0.9)
+    monkeypatch.setattr(strict, "_m", FakeModel(0.9))
     assert strict.detect(np.zeros(FRAME)) is False
 
 
-def test_wake_word_resets_after_a_hit_so_one_phrase_fires_once():
+def test_wake_word_resets_after_a_hit_so_one_phrase_fires_once(monkeypatch):
     class Sticky(FakeModel):
         resets = 0
 
@@ -84,12 +85,13 @@ def test_wake_word_resets_after_a_hit_so_one_phrase_fires_once():
             self.resets += 1
 
     w = WakeWord()
-    w._m = Sticky(0.0)
+    model = Sticky(0.0)
+    monkeypatch.setattr(w, "_m", model)
     hits = [w.detect(np.zeros(FRAME)) for _ in range(5)]
-    assert hits == [True, False, False, False, False] and w._m.resets == 1
+    assert hits == [True, False, False, False, False] and model.resets == 1
 
 
-def test_wake_word_feeds_openwakeword_16_bit_pcm():
+def test_wake_word_feeds_openwakeword_16_bit_pcm(monkeypatch):
     seen = []
 
     class Recorder(FakeModel):
@@ -98,7 +100,7 @@ def test_wake_word_feeds_openwakeword_16_bit_pcm():
             return {"hey_jarvis": 0.0}
 
     w = WakeWord()
-    w._m = Recorder(0.0)
+    monkeypatch.setattr(w, "_m", Recorder(0.0))
     w.detect(np.full(FRAME, 0.5, dtype=np.float32))  # the mic stream delivers float32 in [-1, 1]
     assert seen[0].dtype == np.int16 and seen[0][0] == 16383
 
@@ -124,13 +126,12 @@ class FakeKokoroModel:
 
 
 def _fake_sounddevice(monkeypatch, played):
-    fake_sd = types.ModuleType("sounddevice")
-    fake_sd.play = lambda data, sr: played.append(len(data))
-    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
+        play=lambda data, sr: played.append(len(data))))
 
 
 def test_speaker_kokoro_streams_all_chunks_when_not_interrupted(monkeypatch):
-    played = []
+    played: list[int] = []
     _fake_sounddevice(monkeypatch, played)
     spk = Speaker(engine="kokoro")
     spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(5)])
@@ -140,9 +141,8 @@ def test_speaker_kokoro_streams_all_chunks_when_not_interrupted(monkeypatch):
 
 def test_speaker_kokoro_lets_each_chunk_finish_before_the_next(monkeypatch):
     starts = []
-    fake_sd = types.ModuleType("sounddevice")
-    fake_sd.play = lambda data, sr: starts.append(time.perf_counter())  # returns at once, like the real sd.play
-    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
+        play=lambda data, sr: starts.append(time.perf_counter())))  # returns at once, like the real sd.play
     spk = Speaker(engine="kokoro")
     spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(3)])  # 0.1 s each at 24 kHz
     assert spk.speak("hello", stop_event=threading.Event()) is True
@@ -159,9 +159,7 @@ def test_speaker_kokoro_stops_between_chunks_on_interrupt(monkeypatch):
         if len(played) == 1:
             stop.set()  # Jay says the wake word after the first chunk
 
-    fake_sd = types.ModuleType("sounddevice")
-    fake_sd.play = play
-    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(play=play))
     spk = Speaker(engine="kokoro")
     spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(5)])
     assert spk.speak("hello", stop_event=stop) is False
@@ -169,20 +167,17 @@ def test_speaker_kokoro_stops_between_chunks_on_interrupt(monkeypatch):
 
 
 def test_speaker_kokoro_waits_for_chunks_without_blocking_the_event_loop(monkeypatch):
-    said = []
+    said: list[str] = []
     _fake_pyttsx3(monkeypatch, said)  # records any SAPI fallback
     played = []
-    fake_sd = types.ModuleType("sounddevice")
-    fake_sd.play = lambda data, sr: played.append(len(data))
-    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
-
-    import iris.voice as v
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
+        play=lambda data, sr: played.append(len(data))))
 
     def no_blocking_sleep(*a):
         if threading.current_thread() is threading.main_thread():  # only Kokoro's loop runs there
             raise AssertionError("the event loop must not be blocked with time.sleep")
 
-    monkeypatch.setattr(v.time, "sleep", no_blocking_sleep)  # a blocking wait fails the test at once
+    monkeypatch.setattr(time, "sleep", no_blocking_sleep)  # a blocking wait fails the test at once
 
     spk = Speaker(engine="kokoro")
     spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(2)])  # two short chunks
@@ -201,17 +196,13 @@ def test_speaker_kokoro_falls_back_to_sapi(monkeypatch, tmp_path):
         def runAndWait(self):
             pass
 
-    fake_pyttsx3 = types.ModuleType("pyttsx3")
-    fake_pyttsx3.init = lambda: FakeEngine()
-    monkeypatch.setitem(sys.modules, "pyttsx3", fake_pyttsx3)
+    monkeypatch.setitem(sys.modules, "pyttsx3", types.SimpleNamespace(init=lambda: FakeEngine()))
 
     class BrokenKokoro:
         def __init__(self, *a, **k):
             raise RuntimeError("no model")
 
-    fake_kokoro_onnx = types.ModuleType("kokoro_onnx")
-    fake_kokoro_onnx.Kokoro = BrokenKokoro
-    monkeypatch.setitem(sys.modules, "kokoro_onnx", fake_kokoro_onnx)
+    monkeypatch.setitem(sys.modules, "kokoro_onnx", types.SimpleNamespace(Kokoro=BrokenKokoro))
 
     import iris.voice as v
 
@@ -236,9 +227,7 @@ def test_speaker_sapi_uses_pyttsx3(monkeypatch):
         def runAndWait(self):
             pass
 
-    fake_pyttsx3 = types.ModuleType("pyttsx3")
-    fake_pyttsx3.init = lambda: FakeEngine()
-    monkeypatch.setitem(sys.modules, "pyttsx3", fake_pyttsx3)
+    monkeypatch.setitem(sys.modules, "pyttsx3", types.SimpleNamespace(init=lambda: FakeEngine()))
     assert Speaker(engine="sapi").speak("hello world") is True
     assert said == ["hello world"]
 
@@ -251,13 +240,11 @@ def _fake_pyttsx3(monkeypatch, said):
         def runAndWait(self):
             pass
 
-    fake = types.ModuleType("pyttsx3")
-    fake.init = lambda: FakeEngine()
-    monkeypatch.setitem(sys.modules, "pyttsx3", fake)
+    monkeypatch.setitem(sys.modules, "pyttsx3", types.SimpleNamespace(init=lambda: FakeEngine()))
 
 
 def test_speaker_kokoro_without_model_files_falls_back_and_never_downloads(monkeypatch, tmp_path):
-    said = []
+    said: list[str] = []
     _fake_pyttsx3(monkeypatch, said)
     import iris.voice as v
 
@@ -292,8 +279,8 @@ def test_session_speak_returns_true_when_wake_word_heard_during_speech():
         def speak(self, text, stop_event=None):
             return not (stop_event.wait(2.0) if stop_event else False)
 
-    s = VoiceSession(speaker=SlowSpeaker())
-    s.wake = _FakeWake(True)
+    s = VoiceSession(speaker=cast(Speaker, SlowSpeaker()))
+    s.wake = cast(WakeWord, _FakeWake(True))
     for _ in range(50):  # enough frames to last while the speaker "talks"
         s._frames.put(np.zeros(FRAME, dtype="float32"))
     assert s.speak("a long answer") is True
@@ -305,8 +292,8 @@ def test_session_speak_completes_without_interruption():
             time.sleep(0.15)  # the watcher must sit idle and be released afterwards
             return True
 
-    s = VoiceSession(speaker=QuickSpeaker())
-    s.wake = _FakeWake(False)
+    s = VoiceSession(speaker=cast(Speaker, QuickSpeaker()))
+    s.wake = cast(WakeWord, _FakeWake(False))
     assert s.speak("short answer") is False
 
 
@@ -319,8 +306,8 @@ def test_session_speak_async_does_not_block_the_loop():
             done.append(text)
             return True
 
-    s = VoiceSession(speaker=SlowSpeaker())
-    s.wake = _FakeWake(False)
+    s = VoiceSession(speaker=cast(Speaker, SlowSpeaker()))
+    s.wake = cast(WakeWord, _FakeWake(False))
     t0 = time.time()
     thread = s.speak_async("the answer")
     assert time.time() - t0 < 0.2  # the agent can keep working right away
@@ -340,8 +327,8 @@ def test_speech_from_several_threads_never_overlaps():
             active.remove(text)
             return True
 
-    s = VoiceSession(speaker=Counting())
-    s.wake = _FakeWake(False)
+    s = VoiceSession(speaker=cast(Speaker, Counting()))
+    s.wake = cast(WakeWord, _FakeWake(False))
     threads = [threading.Thread(target=s.speak_async, args=(f"timer {i}",)) for i in range(4)]
     for t in threads:
         t.start()
@@ -357,8 +344,8 @@ def test_a_timer_speaking_while_iris_listens_takes_no_frames_from_the_recording(
             time.sleep(0.2)
             return True
 
-    s = VoiceSession(speaker=Quick())
-    s.wake = _FakeWake(True)  # a watcher would stop at the first frame it took
+    s = VoiceSession(speaker=cast(Speaker, Quick()))
+    s.wake = cast(WakeWord, _FakeWake(True))  # a watcher would stop at the first frame it took
     for _ in range(5):
         s._frames.put(np.zeros(FRAME, dtype="float32"))
     s._listening.set()  # next_request is reading the frames
@@ -366,14 +353,14 @@ def test_a_timer_speaking_while_iris_listens_takes_no_frames_from_the_recording(
     assert s._frames.qsize() == 5 and not s._wake_seen
 
 
-def test_session_barge_in_skips_the_wake_word_for_the_next_request():
+def test_session_barge_in_skips_the_wake_word_for_the_next_request(monkeypatch):
     class BlockingSpeaker:
         def speak(self, text, stop_event=None):
             return not (stop_event.wait(2.0) if stop_event else False)
 
-    s = VoiceSession(speaker=BlockingSpeaker())
-    s.wake = _FakeWake(True)  # the wake word fires on every frame
-    s._transcribe = lambda audio: "close the window"
+    s = VoiceSession(speaker=cast(Speaker, BlockingSpeaker()))
+    s.wake = cast(WakeWord, _FakeWake(True))  # the wake word fires on every frame
+    monkeypatch.setattr(s, "_transcribe", lambda audio: "close the window")
     for _ in range(50):
         s._frames.put(np.zeros(FRAME, dtype="float32"))
     assert s.speak("a long answer") is True  # interrupted
@@ -409,8 +396,13 @@ def _quiet(seconds):
 def test_name_wake_transcribes_a_short_utterance_with_its_lead_in_and_matches_the_name():
     from iris.voice import NameWake
 
-    heard = []
-    w = NameWake(transcribe=lambda a: heard.append(len(a)) or "Hey Iris.")
+    heard: list[int] = []
+
+    def transcribe(a):
+        heard.append(len(a))
+        return "Hey Iris."
+
+    w = NameWake(transcribe=transcribe)
     frames = _quiet(1) + _tone(0.8) + _quiet(0.6)
     hits = [w.detect(f) for f in frames]
     assert sum(hits) == 1 and len(heard) == 1
@@ -422,8 +414,13 @@ def test_name_wake_transcribes_a_short_utterance_with_its_lead_in_and_matches_th
 def test_name_wake_skips_long_speech_and_stays_quiet_on_silence():
     from iris.voice import NameWake
 
-    calls = []
-    w = NameWake(transcribe=lambda a: calls.append(1) or "Iris", max_seconds=1.0)
+    calls: list[int] = []
+
+    def transcribe(a):
+        calls.append(1)
+        return "Iris"
+
+    w = NameWake(transcribe=transcribe, max_seconds=1.0)
     assert not any(w.detect(f) for f in _quiet(2))
     assert not any(w.detect(f) for f in _tone(2.5) + _quiet(0.6))  # a long sentence is not a wake word
     assert calls == []
@@ -439,7 +436,8 @@ def test_make_wake_picks_the_name_or_an_openwakeword_model(monkeypatch):
     assert isinstance(make_wake("hey_jarvis"), WakeWord)
     assert make_wake("iris", vad_threshold=0.05).threshold == 0.05
     monkeypatch.delenv("IRIS_WAKEWORD")
-    assert make_wake().name == "hey_jarvis"
+    default = make_wake()
+    assert isinstance(default, WakeWord) and default.name == "hey_jarvis"
 
 
 def test_name_wake_loads_tiny_whisper_once_with_iris_as_hotword(monkeypatch):
@@ -494,7 +492,9 @@ def test_piper_runs_as_its_own_program_and_returns_one_wav_per_text(tmp_path, mo
         with wave.open(str(second), "rb") as w:
             assert w.getnframes() == 100 * len("Tweede regel")  # the newline became a space: one line, one WAV
     finally:
-        p.proc.stdin.close()
+        stdin = p.proc.stdin
+        assert stdin is not None
+        stdin.close()
         p.proc.wait(timeout=10)
 
 
@@ -602,21 +602,26 @@ class _Quiet:
 
 
 def test_a_question_soon_after_an_answer_needs_no_wake_word(monkeypatch):
-    s = VoiceSession(speaker=_Quiet())
+    s = VoiceSession(speaker=cast(Speaker, _Quiet()))
     monkeypatch.setattr(s, "_transcribe", lambda audio: "en morgen?")
     monkeypatch.setattr(s, "_drain", lambda: None)  # keep the frames this test queues up front
     s.speak("Het is tien over twaalf.")
     for level in [0.0] * 3 + [0.2] * 6 + [0.0] * 30:  # silence, a question, then silence again
         s._frames.put(np.full(FRAME, level, dtype="float32"))
-    woken = []
-    monkeypatch.setattr(s.wake, "detect", lambda frame: woken.append(1) or True)
+    woken: list[int] = []
+
+    def wake(frame):
+        woken.append(1)
+        return True
+
+    monkeypatch.setattr(s.wake, "detect", wake)
     assert s.next_request() == "en morgen?"
     assert woken == []  # no wake word was needed
 
 
 def test_the_follow_up_window_expires_back_to_the_wake_word(monkeypatch):
     monkeypatch.setenv("IRIS_FOLLOW_UP", "0.3")
-    s = VoiceSession(speaker=_Quiet())
+    s = VoiceSession(speaker=cast(Speaker, _Quiet()))
     monkeypatch.setattr(s, "_transcribe", lambda audio: "hoe laat is het")
     monkeypatch.setattr(s, "_drain", lambda: None)
     s.speak("Klaar.")
@@ -640,7 +645,7 @@ def test_the_follow_up_window_expires_back_to_the_wake_word(monkeypatch):
 # --- speech never blocks Iris ----------------------------------------------------------
 
 def _fake_sd(monkeypatch, active):
-    calls = []
+    calls: list[tuple[object, ...]] = []
     stream = types.SimpleNamespace(active=active)
     monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
         play=lambda audio, rate: calls.append(("play", len(audio), rate)),
@@ -692,7 +697,7 @@ def test_a_stuck_speech_thread_does_not_freeze_the_session(monkeypatch, capsys):
             return True
 
     monkeypatch.setattr(v, "SPEECH_TIMEOUT", 0.2)
-    s = VoiceSession(speaker=Stuck())
+    s = VoiceSession(speaker=cast(Speaker, Stuck()))
     t0 = time.monotonic()
     s.speak("Klikken op het vergrootglas?")
     assert time.monotonic() - t0 < 2 and "speech got stuck" in capsys.readouterr().out
@@ -708,7 +713,8 @@ def test_the_session_stops_every_speech_worker_when_it_ends(tmp_path):
     vox = object.__new__(voice.VoxProcess)
     vox.proc = child  # a worker still loading its model: it does not read stdin yet
     piper = object.__new__(voice.PiperProcess)
-    piper.proc = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE)
+    piper.proc = subprocess.Popen(
+        [sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE, text=True)
     piper.dir = tmp_path / "iris-piper-x"
     piper.dir.mkdir()
     spk = Speaker(engine="sapi")
@@ -740,15 +746,13 @@ def test_no_microphone_is_one_sentence_and_still_stops_the_workers(monkeypatch):
         def __init__(self, **kw):
             raise OSError("Error querying device -1")
 
-    fake_sd = types.ModuleType("sounddevice")
-    fake_sd.InputStream = NoMic
-    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(InputStream=NoMic))
 
     class Spk:
         def close(self):
             closed.append(True)
 
-    s = VoiceSession(speaker=Spk())
+    s = VoiceSession(speaker=cast(Speaker, Spk()))
     with pytest.raises(SystemExit, match=r"No microphone could be opened .*Windows Sound settings"):
         s.__enter__()
     s.__exit__(None, None, None)  # __main__ always calls this in its finally
@@ -759,10 +763,10 @@ def test_a_missing_custom_wake_model_is_an_error_not_a_download_of_every_model(m
     from iris import voice
 
     downloads = []
-    fake = types.ModuleType("openwakeword")
-    fake.MODELS = {"hey_jarvis": {"model_path": str(tmp_path / "hey_jarvis.tflite")}}
-    fake.utils = types.SimpleNamespace(download_models=lambda names: downloads.append(names))
-    fake.Model = lambda **kw: object()
+    fake = types.SimpleNamespace(
+        MODELS={"hey_jarvis": {"model_path": str(tmp_path / "hey_jarvis.tflite")}},
+        utils=types.SimpleNamespace(download_models=lambda names: downloads.append(names)),
+        Model=lambda **kw: object())
     monkeypatch.setitem(sys.modules, "openwakeword", fake)
     missing = str(tmp_path / "my_wake.onnx")
     with pytest.raises(FileNotFoundError, match=r"no wake word model at .*my_wake.onnx"):
@@ -775,7 +779,7 @@ def test_a_missing_custom_wake_model_is_an_error_not_a_download_of_every_model(m
 def test_a_microphone_that_stops_sending_ends_voice_mode_with_one_sentence(monkeypatch):
     s = VoiceSession(speaker=Speaker(engine="sapi"))
     monkeypatch.setattr(VoiceSession, "MIC_SILENT_SECONDS", 0.3)
-    s.wake = _FakeWake(False)
+    s.wake = cast(WakeWord, _FakeWake(False))
     t0 = time.perf_counter()
     with pytest.raises(SystemExit, match="The microphone stopped sending sound"):
         s.next_request()
@@ -790,9 +794,7 @@ def test_speaker_kokoro_says_nothing_when_stopped_before_the_first_chunk(monkeyp
     def play(data, sr):
         played.append(len(data))
 
-    fake_sd = types.ModuleType("sounddevice")
-    fake_sd.play = play
-    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(play=play))
     spk = Speaker(engine="kokoro")
     spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(5)])
     assert spk.speak("hello", stop_event=stop) is False

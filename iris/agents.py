@@ -123,7 +123,8 @@ def discover(cfg: Config | None = None) -> list[tuple[str, Path]]:
 def _git(repo: Path, *args: str) -> str:
     """Run a read-only, lock-free git command in `repo`. Raises on failure so the caller can report it."""
     cmd = ["git", "--no-optional-locks", "-C", str(repo), *args]  # never takes the index lock
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=GIT_TIMEOUT, check=False)
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=GIT_TIMEOUT, check=False)
     if proc.returncode != 0:
         raise RuntimeError((proc.stderr or "git failed").strip().splitlines()[-1])
     return proc.stdout

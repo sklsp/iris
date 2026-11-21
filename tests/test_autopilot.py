@@ -13,6 +13,7 @@ import pytest
 from iris.agent import Journal
 from iris.autopilot import (
     _count_started,
+    _dispatch,
     _started_at_epoch,
     cline_cli,
     cline_command,
@@ -319,10 +320,27 @@ def test_cline_sessions_passes_the_exact_argv_and_kwargs(monkeypatch):
         "capture_output": True,
         "text": True,
         "encoding": "utf-8",
+        "errors": "replace",
         "timeout": 30,
         "stdin": subprocess.DEVNULL,
         "check": False,
     }
+
+
+def test_dispatch_decodes_cli_output_as_utf8(monkeypatch):
+    """The CLI's output is decoded as UTF-8 with replacement, so any text survives the locale code page."""
+    _clear_cli_env(monkeypatch)
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(stderr="")
+
+    out = _dispatch("fix the bug", "W:/Iris", run=fake_run)
+    assert out == ""  # empty stderr means nothing to report
+    argv, kwargs = calls[0]
+    assert argv[-1] == "fix the bug"  # the prompt stays one argv item
+    assert kwargs["encoding"] == "utf-8" and kwargs["errors"] == "replace"
 
 
 def test_started_at_epoch_of_a_non_string_is_none():

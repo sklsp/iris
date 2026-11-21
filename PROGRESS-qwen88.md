@@ -1,2 +1,2 @@
 - [x] Q1. typing: test_voice (2440 passed in 115.26s (0:01:55))
-- [ ] Q2. typing: test_agent
+- [x] Q2. typing: test_agent (2440 passed in 113.41s (0:01:53))

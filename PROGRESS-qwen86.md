@@ -1,2 +1,2 @@
 - [x] Q1. typing: test_desktop (2440 passed in 109.29s (0:01:49))
-- [ ] Q2. typing: test_overlay
+- [x] Q2. typing: test_overlay (2440 passed in 110.12s (0:01:50))

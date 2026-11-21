@@ -4,14 +4,17 @@ import builtins
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import types
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 from iris import voice
+from iris.overlay import Overlay
 
 np = pytest.importorskip("numpy")  # synthetic-audio tests need real numpy; CI installs only [dev]
 
@@ -25,7 +28,7 @@ def test_is_yes_returns_false_when_there_was_no_answer():
 def test_cuda_available_is_true_when_the_gpus_and_dlls_load(monkeypatch):
     monkeypatch.setenv("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
     ctranslate2 = types.ModuleType("ctranslate2")
-    ctranslate2.get_cuda_device_count = lambda: 1
+    monkeypatch.setattr(ctranslate2, "get_cuda_device_count", lambda: 1, raising=False)
     monkeypatch.setitem(sys.modules, "ctranslate2", ctranslate2)
     loaded = []
     fake_ctypes = types.SimpleNamespace(WinDLL=lambda name: loaded.append(name))
@@ -38,7 +41,7 @@ def test_cuda_available_is_true_when_the_gpus_and_dlls_load(monkeypatch):
 def test_cuda_available_is_false_without_a_gpu(monkeypatch):
     monkeypatch.setenv("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
     ctranslate2 = types.ModuleType("ctranslate2")
-    ctranslate2.get_cuda_device_count = lambda: 0
+    monkeypatch.setattr(ctranslate2, "get_cuda_device_count", lambda: 0, raising=False)
     monkeypatch.setitem(sys.modules, "ctranslate2", ctranslate2)
     assert _REAL_CUDA_AVAILABLE() is False
 
@@ -61,9 +64,9 @@ def test_chime_stops_when_the_sound_device_stalls(monkeypatch):
     gate = threading.Event()  # never set: the device never finishes playing
 
     sd = types.ModuleType("sounddevice")
-    sd.play = lambda tone, rate: None
-    sd.wait = gate.wait  # blocks until the (never-set) event
-    sd.stop = lambda: stopped.append(1)
+    monkeypatch.setattr(sd, "play", lambda tone, rate: None, raising=False)
+    monkeypatch.setattr(sd, "wait", gate.wait, raising=False)  # blocks until the (never-set) event
+    monkeypatch.setattr(sd, "stop", lambda: stopped.append(1), raising=False)
     monkeypatch.setitem(sys.modules, "sounddevice", sd)
     monkeypatch.setenv("IRIS_CHIME", "1")  # conftest mutes it for the whole run
     s = voice.VoiceSession.__new__(voice.VoiceSession)
@@ -82,9 +85,9 @@ def test_chime_does_not_stop_a_normal_tone(monkeypatch):
     def _play(tone, rate, **kwargs):
         played.append((rate, kwargs))
 
-    sd.play = _play
-    sd.wait = lambda: None  # the tone finishes at once
-    sd.stop = lambda: stopped.append(1)
+    monkeypatch.setattr(sd, "play", _play, raising=False)
+    monkeypatch.setattr(sd, "wait", lambda: None, raising=False)  # the tone finishes at once
+    monkeypatch.setattr(sd, "stop", lambda: stopped.append(1), raising=False)
     monkeypatch.setitem(sys.modules, "sounddevice", sd)
     monkeypatch.setenv("IRIS_CHIME", "1")  # conftest mutes it for the whole run
     s = voice.VoiceSession.__new__(voice.VoiceSession)
@@ -93,7 +96,7 @@ def test_chime_does_not_stop_a_normal_tone(monkeypatch):
     assert stopped == []
 
 
-def test_record_calls_the_speakers_heard_hook():
+def test_record_calls_the_speakers_heard_hook(monkeypatch):
     s = voice.VoiceSession.__new__(voice.VoiceSession)  # no mic, no wake word, no Whisper
     heard = []
 
@@ -112,9 +115,9 @@ def test_record_calls_the_speakers_heard_hook():
     s.silence_seconds = 0.1
     s.vad_threshold = 0.01
     s.max_record_seconds = 5
-    s.speaker = _Speaker()
-    s.overlay = _Overlay()
-    s._transcribe = lambda audio: "hello there"
+    s.speaker = cast(voice.Speaker, _Speaker())
+    s.overlay = cast(Overlay, _Overlay())
+    monkeypatch.setattr(s, "_transcribe", lambda audio: "hello there")  # instance attribute shadows the method
     frame_len = int(voice.RATE * 0.1)  # one silence run of exactly silence_samples
     s._frames.put(np.full(frame_len, 0.5, dtype="float32"))  # voiced
     s._frames.put(np.zeros(frame_len, dtype="float32"))      # then enough silence to stop
@@ -135,7 +138,7 @@ def test_piper_wav_raises_when_the_process_died(tmp_path):
         def flush(self):
             pass
 
-    p.proc = types.SimpleNamespace(stdin=_Stdin(), poll=lambda: 0)
+    p.proc = cast(subprocess.Popen[str], types.SimpleNamespace(stdin=_Stdin(), poll=lambda: 0))
     with pytest.raises(RuntimeError, match="piper stopped"):
         p.wav("hi")
 
@@ -153,7 +156,7 @@ def test_piper_wav_times_out_when_no_wav_appears(tmp_path):
             pass
 
     proc = types.SimpleNamespace(stdin=_Stdin(), poll=lambda: None)  # alive, but never writes a WAV
-    p.proc = proc
+    p.proc = cast(subprocess.Popen[str], proc)
     with pytest.raises(TimeoutError, match="piper took too long"):
         p.wav("hi", timeout=0.1)
 
@@ -198,7 +201,8 @@ def test_play_stream_starts_output_after_all_chunks_are_made(monkeypatch):
             pass
 
     sd = types.ModuleType("sounddevice")
-    sd.OutputStream = _Stream  # never calls the callback: the device "stalls" right after starting
+    # never calls the callback: the device "stalls" right after starting
+    monkeypatch.setattr(sd, "OutputStream", _Stream, raising=False)
     monkeypatch.setitem(sys.modules, "sounddevice", sd)
     chunk = np.zeros(int(voice.RATE * 0.05), dtype="float32")
     assert voice._play_stream([chunk], voice.RATE, 0.05, None, slack=0.0) is True
@@ -224,7 +228,7 @@ def test_play_stream_stops_for_a_wake_word_while_draining(monkeypatch):
             pass
 
     sd = types.ModuleType("sounddevice")
-    sd.OutputStream = _Stream
+    monkeypatch.setattr(sd, "OutputStream", _Stream, raising=False)
     monkeypatch.setitem(sys.modules, "sounddevice", sd)
     chunk = np.zeros(int(voice.RATE * 0.05), dtype="float32")
     assert voice._play_stream([chunk], voice.RATE, 0.05, stop, slack=0.0) is False
@@ -255,7 +259,7 @@ def test_wait_for_speech_stops_a_stuck_thread(monkeypatch):
     s._stop = stop
     s._interrupted = False
 
-    class _Stuck:
+    class _Stuck(threading.Thread):
         def join(self, timeout=None):
             pass  # returns at once; the thread is still "alive"
 
@@ -288,7 +292,7 @@ def test_push_to_talk_without_a_console_says_so(monkeypatch, capsys):
             return False
 
     sd = types.ModuleType("sounddevice")
-    sd.InputStream = _Stream
+    monkeypatch.setattr(sd, "InputStream", _Stream, raising=False)
     monkeypatch.setitem(sys.modules, "sounddevice", sd)
     t0 = time.monotonic()
     text = v.listen()
@@ -310,8 +314,8 @@ def test_piper_env_is_utf8_with_and_without_a_runtime_folder(tmp_path, monkeypat
         d.mkdir(exist_ok=True)
         return str(d)
 
-    monkeypatch.setattr(voice.subprocess, "Popen", _Popen)
-    monkeypatch.setattr(voice.tempfile, "mkdtemp", _mkdtemp)  # no temp folder outside tmp_path
+    monkeypatch.setattr(subprocess, "Popen", _Popen)
+    monkeypatch.setattr(tempfile, "mkdtemp", _mkdtemp)  # no temp folder outside tmp_path
     monkeypatch.delenv("PYTHONPATH", raising=False)
     runtime = tmp_path / "runtime"
     monkeypatch.setattr(voice, "piper_runtime", lambda: runtime)
@@ -323,7 +327,7 @@ def test_piper_env_is_utf8_with_and_without_a_runtime_folder(tmp_path, monkeypat
 
     runtime.mkdir()
     voice.PiperProcess(tmp_path / "model.onnx")  # now the runtime folder exists
-    env = envs[1]
+    env = cast(dict[str, Any], envs[1])
     assert env["PYTHONIOENCODING"] == "utf-8" and env["PYTHONUTF8"] == "1"
     assert env["PYTHONPATH"].startswith(str(runtime))
 
@@ -353,7 +357,7 @@ def _fake_pyttsx3(monkeypatch):
             pass
 
     mod = types.ModuleType("pyttsx3")
-    mod.init = lambda: _Engine()  # no real SAPI or desktop
+    monkeypatch.setattr(mod, "init", lambda: _Engine(), raising=False)  # no real SAPI or desktop
     monkeypatch.setitem(sys.modules, "pyttsx3", mod)
 
 
@@ -499,14 +503,14 @@ class _StubWorker:
 def test_a_worker_that_will_not_stop_is_terminated_then_killed():
     # a worker that ignores stdin close and terminate must be killed, without raising out of _stop_process
     fake = _StubWorker(timeouts=2)
-    voice._stop_process(fake, 0.01)
+    voice._stop_process(cast(subprocess.Popen[str], fake), 0.01)
     assert fake.terminated == 1 and fake.killed == 1
 
 
 def test_a_worker_that_stops_after_terminate_is_not_killed():
     # a worker that quits after terminate must not be killed
     fake = _StubWorker(timeouts=1)
-    voice._stop_process(fake, 0.01)
+    voice._stop_process(cast(subprocess.Popen[str], fake), 0.01)
     assert fake.terminated == 1 and fake.killed == 0
 
 

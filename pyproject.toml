@@ -105,10 +105,6 @@ module = [
     "tests.test_desktop",
     "tests.test_overlay",
     "tests.test_voice_behaviour",
-    "tests.test_packs",
-    "tests.test_browser_branches",
-    "tests.test_voice_branches",
-    "tests.test_browser",
 ]
 ignore_errors = true
 

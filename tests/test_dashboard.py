@@ -1,8 +1,10 @@
 """Safety and route tests for the read-only dashboard (no real repos, LLM or journal touched)."""
 
+import http.client
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import threading
@@ -11,11 +13,21 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import cast
 
+import psutil
 import pytest
 
 import iris.dashboard as d
-from iris.dashboard import HOST, agents_payload, journal_payload, lmstudio_payload, make_server, system_payload
+from iris.dashboard import (
+    HOST,
+    agents_payload,
+    journal_payload,
+    lmstudio_payload,
+    make_server,
+    system_payload,
+    timings_payload,
+)
 from iris.llm import DEFAULT_MODEL
 
 
@@ -66,13 +78,42 @@ def fake_v0(monkeypatch, models):
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 @pytest.mark.parametrize(
-    "path", ["/", "/api/system", "/api/agents", "/api/lmstudio", "/api/journal", "/api/tools", "/api/eval"]
+    "path", ["/", "/api/system", "/api/agents", "/api/lmstudio", "/api/journal", "/api/timings",
+             "/api/tools", "/api/eval"]
 )
 def test_non_get_methods_are_refused_with_405(server, method, path):
     req = urllib.request.Request(server + path, data=b"{}", method=method)
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(req, timeout=5)
     assert exc.value.code == 405
+
+
+def test_head_gets_405_without_a_body(server):
+    """A HEAD answer keeps the 405 status and headers but must not send a body."""
+    host, port = server.removeprefix("http://").rsplit(":", 1)
+    conn = http.client.HTTPConnection(host, int(port), timeout=5)
+    try:
+        conn.request("HEAD", "/api/system")
+        resp = conn.getresponse()
+        assert resp.status == 405
+        assert resp.read() == b""   # a HEAD answer has no body; one here would corrupt keep-alive
+        # the same connection must still work: leftover bytes would break this next request
+        conn.request("GET", "/api/tools")
+        followup = conn.getresponse()
+        assert followup.status == 200
+        json.loads(followup.read().decode("utf-8"))
+    finally:
+        conn.close()
+
+
+def test_put_still_gets_its_json_body(server):
+    """The HEAD fix must not swallow the JSON body of the other refused methods."""
+    req = urllib.request.Request(server + "/api/system", data=b"{}", method="PUT")
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req, timeout=5)
+    assert exc.value.code == 405
+    body = json.loads(exc.value.read().decode("utf-8"))
+    assert "error" in body   # PUT still answers with its JSON error body
 
 
 def test_server_binds_loopback_only():
@@ -200,7 +241,7 @@ def test_api_journal_missing_file_is_empty(tmp_path, monkeypatch):
 
 def test_api_journal_counts_a_returned_error(tmp_path, monkeypatch):
     from iris.agent import Agent, Journal
-    from iris.llm import Reply, ToolCall
+    from iris.llm import LMStudio, Reply, ToolCall
     from iris.tools import SAFE, Tool
 
     journal = tmp_path / "journal.jsonl"
@@ -216,7 +257,8 @@ def test_api_journal_counts_a_returned_error(tmp_path, monkeypatch):
         def chat(self, messages, tools):
             return replies.pop(0)
 
-    Agent(LLM(), lambda q: True, Journal(journal), {"boom": boom}).handle("do it")
+    llm = cast(LMStudio, LLM())
+    Agent(llm, lambda q: True, Journal(journal), {"boom": boom}).handle("do it")
     data = journal_payload()
     assert data["today"] == {"requests": 1, "confirmations": 0, "refusals": 0, "errors": 1}
 
@@ -270,6 +312,94 @@ def test_api_journal_shows_model_errors_like_errored_calls(tmp_path, monkeypatch
     assert data["today"] == {"requests": 1, "confirmations": 0, "refusals": 0, "errors": 0}
 
 
+def test_timings_payload_empty_journal_says_no_requests_yet(tmp_path, monkeypatch):
+    """No journal file at all means no timed requests; the lines say so in plain words."""
+    monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "nope.jsonl"))
+    data = timings_payload()
+    assert data["lines"] == ["no timed requests yet"]
+    assert data["summary"]["count"] == 0
+
+
+def test_timings_payload_two_entries_gives_the_literal_first_line(tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    lines = [json.dumps({"event": "timing", "ms": 1200, "llm_ms": 800, "tools_ms": 400}),
+             json.dumps({"event": "timing", "ms": 3000, "llm_ms": 2500, "tools_ms": 500})]
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = timings_payload()
+    assert data["lines"][0] == "2 requests: median 2.1 s, p90 3.0 s"
+
+
+def test_timings_payload_reads_tts_entries_from_the_journal(tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    lines = [json.dumps({"event": "timing", "ms": 1200, "llm_ms": 800, "tools_ms": 400}),
+             json.dumps({"event": "stt", "ms": 640}),
+             json.dumps({"event": "tts", "ms": 300}),
+             json.dumps({"event": "tts", "ms": 500})]
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = timings_payload()
+
+    assert data["summary"]["tts_count"] == 2
+    assert "speech output: first sound median 0.4 s, p90 0.5 s" in data["lines"]
+
+
+def test_timings_payload_includes_the_per_tool_stats(tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    lines = [json.dumps({"event": "timing", "ms": 1200, "llm_ms": 800, "tools_ms": 400}),
+             json.dumps({"event": "tool_timing", "tool": "browser_open", "ms": 2300}),
+             json.dumps({"event": "tool_timing", "tool": "click", "ms": 500})]
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = timings_payload()
+
+    assert data["tools"] == [{"tool": "browser_open", "calls": 1, "median_ms": 2300.0},
+                             {"tool": "click", "calls": 1, "median_ms": 500.0}]
+
+
+def test_timings_payload_tools_covers_only_the_last_fifty_calls(tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    lines = [json.dumps({"event": "tool_timing", "tool": "click", "ms": i * 10}) for i in range(1, 52)]
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = timings_payload()
+
+    # the oldest entry (ms=10) falls out of the last 50: median of 20..510 is 265
+    assert data["tools"] == [{"tool": "click", "calls": 50, "median_ms": 265.0}]
+
+
+def test_timings_payload_lists_one_row_per_model(tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    lines = [json.dumps({"event": "timing", "model": "qwen3.8-27b", "ms": 1000, "llm_ms": 900, "tools_ms": 100}),
+             json.dumps({"event": "timing", "model": "qwen3.8-27b", "ms": 2000, "llm_ms": 1500, "tools_ms": 500}),
+             json.dumps({"event": "timing", "model": "gpt-mini", "ms": 4000, "llm_ms": 3800, "tools_ms": 200})]
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+
+    data = timings_payload()
+
+    # slowest median first: gpt-mini (4.0 s) before qwen3.8-27b (1.5 s)
+    assert data["models"] == [
+        {"model": "gpt-mini", "requests": 1, "median_ms": 4000.0, "llm_share": 0.95},
+        {"model": "qwen3.8-27b", "requests": 2, "median_ms": 1500.0, "llm_share": 0.8},
+    ]
+
+
+def test_timings_payload_returns_an_error_when_reading_the_journal_fails(monkeypatch):
+    """A journal that cannot be read gives the page one plain error, not a broken endpoint."""
+
+    def broken(*args, **kwargs):
+        raise OSError("disk gone")
+
+    monkeypatch.setattr("iris.timings.read_timings", broken)
+
+    assert timings_payload() == {"error": "disk gone"}
+
+
 def test_page_renders_autopilot_events_in_the_activity_panel(server):
     status, _headers, page = get(server + "/")
     assert status == 200
@@ -281,6 +411,34 @@ def test_page_renders_model_error_text_in_the_activity_panel(server):
     status, _headers, page = get(server + "/")
     assert status == 200
     assert 'truncate(String(ev.error), 160)' in page   # errored rows show their error text via textContent
+
+
+def test_page_serves_a_speed_panel_with_its_renderer(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    assert 'id="timings-body"' in page               # the Speed panel's body on the Activity tab
+    assert "function renderTimings" in page          # one div per line, built with el() — never innerHTML
+    assert '"/api/timings": renderTimings' in page   # refreshed by tick() alongside the other feeds
+
+
+def test_speed_panel_lists_the_slowest_tools(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    fn = page.split("function renderTimings", 1)[1].split("\n}", 1)[0]
+    assert "d.tools" in fn                    # the per-tool numbers /api/timings already returns
+    assert "Slowest tools" in fn              # the small heading above the tool rows
+    assert ".slice(0, 5)" in fn               # only the five slowest fit in this panel
+    assert "innerHTML" not in fn              # every row is built with el(), never innerHTML
+
+
+def test_speed_panel_compares_models_when_there_are_two(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    fn = page.split("function renderTimings", 1)[1].split("\n}", 1)[0]
+    assert "d.models" in fn                   # the per-model numbers /api/timings returns
+    assert "By model" in fn                   # the small heading above the model rows
+    assert "length >= 2" in fn                # one or zero models leaves the panel unchanged
+    assert "innerHTML" not in fn              # every row is built with el(), never innerHTML
 
 
 def test_api_agents_stuck_rows_first(tmp_path, monkeypatch):
@@ -299,14 +457,17 @@ def test_api_agents_stuck_rows_first(tmp_path, monkeypatch):
     assert rows[0]["uncommitted"] == 1 and rows[0]["branch"] == "main"
 
 
-def _runs_repos(tmp_path):
-    """alpha and zeta are not done, beta is done, gamma has no PROGRESS file at all."""
+@pytest.fixture(scope="module")
+def runs_repos(tmp_path_factory):
+    """alpha and zeta are not done, beta is done, gamma has no PROGRESS file at all. Built once for both /api/runs
+    tests: they only read them, so paying for the four git repos twice would be time no assertion needs."""
     from tests.test_autopilot import checklist, make_repo
 
-    alpha = make_repo(tmp_path, "alpha", checklist(open_at=(4, 9)))   # two items open: not done
-    zeta = make_repo(tmp_path, "zeta", checklist(open_at=(7,)))       # one item open: not done
-    beta = make_repo(tmp_path, "beta", checklist())                   # all ticked, old commit: done
-    gamma = make_repo(tmp_path, "gamma", None)                        # no PROGRESS file at all
+    root = tmp_path_factory.mktemp("runs")
+    alpha = make_repo(root, "alpha", checklist(open_at=(4, 9)))   # two items open: not done
+    zeta = make_repo(root, "zeta", checklist(open_at=(7,)))       # one item open: not done
+    beta = make_repo(root, "beta", checklist())                   # all ticked, old commit: done
+    gamma = make_repo(root, "gamma", None)                        # no PROGRESS file at all
     return alpha, zeta, beta, gamma
 
 
@@ -319,8 +480,8 @@ def _watch_only(monkeypatch, tmp_path, repos):
                         write_config(tmp_path, repos=[str(r) for r in repos], worktrees=[]))
 
 
-def test_api_runs_lists_progress_repos_not_done_first_then_by_name(tmp_path, monkeypatch):
-    alpha, zeta, beta, gamma = _runs_repos(tmp_path)
+def test_api_runs_lists_progress_repos_not_done_first_then_by_name(tmp_path, monkeypatch, runs_repos):
+    alpha, zeta, beta, gamma = runs_repos
     _watch_only(monkeypatch, tmp_path, [alpha, zeta, beta, gamma])
 
     data = d.runs_payload()
@@ -345,8 +506,8 @@ def test_api_runs_lists_progress_repos_not_done_first_then_by_name(tmp_path, mon
     }
 
 
-def test_api_runs_route_returns_200_and_the_same_json(server, tmp_path, monkeypatch):
-    alpha, zeta, beta, gamma = _runs_repos(tmp_path)
+def test_api_runs_route_returns_200_and_the_same_json(server, tmp_path, monkeypatch, runs_repos):
+    alpha, zeta, beta, gamma = runs_repos
     _watch_only(monkeypatch, tmp_path, [alpha, zeta, beta, gamma])
 
     with d._lock:  # drop any cached runs payload so the route recomputes against these repos
@@ -357,9 +518,33 @@ def test_api_runs_route_returns_200_and_the_same_json(server, tmp_path, monkeypa
 
 
 def test_api_lmstudio_unreachable_reports_false(monkeypatch):
-    monkeypatch.setattr(d, "V0_MODELS_URL", "http://127.0.0.1:9/api/v0/models")  # port 9: nothing listens
-    monkeypatch.setattr(d, "V1_MODELS_URL", "http://127.0.0.1:9/v1/models")
+    def refused(url, timeout=None):  # nothing answered; a real closed port would cost ~2s on Windows
+        raise urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", refused)
     assert lmstudio_payload() == {"reachable": False}
+
+
+def test_a_closed_local_port_is_seen_at_once_and_the_plain_list_is_not_tried(monkeypatch):
+    import socket
+
+    listener = socket.socket()  # the real probe, on loopback only
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    open_port = listener.getsockname()[1]
+    assert d._probe(f"http://127.0.0.1:{open_port}/api/v0/models") is False
+    listener.close()
+    assert d._probe(f"http://127.0.0.1:{open_port}/api/v0/models") is True
+    assert d._probe("http://192.0.2.10:1234/v1") is False  # another machine: the real request decides
+
+    asked = []
+
+    def refused(url, timeout=None):
+        asked.append(url)
+        raise urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", refused)
+    assert lmstudio_payload() == {"reachable": False} and len(asked) == 1  # down: no second wait for /v1/models
 
 
 def test_api_lmstudio_lists_models_with_state_and_type(monkeypatch):
@@ -378,7 +563,7 @@ def test_api_lmstudio_lists_models_with_state_and_type(monkeypatch):
 
     v0 = b'{"data": [{"id": "qwen3.8-27b", "state": "loaded", "type": "vlm"}, ' \
          b'{"id": "iq3_xxs", "state": "not-loaded", "type": "llm"}]}'
-    monkeypatch.setattr(d.urllib.request, "urlopen", lambda url, timeout=None: FakeResp(v0))
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=None: FakeResp(v0))
     data = lmstudio_payload()
     assert data["reachable"] is True and data["states_known"] is True
     assert data["models"] == [
@@ -402,7 +587,7 @@ def test_api_lmstudio_falls_back_to_v1_without_states(monkeypatch):
             raise OSError("no v0 endpoint")
         return FakeResp()
 
-    monkeypatch.setattr(d.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     data = lmstudio_payload()
     assert data["reachable"] is True and data["states_known"] is False
     assert [m["id"] for m in data["models"]] == ["qwen3.8-27b", "llama-3.1-8b"]
@@ -425,6 +610,51 @@ def test_agents_and_lmstudio_are_cached_for_30_seconds(monkeypatch):
     first = d._cached("lmstudio", d.lmstudio_payload)
     second = d._cached("lmstudio", d.lmstudio_payload)
     assert first is second and calls == [1]  # the second call hit the cache
+    d._cache.clear()
+
+
+def test_two_polls_of_the_same_key_fetch_once():
+    d._cache.clear()
+    calls = []
+    barrier = threading.Barrier(2)
+    results = {}
+
+    def slow():
+        calls.append(1)
+        time.sleep(0.1)  # a slow fetch, like lms or the runs folder
+        return {"ok": True}
+
+    def worker(name):
+        barrier.wait()
+        results[name] = d._cached("k", slow)
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in ("one", "two")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(2)
+    assert calls == [1]  # the second poll waited and got the first fetch's value
+    assert results["one"] is results["two"]
+    d._cache.clear()
+
+
+def test_a_second_key_does_not_wait_for_the_first():
+    d._cache.clear()
+    inside = threading.Event()
+    release = threading.Event()
+
+    def slow():
+        inside.set()  # now fetching key "a"
+        release.wait(0.2)  # hold it open; no real wait over 0.2 s
+        return {"ok": True, "key": "a"}
+
+    t = threading.Thread(target=lambda: d._cached("a", slow))
+    t.start()
+    assert inside.wait(1)  # the first key is mid-fetch now
+    got = d._cached("b", lambda: {"ok": True, "key": "b"})  # a different key must not wait for it
+    release.set()
+    t.join(2)
+    assert got == {"ok": True, "key": "b"}
     d._cache.clear()
 
 
@@ -490,9 +720,14 @@ def test_post_with_a_matching_referer_is_allowed(srv, monkeypatch, tmp_path):
     base = f"http://{HOST}:{srv.server_address[1]}"
     fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
     calls = []
-    monkeypatch.setattr(d, "run_lms", lambda args: (calls.append(args) or (0, "")))
+
+    def fake_run_lms(args):
+        calls.append(args)
+        return (0, "")
+
+    monkeypatch.setattr(d, "run_lms", fake_run_lms)
     monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "j.jsonl"))
-    code, body = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, referer=base + "/")
+    code, _ = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, referer=base + "/")
     assert code == 200 and calls == [["load", "m1"]]
 
 
@@ -500,7 +735,12 @@ def test_post_unknown_model_is_400_and_lms_never_runs(srv, monkeypatch):
     base = f"http://{HOST}:{srv.server_address[1]}"
     fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
     calls = []
-    monkeypatch.setattr(d, "run_lms", lambda args: (calls.append(args) or (0, "")))
+
+    def fake_run_lms(args):
+        calls.append(args)
+        return (0, "")
+
+    monkeypatch.setattr(d, "run_lms", fake_run_lms)
     code, body = post(base + "/api/models/load", {"model": "nope"}, token=srv.token, origin=base)
     assert code == 400 and "unknown model" in body["error"]
     assert calls == []
@@ -534,7 +774,12 @@ def test_post_unload_all_skips_model_validation(srv, monkeypatch):
     base = f"http://{HOST}:{srv.server_address[1]}"
     fake_v0(monkeypatch, [])  # even with an empty list, "all" is a valid unload target
     calls = []
-    monkeypatch.setattr(d, "run_lms", lambda args: (calls.append(args) or (0, "")))
+
+    def fake_run_lms(args):
+        calls.append(args)
+        return (0, "")
+
+    monkeypatch.setattr(d, "run_lms", fake_run_lms)
     code, body = post(base + "/api/models/unload", {"model": "all"}, token=srv.token, origin=base)
     assert code == 200 and calls == [["unload", "--all"]] and body["model"] == "all"
 
@@ -594,13 +839,13 @@ def test_lms_exe_comes_from_the_env_var(monkeypatch):
 
 def test_lms_exe_falls_back_to_path_when_unset(monkeypatch):
     monkeypatch.delenv("IRIS_LMS_BIN", raising=False)
-    monkeypatch.setattr(d.shutil, "which", lambda name: "C:/on/path/lms.exe")
+    monkeypatch.setattr(shutil, "which", lambda name: "C:/on/path/lms.exe")
     assert d._lms_exe() == "C:/on/path/lms.exe"
 
 
 def test_lms_exe_is_empty_when_neither_env_var_nor_path(monkeypatch):
     monkeypatch.delenv("IRIS_LMS_BIN", raising=False)
-    monkeypatch.setattr(d.shutil, "which", lambda name: None)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
     assert d._lms_exe() == ""
 
 
@@ -608,7 +853,7 @@ def test_model_action_without_an_lms_executable_is_503(srv, monkeypatch):
     base = f"http://{HOST}:{srv.server_address[1]}"
     fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
     monkeypatch.delenv("IRIS_LMS_BIN", raising=False)
-    monkeypatch.setattr(d.shutil, "which", lambda name: None)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
     code, body = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, origin=base)
     assert code == 503 and "IRIS_LMS_BIN" in body["error"]
 
@@ -694,7 +939,7 @@ def test_iris_model_post_missing_or_bad_id_is_400(srv, tmp_path, monkeypatch, bo
     _clean_model_env(monkeypatch, tmp_path)
     fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
 
-    code, b = post(base + "/api/iris/model", body, token=srv.token, origin=base)
+    code, _ = post(base + "/api/iris/model", body, token=srv.token, origin=base)
     assert code == 400
 
 
@@ -735,7 +980,7 @@ CREATE TABLE sessions (
 """
 
 
-def make_sessions_db(path: Path, rows: list[tuple]) -> Path:
+def make_sessions_db(path: Path, rows: list[tuple[object, ...]]) -> Path:
     """A temporary sessions.db with the real schema; tests never touch ~/.iris."""
     con = sqlite3.connect(str(path))
     try:
@@ -760,7 +1005,7 @@ def sess_row(sid="s1", *, ended=None, status="completed", pid=4242, model="qwen3
 
 def alive_pids(monkeypatch, pids):
     """psutil.pid_exists as a set lookup, so the tests never depend on real processes."""
-    monkeypatch.setattr(d.psutil, "pid_exists", lambda pid: pid in pids)
+    monkeypatch.setattr(psutil, "pid_exists", lambda pid: pid in pids)
 
 
 def test_live_session_is_running(tmp_path, monkeypatch):
@@ -1368,7 +1613,11 @@ def test_cline_start_while_one_runs_is_409(srv, monkeypatch):
     import iris.autopilot as ap
 
     calls: list[tuple[str, str]] = []
-    monkeypatch.setattr(ap, "cline_start", lambda a, r="": calls.append((a, r)) or "started")
+    def fake_cline_start(a, r=""):
+        calls.append((a, r))
+        return "started"
+
+    monkeypatch.setattr(ap, "cline_start", fake_cline_start)
     base = f"http://{HOST}:{srv.server_address[1]}"
     with d._cline_start_lock:   # hold the lock for the whole request
         code, body = post(base + "/api/cline/start", {"agent": "leadscan"}, token=srv.token, origin=base)
@@ -1431,6 +1680,7 @@ def _ready_skill(name="say_hello"):
     (folder / "skill.toml").write_text('description = "Greets."\n[params.who]\ntype = "string"\n', encoding="utf-8")
     (folder / "skill.py").write_text("def run(who):\n    return 'hi ' + who\n", encoding="utf-8")
     skills._save_meta(name, {**skills.meta(name), "status": "ready"})
+    skills._save_trust(name, checked=skills._digest(name, "confirm"))  # what a passing check() records
 
 
 def test_the_skills_page_shows_the_code_and_approves_only_with_the_token(server, srv):
@@ -1491,6 +1741,7 @@ def test_logs_payload_tails_each_log(tmp_path, monkeypatch):
     assert by_name["VoxCPM2 speech"]["path"] == str(tmp_path / "voxcpm" / "worker.log")
     assert by_name["App"]["path"] == str(config.config_path().parent / "logs" / "app.log")
     assert by_name["Voice packs"]["path"] == str(config.config_path().parent / "logs" / "packs.log")
+    assert by_name["Crashes"]["path"] == str(config.config_path().parent / "logs" / "crash.log")
 
 
 def test_tail_lines_reads_only_the_end_of_a_big_file(tmp_path, monkeypatch):
@@ -1505,3 +1756,99 @@ def test_tail_lines_reads_only_the_end_of_a_big_file(tmp_path, monkeypatch):
 def test_logs_route_is_read_only(server):
     with urllib.request.urlopen(server + "/api/logs", timeout=5) as r:
         assert json.loads(r.read())["ok"] is True
+
+
+def test_a_rebound_host_name_gets_nothing(server, srv):
+    """DNS rebinding: a site that points its own name at 127.0.0.1 sends its name as Host. It must not read the page
+    (with its token) or any route, and writes stay refused too."""
+    import http.client
+
+    port = int(server.rsplit(":", 1)[1])
+    for method, path in (("GET", "/"), ("GET", "/api/journal"), ("GET", "/api/settings"), ("POST", "/api/settings")):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request(method, path, body="{}" if method == "POST" else None,
+                     headers={"Host": f"evil.example:{port}", "X-Iris-Token": srv.token,
+                              "Origin": f"http://127.0.0.1:{port}"})
+        r = conn.getresponse()
+        body = r.read().decode("utf-8")
+        conn.close()
+        assert r.status == 421 and srv.token not in body, (method, path)
+    for host in (f"127.0.0.1:{port}", f"localhost:{port}", f"LOCALHOST:{port}"):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/", headers={"Host": host})
+        assert conn.getresponse().status == 200
+        conn.close()
+
+
+def _raw_post(srv, path, body: bytes, headers=None):
+    import http.client
+
+    port = srv.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.putrequest("POST", path)
+    for k, v in {"X-Iris-Token": srv.token, "Origin": f"http://127.0.0.1:{port}", **(headers or {})}.items():
+        conn.putheader(k, v)
+    if "Content-Length" not in (headers or {}) and "Transfer-Encoding" not in (headers or {}):
+        conn.putheader("Content-Length", str(len(body)))
+    conn.endheaders(body)
+    r = conn.getresponse()
+    out = r.status, json.loads(r.read().decode("utf-8") or "{}")
+    conn.close()
+    return out
+
+
+@pytest.mark.parametrize("path", ["/api/settings", "/api/skills/approve", "/api/packs/install", "/api/setup/server",
+                                  "/api/queue/add", "/api/models/load"])
+@pytest.mark.parametrize("body", [b"[]", b'"x"', b"5", b"null"])
+def test_a_body_that_is_not_an_object_gets_400_not_a_dropped_connection(srv, path, body):
+    status, data = _raw_post(srv, path, body)
+    assert (status, data["error"]) == (400, "the body must be a JSON object")
+
+
+def test_odd_bodies_get_an_answer(srv):
+    assert _raw_post(srv, "/api/settings", b"[" * 200_000)[0] == 400  # nested too deep for json
+    # no body: the server closes without reading it, and unread bytes make Windows reset the reply
+    assert _raw_post(srv, "/api/settings", b"", {"Content-Length": "-1"})[0] == 400
+    assert _raw_post(srv, "/api/settings", b"", {"Content-Length": str(2_000_000)})[0] == 413
+    status, data = _raw_post(srv, "/api/setup/done", b"", {"Transfer-Encoding": "chunked"})
+    assert status == 411 and "Content-Length" in data["error"]
+
+
+def test_a_failing_write_answers_500_with_its_reason(srv, monkeypatch):
+    from iris import settings
+
+    def boom(values):
+        raise PermissionError("config.toml is open in another program")
+
+    monkeypatch.setattr(settings, "save", boom)
+    status, data = _raw_post(srv, "/api/settings", b'{"values": {}}')
+    assert status == 500 and data["error"] == "PermissionError: config.toml is open in another program"
+
+
+@pytest.mark.parametrize("value", ["inf", 1e400, "nan"])
+def test_settings_refuse_infinite_numbers(value):
+    from iris import settings
+
+    _, errors = settings.validate({"voxcpm_gpu": value, "silence": value})
+    assert set(errors) == {"voxcpm_gpu", "silence"}
+
+
+def test_the_page_with_its_token_is_never_cached(server):
+    status, headers, _ = get(server + "/")
+    assert status == 200 and headers.get("Cache-Control") == "no-store"
+
+
+def test_the_page_pauses_its_polling_while_hidden():
+    page = d._page_template().decode("utf-8")
+    assert "if (document.hidden || ticking) return;" in page and '"visibilitychange"' in page
+
+
+def test_the_page_meets_the_basic_accessibility_rules():
+    """Muted text and field borders pass contrast (4.5:1 and 3:1 on the panels), keyboard focus is visible, the tabs
+    say which one is open, and the fields without a visible label have one for screen readers."""
+    page = d._page_template().decode("utf-8")
+    assert "#565c66" not in page  # 2.6:1 on the panels; #80868f is 4.6:1 and more
+    assert ":focus-visible{outline:2px solid #7aa2ff" in page and "outline:none" not in page
+    assert page.count('role="tab"') == 11 and 'role="tablist"' in page and "aria-selected" in page
+    for label in ('aria-label="Agent"', 'aria-label="Prompt to queue"', '"Model server"', 'id="updated" aria-live'):
+        assert label in page

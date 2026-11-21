@@ -1,9 +1,12 @@
 """VoxCPM2 speech: the worker protocol against a fake worker program, and streamed playback against a fake device."""
 
+import subprocess
 import sys
 import threading
 import time
 import types
+from pathlib import Path
+from typing import ClassVar, cast
 
 import numpy as np
 import pytest
@@ -31,7 +34,7 @@ def vox(tmp_path, monkeypatch):
     monkeypatch.setattr(voice, "VOXCPM_DIR", tmp_path)
     worker = tmp_path / "worker.py"
     worker.write_text(FAKE_WORKER, encoding="utf-8")
-    v = voice.VoxProcess(python=voice.Path(sys.executable), worker=worker, startup=20)
+    v = voice.VoxProcess(python=Path(sys.executable), worker=worker, startup=20)
     yield v
     v.proc.kill()
 
@@ -64,13 +67,16 @@ def test_the_gpu_comes_from_config_unless_the_environment_says_otherwise(tmp_pat
 
     seen = []
     monkeypatch.setattr(voice, "VOXCPM_DIR", tmp_path)
-    monkeypatch.setattr(voice.subprocess, "Popen", lambda *a, env, **kw: seen.append(env["CUDA_VISIBLE_DEVICES"]) or
-                        types.SimpleNamespace(stdout=types.SimpleNamespace(read=lambda n: b"")))
+    def fake_popen(*a, env, **kw):
+        seen.append(env["CUDA_VISIBLE_DEVICES"])
+        return types.SimpleNamespace(stdout=types.SimpleNamespace(read=lambda n: b""))
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
     monkeypatch.setattr(config, "raw", lambda: {"voxcpm_gpu": 1})
     monkeypatch.delenv("IRIS_VOXCPM_GPU", raising=False)
-    voice.VoxProcess(python=voice.Path(sys.executable))
+    voice.VoxProcess(python=Path(sys.executable))
     monkeypatch.setenv("IRIS_VOXCPM_GPU", "0")
-    voice.VoxProcess(python=voice.Path(sys.executable))
+    voice.VoxProcess(python=Path(sys.executable))
     assert seen == ["1", "0"]
 
 
@@ -82,7 +88,8 @@ def test_without_its_python_voxcpm_says_how_to_install_it(tmp_path):
 class FakeOut:
     """A sound device that pulls audio from the callback 100 frames at a time, as PortAudio does."""
 
-    made = []
+    made: ClassVar[list["FakeOut"]] = []
+    last: ClassVar["FakeOut | None"] = None
 
     def __init__(self, samplerate, channels, dtype, callback, pull=True):
         self.cb, self.played, self.latency, self.pull, self._run = callback, [], 0.0, pull, False
@@ -112,7 +119,7 @@ class FakeOut:
 def device(monkeypatch):
     FakeOut.made = []
     fake = types.ModuleType("sounddevice")
-    fake.OutputStream = FakeOut
+    monkeypatch.setattr(fake, "OutputStream", FakeOut, raising=False)
     monkeypatch.setitem(sys.modules, "sounddevice", fake)
     return fake
 
@@ -130,9 +137,10 @@ def test_the_lead_follows_the_measured_speed():
 
 
 def test_playback_waits_for_the_lead_then_plays_everything_in_order(device):
-    started = []
+    started: list[int] = []
     assert voice._play_stream(chunks(5, started), 1000, 0.5, None) is True
     assert started == [0, 0, 0, 1, 1]  # made much faster than real time: starts once 0.3 s (three chunks) is in
+    assert FakeOut.last is not None
     played = np.concatenate(FakeOut.last.played)
     assert played[:500].tolist() == [v for i in range(5) for v in [i + 1] * 100]
 
@@ -147,6 +155,7 @@ def test_speech_that_runs_dry_pauses_once_and_loses_nothing(device, monkeypatch)
             time.sleep(0.03)  # 0.1 s of speech per 0.03 s, but the fake device plays 100 frames a millisecond
 
     assert voice._play_stream(slow(), 1000, 0.8, None) is True
+    assert FakeOut.last is not None
     played = np.concatenate(FakeOut.last.played)
     sound = played[played != 0]
     assert sound.tolist() == [v for i in range(8) for v in [i + 1] * 100]  # all of it, in order
@@ -184,9 +193,14 @@ def test_piper_speaks_while_voxcpm_is_still_loading(monkeypatch):
         ready = threading.Event()
 
     spk = voice.Speaker(engine="sapi")
-    spk.engine, spk._vox = "voxcpm", Loading()
-    said = []
-    monkeypatch.setattr(spk, "_speak_piper", lambda text, stop: said.append(text) or True)
+    spk.engine, spk._vox = "voxcpm", cast(voice.VoxProcess, Loading())  # a VoxCPM that is still loading
+    said: list[str] = []
+
+    def fake_piper(text, stop):
+        said.append(text)
+        return True
+
+    monkeypatch.setattr(spk, "_speak_piper", fake_piper)
     assert spk.speak("Ready.") is True and said == ["Ready."] and spk.engine == "voxcpm"  # VoxCPM once it is loaded
 
 
@@ -200,10 +214,18 @@ def test_speaker_falls_back_to_piper_when_voxcpm_fails_mid_answer(monkeypatch):
 
     Broken.ready.set()
     spk = voice.Speaker(engine="sapi")
-    spk.engine, spk._vox = "voxcpm", Broken()
-    said = []
-    monkeypatch.setattr(spk, "_speak_piper", lambda text, stop: said.append(text) or True)
-    assert spk.speak("Hallo") is True and said == ["Hallo"] and spk.engine == "piper"
+    spk.engine, spk._vox = "voxcpm", cast(voice.VoxProcess, Broken())  # a VoxCPM whose worker keeps dying
+    said: list[str] = []
+
+    def fake_piper(text, stop):
+        said.append(text)
+        return True
+
+    monkeypatch.setattr(spk, "_speak_piper", fake_piper)
+    assert spk.speak("Hallo") is True and spk.engine == "voxcpm"  # one failure: still tries VoxCPM next time
+    assert spk.speak("Hallo") is True and spk.engine == "voxcpm"  # two failures: not yet
+    assert spk.speak("Hallo") is True and spk.engine == "piper"  # three in a row: switches for good
+    assert said == ["Hallo", "Hallo", "Hallo"]
 
 
 def test_the_worker_speaks_a_long_answer_in_pieces_that_fit_its_cache():

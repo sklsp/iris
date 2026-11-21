@@ -6,9 +6,11 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
+from iris.agent import Journal
 from iris.autopilot import (
     _count_started,
     _started_at_epoch,
@@ -229,6 +231,31 @@ def test_cline_command_keeps_a_multiline_text_as_one_item(monkeypatch):
     assert argv[-1] == text
 
 
+@pytest.mark.parametrize("cli", ["C:/x/cline.cmd", "C:/x/CLINE.BAT", ' "C:/x/cline.cmd" '])
+def test_cline_command_refuses_cmd_and_bat_cli(monkeypatch, cli):
+    """A .cmd or .bat CLI would pass the prompt through cmd.exe and parse it again: refuse it."""
+    _clear_cli_env(monkeypatch)
+    monkeypatch.setenv("IRIS_CLINE_CLI", cli)
+    with pytest.raises(LookupError) as exc:
+        cline_command("fix & del /q *", "W:/Iris")
+    assert str(exc.value) == (
+        "cline_cli points at a .cmd or .bat file, which would pass the prompt through cmd.exe; "
+        "set cline_cli to Cline's .exe, or to node plus Cline's script"
+    )
+
+
+def test_cline_command_still_builds_the_argv_for_exe_and_bare_names(monkeypatch):
+    _clear_cli_env(monkeypatch)
+    monkeypatch.setenv("IRIS_CLINE_CLI", "C:/x/cline.exe")
+    assert cline_command("go", "W:/Iris") == [
+        "C:/x/cline.exe", "-z", "-c", "W:/Iris", "-P", "lmstudio", "-m", "qwen3.8-27b", "go",
+    ]
+    monkeypatch.delenv("IRIS_CLINE_CLI")
+    assert cline_command("fix the bug", "W:/Iris") == [
+        "cline", "-z", "-c", "W:/Iris", "-P", "lmstudio", "-m", "qwen3.8-27b", "fix the bug",
+    ]
+
+
 def test_cline_sessions_returns_the_parsed_list_and_skips_non_dicts(monkeypatch):
     _clear_cli_env(monkeypatch)
 
@@ -279,7 +306,7 @@ def test_cline_sessions_timeout_gives_none(monkeypatch):
 
 def test_cline_sessions_passes_the_exact_argv_and_kwargs(monkeypatch):
     _clear_cli_env(monkeypatch)
-    calls: list[tuple[list[str], dict]] = []
+    calls: list[tuple[list[str], dict[str, object]]] = []
 
     def fake_run(argv, **kwargs):
         calls.append((argv, kwargs))
@@ -396,7 +423,7 @@ def test_start_in_hub_missing_cli_raises_lookup_error(monkeypatch):
         raise FileNotFoundError("no such file")
 
     with pytest.raises(LookupError) as exc:
-        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW)
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=list, now=lambda: HUB_NOW)
     assert str(exc.value) == "Cline CLI not found at cline"
 
 
@@ -408,7 +435,7 @@ def test_start_in_hub_error_carries_the_last_stderr_line(monkeypatch):
 
     with pytest.raises(RuntimeError) as exc:
         start_in_hub(
-            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=lambda s: None
+            "fix the bug", "W:/Iris", run=fake_run, sessions=list, now=lambda: HUB_NOW, sleep=lambda s: None
         )
     assert str(exc.value) == "Cline did not start a session after two tries: hub timed out after 120s"
 
@@ -421,7 +448,7 @@ def test_start_in_hub_error_says_no_output_when_stderr_is_empty(monkeypatch):
 
     with pytest.raises(RuntimeError) as exc:
         start_in_hub(
-            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=lambda s: None
+            "fix the bug", "W:/Iris", run=fake_run, sessions=list, now=lambda: HUB_NOW, sleep=lambda s: None
         )
     assert str(exc.value) == "Cline did not start a session after two tries: no output"
 
@@ -478,7 +505,7 @@ def test_start_in_hub_finds_a_late_session_on_the_third_check(monkeypatch):
 
     seen = 0
 
-    def late_sessions() -> list[dict]:
+    def late_sessions() -> list[dict[str, Any]]:
         nonlocal seen
         seen += 1
         return [] if seen < 3 else sessions  # the session appears in the history a few seconds late
@@ -512,7 +539,7 @@ def test_start_in_hub_gives_up_after_the_polls(monkeypatch):
         sleeps.append(seconds)
 
     with pytest.raises(RuntimeError) as exc:
-        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=fake_sleep)
+        start_in_hub("fix the bug", "W:/Iris", run=fake_run, sessions=list, now=lambda: HUB_NOW, sleep=fake_sleep)
     assert str(exc.value) == "Cline did not start a session after two tries: hub timed out after 120s"
     assert calls == 2  # one retry after the first polls found nothing
     assert sleeps == [3, 3, 3, 3, 3, 3, 3, 3]  # five checks per dispatch, four waits between them
@@ -533,7 +560,7 @@ def test_start_in_hub_a_late_first_session_needs_no_second_dispatch(monkeypatch)
 
     seen = 0
 
-    def late_sessions() -> list[dict]:
+    def late_sessions() -> list[dict[str, Any]]:
         nonlocal seen
         seen += 1
         return [] if seen < 3 else sessions  # the session appears in the history a few seconds late
@@ -566,7 +593,7 @@ def test_start_in_hub_retries_the_dispatch_once_when_the_first_is_lost(monkeypat
         now_calls += 1
         return HUB_NOW if now_calls == 1 else HUB_NOW + 100
 
-    def late_sessions() -> list[dict]:
+    def late_sessions() -> list[dict[str, Any]]:
         return [] if calls < 2 else sessions  # nothing in the history until the second dispatch happens
 
     out = start_in_hub(
@@ -589,7 +616,7 @@ def test_start_in_hub_retries_when_round_one_read_but_found_nothing(monkeypatch)
         calls += 1
         return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
 
-    def empty_then_found() -> list[dict]:
+    def empty_then_found() -> list[dict[str, Any]]:
         # round one reads an empty history (a successful read); the session appears only after the retry dispatches
         return [] if calls < 2 else sessions
 
@@ -631,7 +658,7 @@ def test_start_in_hub_missing_cli_raises_lookup_error_without_a_retry(monkeypatc
 
     with pytest.raises(LookupError) as exc:
         start_in_hub(
-            "fix the bug", "W:/Iris", run=fake_run, sessions=lambda: [], now=lambda: HUB_NOW, sleep=lambda s: None
+            "fix the bug", "W:/Iris", run=fake_run, sessions=list, now=lambda: HUB_NOW, sleep=lambda s: None
         )
     assert str(exc.value) == "Cline CLI not found at cline"
     assert calls == 1
@@ -648,7 +675,7 @@ def test_start_in_hub_first_round_success_does_not_reread_the_history(monkeypatc
 
     reads = 0
 
-    def counting_sessions() -> list[dict]:
+    def counting_sessions() -> list[dict[str, Any]]:
         nonlocal reads
         reads += 1
         return sessions
@@ -681,7 +708,7 @@ def test_start_in_hub_retry_with_one_session_says_nothing(monkeypatch):
 
     reads = 0
 
-    def empty_then_found() -> list[dict]:
+    def empty_then_found() -> list[dict[str, Any]]:
         # round one reads an empty history; the session appears only after the retry dispatches
         nonlocal reads
         reads += 1
@@ -705,9 +732,8 @@ def test_start_in_hub_retry_with_two_sessions_warns_about_the_double_start(monke
     first = [
         {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
     ]
-    both = first + [
-        {"sessionId": "def", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 2), "prompt": "fix the bug"}
-    ]
+    both = [*first,
+            {"sessionId": "def", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 2), "prompt": "fix the bug"}]
 
     calls = 0
 
@@ -718,7 +744,7 @@ def test_start_in_hub_retry_with_two_sessions_warns_about_the_double_start(monke
 
     reads = 0
 
-    def empty_then_first_then_both() -> list[dict]:
+    def empty_then_first_then_both() -> list[dict[str, Any]]:
         # round one is empty; the retry's polls see one session; the extra read sees both (a double start)
         nonlocal reads
         reads += 1
@@ -749,7 +775,7 @@ def test_start_in_hub_retry_with_an_unreadable_extra_read_says_nothing(monkeypat
 
     reads = 0
 
-    def empty_then_found_then_none() -> list[dict] | None:
+    def empty_then_found_then_none() -> list[dict[str, Any]] | None:
         # round one is empty; the retry's polls find it; the extra read fails (None) and must not warn
         nonlocal reads
         reads += 1
@@ -808,6 +834,30 @@ def test_cline_start_starts_the_oldest_prompt_in_the_hub_and_shrinks_the_queue(t
     assert cline_start("cline") == "started Cline session abc in W:/Iris"
     assert started == [("first prompt", "W:/Iris")]  # the oldest waiting prompt was started in cline_cwd()
     assert _waiting(path) == ["second prompt"]  # the queue shrank by exactly one
+
+
+@pytest.mark.parametrize("meanwhile", ["move", "delete"])
+def test_cline_start_removes_the_prompt_it_started_even_when_the_queue_changed(tmp_path, monkeypatch, meanwhile):
+    import iris.autopilot as autopilot
+    from iris import prompt_queue
+
+    _clear_cli_env(monkeypatch)
+    path = _queue_file(tmp_path)
+    monkeypatch.setenv("IRIS_QUEUE", str(path))
+    started = []
+
+    def slow_start(text, cwd):  # the dashboard changes the queue while Cline starts
+        started.append(text)
+        first, second = prompt_queue.load()["prompts"][:2]
+        if meanwhile == "move":
+            prompt_queue.move(second["id"], -1)
+        else:
+            prompt_queue.remove(first["id"])
+        return "started Cline session abc"
+
+    monkeypatch.setattr(autopilot, "start_in_hub", slow_start)
+    cline_start("cline")
+    assert started == ["first prompt"] and _waiting(path) == ["second prompt"]  # never the one that did not run
 
 
 def test_cline_start_leaves_the_queue_when_the_cli_is_missing(tmp_path, monkeypatch):
@@ -881,7 +931,7 @@ def test_cline_start_is_a_confirm_tool():
 
 class FakeJournal:
     def __init__(self) -> None:
-        self.entries: list[dict] = []
+        self.entries: list[dict[str, Any]] = []
 
     def log(self, **entry) -> None:
         self.entries.append(entry)
@@ -942,12 +992,13 @@ def test_watch_a_no_never_starts(tmp_path, monkeypatch):
         started.append((agent_name, repo))
         return "should not happen"
 
-    journal = FakeJournal()
+    fake_journal = FakeJournal()
+    journal = cast(Journal, fake_journal)
     out = watch("acme", "cline", fake_confirm, sleep=lambda s: None, start=fake_start, journal=journal)
     assert out == "the user said no"
     assert asked == ["acme is done (PROGRESS-iris6.md done: 15 items). Start the next cline prompt?"]
     assert started == []
-    assert journal.entries == [
+    assert fake_journal.entries == [
         {
             "event": "autopilot",
             "source": "cli",
@@ -971,7 +1022,8 @@ def test_watch_with_an_empty_queue_never_asks(tmp_path, monkeypatch):
         asked.append(question)
         return True
 
-    journal = FakeJournal()
+    fake_journal = FakeJournal()
+    journal = cast(Journal, fake_journal)
     out = watch(
         "acme",
         "cline",
@@ -982,7 +1034,7 @@ def test_watch_with_an_empty_queue_never_asks(tmp_path, monkeypatch):
     )
     assert out == "nothing queued for cline"
     assert asked == []  # nothing waiting means no question at all
-    assert journal.entries == [
+    assert fake_journal.entries == [
         {
             "event": "autopilot",
             "source": "cli",
@@ -1023,7 +1075,8 @@ def test_watch_logs_an_autopilot_event(tmp_path, monkeypatch):
     path = _queue_file(tmp_path)
     monkeypatch.setenv("IRIS_QUEUE", str(path))
     monkeypatch.setattr(autopilot, "run_done", lambda repo: (True, "PROGRESS-iris6.md done: 15 items"))
-    journal = FakeJournal()
+    fake_journal = FakeJournal()
+    journal = cast(Journal, fake_journal)
 
     seen: list[tuple[str, str]] = []
 
@@ -1034,7 +1087,7 @@ def test_watch_logs_an_autopilot_event(tmp_path, monkeypatch):
     out = watch("acme", "cline", lambda q: True, sleep=lambda s: None, start=fake_start, journal=journal)
     assert out == "started the next prompt"
     assert seen == [("cline", "acme")]  # started in the repo that just finished
-    assert journal.entries == [
+    assert fake_journal.entries == [
         {
             "event": "autopilot",
             "source": "cli",

@@ -12,7 +12,9 @@ can remove it on request. One install runs at a time, as child processes whose o
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import os
+import queue
 import subprocess
 import sys
 import threading
@@ -30,6 +32,8 @@ UV_URL = f"https://github.com/astral-sh/uv/releases/download/{UV_VERSION}/uv-x86
 UV_SHA256 = "ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225"
 FEATURE_MODELS = ("melspectrogram.onnx", "embedding_model.onnx")  # openWakeWord needs these next to the wake model
 
+STEP_TIMEOUT = 1800  # seconds; a step past it is killed and the job fails
+
 
 def home() -> Path:
     """The folder every pack installs into, next to config.toml, so it survives upgrades."""
@@ -39,6 +43,12 @@ def home() -> Path:
 def gpu_dir() -> Path:
     """The folder the gpu pack installs its NVIDIA libraries into."""
     return home() / "gpu"
+
+
+def installing_marker(pack_id: str) -> Path:
+    """The file that says an install of this pack started and has not finished. A marker of "started" rather than
+    "finished" keeps packs installed before markers existed counted as installed."""
+    return home() / pack_id / ".installing"
 
 
 def piper_runtime() -> Path:
@@ -52,7 +62,7 @@ def whisper_names() -> list[str]:
     """The Whisper models voice mode will load: the chosen or automatic one, plus tiny for the "iris" wake word."""
     from iris import voice
 
-    names = [voice.WHISPER_MODEL or ("large-v3-turbo" if _has_nvidia() else "small")]
+    names = [voice.whisper_model() or ("large-v3-turbo" if _has_nvidia() else "small")]
     if config.setting("IRIS_WAKEWORD", "wakeword", "hey_jarvis").lower() in ("iris", "hey_iris"):
         names.append(config.setting("IRIS_WAKE_WHISPER", "wake_whisper", "tiny"))
     return names
@@ -69,10 +79,22 @@ def _wake_name() -> str:
 
 
 def _wake_files() -> list[Path]:
-    import openwakeword
-
+    """The wake model and the feature models next to it. Found on disk when openwakeword is not loaded yet:
+    importing it loads scikit-learn, two seconds that made `iris doctor` slow."""
     name = _wake_name()
-    model = Path(openwakeword.MODELS[name]["model_path"].replace(".tflite", ".onnx"))
+    loaded = sys.modules.get("openwakeword")
+    if loaded is not None:  # the voice loop already has it: use its own table
+        model = Path(loaded.MODELS[name]["model_path"].replace(".tflite", ".onnx"))
+    else:
+        spec = importlib.util.find_spec("openwakeword")
+        locations = getattr(spec, "submodule_search_locations", None)  # absent when it is not installed
+        if not locations:
+            raise ImportError("openwakeword is not installed")
+        folder = Path(next(iter(locations))) / "resources" / "models"
+        found = sorted(folder.glob(f"{name}_v*.onnx"))
+        if not found:
+            raise KeyError(name)  # not downloaded yet, or not one of openwakeword's own models
+        model = found[-1]
     return [model] + [model.parent / f for f in FEATURE_MODELS]
 
 
@@ -85,7 +107,7 @@ def _whisper_installed() -> bool:
         for name in whisper_names():
             download_model(name, local_files_only=True)
         return True
-    except Exception:  # noqa: BLE001 - not cached, or the voice parts are missing
+    except Exception:  # not cached, or the voice parts are missing
         return False
 
 
@@ -100,7 +122,7 @@ def _piper_installed() -> bool:
     from iris import voice
 
     have = (piper_runtime() / "piper").is_dir() or _importable("piper")
-    return have and all((voice.PIPER_DIR / f"{v}.onnx").exists() for v in voice.PIPER_VOICES.values())
+    return have and all((voice.PIPER_DIR / f"{v}.onnx").exists() for v in voice.piper_voices().values())
 
 
 def _importable(module: str) -> bool:
@@ -123,7 +145,7 @@ def _voxcpm_installed() -> bool:
 
 # --- the packs -------------------------------------------------------------------------------------------------------
 
-def packs() -> list[dict]:
+def packs() -> list[dict[str, Any]]:
     """Every pack with what it is, its size and license, whether it applies to this PC and whether it is there."""
     from iris import voice
 
@@ -146,7 +168,7 @@ def packs() -> list[dict]:
         {"id": "piper", "name": "Piper voices (Dutch and English)", "size": "about 200 MB",
          "license": "Piper: GPL-3.0, run as a separate program. Voices: per model card (the defaults are trained "
                     "on CC0 data)",
-         "what": f"Natural local voices: {', '.join(voice.PIPER_VOICES.values())}. Then pick piper as the voice "
+         "what": f"Natural local voices: {', '.join(voice.piper_voices().values())}. Then pick piper as the voice "
                  "engine on the Settings tab.", "available": True, "installed": _piper_installed},
         {"id": "voxcpm", "name": "VoxCPM2 voice", "size": "about 3 GB now, 5 GB more on first use",
          "license": "Apache-2.0 (uv, which installs it: MIT or Apache-2.0)",
@@ -155,7 +177,7 @@ def packs() -> list[dict]:
          "available": nvidia, "installed": _voxcpm_installed},
     ]
     for r in rows:
-        r["installed"] = bool(r["available"]) and r["installed"]()
+        r["installed"] = bool(r["available"]) and r["installed"]() and not installing_marker(r["id"]).exists()
     return rows
 
 
@@ -176,10 +198,10 @@ def steps(pack_id: str) -> list[tuple[str, list[str] | Callable[[Job], None]]]:
             f"import openwakeword.utils as u; u.download_models([{_wake_name()!r}])"))]
     if pack_id == "gpu":
         return [("Installing cuBLAS and cuDNN (about 2 GB)",
-                 pip + ["--target", str(gpu_dir()), "nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"])]
+                 [*pip, "--target", str(gpu_dir()), "nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"])]
     if pack_id == "piper":
-        voices = list(voice.PIPER_VOICES.values())
-        return [("Installing Piper as a separate program", pip + ["--target", str(piper_runtime()), "piper-tts"]),
+        voices = list(voice.piper_voices().values())
+        return [("Installing Piper as a separate program", [*pip, "--target", str(piper_runtime()), "piper-tts"]),
                 ("Downloading the voices", [sys.executable, "-m", "piper.download_voices", *voices,
                                             "--data-dir", str(voice.PIPER_DIR)])]
     if pack_id == "voxcpm":
@@ -213,7 +235,7 @@ def _fetch_uv(job: Job, url: str = UV_URL, sha256: str = UV_SHA256) -> None:
     job.say(f"uv {UV_VERSION} checked and unpacked")
 
 
-def child_env(pack_id: str = "") -> dict:
+def child_env(pack_id: str = "") -> dict[str, str]:
     """What a pack command runs with: plain output, and for the Piper pack only, Piper's own folder on its path.
 
     HF_HOME is inherited, not set here: the app puts it under ~/.iris for itself and its children, while under
@@ -241,7 +263,7 @@ class Job:
         with self.log.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         """What the dashboard shows about this install: pack, state and its last lines."""
         return {"pack": self.pack, "state": self.state, "lines": list(self.lines)}
 
@@ -250,30 +272,56 @@ _job: Job | None = None
 _lock = threading.Lock()
 
 
-def run(job: Job, popen: Callable = subprocess.Popen) -> None:
-    """Run the pack's steps in order; the first failure stops it."""
+def run(job: Job, popen: Callable[..., subprocess.Popen[str]] = subprocess.Popen) -> None:
+    """Run the pack's steps in order; the first failure stops it. The .installing marker is written before the
+    first step and removed only when every step succeeded, so an interrupted install never counts as installed."""
     try:
+        marker = installing_marker(job.pack)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("installing\n", encoding="utf-8")
         for title, step in steps(job.pack):
             job.say(f"== {title}")
             if callable(step):
                 step(job)
                 continue
-            proc = popen(step, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                         env=child_env(job.pack), text=True, encoding="utf-8", errors="replace",
-                         creationflags=subprocess.CREATE_NO_WINDOW)
-            for line in proc.stdout:
-                if line.strip():
-                    job.say(line.rstrip())
-            if proc.wait() != 0:
-                raise RuntimeError(f"{title} failed (exit code {proc.returncode})")
+            _run_step(job, title, step, popen)
+        marker.unlink(missing_ok=True)
         job.say("== Done")
         job.state = "done"
-    except Exception as exc:  # noqa: BLE001 - the user reads what went wrong on the Setup tab
+    except Exception as exc:  # the user reads what went wrong on the Setup tab
         job.say(f"== Stopped: {exc}")
         job.state = "failed"
 
 
-def start(pack_id: str, runner: Callable[[Job], None] = run) -> dict:
+def _run_step(job: Job, title: str, command: list[str], popen: Callable[..., subprocess.Popen[str]]) -> None:
+    """One subprocess step: its output streams to the job and it is killed when STEP_TIMEOUT passes.
+
+    The pipe is read in a thread so a silent hang (a pip stuck on the network) still hits the deadline; the main
+    loop waits for the end-of-pipe signal at most STEP_TIMEOUT seconds."""
+    proc = popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                 env=child_env(job.pack), text=True, encoding="utf-8", errors="replace",
+                 creationflags=subprocess.CREATE_NO_WINDOW)
+    finished: queue.Queue[bool] = queue.Queue()
+
+    def pump() -> None:
+        assert proc.stdout is not None  # stdout=PIPE above always gives a pipe
+        for line in proc.stdout:  # stream the output to the log and the Setup tab as it happens
+            if line.strip():
+                job.say(line.rstrip())
+        finished.put(True)
+
+    threading.Thread(target=pump, name=f"iris-pack-out-{job.pack}", daemon=True).start()
+    try:
+        finished.get(timeout=STEP_TIMEOUT)
+    except queue.Empty:
+        proc.kill()  # a hung step must not block every pack forever
+        proc.wait()
+        raise RuntimeError(f"timed out after 30 minutes: {title}") from None
+    if proc.wait() != 0:
+        raise RuntimeError(f"{title} failed (exit code {proc.returncode})")
+
+
+def start(pack_id: str, runner: Callable[[Job], None] = run) -> dict[str, Any]:
     """Begin installing a pack, unless another install is still running."""
     global _job
     if pack_id not in {p["id"] for p in packs() if p["available"]}:
@@ -286,6 +334,6 @@ def start(pack_id: str, runner: Callable[[Job], None] = run) -> dict:
     return {"ok": True, "job": _job.as_dict()}
 
 
-def payload() -> dict:
+def payload() -> dict[str, Any]:
     """The Setup tab's view of the voice packs and the one running install."""
     return {"ok": True, "packs": packs(), "job": _job.as_dict() if _job is not None else None}

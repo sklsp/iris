@@ -12,15 +12,15 @@ asks once per run. Nothing here reaches the network: only the browser on this PC
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import threading
 import time
-import urllib.error
-import urllib.request
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from iris import config
@@ -44,17 +44,21 @@ def _profiles() -> list[Path]:
 
 def _ws_url() -> str:
     """The browser's DevTools websocket, from the DevToolsActivePort file it writes when remote debugging is on."""
+    import urllib.error
+    import urllib.request
+
     for base in _profiles():
         try:
             lines = (base / "DevToolsActivePort").read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             continue
-        port, path = (lines + ["", ""])[0].strip(), (lines + ["", ""])[1].strip()
+        padded = [*lines, "", ""]
+        port, path = padded[0].strip(), padded[1].strip()
         if not port.isdigit():
             continue
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=1) as r:
-                return json.load(r)["webSocketDebuggerUrl"]
+                return cast("str", json.load(r)["webSocketDebuggerUrl"])
         except urllib.error.HTTPError as exc:
             if exc.code == 403:
                 raise BrowserError("the browser is waiting for you to click Allow on its remote debugging "
@@ -77,13 +81,19 @@ class Connection:
             raise BrowserError("install the browser extra first: pip install -e .[browser]") from None
 
         # the handshake waits while the browser asks the user to Allow it
-        self.ws: Any = websocket.create_connection(url, timeout=handshake, suppress_origin=True)
+        try:
+            self.ws: Any = websocket.create_connection(url, timeout=handshake, suppress_origin=True)
+        except (OSError, websocket.WebSocketException) as exc:
+            # a refused or timed-out port is the browser closing or restarting, not something Iris can fix itself
+            raise BrowserError("could not reach the browser's DevTools port; make sure the browser is open "
+                               "and has allowed remote control") from exc
         self.ws.settimeout(15)
         self._id = 0
         self._slow = (TimeoutError, websocket.WebSocketTimeoutException)
         self._lock = threading.Lock()  # the watcher's check and a request can send at the same moment
 
-    def send(self, method: str, params: dict | None = None, session: str | None = None, wait: float = 15) -> dict:
+    def send(self, method: str, params: dict[str, Any] | None = None, session: str | None = None,
+             wait: float = 15) -> dict[str, Any]:
         """Send one DevTools command and wait for the reply with its id, skipping events in between."""
         with self._lock:
             self._id += 1
@@ -102,12 +112,13 @@ class Connection:
                 if reply.get("id") == self._id:  # events and other replies are skipped
                     if "error" in reply:
                         raise BrowserError(f"{method} failed: {reply['error'].get('message', reply['error'])}")
-                    return reply.get("result", {})
+                    return cast("dict[str, Any]", reply.get("result", {}))
 
 
 _conn: Connection | None = None
 _sessions: dict[str, str] = {}  # targetId -> sessionId, so a tab is attached once
-_last: dict[int, dict] = {}  # number -> item of the last list Iris read, for tiers and confirm questions
+_last: dict[int, dict[str, str]] = {}  # number -> item of the last list Iris read, for tiers and confirm questions
+_last_tab: list[str] = []  # the DevTools session of the tab that list came from; empty when it came from text
 _watching = threading.Event()  # voice mode: watch() connects, so a request never waits on the browser's question
 WATCH_WAIT = 5.0  # seconds a request waits for watch() to have the connection
 ASKS = "Brave asks whether Iris may control it. Click Allow in Brave."
@@ -129,7 +140,8 @@ def _connect() -> Connection:
     return _conn
 
 
-def watch(announce=None, every: float = 5, ask_after: float = 3, stop: threading.Event | None = None):
+def watch(announce: Callable[[str], object] | None = None, every: float = 5, ask_after: float = 3,
+          stop: threading.Event | None = None) -> threading.Thread:
     """Voice mode: connect in the background as soon as the browser is open and allows remote control, so its Allow
     question comes when Iris or the browser starts instead of halfway through a request, and connect again after the
     browser restarts. One click per Iris run while the browser stays open. `announce` says the question is waiting."""
@@ -149,6 +161,12 @@ def watch(announce=None, every: float = 5, ask_after: float = 3, stop: threading
                         conn = Connection(url, handshake=600)
                     finally:
                         asking.cancel()
+                    if stop and stop.is_set():  # voice mode ended while Allow was still being asked
+                        close = getattr(conn, "close", None)
+                        if callable(close):
+                            with contextlib.suppress(Exception):  # a dead socket on the way out is fine
+                                close()
+                        return  # a stopped watcher never publishes its connection
                     _sessions.clear()
                     _conn = conn
                 else:
@@ -156,7 +174,7 @@ def watch(announce=None, every: float = 5, ask_after: float = 3, stop: threading
                 pause = every
             except BrowserError:
                 pass  # closed, not allowed, or busy: look again soon
-            except Exception:  # noqa: BLE001 - a broken socket, or the question was refused or left open
+            except Exception:  # a broken socket, or the question was refused or left open
                 if _conn is None:
                     pause = min(max(pause * 2, 30), 600)  # do not ask again every few seconds after a Cancel
                 _conn = None
@@ -167,14 +185,15 @@ def watch(announce=None, every: float = 5, ask_after: float = 3, stop: threading
     return thread
 
 
-def _call(method: str, params: dict | None = None, session: str | None = None, wait: float = 15) -> dict:
+def _call(method: str, params: dict[str, Any] | None = None, session: str | None = None,
+          wait: float = 15) -> dict[str, Any]:
     """A command, with one reconnect when the browser was restarted since the last one."""
     global _conn
     try:
         return _connect().send(method, params, session, wait)
     except BrowserError:
         raise
-    except Exception:  # noqa: BLE001 - a dropped socket: connect again once
+    except Exception:  # a dropped socket: connect again once
         _conn = None
         return _connect().send(method, params, session, wait)
 
@@ -225,10 +244,11 @@ const sel = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[ro
   '[role=menuitem],[role=option],[role=checkbox],[role=radio],[role=switch],[role=combobox],[role=searchbox],' +
   '[role=textbox],[contenteditable=""],[contenteditable=true],[onclick],[tabindex]:not([tabindex="-1"])';
 const seen = new Set(), items = [], els = [];
+let more = false;
 const vw = innerWidth, vh = innerHeight;
 const clean = s => (s || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
 for (const el of document.querySelectorAll(sel)) {
-  if (els.length >= MAX_ITEMS) break;
+  if (els.length >= MAX_ITEMS) { more = true; break; }
   const r = el.getBoundingClientRect();
   if (r.width < 2 || r.height < 2 || r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) continue;
   const cs = getComputedStyle(el);
@@ -260,39 +280,44 @@ for (const el of document.querySelectorAll(sel)) {
   items.push({role, name, value, type});
 }
 window.__iris = els;
-const text = document.body ? (document.body.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, MAX_TEXT) : '';
-return JSON.stringify({title: document.title, url: location.href, items, text});
+const all = document.body ? (document.body.innerText || '').replace(/\\s+/g, ' ').trim() : '';
+const text = all.slice(0, MAX_TEXT), text_more = all.length - text.length;
+return JSON.stringify({title: document.title, url: location.href, items, more, text, text_more});
 })()""".replace("MAX_ITEMS", str(MAX_ITEMS)).replace("MAX_TEXT", str(MAX_TEXT))
 
 
-def _format(snap: dict) -> str:
+def _format(snap: dict[str, Any]) -> str:
     lines = [f"Tab: {snap.get('title', '')} ({snap.get('url', '')})"]
     for i, it in enumerate(snap.get("items", []), 1):
         line = f'[{i}] {it["role"]} "{it["name"]}"'
         if it.get("value") is not None:
             line += f' = "{it["value"]}"' if it["value"] else " (empty)"
         lines.append(line)
+    if snap.get("more"):
+        lines.append(f"[truncated after {MAX_ITEMS} controls; scroll to reach the rest]")
     if not snap.get("items"):
         lines.append("(no buttons, links or fields visible; scroll, or wait for the page to load)")
     if snap.get("text"):
-        lines.append("Page text: " + snap["text"])
+        lines.append("Page text: " + snap["text"]
+                     + (f" [truncated, {snap['text_more']} more characters]" if snap.get("text_more") else ""))
     return "\n".join(lines)
 
 
 def remember(text: str) -> None:
     """Keep the numbered items of a list Iris read, so tiers and questions know what number 3 is."""
     _last.clear()
+    _last_tab.clear()
     url = ""
     for line in text.splitlines():
         if line.startswith("Tab: ") and line.endswith(")") and " (" in line:
             url = line[line.rindex(" (") + 2:-1]
-        m = re.match(r'\[(\d+)\] (\S+) "(.*?)"', line)
+        m = re.match(r'\[(\d+)\] (\S+) "(.*?)"(?: = ".*"| \(empty\))?$', line)
         if m:
             _last[int(m[1])] = {"role": m[2], "name": m[3], "url": url,
                                 "type": "password" if "password" in m[3].lower() else ""}
 
 
-def item(index: int) -> dict:
+def item(index: int) -> dict[str, str]:
     """What number `index` was in the last list, or {} when Iris has not read it."""
     try:
         return _last.get(int(index), {})
@@ -304,9 +329,19 @@ def _read(session: str) -> str:
     snap = json.loads(_eval(session, _SNAPSHOT))
     text = _format(snap)
     remember(text)
-    for i, it in enumerate(snap.get("items", []), 1):  # the real type, which the text leaves out
-        _last[i]["type"] = it.get("type", "")
+    for i, it in enumerate(snap.get("items", []), 1):  # the page's own name and type, which the text can not hold
+        _last.setdefault(i, {"role": it.get("role", ""), "url": snap.get("url", "")})
+        _last[i].update(name=it.get("name", ""), type=it.get("type", ""))
+    _last_tab.append(session)
     return text
+
+
+def _same_tab(session: str) -> None:
+    """Numbers belong to the tab they were read in: the tier and the question describe that tab's item, so a click
+    in another tab is refused instead of hitting whatever that tab has under the same number."""
+    if _last_tab and _last_tab[0] != session:
+        raise BrowserError("the tab in front is not the one Iris read last; call browser_read first, then use its "
+                           "numbers")
 
 
 def _settle(session: str) -> None:
@@ -392,6 +427,7 @@ def open_page(url: str, wait: float = 4) -> str:
 def browser_click(index: int, tab: str = "") -> str:
     """Click item `index` from the last browser_read and return the page as it is now."""
     session = _tab(tab)
+    _same_tab(session)
     what = item(index)
     _mouse_click(session, *_point(session, index))
     _settle(session)
@@ -401,6 +437,7 @@ def browser_click(index: int, tab: str = "") -> str:
 def browser_type(index: int, text: str, enter: bool = False, tab: str = "") -> str:
     """Replace the text in field `index` with `text`; enter=True presses Enter after (to search). Returns the page."""
     session = _tab(tab)
+    _same_tab(session)
     _mouse_click(session, *_point(session, index))
     _eval(session, """(() => { const el = (window.__iris || [])[INDEX]; if (!el) return;
       el.focus(); if (el.select) el.select(); else document.execCommand('selectAll'); })()"""
@@ -475,7 +512,7 @@ _RESULTS = r"""(() => {
 })()"""
 
 
-def search(query: str, max_results: int = 5, wait: float = 8) -> list[dict]:
+def search(query: str, max_results: int = 5, wait: float = 8) -> list[dict[str, str]]:
     """Search the web in a background tab of the user's own browser and return [{title, url, snippet}]. The tab is
     closed afterwards. A search engine that asks for a human check raises BrowserError: Iris never solves those."""
     from urllib.parse import quote_plus
@@ -485,7 +522,7 @@ def search(query: str, max_results: int = 5, wait: float = 8) -> list[dict]:
     try:
         session = _call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
         deadline = time.perf_counter() + wait
-        found: dict = {"human": False, "results": []}
+        found: dict[str, Any] = {"human": False, "results": []}
         while time.perf_counter() < deadline:  # the results are often drawn after the page itself has loaded
             time.sleep(0.25)
             try:
@@ -495,10 +532,8 @@ def search(query: str, max_results: int = 5, wait: float = 8) -> list[dict]:
             if found.get("human") or found.get("results"):
                 break
     finally:
-        try:
+        with contextlib.suppress(BrowserError):
             _call("Target.closeTarget", {"targetId": tid})
-        except BrowserError:
-            pass
-    if found.get("human"):
+    if found.get("human") and not found.get("results"):  # results that merely mention a captcha are results
         raise BrowserError("the search engine asks for a human check; Iris does not solve those")
     return found.get("results") or []

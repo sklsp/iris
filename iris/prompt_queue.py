@@ -10,6 +10,7 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 
 def queue_path() -> Path:
@@ -17,7 +18,7 @@ def queue_path() -> Path:
     return Path(os.environ.get("IRIS_QUEUE") or (Path.home() / ".iris" / "queue.json"))
 
 
-def load(path: Path | None = None) -> dict:
+def load(path: Path | None = None) -> dict[str, Any]:
     """Read the saved queue; no file means an empty one, but a broken file raises so nothing waiting in it is lost."""
     p = Path(path) if path else queue_path()
     if not p.exists():
@@ -26,21 +27,23 @@ def load(path: Path | None = None) -> dict:
         data = json.loads(p.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         raise ValueError(f"the queue file is broken: {p}") from e
-    prompts = data.get("prompts") if isinstance(data, dict) else None
-    next_id = data.get("next_id") if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        raise ValueError(f"the queue file is broken: {p}")
+    prompts = data.get("prompts")
+    next_id = data.get("next_id")
     # Never silently start over: a broken file would lose the prompts waiting in it.
     if not isinstance(prompts, list) or not isinstance(next_id, int):
         raise ValueError(f"the queue file is broken: {p}")
     return data
 
 
-def save(data: dict, path: Path | None = None) -> None:
+def save(data: dict[str, Any], path: Path | None = None) -> None:
     """Write the queue atomically through a temp file so a crash never leaves a half-written queue.json behind."""
     p = Path(path) if path else queue_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, p)
+    tmp.replace(p)
 
 
 def add(agent: str, text: str, now: str = "", path: Path | None = None) -> int:
@@ -50,7 +53,7 @@ def add(agent: str, text: str, now: str = "", path: Path | None = None) -> int:
     if not agent or not text:
         raise ValueError("agent and text are required")
     data = load(path)
-    prompt_id = data["next_id"]
+    prompt_id = int(data["next_id"])
     data["prompts"].append(
         {"id": prompt_id, "agent": agent, "text": text, "added": now or time.strftime("%Y-%m-%d %H:%M")}
     )
@@ -59,33 +62,35 @@ def add(agent: str, text: str, now: str = "", path: Path | None = None) -> int:
     return prompt_id
 
 
-def pending(agent: str = "", path: Path | None = None) -> list[dict]:
+def pending(agent: str = "", path: Path | None = None) -> list[dict[str, Any]]:
     """The prompts still waiting, optionally only those for one agent."""
-    prompts = load(path)["prompts"]
+    prompts: list[dict[str, Any]] = load(path)["prompts"]
     if agent:
         a = agent.strip().lower()
         prompts = [p for p in prompts if str(p.get("agent", "")).strip().lower() == a]
     return prompts
 
 
-def take(agent: str, path: Path | None = None) -> dict:
+def take(agent: str, path: Path | None = None) -> dict[str, Any]:
     """Remove and return the oldest prompt waiting for an agent, so Iris never hands one out twice."""
     data = load(path)
+    prompts: list[dict[str, Any]] = data["prompts"]
     a = agent.strip().lower()
-    for i, p in enumerate(data["prompts"]):
+    for i, p in enumerate(prompts):
         if str(p.get("agent", "")).strip().lower() == a:
-            del data["prompts"][i]
+            del prompts[i]
             save(data, path)
             return p
     raise LookupError(f"no prompts waiting for {agent.strip()}")
 
 
-def remove(prompt_id: int, path: Path | None = None) -> dict:
+def remove(prompt_id: int, path: Path | None = None) -> dict[str, Any]:
     """Drop one prompt by id and return it."""
     data = load(path)
-    for i, p in enumerate(data["prompts"]):
+    prompts: list[dict[str, Any]] = data["prompts"]
+    for i, p in enumerate(prompts):
         if p.get("id") == prompt_id:
-            del data["prompts"][i]
+            del prompts[i]
             save(data, path)
             return p
     raise LookupError(f"no prompt with id {prompt_id}")

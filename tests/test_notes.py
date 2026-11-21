@@ -4,6 +4,7 @@ Reminders in ~/.iris/reminders.json (IRIS_REMINDERS overrides): set, list, cance
 
 import json
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -173,7 +174,7 @@ def test_describe_falls_back_to_the_query_when_several_match(notes_file):
 
 def test_default_path_is_under_home(monkeypatch, tmp_path):
     monkeypatch.delenv("IRIS_NOTES", raising=False)
-    monkeypatch.setattr(notes.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
     assert notes._path() == tmp_path / ".iris" / "notes.md"
 
 
@@ -314,7 +315,7 @@ def test_start_reminders_schedules_future_and_announces_missed(reminders_file):
     reminders_file.write_text(json.dumps([
         {"id": 1, "due": "2026-10-31T08:00", "text": "old thing"},
         {"id": 2, "due": "2026-10-31T10:00", "text": "later thing"}]), encoding="utf-8")
-    said = []
+    said: list[str] = []
     sched = _Sched()
     reminders.start_reminders(said.append, now=_now_905, schedule=sched)
     assert said == ["Missed reminder: old thing"]  # due while Iris was off: announced at once
@@ -327,7 +328,7 @@ def test_start_reminders_schedules_future_and_announces_missed(reminders_file):
 
 
 def test_start_reminders_with_nothing_pending_does_nothing(reminders_file):
-    said = []
+    said: list[str] = []
     sched = _Sched()
     reminders.start_reminders(said.append, now=_now_905, schedule=sched)
     assert said == [] and sched.calls == []
@@ -335,7 +336,7 @@ def test_start_reminders_with_nothing_pending_does_nothing(reminders_file):
 
 def test_cancelled_reminder_never_announces(reminders_file):
     reminders_file.write_text(json.dumps([{"id": 1, "due": "2026-10-31T10:00", "text": "buy milk"}]), encoding="utf-8")
-    said = []
+    said: list[str] = []
     sched = _Sched()
     reminders.start_reminders(said.append, now=_now_905, schedule=sched)
     assert reminders.reminder_cancel(1).startswith("cancelled")
@@ -344,7 +345,7 @@ def test_cancelled_reminder_never_announces(reminders_file):
 
 
 def test_reminder_set_while_running_schedules_at_once(reminders_file, monkeypatch):
-    said = []
+    said: list[str] = []
     sched = _Sched()
     reminders.start_reminders(said.append, now=_now_905, schedule=sched)
     monkeypatch.setattr(reminders, "_wall_now", _now_905)
@@ -363,7 +364,7 @@ def test_reminder_tiers_pin_safe():
 
 def test_reminder_default_path_is_under_home(reminders_file, monkeypatch, tmp_path):
     monkeypatch.delenv("IRIS_REMINDERS", raising=False)
-    monkeypatch.setattr(reminders.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
     assert reminders._path() == tmp_path / ".iris" / "reminders.json"
 
 
@@ -380,3 +381,55 @@ def test_rewrites_never_leave_a_temp_file_behind(tmp_path, monkeypatch):
     assert sorted(p.name for p in tmp_path.iterdir()) == ["notes.md", "reminders.json"]
     assert "loodgieter" in (tmp_path / "notes.md").read_text(encoding="utf-8")
     assert reminders._read()[0]["text"] == "bellen"
+
+
+def test_a_bad_line_or_a_non_utf8_notes_file_never_breaks_the_note_tools(notes_file):
+    notes_file.write_bytes(b"- 2026-13-01 10:00 a month that does not exist\n- 2026-10-30 08:00 caf\xe9 met Mark\n"
+                           b"- 2026-10-31 09:00 milk\n")
+    assert notes.find_notes("milk") == ["milk"]
+    assert notes.find_notes("caf") == ["caf\ufffd met Mark"]
+    assert "milk" in notes.notes_read()
+
+
+def test_an_unreadable_reminders_file_is_kept_aside_not_overwritten(reminders_file, monkeypatch):
+    monkeypatch.setattr(reminders, "_wall_now", lambda: datetime(2026, 10, 31, 9, 0))
+    reminders_file.write_bytes(b'\xef\xbb\xbf[{"id": 1, "due": "2026-11-02T10:00", "text": "dentist"}')  # cut off
+    assert reminders.reminder_set("18:00", "tax").startswith("reminder set")
+    kept = [p for p in reminders_file.parent.iterdir() if p.name.startswith("reminders.json.unreadable-")]
+    assert len(kept) == 1 and b"dentist" in kept[0].read_bytes()
+
+
+def test_reminders_with_a_bom_or_a_utc_offset_are_read(reminders_file):
+    reminders_file.write_bytes(b'\xef\xbb\xbf[{"id": 1, "due": "2026-11-02T10:00+00:00", "text": "dentist"}]')
+    (row,) = reminders._read()
+    assert row["text"] == "dentist" and datetime.fromisoformat(row["due"]).tzinfo is None
+
+
+def test_a_reminder_months_ahead_waits_in_steps_and_can_be_cancelled(monkeypatch):
+    import threading
+    import time
+
+    fired = []
+    monkeypatch.setattr(reminders._Wait, "STEP", 0.05)
+    t = reminders._start_thread(0.12, lambda: fired.append(1))
+    t.join(2)
+    assert fired == [1]  # a few short steps, then the call
+    waits: list[float] = []
+    long = reminders._Wait(60 * 86_400, lambda: fired.append(2))  # 60 days: over TIMEOUT_MAX on Windows
+    real_wait = long.finished.wait
+
+    def stepped_wait(timeout=None):
+        waits.append(timeout)
+        return real_wait(0.01)
+
+    monkeypatch.setattr(long.finished, "wait", stepped_wait)
+    long.start()
+    time.sleep(0.05)
+    long.cancel()
+    long.join(2)
+    assert not long.is_alive() and fired == [1] and waits and max(waits) <= 0.05 <= threading.TIMEOUT_MAX
+
+
+def test_a_line_that_is_not_a_note_is_skipped(notes_file):
+    notes_file.write_text("- 2026-10-31 09:05 buy milk\njust some text\n", encoding="utf-8")
+    assert notes._read(notes_file) == [(datetime(2026, 10, 31, 9, 5), "buy milk")]

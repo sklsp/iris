@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import base64
+import copy
 import json
 import os
 import re
-import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from iris import config
 
@@ -21,16 +22,33 @@ def settings_path() -> Path:
     return Path(os.environ.get("IRIS_SETTINGS") or (Path.home() / ".iris" / "settings.json"))
 
 
-def read_settings() -> dict:
-    """The contents of settings.json, re-read on every call so edits apply at once.
+# ((path, file id, mtime_ns, size), parsed) until the file changes
+_cache: tuple[tuple[str, int, int, int], dict[str, Any]] | None = None
 
-    A missing file, a broken one and a non-object top level all mean "no user choice"."""
+
+def read_settings() -> dict[str, Any]:
+    """The contents of settings.json; re-read when the file changes (its path, file id, mtime or size).
+
+    A missing file, a broken one and a non-object top level all mean "no user choice"; the result is a deep copy,
+    so callers may change it."""
+    global _cache
+    path = settings_path()
     try:
-        with settings_path().open(encoding="utf-8") as f:
+        st = path.stat()
+    except OSError:
+        return {}
+    key = (str(path), st.st_ino, st.st_mtime_ns, st.st_size)
+    if _cache is not None and _cache[0] == key:
+        return copy.deepcopy(_cache[1])
+    try:
+        with path.open(encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    _cache = (key, data)
+    return copy.deepcopy(data)
 
 
 def resolve_model() -> tuple[str, str]:
@@ -56,14 +74,14 @@ def effective_model() -> str:
 class ToolCall:
     id: str
     name: str
-    args: dict
+    args: dict[str, Any]
 
 
 @dataclass
 class Reply:
     text: str = ""
     calls: list[ToolCall] = field(default_factory=list)
-    raw: dict = field(default_factory=dict)  # the assistant message, to append to the history as-is
+    raw: dict[str, Any] = field(default_factory=dict)  # the assistant message, to append to the history as-is
 
 
 class LMStudio:
@@ -75,8 +93,10 @@ class LMStudio:
     def _model(self) -> str:
         return self.model if self.model is not None else effective_model()
 
-    def chat(self, messages: list[dict], tools: list[dict]) -> Reply:
+    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> Reply:
         """One round trip with the model; its text and any tool calls come back as a Reply."""
+        import urllib.request
+
         # Qwen reasons before it acts: 1500 to 2500 tokens on an open request, so 4096 cut some replies off.
         body = {"model": self._model(), "messages": messages, "tools": tools, "temperature": 0.3, "max_tokens": 8192}
         req = urllib.request.Request(self.url, json.dumps(body).encode(), {"Content-Type": "application/json"})
@@ -88,10 +108,11 @@ class LMStudio:
             raise ValueError("the model ran out of tokens while thinking")
         calls = []
         for c in msg.get("tool_calls") or []:
-            try:
-                args = json.loads(c["function"].get("arguments") or "{}")
-            except json.JSONDecodeError:
-                args = {"_unparsed": c["function"].get("arguments")}
+            raw_args = c["function"].get("arguments") or "{}"
+            try:  # some servers send the arguments as an object instead of a JSON string
+                args = raw_args if isinstance(raw_args, dict) else json.loads(raw_args)
+            except (json.JSONDecodeError, TypeError):
+                args = {"_unparsed": raw_args}
             calls.append(ToolCall(c.get("id", ""), c["function"]["name"], args))
         raw = {"role": "assistant", "content": msg.get("content") or ""}
         if msg.get("tool_calls"):
@@ -122,6 +143,8 @@ def locate(png: bytes, target: str, base_url: str = BASE_URL, timeout: float = 3
 
 
 def _vision(png: bytes, text: str, base_url: str, timeout: float) -> str:
+    import urllib.request
+
     image = "data:image/png;base64," + base64.b64encode(png).decode()
     body = {"model": effective_model(), "temperature": 0.2, "max_tokens": 8192,
             "messages": [{"role": "user", "content": [{"type": "text", "text": text},

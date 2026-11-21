@@ -8,6 +8,7 @@ for a few minutes. run_done only reads; cline_start starts a session through the
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import subprocess
@@ -16,6 +17,7 @@ from collections.abc import Callable
 from datetime import datetime
 from functools import partial
 from pathlib import Path
+from typing import Any, cast
 
 from iris import config, prompt_queue
 from iris.agent import Journal
@@ -47,13 +49,21 @@ def cline_cwd() -> str:
 def cline_command(text: str, cwd: str) -> list[str]:
     """The argv that starts a Cline CLI session with `text` in `cwd`.
 
-    A multi-line text is allowed; it stays one argv item. Empty or whitespace-only text raises ValueError."""
+    A multi-line text is allowed; it stays one argv item. Empty or whitespace-only text raises ValueError.
+    A .cmd or .bat CLI raises LookupError: Windows would run it through cmd.exe and parse the prompt again."""
     if not text.strip():
         raise ValueError("empty prompt")
-    return [cline_cli(), "-z", "-c", cwd, "-P", cline_provider(), "-m", cline_model(), text]
+    cli = cline_cli()
+    if cli.strip().strip('"').lower().endswith((".cmd", ".bat")):
+        raise LookupError(
+            "cline_cli points at a .cmd or .bat file, which would pass the prompt through cmd.exe; "
+            "set cline_cli to Cline's .exe, or to node plus Cline's script"
+        )
+    return [cli, "-z", "-c", cwd, "-P", cline_provider(), "-m", cline_model(), text]
 
 
-def cline_sessions(run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> list[dict] | None:
+def cline_sessions(
+    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> list[dict[str, Any]] | None:
     """The last ten Cline sessions as dicts, from `history --json`; None when they cannot be read.
 
     Non-dict items in the JSON are skipped; a missing CLI, a timeout, bad JSON or a non-list result all give None."""
@@ -88,7 +98,7 @@ def _started_at_epoch(value: object) -> float | None:
         return None
 
 
-def _matches(text: str, t0: float, session: dict) -> bool:
+def _matches(text: str, t0: float, session: dict[str, Any]) -> bool:
     """Whether one history entry is a start of `text`: right source, inside the window, prompt contains it."""
     if session.get("source") != "cline-cli-zen":
         return False
@@ -100,15 +110,15 @@ def _matches(text: str, t0: float, session: dict) -> bool:
     return isinstance(prompt, str) and needle in prompt
 
 
-def _find_started(text: str, t0: float, sessions: list[dict]) -> str | None:
+def _find_started(text: str, t0: float, sessions: list[dict[str, Any]]) -> str | None:
     """The session id of a `cline-cli-zen` entry started at or after t0 - 5 whose prompt contains text, else None."""
     for session in sessions:
         if _matches(text, t0, session):
-            return session["sessionId"]
+            return cast("str", session["sessionId"])
     return None
 
 
-def _count_started(text: str, t0: float, sessions_list: list[dict]) -> int:
+def _count_started(text: str, t0: float, sessions_list: list[dict[str, Any]]) -> int:
     """How many entries of the history _find_started's rules would match; two or more means a double start."""
     return sum(1 for s in sessions_list if _matches(text, t0, s))
 
@@ -132,8 +142,8 @@ def _dispatch(text: str, cwd: str, run: Callable[..., subprocess.CompletedProces
     return result.stderr or ""
 
 
-def _poll(text: str, t0: float, sessions: Callable[[], list[dict] | None], sleep: Callable[[float], None] = time.sleep,
-          polls: int = 5) -> tuple[str | None, bool]:
+def _poll(text: str, t0: float, sessions: Callable[[], list[dict[str, Any]] | None],
+          sleep: Callable[[float], None] = time.sleep, polls: int = 5) -> tuple[str | None, bool]:
     """Check the history up to `polls` times, 3 seconds apart.
 
     Returns (the matching session id or None, whether at least one read succeeded)."""
@@ -153,7 +163,7 @@ def _poll(text: str, t0: float, sessions: Callable[[], list[dict] | None], sleep
 
 def start_in_hub(
     text: str, cwd: str, run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
-    sessions: Callable[[], list[dict] | None] | None = None, now: Callable[[], float] | None = None,
+    sessions: Callable[[], list[dict[str, Any]] | None] | None = None, now: Callable[[], float] | None = None,
     sleep: Callable[[float], None] = time.sleep, polls: int = 5) -> str:
     """Start a Cline session in the background hub and prove it started from the history.
 
@@ -206,7 +216,10 @@ def cline_start(agent: str, repo: str = "") -> str:
         result = start_in_hub(waiting[0]["text"], cwd)
     except (LookupError, RuntimeError) as exc:
         return f"error: {exc}"  # the session did not start; the queue stays untouched
-    prompt_queue.take(agent)  # only after the hub started the session, so a failure leaves the queue unchanged
+    # only after the hub started the session, so a failure leaves the queue unchanged; by id, because the dashboard
+    # may have moved or deleted prompts while the session started (that can take minutes)
+    with contextlib.suppress(LookupError):  # deleted meanwhile: nothing else is taken in its place
+        prompt_queue.remove(waiting[0]["id"])
     return result
 
 
@@ -299,7 +312,7 @@ def run_done(repo: Path | str, quiet_minutes: int = 3, now: float | None = None)
     return True, f"{progress.name} done: {total} items"
 
 
-def run_progress(repo: Path | str) -> dict:
+def run_progress(repo: Path | str) -> dict[str, Any]:
     """The progress of the newest PROGRESS-*.md run in `repo`: file name, item counts and whether it is done."""
     path = Path(repo)
     progress = _newest_progress(path)

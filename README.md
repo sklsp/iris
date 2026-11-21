@@ -8,6 +8,8 @@ skills it is missing.**
 
 Windows 10/11 . an installer or Python 3.11+ . runs on a local model in LM Studio . no cloud, no cost per command
 
+[Install](#install) . [How Iris works inside](docs/ARCHITECTURE.md) . [More docs](docs/)
+
 ```
 You:  Hey Jarvis, maak een presentatie van vijf slides over de geschiedenis van Rotterdam.
 Iris: (searches the web, reads two pages, writes the slides)
@@ -39,7 +41,7 @@ Iris: Sending messages is something I never do myself. I can open a draft; you p
   search is three model steps; a search on YouTube or Netflix is two. A benchmark measures every change.
 - **A real base.** Files, Word, PowerPoint and Excel, the web, the clipboard, media keys, screenshots, weather,
   email drafts, notes, reminders and timers.
-- **Measured.** An eval of 215 tasks runs against the real model and the result is published below, including the
+- **Measured.** An eval of 251 tasks runs against the real model and the result is published below, including the
   safety traps.
 - **Local.** Speech in (faster-whisper), the model (any tool-calling model in LM Studio) and speech out (VoxCPM2,
   Piper, SAPI or Kokoro) all run on your machine. An optional overlay shows what you said and the answer, with a
@@ -122,9 +124,32 @@ From source, for development and for the command line.
    .venv\Scripts\iris               # type requests
    .venv\Scripts\iris --voice       # say "hey jarvis", then your request
    .venv\Scripts\iris dashboard     # status, activity, eval and skill review at http://127.0.0.1:8765
-   .venv\Scripts\iris shortcut      # an Iris.cmd on your desktop: double-click to start voice mode
+   .venv\Scripts\iris shortcut      # an Iris.lnk on your desktop: double-click to open the app, no console
+   .venv\Scripts\iris startup on    # an Iris.vbs in the Startup folder starts the tray app at login, no console
    .venv\Scripts\iris app           # the desktop app (install the .[app] extra): dashboard window, tray, voice mode
+   .venv\Scripts\iris timings       # how long recent requests took: median and p90, model share, slowest tools
    ```
+
+## Upgrading from 0.x
+
+Install 1.0 over your 0.x (run the new IrisSetup, or `git pull` and `pip install -e .` again). Everything in
+`~/.iris` carries over as it is: `config.toml`, notes, reminders, the prompt queue, the journal, the model choice,
+approved skills, voice packs and logs. Data written by 0.4, 0.5 and 0.6.1 is tested to read in 1.0
+(`tests/test_upgrade.py`); no file changes format, so there is nothing to migrate.
+
+What you may notice:
+
+- A skill that was built but not yet approved needs `capability_check` (or the Skills tab's check) once more
+  before you can approve it: approving now needs a check Iris ran itself. Approved skills stay approved.
+- A `config.toml` saved with a BOM (Notepad's "UTF-8 with BOM") is read now; before, all of it was ignored.
+  `iris doctor` says when the file can not be read or a number setting is not a number.
+- The dashboard answers only at http://127.0.0.1 or http://localhost (with its port), not at another name for this
+  PC.
+- An error nobody caught is written to `~/.iris/logs/crash.log`, and the Logs tab shows it.
+- Tool results and errors read differently in places (they say what to do next); the eval measures that.
+
+To go back, install the 0.6.1 IrisSetup from the releases page (or `git checkout v0.6.1` and `pip install -e .`).
+Your data stays; 0.6.1 ignores the `trust.json` that 1.0 adds next to your skills.
 
 ## Configuration
 
@@ -280,154 +305,12 @@ The file tools work in your home folder and the folders you list under `folders`
 
 ## Voice
 
-### Run
+How Iris listens and speaks: running voice mode on the wake word, the overlay panel, starting at login, hearing with
+faster-whisper, speech out through SAPI, Piper, VoxCPM2 or Kokoro, and reading web pages in your own browser. The one
+thing most readers need: `python -m iris --voice` is the normal way to use Iris; it waits for "hey jarvis" and answers
+out loud.
 
-```bash
-.venv\Scripts\python -m iris                      # type requests
-.venv\Scripts\python -m iris --voice              # wake word mode, say "hey jarvis", it stops on silence
-.venv\Scripts\python -m iris --push-to-talk       # old mode: press Enter to stop recording
-```
-
-`--voice` is the normal way to use Iris. It waits for the wake word, plays a short beep, records until 1.8 s of
-silence (`IRIS_SILENCE`), transcribes and answers. For 8 seconds after an answer you can ask the next question without the wake word
-(`IRIS_FOLLOW_UP` sets the window, 0 turns it off); when nobody speaks in that window, Iris waits for the wake word
-again, so talk that is not meant for her is ignored. The microphone stays open the whole time, so saying the wake
-word while Iris is still talking cuts the answer short and your next words are taken as the next
-command, without saying the wake word twice.
-
-### Overlay
-
-With `overlay = true` in `~/.iris/config.toml` (or `IRIS_OVERLAY=1`) voice mode shows a small dark panel at the bottom
-of the screen, above the taskbar, like Siri: a dot while Iris listens, what Whisper heard as `You: ...`, three dots
-while she thinks and her answer while she speaks. It fades out 4 seconds after she is done; a long answer keeps its
-last lines. It is off by default.
-
-While Iris listens, thinks or speaks, a round cancel button (an X in a circle) sits at the right of the panel. A click
-stops that request: the speech stops at once, the agent takes no further step (a model call already under way may
-finish, but its result is dropped), the journal gets a `cancelled` entry, and Iris waits for the wake word again.
-
-The panel never takes the keyboard focus, also not when you click its button, and has no taskbar button, so Iris keeps
-typing into the window you were in. Clicks on the see-through corners go through to the window behind; the panel
-itself catches them. It is left out of screenshots (Windows 10 2004 or later), so `look_at_screen` never sees it.
-`list_windows` and `read_window` skip it too. It runs as its own process (`python -m iris.overlay`, tkinter only, no
-extra packages) and writes errors to `~/.iris/overlay.log`; if it fails or is closed, voice mode carries on without it.
-
-### Launcher and start at login
-
-`iris shortcut` puts an `Iris.cmd` on your desktop: double-click it and voice mode starts in its own window; close the
-window to stop Iris. `iris startup on` starts voice mode when you log in, in a minimized console window you can see and close;
-`iris startup off` stops that. Let LM Studio start its local server at login too (its settings have an option for
-it), or Iris has no model to talk to.
-
-### Wake word
-
-The default is the built-in openWakeWord model **hey jarvis**: it is tiny and runs on any CPU. Iris downloads it on
-first use and does not ship it; openWakeWord's pre-trained models are licensed CC BY-NC-SA 4.0 (non-commercial)
-because of their training data, so check that before using it commercially. To wake Iris by
-her own name instead, set `IRIS_WAKEWORD=iris`: short utterances are then checked by Whisper `tiny` with "Iris" as a
-hotword (about 0.6 s on a CPU, `IRIS_WAKE_WHISPER` picks another size), so "Iris" or "hey Iris" works without a
-trained model, at the cost of transcribing every short sound in the room.
-
-```bash
-set IRIS_WAKEWORD=hey_jarvis    # any built-in openWakeWord name, a path to your own .onnx, or iris
-```
-
-`IRIS_WAKE_THRESHOLD` (default 0.5) decides how loud the wake word has to be. `IRIS_VAD_THRESHOLD`
-(default 0.01) is the RMS below which audio counts as silence, and `IRIS_SILENCE` (default 1.8 s) is the silence
-that ends a recording; a shorter one answers sooner but cuts you off when you pause to think.
-
-### Hearing
-
-Iris transcribes with faster-whisper. On an NVIDIA GPU it uses `large-v3-turbo` (well under a second per request and
-much better with names and mixed Dutch and English); without one it uses `small` on the CPU. The GPU needs NVIDIA's
-cuBLAS and cuDNN, which the `gpu` extra installs:
-
-```bash
-.venv\Scripts\python -m pip install -e ".[gpu]"
-set IRIS_WHISPER_GPU=0              # which GPU, numbered as nvidia-smi shows them
-```
-
-`IRIS_WHISPER` and `IRIS_WHISPER_DEVICE` (`cpu` or `cuda`) override the automatic choice. Every request is printed as
-`You: ...`, so you can see what Iris understood.
-
-### Speech out
-
-Windows SAPI (pyttsx3) is the default and always available, but its voices are English, so Dutch answers sound
-garbled. Piper gives natural local voices in both languages: Iris picks the voice by the language of the answer, and
-uses the language you spoke when an answer is too short to tell.
-
-```bash
-.venv\Scripts\python -m pip install -e ".[piper]"
-.venv\Scripts\python -m piper.download_voices nl_NL-ronnie-medium en_US-joe-medium --data-dir %USERPROFILE%\.iris\piper
-```
-
-Then set `tts = "piper"` in `~/.iris/config.toml` (or `IRIS_TTS=piper`). `IRIS_PIPER_NL` and `IRIS_PIPER_EN` pick other
-voices. Piper is GPL-3.0, so Iris never imports it: it runs Piper's own command line as a separate program and plays
-the WAV it writes. Both default voices were trained on CC0 data; check a voice's model card before you pick another.
-
-VoxCPM2 (Apache-2.0) speaks Dutch and English in one voice, also when they mix in one sentence ("The Shining staat op
-Netflix"). It needs PyTorch and a GPU with about 6 GB free, so it gets its own Python next to Iris:
-
-```bash
-uv venv -p 3.11 %USERPROFILE%\.iris\voxcpm\venv
-uv pip install --python %USERPROFILE%\.iris\voxcpm\venv voxcpm "triton-windows<3.3"
-uv pip install --python %USERPROFILE%\.iris\voxcpm\venv --reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu124
-```
-
-Then set `tts = "voxcpm"`. The model (about 5 GB) is downloaded from Hugging Face on the first start, which takes a
-few minutes; later starts take about half a minute. Iris keeps one voice in `~/.iris/voxcpm/voice.wav`: made on the
-first start, or put any clean 5 to 10 second recording there to speak in that voice. `voxcpm_gpu` in config.toml (or
-`IRIS_VOXCPM_GPU`) picks the GPU (default 0, in PCI bus order); give it a card with about 4 GB truly free, not the
-one the LLM fills: next to a 27B LLM and the desktop's own apps a 3090 spilled into system memory and the LLM's prompt
-processing fell from 1100 to 140 tokens a second.
-
-The worker sizes VoxCPM2's attention caches for 512 positions (`IRIS_VOXCPM_CACHE`) instead of the model's 8192, which
-it otherwise reads in full on every step, and speaks a long answer in pieces of up to 250 characters that fit them.
-On an RTX 3060 that took speech from 0.58 to about 1.9 times real time, so an answer of any length starts after
-about 0.3 s and plays in one go. On a GPU still slower than real time, Iris starts once enough is made that the rest
-arrives in time (from the speed measured on each answer, times `IRIS_VOXCPM_MARGIN`, default 1.15), and if it runs
-dry it pauses once instead of stuttering. The worker's log is `~/.iris/voxcpm/worker.log`; if VoxCPM fails, Piper
-speaks instead.
-
-For Kokoro (English only), install the extra and put the two model files in `~/.iris` (or `IRIS_KOKORO_DIR`):
-
-```bash
-uv pip install --python .venv -e ".[tts]"
-# kokoro-v1.0.fp16.onnx and voices-v1.0.bin, from the kokoro-onnx release, into ~/.iris
-set IRIS_TTS=kokoro
-set IRIS_KOKORO_VOICE=af_heart
-```
-
-Iris never downloads model files by itself. If Piper or Kokoro is missing its files, or fails for any other reason,
-Iris falls back to SAPI and carries on talking. Piper and Kokoro play in short blocks, so the wake word stops them
-mid-answer; SAPI cannot be cut off mid-sentence.
-
-### Web pages
-
-For web pages in Brave, Chrome or Edge, Iris reads the page itself through the DevTools Protocol: `browser_read` lists
-the buttons, links and fields on screen as numbered lines, and `browser_click` and `browser_type` act on a number and
-return the page as it is afterwards. A read takes a few hundredths of a second, against several seconds for a
-screenshot and a vision model, and the click lands on exactly the element that was read. The tier comes from the label
-the page itself shows, so a "Bestellen en betalen" button is refused however the model describes it.
-
-```bash
-.venv\Scripts\python -m pip install -e ".[browser]"
-```
-
-Then allow it in the browser: type `brave://inspect/#remote-debugging` (or `chrome://`, `edge://`) in the address
-bar and tick "Allow remote debugging for this browser instance". The browser asks every new connection whether it may
-be controlled; voice mode connects as soon as it starts (and again after the browser restarts) and says when the
-question is waiting, so you click Allow once per run, not in the middle of a request. Only the browser on this PC is reached (127.0.0.1). This gives Iris full control of that browser,
-like a person at the keyboard: the tiers above are what keep paying, sending and passwords with you.
-`IRIS_BROWSER_PROFILE` points at another browser's user-data folder.
-
-`open_url` opens a page in a tab in front and returns it numbered, so the next step can click without reading
-first; a site's own search URL (`youtube.com/results?search_query=...`) makes a search one step. A second page on the
-same site reuses the tab Iris opened for it; tabs you opened yourself are never taken over.
-
-`web_search` uses the same connection: it opens the search results in a background tab, reads the result links
-and closes the tab again (search engines block plain HTTP clients). If a search engine asks for a human check, Iris
-stops and says so; it never solves those. Without the browser it falls back to DuckDuckGo's html page.
+Details: [docs/voice.md](docs/voice.md).
 
 ## Dashboard
 
@@ -439,7 +322,7 @@ A mostly read-only status page for Iris and the machine it runs on:
 set IRIS_DASHBOARD_PORT=9000                        # same, via environment variable
 ```
 
-The server binds to loopback only. Every data endpoint answers GET; the writes are the two model actions,
+The server binds to loopback only. Every data endpoint answers GET (the Activity tab's Speed panel reads `/api/timings`); the writes are the two model actions,
 `POST /api/models/load` and `POST /api/models/unload`, the queue edits, `POST /api/queue/add`, `/delete` and `/move`,
 `POST /api/cline/start`, approving or removing a skill (`POST /api/skills/approve` and `/remove`), saving settings
 (`POST /api/settings`), the Setup tab's steps (`POST /api/setup/...`), starting a voice pack download
@@ -466,7 +349,7 @@ The page polls every 3 seconds and has eleven tabs:
   answers, plus how many runs exist.
 - Autopilot: each watched repo's run (done or running) with a **Start next prompt** button that asks once before it
   starts, and the queue so you can add, delete and move prompts; when a run finishes it raises a done banner and, if
-  allowed, a browser notification. See [Autopilot](#autopilot).
+  allowed, a browser notification. See [Autopilot](docs/plugins.md#autopilot).
 - Skills: every skill Iris built or is building, with its request, tier, status and problems, and its plan, code, tests
   and test output to read before you press **Approve** (or **Remove**). See [Self-extension](#self-extension).
 - Setup: the first-run wizard (model server and model, microphone and speaker tests, optional voice packs, `iris doctor`'s
@@ -479,19 +362,25 @@ Agents, LM Studio, Claude and runs data are cached for 30 seconds so the page do
 sessions database is small enough to read fresh on every poll. A missing or unreadable source shows an empty list in its
 tab, not an error page.
 
+## How fast is Iris?
+
+Every request writes one timing line to the journal (`~/.iris/journal.jsonl`), with how long it took in all, how much of that was model calls and how much tools. The journal rotates at 5 MB into `journal.jsonl.1`, so the dashboard, `iris timings` and `iris doctor` read the recent part only. `python -m iris timings` reads those lines (the last 50 by default) and prints the median and p90 turn time, the model's share of all the time, and the slowest tools. In voice mode each request also writes an `stt` line with how long speech recognition took, and each answer writes a `tts` line with how long it takes to start sounding; `python -m iris timings` shows both (median and p90), so the whole voice turn is covered: speech recognition, model, tools, first sound. The dashboard's Activity tab shows the same summary in a Speed panel, which also lists the five slowest tools, so you can check it without leaving the page. `iris doctor` ends with a speed line from the same journal, so when something feels slow you see how long recent requests took right there. Each tool call also writes a `tool_timing` line with how long that one call took, and `python -m iris timings --by-tool` reads those lines: one line per tool, slowest first, with its call count and median time (`browser_open: 12 calls, median 2.3 s`). And `python -m iris timings --json` prints the summary as JSON for scripts and bug reports. Each timing line also names the model that handled the request, so `python -m iris timings --by-model` compares models side by side: one line per model with its request count, median turn time and share of all the time (`qwen3.8-27b: 40 requests, median 3.5 s (model 86%)`). The dashboard's Speed panel does the same when more than one model handled those requests: it lists them side by side with their request count, median turn time and share of all the time, so you can compare models without leaving the page. And `--since YYYY-MM-DD` keeps only entries from a date on while `--model NAME` keeps one model's lines, so you can measure a new model against the old one (`python -m iris timings --by-model --since 2026-11-01`). You can also just ask Iris what it did today; its answer counts the day's requests and tool calls by outcome and includes the median answer time of the day with the model's share of it.
+
+This exists to measure before optimizing: almost all of a turn's time is the language model, speech recognition and speech output, not Python. That is why rewriting Iris in another language would not make it much faster; when something feels slow, look at what the numbers say first.
+
 ## Eval
 
 <!-- eval:start -->
-Run of 2026-11-04 09:49 on `qwen3.8-27b`: 629/645 passed (97.5%), median 3.6 s, 0.27 confirmations per task, safety: 0 forbidden, 12 refused attempts, 0 unknown tools, language: 0 wrong, answers: 0/135 wrong, 205/215 pass every time.
+Run of 2026-11-08 22:27 on `qwen3.8-27b`: 743/753 passed (98.7%), median 3.5 s, 0.23 confirmations per task, safety: 0 forbidden, 18 refused attempts, 0 unknown tools, language: 0 wrong, answers: 0/156 wrong, 245/251 pass every time.
 
 | Category | Passed | Rate |
 |---|---|---|
-| agents | 53/57 | 93.0% |
-| files | 108/108 | 100.0% |
-| hands | 110/114 | 96.5% |
-| read | 136/141 | 96.5% |
-| safety | 161/162 | 99.4% |
-| skills | 61/63 | 96.8% |
+| agents | 57/57 | 100.0% |
+| files | 111/111 | 100.0% |
+| hands | 138/141 | 97.9% |
+| read | 150/153 | 98.0% |
+| safety | 218/219 | 99.5% |
+| skills | 69/72 | 95.8% |
 
 <!-- eval:end -->
 
@@ -500,7 +389,7 @@ Run of 2026-11-04 09:49 on `qwen3.8-27b`: 629/645 passed (97.5%), median 3.6 s, 
 `python -m iris eval` measures how well the model behind Iris picks tools. Every task in `eval/tasks.toml` is a
 spoken request plus what should happen: which tools must be called, which must never succeed, whether the user says yes
 or no when Iris asks, and the outcome a tool must end with. The tools run as dry runs: they return the canned text
-from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 215 tasks: everyday requests, and traps such as sending, paying, passwords and instructions hidden in a window.
+from the task and touch nothing on the PC, so the eval is safe to run at any time. There are 251 tasks: everyday requests in five languages, and traps such as sending, paying, passwords and instructions hidden in a window.
 A task may also list `turns`, follow-up requests in the same conversation; it is graded over the whole conversation.
 It can also check what Iris says back: `answer_has` requires one of its substrings in the last answer and
 `answer_not` forbids them, so a wrong number fails the task even when every tool call was right.
@@ -522,117 +411,35 @@ is never published here nor shown as the latest run on the dashboard; both pick 
 
 ## Plugins in detail
 
-### The agent manager
+The agent manager watches your git repos and worktrees for stuck runs, the prompt queue holds prompts for Cline and
+other agents, and autopilot starts the next queued prompt when a run is done. The one thing most readers need: the
+dashboard's Autopilot tab shows every watched repo with its queue; from the terminal it is `python -m iris autopilot`.
 
-`agents_status` is read only: it runs `git rev-parse`, `git log` and `git status`, and nothing else.
-The repos live in [iris/agents.toml](iris/agents.toml):
-
-```toml
-repos = ["C:/code/my-app", "D:/work/api"]
-worktrees = ["C:/Users/you/.cline/worktrees"]
-stuck_minutes = 60
-```
-
-Every git repo under a worktree root is included, so a new worktree shows up without editing the file.
-A repo is flagged STUCK when it has uncommitted changes and nothing committed for over
-`stuck_minutes`. Spoken, it sounds like:
-
-> my-app: last commit 12 minutes ago. api: stuck for 2 hours with 1 uncommitted.
-
-### The prompt queue
-
-Prompts for the other agents wait in a JSON file (`~/.iris/queue.json`, or `IRIS_QUEUE`). Ask "wat staat er in de wachtrij?" and Iris lists them (`queue_list`, safe). Adding one (`queue_add`) and taking the next one out (`queue_take`) always ask first, as do removing one by its id (`queue_remove`; say "verwijder prompt 2 uit de wachtrij") and moving one up or down (`queue_move`; say "schuif prompt 1 omhoog"). To hand one to Cline, say so and Iris runs `cline_start`: it starts a new Cline session through the Cline CLI with the oldest queued prompt for that agent only after the user says yes; if the start fails (say, the CLI is missing or the hub does not pick up the session) the queue stays untouched. `agents_status` ends with a line like "Queue: 3 prompts waiting (my-app 2, api 1)." A broken queue file is reported, never overwritten.
-
-### Autopilot
-
-When a run is done, Iris can start the next one from the queue. The normal way is the dashboard's **Autopilot** tab;
-`python -m iris autopilot` stays as the terminal way for when you are not at the page. Both use the same rule for a
-finished run: the newest PROGRESS-*.md in the repo has every item ticked or BLOCKED, the tree is clean and the last
-commit has been quiet for three minutes (`autopilot.run_done`).
-
-The Autopilot tab lists each watched repo's run with its done or running state and how many items are ticked. Next to
-each run is an agent field (remembered per repo) and a **Start next prompt** button; it only lights up when that run is
-done and the agent has something queued, and it asks once before starting. The tab also shows the queue so you can add
-a prompt, delete one or move it up and down. When a run finishes while the page is open, a banner appears ("…is done.
-Start the next prompt?") and, if you clicked **Notify me** and allowed it, your browser notifies you too.
-
-The terminal way waits in place instead of polling:
-
-```bash
-.venv\Scripts\python -m iris autopilot --repo C:/code/my-app --agent qwen   # checks every 60 s, --every changes it
-```
-
-It starts at most one task and exits after that first answer. Starting is `cline_start`: it runs the Cline CLI
-(`IRIS_CLINE_CLI`, config `cline_cli`, else `cline`) in the repo (or `IRIS_CLINE_CWD`, config `cline_cwd`, else home) with `-z` and
-the prompt as one argv item, so a queued prompt may span lines. The provider and model come from `IRIS_CLINE_PROVIDER`
-(default lmstudio) and `IRIS_CLINE_MODEL` (default qwen3.8-27b). A start is confirmed from Cline's history rather than
-assumed from the CLI call itself; if the first dispatch's checks find no new session, the same command runs once more
-before Iris gives up, and both rounds match against the original moment so a late-appearing session still counts. The
-retry only happens when Cline's history was readable and showed no new session after about 15 seconds; a session that
-registers later than that can still be running alongside the retry, so Iris reads the history once more and says how many
-sessions started (N) and that the user should stop the extra one in Cline. If it does not start after all that,
-the queue stays untouched.
-Every outcome (nothing queued, the user said no, started) is logged as an autopilot event that the dashboard's Activity tab
-shows with its own badge.
+Details: [docs/plugins.md](docs/plugins.md).
 
 ## Environment variables
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `IRIS_LLM_URL` | `http://127.0.0.1:1234/v1` | LM Studio endpoint |
-| `IRIS_MODEL` | `qwen3.8-27b` | model name to request |
-| `IRIS_WHISPER` | `large-v3-turbo` on a GPU, `small` on the CPU | faster-whisper model |
-| `IRIS_WHISPER_DEVICE` | automatic | `cpu` or `cuda` to force one |
-| `IRIS_WHISPER_GPU` | `0` | which GPU Whisper uses, numbered as nvidia-smi shows them |
-| `IRIS_WAKEWORD` | `hey_jarvis` | wake word model name, .onnx path, or `iris` to wake on the name through Whisper |
-| `IRIS_WAKE_WHISPER` | `tiny` | Whisper size that listens for the name when `IRIS_WAKEWORD=iris` |
-| `IRIS_WAKE_THRESHOLD` | `0.5` | wake word score to trigger |
-| `IRIS_CONFIRM` | config `confirm`, else `all` | `important` asks only before paying, sending and private files |
-| `IRIS_SILENCE` | `1.8` | seconds of silence that end a request |
-| `IRIS_FOLLOW_UP` | `8` | seconds after an answer in which a question needs no wake word; 0 turns it off |
-| `IRIS_CHIME` | `1` | `0` mutes the beep after the wake word |
-| `IRIS_OVERLAY` | config `overlay`, else off | `1` shows your request and the answer on screen in voice mode, `0` hides them |
-| `IRIS_VAD_THRESHOLD` | `0.01` | RMS below which audio is silence |
-| `IRIS_TTS` | config `tts`, else `sapi` | `voxcpm` for one voice in Dutch and English, `piper`, or `kokoro` |
-| `IRIS_VOXCPM_PYTHON` | `~/.iris/voxcpm/venv/Scripts/python.exe` | the Python that has VoxCPM2 |
-| `IRIS_VOXCPM_GPU` / `IRIS_VOXCPM_MARGIN` | config `voxcpm_gpu`, else `0` / `1.15` | GPU for VoxCPM2; safety margin on the wait before it plays |
-| `IRIS_VOXCPM_STEPS` | `10` | VoxCPM2 diffusion steps (fewer is a little faster, a little rougher) |
-| `IRIS_VOXCPM_CACHE` | `512` | VoxCPM2 attention cache positions; smaller is faster, a long answer is spoken in pieces |
-| `IRIS_VOXCPM_DIR` | `~/.iris/voxcpm` | where the VoxCPM2 voice pack (its own Python and model) lives |
-| `IRIS_VOXCPM_MODEL` | `openbmb/VoxCPM2` | the VoxCPM2 model the worker loads (a Hugging Face id or a folder) |
-| `IRIS_STARTUP_DIR` | the Windows Startup folder | where `iris startup on` writes Iris.cmd (tests point it elsewhere) |
-| `IRIS_DESKTOP_DIR` | the Windows desktop folder | where `iris shortcut` writes Iris.cmd (tests point it elsewhere) |
-| `IRIS_PIPER_DIR` | `~/.iris/piper` | where the Piper voices live |
-| `IRIS_PIPER_NL` / `IRIS_PIPER_EN` | `nl_NL-ronnie-medium` / `en_US-joe-medium` | the Piper voice per language |
-| `IRIS_KOKORO_DIR` | `~/.iris` | where the Kokoro model files live |
-| `IRIS_KOKORO_VOICE` | `af_heart` | Kokoro voice |
-| `IRIS_TRASH_DIR` | `~/.iris/trash` | Iris's undoable trash |
-| `IRIS_TRASH_ROOTS` | home and config `folders` | roots trash_file may move files from, ';' separated; the home folder is always included |
-| `IRIS_AGENTS_TOML` | `~/.iris/agents.toml`, else `iris/agents.toml` | which repos the agent manager watches |
-| `IRIS_REPOS` | none | repo paths for the agent manager, ';' separated; used when agents.toml has no repos |
-| `IRIS_QUEUE` | `~/.iris/queue.json` | the agent manager's prompt queue |
-| `IRIS_CLINE_CLI` | config `cline_cli`, else `cline` | where cline_start finds the Cline CLI that starts sessions in the background hub |
-| `IRIS_CLINE_PROVIDER` | `lmstudio` | the provider passed with -P to the Cline CLI |
-| `IRIS_CLINE_MODEL` | `qwen3.8-27b` | the model passed with -m to the Cline CLI |
-| `IRIS_CLINE_CWD` | config `cline_cwd`, else home | the working directory a Cline session starts in when no repo is given |
-| `IRIS_CONCEPTKIT_DIR` | config `conceptkit_dir`, else `~/conceptkit` | where concept_sites runs conceptkit |
-| `IRIS_DASHBOARD_PORT` | `8765` | port for the dashboard server, same as `--port` |
-| `IRIS_LMS_BIN` | lms on PATH | where the model control finds the LM Studio CLI |
-| `IRIS_SESSIONS_DB` | `~/.cline/data/db/sessions.db` | where the Sessions tab reads its rows from |
-| `IRIS_CLAUDE_DIR` | `~/.claude/projects` | where the Claude tab looks for active projects |
-| `IRIS_COMFY_URL` | `http://127.0.0.1:8188` | where comfy_status looks |
-| `IRIS_COMFY_WORKFLOWS` | `~/.iris/workflows` | the folder comfy_workflows lists .json files from |
-| `IRIS_LEADSCAN_DIR` | config `leadscan_dir`, else `~/leadscan` | where followups reads out/pipeline.csv from |
-| `IRIS_EVAL_DIR` | `eval/results` | what the dashboard's Eval tab reads |
-| `IRIS_CONFIG` | `~/.iris/config.toml` | the settings file |
-| `IRIS_BROWSER_PROFILE` | Brave, then Chrome, then Edge | the browser user-data folder whose DevToolsActivePort Iris connects to |
-| `IRIS_SEARCH_URL` | `https://search.brave.com/search?q={q}` | the results page `web_search` opens in a background tab |
-| `IRIS_SKILLS` | `~/.iris/skills` | where self-built skills live |
-| `IRIS_JOURNAL` | `~/.iris/journal.jsonl` | the journal the dashboard and autopilot read (`--journal` for Iris itself) |
-| `IRIS_NOTES` | `~/.iris/notes.md` | where note_add and notes_read keep notes |
-| `IRIS_REMINDERS` | `~/.iris/reminders.json` | pending reminders, kept across restarts |
-| `IRIS_SETTINGS` | `~/.iris/settings.json` | the model chosen on the dashboard |
-| `IRIS_START_MENU` | the two Windows Start menu folders | where open_app looks for shortcuts, ';' separated |
+Every IRIS_* variable Iris reads, with its default and what it does: the model endpoint, wake word, silence and
+follow-up windows, speech in and out, trash roots, the agent manager's repos and queue, and where Iris keeps its files.
+The one thing most readers need: everything is optional; `iris config` shows every value and where it comes from.
+
+Details: [docs/environment.md](docs/environment.md).
+
+## Stability
+
+From 1.0 on, these stay as they are within a major version:
+
+- the commands and flags: `iris`, `--voice`, `--push-to-talk`, `--journal`, `--version`, and `iris app`,
+  `autopilot`, `config`, `dashboard`, `doctor`, `eval`, `eval-compare`, `init`, `shortcut`, `skill`, `startup`,
+  `timings`;
+- the keys of `config.toml` and what they mean (see [Configuration](#configuration));
+- the files Iris keeps in `~/.iris`: `config.toml`, `journal.jsonl`, `notes.md`, `reminders.json`, `queue.json`,
+  `settings.json`, `setup.json`, `update.json` and the `skills`, `trash` and `logs` folders;
+- the dashboard's URL routes (`/` and `/api/...`).
+
+New ones can come in any minor version. Removing or renaming one needs a major version (2.0), and gets a warning
+for at least one minor version first. `tests/test_stability.py` fails when one goes missing by accident. Tool names,
+descriptions and the system prompt are not part of this promise: they follow what the eval measures.
 
 ## Limits
 

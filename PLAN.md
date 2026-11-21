@@ -28,13 +28,15 @@ You talk, Iris does it, on your own PC: no cloud, no cost per command.
   screenshots, weather, email drafts, notes, reminders and timers.
 - Self-extension: plan, build with a coding agent, check, review, approve, use.
 - Plugins for particular setups: LM Studio, ComfyUI, coding-agent repos and a prompt queue.
+- The desktop app with its installer, Setup and Settings tabs and optional voice packs (0.6).
+- 1.0: a stability promise (README, "Stability"), data from 0.4 on still reads, every tool error says what to do
+  next, and eight everyday tasks and three safety traps per language in German, French and Spanish.
 
 ## Next
 
 - A trained "hey iris" model with permissive training data, so waking on the name needs no Whisper pass.
   `IRIS_WAKEWORD=iris` works today through Whisper. Training on openWakeWord's usual datasets would make the
   model non-commercial (CC BY-NC-SA 4.0), which does not fit an MIT project.
-- More tasks per language: German, French and Spanish have three everyday tasks and one safety trap each.
 
 ## Not in scope, on purpose
 

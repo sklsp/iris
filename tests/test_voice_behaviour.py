@@ -4,14 +4,17 @@ the VoiceSession stream lifecycle and the SAPI fallback paths.
 openwakeword, faster_whisper, sounddevice and pyttsx3 are all faked in sys.modules,
 so nothing is downloaded, no mic is opened and no audio device is touched."""
 
+import contextlib
 import queue
 import sys
 import threading
 import types
+from typing import cast
 
 import pytest
 
-from iris.voice import FRAME, RATE, Speaker, Voice, VoiceSession, WakeWord
+from iris.overlay import Overlay
+from iris.voice import FRAME, RATE, PiperProcess, Speaker, Voice, VoiceSession, WakeWord
 
 np = pytest.importorskip("numpy")  # synthetic-audio tests need real numpy; CI installs only [dev]
 
@@ -24,16 +27,8 @@ class _FakeOWModel:
 
 
 def _fake_openwakeword(monkeypatch, models, downloads):
-    fake = types.ModuleType("openwakeword")
-    fake.MODELS = models
-
-    class _Utils:
-        @staticmethod
-        def download_models(names):
-            downloads.append(list(names))
-
-    fake.utils = _Utils()
-    fake.Model = _FakeOWModel
+    utils = types.SimpleNamespace(download_models=lambda names: downloads.append(list(names)))
+    fake = types.SimpleNamespace(MODELS=models, utils=utils, Model=_FakeOWModel)
     monkeypatch.setitem(sys.modules, "openwakeword", fake)
 
 
@@ -41,7 +36,7 @@ def test_wake_word_model_resolves_builtin_name_to_onnx(tmp_path, monkeypatch):
     tflite = tmp_path / "hey_jarvis.tflite"
     onnx = tmp_path / "hey_jarvis.onnx"
     onnx.write_bytes(b"x")  # already present: no download may happen
-    downloads = []
+    downloads: list[list[str]] = []
     _fake_openwakeword(monkeypatch, {"hey_jarvis": {"model_path": str(tflite)}}, downloads)
 
     w = WakeWord(name="hey_jarvis")
@@ -54,7 +49,7 @@ def test_wake_word_model_resolves_builtin_name_to_onnx(tmp_path, monkeypatch):
 
 def test_wake_word_model_downloads_when_onnx_missing(tmp_path, monkeypatch):
     tflite = tmp_path / "hey_jarvis.tflite"
-    downloads = []
+    downloads: list[list[str]] = []
     _fake_openwakeword(monkeypatch, {"hey_jarvis": {"model_path": str(tflite)}}, downloads)
 
     w = WakeWord(name="hey_jarvis")
@@ -67,7 +62,7 @@ def test_wake_word_model_downloads_when_onnx_missing(tmp_path, monkeypatch):
 def test_wake_word_model_custom_onnx_path_skips_the_downloader(tmp_path, monkeypatch):
     custom = tmp_path / "custom.onnx"
     custom.write_bytes(b"x")
-    downloads = []
+    downloads: list[list[str]] = []
     _fake_openwakeword(monkeypatch, {}, downloads)
 
     w = WakeWord(name=str(custom))
@@ -78,14 +73,14 @@ def test_wake_word_model_custom_onnx_path_skips_the_downloader(tmp_path, monkeyp
 
 
 def test_wake_word_model_unknown_missing_path_downloads_nothing(tmp_path, monkeypatch):
-    downloads = []
+    downloads: list[list[str]] = []
     _fake_openwakeword(monkeypatch, {}, downloads)
 
     w = WakeWord(name=str(tmp_path / "missing.onnx"))
-    m = w._model()
+    with pytest.raises(FileNotFoundError, match="no wake word model at"):
+        w._model()
 
-    assert m.wakeword_models == [str(tmp_path / "missing.onnx")]
-    assert downloads == [[]]  # not a built-in name, so the downloader gets no names
+    assert downloads == []  # download_models([]) would fetch every official model
 
 
 def test_wake_word_model_is_loaded_once(tmp_path, monkeypatch):
@@ -117,8 +112,7 @@ class _FakeWhisperModel:
 
 
 def _fake_faster_whisper(monkeypatch, model_cls):
-    fake = types.ModuleType("faster_whisper")
-    fake.WhisperModel = model_cls
+    fake = types.SimpleNamespace(WhisperModel=model_cls)
     monkeypatch.setitem(sys.modules, "faster_whisper", fake)
 
 
@@ -129,7 +123,7 @@ class _FakeStream:
     """Stands in for sounddevice.InputStream; records kwargs and the callback."""
 
     def __init__(self, samplerate=None, channels=None, dtype=None, blocksize=None, callback=None):
-        self.kwargs = dict(samplerate=samplerate, channels=channels, dtype=dtype, blocksize=blocksize)
+        self.kwargs = {"samplerate": samplerate, "channels": channels, "dtype": dtype, "blocksize": blocksize}
         self.callback = callback
         self.exit_calls = []
         self.raise_on_exit = False
@@ -144,14 +138,14 @@ class _FakeStream:
 
 
 def _fake_sounddevice(monkeypatch, stream_cls=_FakeStream):
-    fake = types.ModuleType("sounddevice")
-    fake.InputStream = stream_cls
+    fake = types.SimpleNamespace(InputStream=stream_cls)
     monkeypatch.setitem(sys.modules, "sounddevice", fake)
 
 
 class _StubSpeaker:
     def speak(self, text, stop_event=None):
         return True
+
 
 # --- Voice (push-to-talk) ----------------------------------------------------
 
@@ -263,7 +257,7 @@ def test_voice_listen_returns_empty_string_when_no_audio_arrived(monkeypatch):
 
 def test_session_enter_opens_the_stream_and_queues_frames(monkeypatch):
     _fake_sounddevice(monkeypatch)
-    s = VoiceSession(speaker=_StubSpeaker())
+    s = VoiceSession(speaker=cast(Speaker, _StubSpeaker()))
     with s:
         indata = np.full((FRAME, 1), 0.25, dtype="float32")
         s._stream.callback(indata, FRAME, None, None)
@@ -278,7 +272,7 @@ def test_session_enter_opens_the_stream_and_queues_frames(monkeypatch):
 
 def test_session_enter_drops_the_oldest_frame_when_the_queue_is_full(monkeypatch):
     _fake_sounddevice(monkeypatch)
-    s = VoiceSession(speaker=_StubSpeaker())
+    s = VoiceSession(speaker=cast(Speaker, _StubSpeaker()))
     with s:
         for i in range(1024):  # maxsize of the frame queue
             s._frames.put(np.full(FRAME, float(i % 7), dtype="float32"))
@@ -293,7 +287,7 @@ def test_session_enter_drops_the_oldest_frame_when_the_queue_is_full(monkeypatch
 
 def test_session_exit_closes_the_stream(monkeypatch):
     _fake_sounddevice(monkeypatch)
-    s = VoiceSession(speaker=_StubSpeaker())
+    s = VoiceSession(speaker=cast(Speaker, _StubSpeaker()))
     with s:
         pass
 
@@ -301,7 +295,7 @@ def test_session_exit_closes_the_stream(monkeypatch):
 
 
 def test_session_exit_swallows_errors_from_closing_the_mic():
-    s = VoiceSession(speaker=_StubSpeaker())
+    s = VoiceSession(speaker=cast(Speaker, _StubSpeaker()))
     st = _FakeStream()
     st.raise_on_exit = True
     s._stream = st
@@ -313,7 +307,7 @@ def test_session_exit_swallows_errors_from_closing_the_mic():
 
 
 def test_session_exit_is_a_noop_when_the_stream_never_opened():
-    s = VoiceSession(speaker=_StubSpeaker())
+    s = VoiceSession(speaker=cast(Speaker, _StubSpeaker()))
     assert s._stream is None
     s.__exit__(None, None, None)  # nothing to close
 
@@ -322,7 +316,7 @@ def test_session_enter_survives_a_race_between_drop_and_reput(monkeypatch):
     """If another consumer empties the queue between the Full and the drop (and refills it before
     the re-put), both defensive excepts fire and the frame is simply lost - no exception escapes."""
     _fake_sounddevice(monkeypatch)
-    s = VoiceSession(speaker=_StubSpeaker())
+    s = VoiceSession(speaker=cast(Speaker, _StubSpeaker()))
     with s:
         q = s._frames
         for _ in range(1024):  # fill to capacity so put_nowait raises Full
@@ -334,6 +328,62 @@ def test_session_enter_survives_a_race_between_drop_and_reput(monkeypatch):
         monkeypatch.setattr(q, "get_nowait", racy_get)
         s._stream.callback(np.full((FRAME, 1), 5.0, dtype="float32"), FRAME, None, None)
         assert q.qsize() == 1024  # the new frame was dropped; nothing raised
+
+
+# --- _speak_and_watch: reporting the first sound ------------------------------
+
+
+class _SpokenSpeaker:
+    """A Speaker that reports when its first sound started, in ms."""
+
+    def __init__(self):
+        self.last_first_sound_ms = 300
+
+    def speak(self, text, stop_event=None):
+        return True
+
+
+class _Recorder:
+    """Stands in for Overlay in a VoiceSession so no subprocess is started."""
+
+    def send(self, event, text=""):
+        pass
+
+
+def test_speak_and_watch_reports_the_first_sound_when_panel_is_on():
+    s = VoiceSession(speaker=cast(Speaker, _SpokenSpeaker()))
+    s.overlay = cast(Overlay, _Recorder())  # no subprocess in a test
+    calls: list[int | None] = []
+    s.on_spoken = calls.append
+
+    s._speak_and_watch("The answer.", panel=True)
+
+    assert calls == [300]
+
+
+def test_speak_and_watch_does_not_report_without_a_panel():
+    s = VoiceSession(speaker=cast(Speaker, _SpokenSpeaker()))
+    s.overlay = cast(Overlay, _Recorder())
+    calls: list[int | None] = []
+    s.on_spoken = calls.append
+
+    s._speak_and_watch("One moment.", panel=False)
+
+    assert calls == []
+
+
+def test_a_raising_on_spoken_never_breaks_the_speech():
+    s = VoiceSession(speaker=cast(Speaker, _SpokenSpeaker()))
+    s.overlay = cast(Overlay, _Recorder())
+
+    def boom(ms):
+        raise RuntimeError("the journal is gone")
+
+    s.on_spoken = boom
+
+    s._speak_and_watch("The answer.", panel=True)  # must not raise
+
+    assert s._interrupted is False
 
 
 # --- next_request / next_command ----------------------------------------------
@@ -350,9 +400,9 @@ class _FakeWake:
 
 
 def test_next_request_waits_for_the_wake_word_before_recording(monkeypatch):
-    s = VoiceSession(speaker=_StubSpeaker())
+    s = VoiceSession(speaker=cast(Speaker, _StubSpeaker()))
     wake = _FakeWake(misses=2)  # two non-wake frames, then the hit
-    s.wake = wake
+    s.wake = cast(WakeWord, wake)
     commands = []
 
     def fake_next_command():
@@ -382,7 +432,7 @@ class _Clock:
 def test_next_command_stops_at_the_hard_cap_even_while_speech_continues(monkeypatch, capsys):
     import iris.voice as v
 
-    s = VoiceSession(max_record_seconds=30, speaker=_StubSpeaker())
+    s = VoiceSession(max_record_seconds=30, speaker=cast(Speaker, _StubSpeaker()))
     captured = {}
 
     def fake_transcribe(audio):
@@ -397,10 +447,8 @@ def test_next_command_stops_at_the_hard_cap_even_while_speech_continues(monkeypa
 
     def feeder():  # the mic keeps delivering speech while recording runs (next_command drains first)
         while not stop.is_set():
-            try:
+            with contextlib.suppress(queue.Full):  # consumer is keeping up; nothing to drop on the test side
                 s._frames.put_nowait(np.full(FRAME, 0.3, dtype="float32"))
-            except queue.Full:  # consumer is keeping up; nothing to drop on the test side
-                pass
 
     t = threading.Thread(target=feeder, daemon=True)
     t.start()
@@ -432,7 +480,7 @@ def test_session_transcribe_builds_whisper_lazily_and_joins_segments(monkeypatch
 
     monkeypatch.setattr(v, "WHISPER_DEVICE", "cpu")
 
-    s = VoiceSession(whisper_model="tiny-test", speaker=_StubSpeaker())
+    s = VoiceSession(whisper_model="tiny-test", speaker=cast(Speaker, _StubSpeaker()))
     audio = np.arange(160, dtype="float32")
     assert s._transcribe(audio) == "one two"  # stripped and joined with single spaces
 
@@ -456,7 +504,7 @@ def test_session_transcribe_reuses_the_loaded_model(monkeypatch):
 
     monkeypatch.setattr(v, "WHISPER_DEVICE", "cpu")
 
-    s = VoiceSession(whisper_model="tiny-test", speaker=_StubSpeaker())
+    s = VoiceSession(whisper_model="tiny-test", speaker=cast(Speaker, _StubSpeaker()))
     assert s._transcribe(np.zeros(FRAME, dtype="float32")) == "one two"
     assert s._transcribe(np.ones(FRAME, dtype="float32")) == "one two"
 
@@ -467,15 +515,95 @@ def test_session_transcribe_reuses_the_loaded_model(monkeypatch):
 
 
 def test_speaker_sapi_survives_a_broken_pyttsx3(monkeypatch):
-    fake = types.ModuleType("pyttsx3")
-
     def boom():
         raise RuntimeError("no SAPI on this machine")
 
-    fake.init = boom
+    fake = types.SimpleNamespace(init=boom)
     monkeypatch.setitem(sys.modules, "pyttsx3", fake)
 
     assert Speaker(engine="sapi").speak("hello") is True  # printed instead of spoken
+
+
+# --- Speaker engine switching --------------------------------------------------
+
+
+class _FakeVoxProcess:
+    """Stands in for the VoxCPM2 worker; stream() can be made to fail on demand."""
+
+    def __init__(self, ready=True):
+        self.ready = threading.Event()
+        if ready:
+            self.ready.set()
+        self.stream_boom = False
+        self.close_calls = 0
+
+    def close(self):
+        self.close_calls += 1
+
+    def stream(self, text, timeout=30):
+        if self.stream_boom:
+            raise RuntimeError("voxcpm worker died")
+        return iter(())
+
+
+class _FakePiperProcess:
+    """Stands in for one running Piper; wav() can be made to fail on demand."""
+
+    def __init__(self, boom=False):
+        self.boom = boom
+
+    def wav(self, text, timeout=20):
+        if self.boom:
+            raise RuntimeError("piper stopped")
+        return "unused.wav"
+
+
+def _fake_pyttsx3(monkeypatch):
+    class Engine:
+        def say(self, t):
+            pass
+
+        def runAndWait(self):
+            pass
+
+    fake = types.SimpleNamespace(init=lambda: Engine())
+    monkeypatch.setitem(sys.modules, "pyttsx3", fake)
+
+
+def test_speaker_keeps_voxcpm_when_piper_fails_while_it_is_loading(monkeypatch):
+    import iris.voice as v
+
+    _fake_pyttsx3(monkeypatch)
+    vox = _FakeVoxProcess(ready=False)  # still loading: Piper says the answers meanwhile
+    monkeypatch.setattr(v, "VoxProcess", lambda: vox)
+    spk = Speaker(engine="voxcpm")
+    spk._piper["en"] = cast(PiperProcess, _FakePiperProcess(boom=True))
+
+    for _ in range(3):  # three Piper failures while VoxCPM is still loading
+        assert spk.speak("hello") is True
+
+    assert spk.engine == "voxcpm"  # the chosen engine must not be switched away from
+    assert spk._failures["piper"] == 3  # the streak is still counted...
+    assert vox.close_calls == 0  # ...and the loading worker keeps running
+
+
+def test_speaker_stops_the_vox_worker_after_three_failures(monkeypatch):
+    import iris.voice as v
+
+    _fake_pyttsx3(monkeypatch)
+    vox = _FakeVoxProcess(ready=True)
+    vox.stream_boom = True  # the stream dies on every answer
+    monkeypatch.setattr(v, "VoxProcess", lambda: vox)
+    spk = Speaker(engine="voxcpm")
+    spk._piper["en"] = cast(PiperProcess, _FakePiperProcess())  # Piper takes over and speaks fine
+    monkeypatch.setattr(v, "_play_wav", lambda path, stop_event, slack=3.0, on_start=None: True)
+
+    for _ in range(3):
+        assert spk.speak("hello") is True
+
+    assert spk.engine == "piper"  # switched after three VoxCPM failures
+    assert vox.close_calls == 1  # the worker is stopped, so its GPU memory is freed
+    assert spk._vox is None
 
 
 # --- module level speak() --------------------------------------------------------
@@ -493,8 +621,7 @@ def test_module_level_speak_creates_and_caches_a_speaker(monkeypatch):
         def runAndWait(self):
             pass
 
-    fake_pyttsx3 = types.ModuleType("pyttsx3")
-    fake_pyttsx3.init = lambda: FakeEngine()
+    fake_pyttsx3 = types.SimpleNamespace(init=lambda: FakeEngine())
     monkeypatch.setitem(sys.modules, "pyttsx3", fake_pyttsx3)
     monkeypatch.delenv("IRIS_TTS", raising=False)
     monkeypatch.setattr(v, "_speaker", None)
@@ -505,5 +632,3 @@ def test_module_level_speak_creates_and_caches_a_speaker(monkeypatch):
     assert v.speak("again") is True
     assert v._speaker is first  # created once, reused afterwards
     assert said == ["hello", "again"]
-
-

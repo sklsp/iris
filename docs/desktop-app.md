@@ -64,6 +64,11 @@ flowchart LR
 - **Logs:** the child's stdout and stderr go to `~/.iris/logs/voice.log` (moved to `voice.log.1` at the next start once it is over 1 MB). A new
   read-only **Logs** tab on the dashboard tails that file, `overlay.log` and the VoxCPM `worker.log`.
 
+`iris startup on` writes an `Iris.vbs` in the Startup folder (pythonw, `-m iris app --background`, hidden, so only
+the tray icon shows). `iris shortcut` writes an `Iris.lnk` on the desktop (`-m iris app`, the Iris icon; a second
+start brings the running window forward). The app gives its child programs one hidden console, so git, nvidia-smi
+and powershell never flash a window. The installer build makes its own Start menu and startup entries (section 3).
+
 ## 3. Packaging: a private CPython plus Inno Setup
 
 **Decision:** not PyInstaller or Nuitka. Iris starts Python children with `sys.executable`: the overlay

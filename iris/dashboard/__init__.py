@@ -13,6 +13,8 @@ IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by th
                   (llm/vlm/embeddings) from the v0 API; falls back to the OpenAI-style
                   list labelled "available (state unknown)"; cached 30 s
     /api/journal  the last 50 journal entries, newest first, plus today's counters
+    /api/timings  the timing summary of the last 50 requests and their speech-recognition times,
+                  the same numbers `iris timings` prints
     /api/tools    every tool with its risk tier, straight from iris.tools.TOOLS
     /api/sessions rows of Cline's ~/.cline/data/db/sessions.db: running sessions (ended_at NULL and a
                   live pid) first, then history; subagents grouped under their parent
@@ -46,11 +48,13 @@ import json
 import os
 import secrets
 import shutil
+import socket
 import sqlite3
 import subprocess
 import threading
 import time
-import urllib.request
+import urllib.error
+import urllib.parse
 from collections import deque
 from collections.abc import Callable
 from datetime import datetime
@@ -61,6 +65,7 @@ from typing import Any
 import psutil
 
 HOST = "127.0.0.1"  # loopback only; never 0.0.0.0
+MAX_BODY = 1_000_000  # bytes a POST body may have: every write takes a few short fields
 PORT = 8765
 CACHE_SECONDS = 30      # agents and LM Studio can be slow; do not re-query on every poll
 HISTORY_SECONDS = 300   # the sparklines cover five minutes
@@ -85,8 +90,9 @@ def _lm_base_from_settings() -> str:
     return config.setting("IRIS_LLM_URL", "llm_url", "http://127.0.0.1:1234/v1")
 
 _lock = threading.Lock()
-_cache: dict[str, tuple[float, dict]] = {}   # key -> (fetched_at, payload)
-_history: deque[dict] = deque(maxlen=240)    # system samples for the sparklines
+_cache: dict[str, tuple[float, Any]] = {}   # key -> (fetched_at, payload)
+_key_locks: dict[str, threading.Lock] = {}   # one lock per cached key; created under _lock
+_history: deque[dict[str, Any]] = deque(maxlen=240)    # system samples for the sparklines
 set_lm_base(_lm_base_from_settings())
 
 
@@ -97,7 +103,7 @@ def journal_path() -> Path:
 
 # --- payloads ------------------------------------------------------------------
 
-def system_payload() -> dict:
+def system_payload() -> dict[str, Any]:
     """The live numbers plus the five-minute history the page draws as sparklines."""
     from iris.tools import system_data
 
@@ -113,7 +119,7 @@ def system_payload() -> dict:
     return {**data, "history": history}
 
 
-def agents_payload() -> dict:
+def agents_payload() -> dict[str, Any]:
     """One structured row per watched repo; the stuck ones come first."""
     from iris.agents import discover, load_config, repo_status
 
@@ -130,7 +136,7 @@ def agents_payload() -> dict:
     return {"rows": rows}
 
 
-def runs_payload() -> dict:
+def runs_payload() -> dict[str, Any]:
     """One progress row per watched repo that has a PROGRESS-*.md file.
 
     Each row is the run_progress dict for that repo plus its discovered name. Repos without a
@@ -149,27 +155,53 @@ def runs_payload() -> dict:
     return {"ok": True, "runs": rows}
 
 
-def _fetch_json(url: str) -> dict:
+def _fetch_json(url: str) -> Any:
+    import urllib.request
+
     with urllib.request.urlopen(url, timeout=5) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def lmstudio_payload() -> dict:
+def _probe(url: str, timeout: float = 0.5) -> bool:
+    """True when url's port on this PC takes no connection. On Windows a refused connection to a closed local port
+    takes seconds (it retries), so a short probe first keeps doctor and the dashboard quick when the server is off."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.hostname not in ("127.0.0.1", "localhost", "::1"):
+        return False  # another machine: let the real request say
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    try:
+        socket.create_connection((parts.hostname, port), timeout=timeout).close()
+    except OSError:
+        return True
+    return False
+
+
+_nothing_listens = _probe  # tests replace this name; they call _probe itself when they test it
+
+
+def lmstudio_payload() -> dict[str, Any]:
     """Every model LM Studio knows. The v0 API says which one is loaded and what kind it
     is; the OpenAI-style /v1 list only gives ids, so a fallback answer carries no state."""
+    if _nothing_listens(V0_MODELS_URL):
+        return {"reachable": False}
     try:
         data = _fetch_json(V0_MODELS_URL)
         models = [{"id": str(m.get("id", "")), "state": m.get("state"), "type": m.get("type")}
                   for m in data.get("data", [])]
         return {"reachable": True, "states_known": True, "models": models}
-    except Exception:  # noqa: BLE001 - no v0 endpoint (older LM Studio): try the plain list
+    except urllib.error.HTTPError:
+        pass  # the server answered without a v0 API (Ollama, llama.cpp, older LM Studio): try the plain list
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, OSError):  # nothing answered at all: the plain list would fail the same way
+            return {"reachable": False}
+    except Exception:  # bad JSON and the like: try the plain list
         pass
     try:
         data = _fetch_json(V1_MODELS_URL)
         models = [{"id": str(m.get("id", "")), "state": None, "type": None}
                   for m in data.get("data", [])]
         return {"reachable": True, "states_known": False, "models": models}
-    except Exception:  # noqa: BLE001 - unreachable or bad JSON both mean "not reachable"
+    except Exception:  # unreachable or bad JSON both mean "not reachable"
         return {"reachable": False}
 
 
@@ -193,7 +225,8 @@ WRITE_ROUTES = (
     "/api/settings", "/api/app/voice/restart",
     "/api/setup/server", "/api/setup/mic", "/api/setup/speaker", "/api/setup/done", "/api/packs/install",
 )   # the only POST routes: model control, the prompt queue, Cline, skill review, settings and the app's voice loop
-APP_HOOKS: dict = {}   # set by `iris app`: "restart_voice" -> a callable; empty under `iris dashboard`
+# set by `iris app`: "restart_voice" -> a callable; empty under `iris dashboard`
+APP_HOOKS: dict[str, Callable[[], str]] = {}
 
 _model_action_lock = threading.Lock()   # one load or unload at a time, full stop
 _cline_start_lock = threading.Lock()    # one Cline start at a time, full stop
@@ -213,7 +246,7 @@ def run_lms(args: list[str]) -> tuple[int, str]:
     exe = _lms_exe()
     if not exe:
         raise ModelActionError(503, "no lms executable found: set IRIS_LMS_BIN or put lms on PATH")
-    proc = subprocess.run([exe] + args, capture_output=True, text=True,
+    proc = subprocess.run([exe, *args], capture_output=True, text=True,
                           timeout=LMS_TIMEOUT_SECONDS)
     return proc.returncode, (proc.stderr or proc.stdout or "").strip()
 
@@ -230,14 +263,14 @@ def _log_model_event(action: str, model: str, outcome: str) -> None:
     Journal(journal_path()).log(event="model", action=action, model=model, outcome=outcome)
 
 
-def _fresh_lmstudio_state() -> dict:
+def _fresh_lmstudio_state() -> dict[str, Any]:
     """The v0 state after an action; the 30 s cache is dropped so it is really fresh."""
     with _lock:
         _cache.pop("lmstudio", None)
     return lmstudio_payload()
 
 
-def model_action(action: str, body: dict) -> dict:
+def model_action(action: str, body: dict[str, Any]) -> dict[str, Any]:
     """Run one load or unload and return the new LM Studio state.
 
     action is "load" or "unload". The model must be an id from /api/v0/models at this
@@ -272,7 +305,7 @@ def model_action(action: str, body: dict) -> dict:
     return {"action": action, "model": target, **_fresh_lmstudio_state()}
 
 
-def iris_model_payload() -> dict:
+def iris_model_payload() -> dict[str, Any]:
     """Which model Iris talks to right now, and where that choice came from."""
     from iris.llm import resolve_model
 
@@ -280,7 +313,7 @@ def iris_model_payload() -> dict:
     return {"model": model, "source": source}
 
 
-def set_iris_model(body: dict) -> dict:
+def set_iris_model(body: dict[str, Any]) -> dict[str, Any]:
     """Point Iris at a model by writing the "model" key of settings.json.
 
     Same rules as a load or unload: the body must name an id LM Studio reports right
@@ -300,9 +333,17 @@ def set_iris_model(body: dict) -> dict:
     data["model"] = model
     tmp = path.with_name(path.name + ".tmp")  # write aside, then swap: a crash never leaves half a file
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    tmp.replace(path)
     _log_model_event("select", model, "ok")
     return iris_model_payload()
+
+
+def _host_ok(self: Any) -> bool:
+    """The page must have been asked for by its loopback name. A site that rebinds its own name to 127.0.0.1 would
+    otherwise read every GET route (the page with its token, the journal, the settings) as a same-origin page."""
+    host = (self.headers.get("Host") or "").strip().lower()
+    port = str(self.server.server_address[1])
+    return not host or host in (f"127.0.0.1:{port}", f"localhost:{port}", "127.0.0.1", "localhost")
 
 
 def _authorized(self: Any) -> bool:
@@ -330,7 +371,7 @@ def _page_template() -> bytes:
     return _PAGE_TEMPLATE
 
 
-def _activity_entry(e: dict) -> dict:
+def _activity_entry(e: dict[str, Any]) -> dict[str, Any]:
     """A journal line shaped for the Activity tab; a model failure shows like an errored call of 'model'."""
     if e.get("event") == "llm_error":
         return {"event": "tool", "tool": "model", "tier": "?", "outcome": "error",
@@ -338,7 +379,7 @@ def _activity_entry(e: dict) -> dict:
     return e
 
 
-def journal_payload() -> dict:
+def journal_payload() -> dict[str, Any]:
     """The last 50 entries, newest first, plus today's counters. Read only."""
     path = journal_path()
     entries = []
@@ -370,7 +411,27 @@ def journal_payload() -> dict:
     return {"entries": [_activity_entry(e) for e in entries[-JOURNAL_LIMIT:]][::-1], "today": counts}
 
 
-def tools_payload() -> dict:
+def timings_payload() -> dict[str, Any]:
+    """The timing summary of the last 50 requests, with speech recognition and output; iris.timings does the math."""
+    from iris import timings
+
+    try:
+        entries = timings.read_timings(journal_path())
+        stt = timings.read_timings(journal_path(), event="stt")
+        tts = timings.read_timings(journal_path(), event="tts")
+        tools = timings.read_timings(journal_path(), event="tool_timing")  # the last 50 timed tool calls
+    except OSError as exc:
+        return {"error": str(exc)}
+    summary = timings.summarize(entries, stt=stt, tts=tts)
+    stats = timings.tool_stats(tools)
+    models = timings.model_stats(entries)   # the same last 50 timing entries, grouped per model
+    return {"summary": summary, "lines": timings.format_summary(summary),
+            "tools": [{"tool": name, "calls": calls, "median_ms": ms} for name, calls, ms in stats],
+            "models": [{"model": name, "requests": n, "median_ms": ms, "llm_share": share}
+                       for name, n, ms, share in models]}
+
+
+def tools_payload() -> dict[str, Any]:
     """Every bundled tool plus the approved skills; "active" says whether the model is offered it right now (a
     plugin tool is inactive until its plugin is enabled in config.toml)."""
     from iris.registry import active_tools
@@ -401,7 +462,7 @@ def _parse_ts(value: object) -> float | None:
         return None
 
 
-def load_sessions(db_path: Path | str | None = None) -> list[dict]:
+def load_sessions(db_path: Path | str | None = None) -> list[dict[str, Any]]:
     """The raw rows of sessions.db, opened read-only. A missing or unreadable file means no data."""
     path = Path(db_path) if db_path else SESSIONS_DB
     try:
@@ -421,7 +482,7 @@ def load_sessions(db_path: Path | str | None = None) -> list[dict]:
         con.close()
 
 
-def session_rows(db_path: Path | str | None = None, now: float | None = None) -> list[dict]:
+def session_rows(db_path: Path | str | None = None, now: float | None = None) -> list[dict[str, Any]]:
     """Sessions shaped for display.
 
     A session is running only when ended_at IS NULL and its pid still exists (psutil).
@@ -431,7 +492,7 @@ def session_rows(db_path: Path | str | None = None, now: float | None = None) ->
     now = time.time() if now is None else now
     rows = load_sessions(db_path)
     by_id = {r.get("session_id"): r for r in rows}
-    shaped: list[dict] = []
+    shaped: list[dict[str, Any]] = []
     for r in rows:
         ended_ts = _parse_ts(r.get("ended_at"))
         updated_ts = _parse_ts(r.get("updated_at")) or now
@@ -457,7 +518,7 @@ def session_rows(db_path: Path | str | None = None, now: float | None = None) ->
                        "folder": Path(cwd).name if cwd else "-", "status": status,
                        "live": live, "age_seconds": max(0.0, now - updated_ts),
                        "_updated": updated_ts})
-    top: list[dict] = []
+    top: list[dict[str, Any]] = []
     for s in shaped:
         raw = by_id.get(s["session_id"])
         if raw and int(raw.get("is_subagent") or 0) == 1 and raw.get("parent_session_id"):
@@ -482,14 +543,14 @@ CLAUDE_PROJECTS = Path(os.environ.get("IRIS_CLAUDE_DIR") or (Path.home() / ".cla
 CLAUDE_FRESH_SECONDS = 10 * 60   # a project counts as active while its newest .jsonl is under 10 minutes old
 
 
-def claude_projects(projects_dir: Path | str | None = None, now: float | None = None) -> list[dict]:
+def claude_projects(projects_dir: Path | str | None = None, now: float | None = None) -> list[dict[str, Any]]:
     """Claude Code project folders whose newest *.jsonl is under 10 minutes old.
 
     Folder name and age only; the .jsonl files are stat'ed for their mtime, never opened
     or read."""
     base = Path(projects_dir) if projects_dir else CLAUDE_PROJECTS
     now = time.time() if now is None else now
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     try:
         entries = sorted(base.iterdir())
     except OSError:
@@ -510,29 +571,32 @@ def claude_projects(projects_dir: Path | str | None = None, now: float | None = 
     return sorted(out, key=lambda r: r["age_seconds"])
 
 
-def _cached(key: str, fn: Callable[[], Any]) -> dict:
-    now = time.time()
-    with _lock:
+def _cached(key: str, fn: Callable[[], Any]) -> Any:
+    """One fetch per key while it is fresh; a second caller for the same key waits and gets its value."""
+    with _lock:  # one lock per key, created here so two misses cannot make two locks
+        key_lock = _key_locks.setdefault(key, threading.Lock())
+    with key_lock:  # held while checking AND fetching; other keys never wait for this one
+        now = time.time()
         hit = _cache.get(key)
         if hit and now - hit[0] < CACHE_SECONDS:
             return hit[1]
-    value = fn()
-    with _lock:
-        _cache[key] = (now, value)
+        value = fn()
+        with _lock:
+            _cache[key] = (time.time(), value)
     return value
 
 
 # --- eval reports ---------------------------------------------------------------
 
 
-def _wrong_answers(results: object) -> list[dict]:
+def _wrong_answers(results: object) -> list[dict[str, Any]]:
     """The results whose answer failed its checks, for the Eval tab.
 
     Every result with a reason starting "answer lacks" or "answer says", as
     {"id", "reasons" (only those answer reasons), "answer" (first 160 chars)},
     at most 20. A report without "results", or with entries that are not dicts,
     gives an empty list and never raises."""
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     if not isinstance(results, list):
         return out
     for r in results:
@@ -552,7 +616,7 @@ def _wrong_answers(results: object) -> list[dict]:
     return out
 
 
-def eval_payload(results_dir: str | None = None) -> dict:
+def eval_payload(results_dir: str | None = None) -> dict[str, Any]:
     """The newest full eval report from results_dir / IRIS_EVAL_DIR, plus how many runs exist.
 
     The newest file is decided by name alone: the stamps sort by time. Partial (filtered)
@@ -585,7 +649,7 @@ def eval_payload(results_dir: str | None = None) -> dict:
     return {"latest": latest, "runs": len(files)}
 
 
-def eval_history_payload(results_dir: str | None = None) -> dict:
+def eval_history_payload(results_dir: str | None = None) -> dict[str, Any]:
     """The trend over the newest saved runs from results_dir / IRIS_EVAL_DIR (read only)."""
     if results_dir is None:
         results_dir = os.environ.get("IRIS_EVAL_DIR") or str(Path(__file__).resolve().parents[2] / "eval" / "results")
@@ -617,7 +681,7 @@ def tail_lines(path: Path, lines: int = LOG_TAIL_LINES) -> list[str]:
     return (out[1:] if start else out)[-lines:]  # a tail that starts mid-line drops that piece of a line
 
 
-def logs_payload() -> dict:
+def logs_payload() -> dict[str, Any]:
     """The logs of the voice loop the app runs, the overlay, the VoxCPM worker, the app itself when it has no console
     (Iris.exe) and the voice pack downloads, newest lines last."""
     from iris import config
@@ -626,7 +690,7 @@ def logs_payload() -> dict:
     home = config.config_path().parent
     files = (("Voice mode", home / "logs" / "voice.log"), ("Overlay", home / "overlay.log"),
              ("VoxCPM2 speech", VOXCPM_DIR / "worker.log"), ("App", home / "logs" / "app.log"),
-             ("Voice packs", home / "logs" / "packs.log"))
+             ("Voice packs", home / "logs" / "packs.log"), ("Crashes", home / "logs" / "crash.log"))
     return {"ok": True, "logs": [{"name": name, "path": str(p), "exists": p.exists(), "lines": tail_lines(p)}
                                  for name, p in files]}
 
@@ -634,7 +698,7 @@ def logs_payload() -> dict:
 SKILL_FILES = ("plan.md", "skill.toml", "skill.py", "test_skill.py", "check.txt")
 
 
-def skills_payload() -> dict:
+def skills_payload() -> dict[str, Any]:
     """Every skill Iris built or is building, with its files, so the user can review the code before approving."""
     from iris import skills
 
@@ -657,7 +721,7 @@ def skills_payload() -> dict:
     return {"ok": True, "skills": rows}
 
 
-def skill_action(action: str, body: dict) -> dict:
+def skill_action(action: str, body: dict[str, Any]) -> dict[str, Any]:
     """Approve or remove one skill from the review page; the same rules as the voice tools."""
     from iris import skills
 
@@ -669,7 +733,7 @@ def skill_action(action: str, body: dict) -> dict:
     return skills_payload()
 
 
-def queue_payload() -> dict:
+def queue_payload() -> dict[str, Any]:
     """The prompts waiting in the agent queue, oldest first (read only)."""
     from iris import prompt_queue
 
@@ -686,7 +750,7 @@ def _log_queue_event(action: str, agent: str | None = None, prompt_id: int | Non
     Journal(journal_path()).log(event="queue", action=action, agent=agent, id=prompt_id)
 
 
-def queue_action(action: str, body: dict) -> dict:
+def queue_action(action: str, body: dict[str, Any]) -> dict[str, Any]:
     """Run one add, delete or move on the prompt queue and return the new queue state.
 
     action is "add" ({agent, text}), "delete" ({id}) or "move" ({id, step}). Raises
@@ -745,7 +809,7 @@ def _log_autopilot_event(repo: str, agent: str, result: str) -> None:
     )
 
 
-def cline_start_action(body: dict) -> dict:
+def cline_start_action(body: dict[str, Any]) -> dict[str, Any]:
     """Start the agent's next queued prompt as a Cline session, one at a time.
 
     Body is {agent, repo}: agent required (1 to 40 chars), repo optional. Calls
@@ -775,7 +839,7 @@ def cline_start_action(body: dict) -> dict:
     return {"ok": True, "result": result, "queue": queue_payload()["prompts"]}
 
 
-def app_voice_restart() -> dict:
+def app_voice_restart() -> dict[str, Any]:
     """Start voice mode again so new voice settings apply; only inside the desktop app."""
     hook = APP_HOOKS.get("restart_voice")
     if hook is None:
@@ -805,16 +869,18 @@ class Handler(BaseHTTPRequestHandler):
                 if not chunk:
                     break
                 length -= len(chunk)
-        except Exception:  # noqa: BLE001 - a lying Content-Length must never kill the handler
+        except Exception:  # a lying Content-Length must never kill the handler
             pass
 
     def do_GET(self) -> None:  # GET stays read-only; the write routes refuse it with a 405
         """Serve the dashboard page and its read-only /api routes; a write route answers 405 until it gets a POST."""
         path = self.path.split("?", 1)[0]
-        if path == "/":
+        if not _host_ok(self):
+            self._json({"error": "open the dashboard at http://127.0.0.1 or http://localhost"}, code=421)
+        elif path == "/":
             token = getattr(self.server, "token", "")
             page = _page_template().replace(b"__IRIS_TOKEN__", token.encode())
-            self._send(200, page, "text/html; charset=utf-8")
+            self._send(200, page, "text/html; charset=utf-8", cache=False)  # its token is new on every start
         elif path == "/api/iris/model":
             self._json(iris_model_payload())   # readable via GET; writes go through the POST below
         elif path == "/api/settings":
@@ -837,6 +903,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True, "rows": _cached("claude", lambda: claude_projects())})
         elif path == "/api/journal":
             self._json(journal_payload())
+        elif path == "/api/timings":
+            self._json(timings_payload())
         elif path == "/api/tools":
             self._json(tools_payload())
         elif path == "/api/eval":
@@ -869,6 +937,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # the write routes and nothing else
         """The only door to changes: check the token, then run the named write action with its JSON body."""
         path = self.path.split("?", 1)[0]
+        if not _host_ok(self):
+            self._drain_body()
+            self._json({"error": "open the dashboard at http://127.0.0.1 or http://localhost"}, code=421)
+            return
         if path not in WRITE_ROUTES:
             self._drain_body()
             self._json({"error": "read only: this route does not accept POST"}, code=405)
@@ -877,11 +949,26 @@ class Handler(BaseHTTPRequestHandler):
             self._drain_body()
             self._json({"error": "forbidden: wrong token or origin"}, code=403)
             return
+        if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+            self.close_connection = True  # its bytes would otherwise be read as the next request
+            self._json({"error": "send the JSON body with a Content-Length"}, code=411)
+            return
         try:
             length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_BODY:
+            self.close_connection = True
+            self._json({"error": f"the body must be a JSON object of at most {MAX_BODY} bytes"},
+                       code=413 if length > MAX_BODY else 400)
+            return
+        try:
             body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-        except (ValueError, UnicodeDecodeError):
+        except (ValueError, UnicodeDecodeError, RecursionError):
             self._json({"error": "bad JSON body"}, code=400)
+            return
+        if not isinstance(body, dict):
+            self._json({"error": "the body must be a JSON object"}, code=400)
             return
         try:
             if path == "/api/iris/model":
@@ -915,6 +1002,9 @@ class Handler(BaseHTTPRequestHandler):
         except ModelActionError as exc:
             self._json({"error": exc.message}, code=exc.code)
             return
+        except Exception as exc:  # any other failure is an answer too, never a dropped connection
+            self._json({"error": f"{type(exc).__name__}: {exc}"}, code=500)
+            return
         self._json(payload)
 
     def _method_not_allowed(self) -> None:  # PUT, DELETE, PATCH, OPTIONS and HEAD alike
@@ -923,21 +1013,23 @@ class Handler(BaseHTTPRequestHandler):
 
     do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_HEAD = _method_not_allowed
 
-    def _json(self, payload: dict, code: int = 200) -> None:
+    def _json(self, payload: dict[str, Any], code: int = 200) -> None:
         self._send(code, json.dumps(payload), "application/json")
 
-    def _send(self, code: int, body: str | bytes, ctype: str) -> None:
+    def _send(self, code: int, body: str | bytes, ctype: str, cache: bool = True) -> None:
         data = body.encode("utf-8") if isinstance(body, str) else body
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        if not cache:
+            self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         # no CORS headers on purpose: other websites must not be able to read this
         self.end_headers()
-        self.wfile.write(data)
+        if self.command != "HEAD":   # a HEAD answer keeps its headers but never sends its body
+            self.wfile.write(data)
 
     def log_message(self, fmt: str, *args: object) -> None:  # keep the console quiet while it runs
         """No per-request logging; a running dashboard must not fill the console."""
-        pass
 
 
 class _Server(ThreadingHTTPServer):

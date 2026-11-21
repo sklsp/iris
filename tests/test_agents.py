@@ -45,7 +45,7 @@ def test_repo_status_reports_branch_commit_and_clean_tree(tmp_path):
     s = repo_status(repo)
     assert s.exists and s.branch == "feature/render"
     assert s.last_commit == "first commit"
-    assert 700 <= s.commit_age <= 800  # about 12 minutes
+    assert s.commit_age is not None and 700 <= s.commit_age <= 800  # about 12 minutes
     assert s.uncommitted == 0 and not s.blocked and not s.stuck
 
 
@@ -93,10 +93,34 @@ def test_git_raises_the_last_stderr_line_when_a_command_fails(tmp_path, monkeypa
         stdout = ""
         stderr = "fatal: not a git repository\nthe last line\n"
 
-    monkeypatch.setattr(agents.subprocess, "run", lambda *args, **kwargs: _Proc())
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: _Proc())
     with pytest.raises(RuntimeError) as excinfo:
         agents._git(repo, "rev-parse", "--abbrev-ref", "HEAD")
     assert str(excinfo.value) == "the last line"
+
+
+def test_git_never_takes_the_index_lock(tmp_path, monkeypatch):
+    """A read-only poll must not take the index lock; every git call carries --no-optional-locks."""
+    repo = tmp_path / "locked"
+    (repo / ".git").mkdir(parents=True)
+
+    class _Proc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    argvs = []
+
+    def spy(*args, **kwargs):
+        argvs.append(args[0])
+        return _Proc()
+
+    monkeypatch.setattr(subprocess, "run", spy)
+    repo_status(repo)  # rev-parse, log and status: three git calls
+    assert len(argvs) == 3
+    for argv in argvs:
+        assert argv[:2] == ["git", "--no-optional-locks"]
+        assert argv[2:4] == ["-C", str(repo)]
 
 
 def test_repo_status_reports_git_failure_as_an_error(tmp_path, monkeypatch):
@@ -111,7 +135,7 @@ def test_repo_status_reports_git_failure_as_an_error(tmp_path, monkeypatch):
     def broken(*args, **kwargs):
         return _Proc()
 
-    monkeypatch.setattr(agents.subprocess, "run", broken)
+    monkeypatch.setattr(subprocess, "run", broken)
     s = repo_status(repo)
     assert s.exists is False and s.error == "git failed: the last line"
 

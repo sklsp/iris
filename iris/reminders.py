@@ -13,9 +13,11 @@ import json
 import os
 import re
 import threading
+import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 MAX_DAYS_AHEAD = 366  # a reminder is at most a year away
 MAX_TEXT = 200  # the same cap as a timer message: it will be spoken out loud
@@ -35,10 +37,30 @@ def _wall_now() -> datetime:
     return datetime.now()
 
 
-def _start_thread(seconds: float, fn: Callable[[], None]) -> threading.Timer:
+class _Wait(threading.Timer):
+    """A Timer that waits in steps of a day: one wait longer than threading.TIMEOUT_MAX (about 49.7 days on Windows)
+    raises OverflowError, and a reminder may be a year away. cancel() stops it, as for any Timer."""
+
+    STEP = 86_400.0
+
+    def __init__(self, seconds: float, fn: Callable[[], None]) -> None:
+        super().__init__(max(0.0, seconds), fn)
+        self.daemon = True
+        self.deadline = time.monotonic() + max(0.0, seconds)
+
+    def run(self) -> None:
+        while not self.finished.is_set():
+            left = self.deadline - time.monotonic()
+            if left <= 0:
+                self.function(*self.args, **self.kwargs)
+                break
+            self.finished.wait(min(left, self.STEP))
+        self.finished.set()
+
+
+def _start_thread(seconds: float, fn: Callable[[], None]) -> _Wait:
     """The default scheduler: a daemon thread that calls `fn` after `seconds`."""
-    timer = threading.Timer(max(0.0, seconds), fn)
-    timer.daemon = True
+    timer = _Wait(seconds, fn)
     timer.start()
     return timer
 
@@ -56,34 +78,50 @@ _announce: Callable[[str], object] | None = None
 _schedule: Callable[[float, Callable[[], None]], object] = _start_thread
 
 
-def _read(path: Path | None = None) -> list[dict]:
+def _read(path: Path | None = None) -> list[dict[str, Any]]:
     """The pending reminders; a missing or unreadable file is an empty list, never fatal."""
     p = path or _path()
     if not p.exists():
         return []
     try:
-        rows = json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+        rows = json.loads(p.read_text(encoding="utf-8-sig"))
+    except (ValueError, OSError):  # broken JSON or not UTF-8; _write keeps such a file aside before replacing it
         return []
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for row in rows if isinstance(rows, list) else []:
         if not (isinstance(row, dict) and isinstance(row.get("id"), int)
                 and isinstance(row.get("due"), str) and isinstance(row.get("text"), str)):
             continue
         try:
-            datetime.fromisoformat(row["due"])
+            due = datetime.fromisoformat(row["due"])
         except ValueError:
             continue  # a reminder whose time cannot be read is left alone, never fatal
+        if due.tzinfo is not None:  # a hand-edited time with an offset: local wall time, like every other row
+            row = {**row, "due": due.astimezone().replace(tzinfo=None).isoformat(timespec="minutes")}
         out.append(row)
     return out
 
 
-def _write(path: Path | None, rows: list[dict]) -> None:
+def _keep_unreadable(p: Path) -> None:
+    """A reminders.json Iris can not read is moved aside before a new list replaces it, so its reminders are never
+    lost: reminders.json.unreadable-<time> holds the old file for the user to look at."""
+    if not p.exists():
+        return
+    try:
+        if isinstance(json.loads(p.read_text(encoding="utf-8-sig")), list):
+            return
+    except (ValueError, OSError):
+        pass
+    p.replace(p.with_name(f"{p.name}.unreadable-{datetime.now():%Y%m%d-%H%M%S}"))
+
+
+def _write(path: Path | None, rows: list[dict[str, Any]]) -> None:
     p = path or _path()
     p.parent.mkdir(parents=True, exist_ok=True)  # a fresh PC has no ~/.iris yet
+    _keep_unreadable(p)
     tmp = p.with_name(p.name + ".tmp")  # write aside, then swap: a crash mid-write never empties the list
     tmp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, p)
+    tmp.replace(p)
 
 
 def _parse_when(when: str, now: datetime) -> datetime | None:
@@ -120,6 +158,12 @@ def _fire_later(rid: int, text: str) -> Callable[[], None]:
     return lambda: _fire(rid, text)
 
 
+def _seconds_until(due: datetime, now: datetime) -> float:
+    """Seconds from now to due, both local wall times: astimezone() gives each its own UTC offset, so a daylight
+    saving change in between is counted."""
+    return (due.astimezone() - now.astimezone()).total_seconds()
+
+
 def reminder_set(when: str, text: str) -> str:
     """Remember `text` for a time; Iris says it out loud when the time comes.
 
@@ -144,7 +188,7 @@ def reminder_set(when: str, text: str) -> str:
         rows.append({"id": new_id, "due": due.strftime("%Y-%m-%dT%H:%M"), "text": flat})
         _write(None, rows)
         if _announce is not None:
-            _handles[new_id] = _schedule((due - now).total_seconds(), _fire_later(new_id, flat))
+            _handles[new_id] = _schedule(_seconds_until(due, now), _fire_later(new_id, flat))
     return f"reminder set for {due:%Y-%m-%d %H:%M} (id {new_id})"
 
 
@@ -157,8 +201,9 @@ def reminder_list() -> str:
     return "\n".join(f"- {due:%Y-%m-%d %H:%M} {r['text']} (id {r['id']})" for due, r in parsed)
 
 
-def reminder_cancel(rid: int) -> str:
+def reminder_cancel(id: int) -> str:  # the name the tool schema gives the model, like timer_cancel
     """Cancel one pending reminder by its id; it stops waiting and leaves the file."""
+    rid = id
     with _lock:
         handle = _handles.pop(rid, None)
         rows = _read()
@@ -185,7 +230,7 @@ def start_reminders(announce: Callable[[str], object], now: Callable[[], datetim
         _announce = announce
         _schedule = schedule or _start_thread
         rows = _read()
-        kept: list[dict] = []
+        kept: list[dict[str, Any]] = []
         for row in rows:
             due = datetime.fromisoformat(row["due"])  # _read only keeps rows whose time parses
             t = clock()
@@ -193,7 +238,7 @@ def start_reminders(announce: Callable[[str], object], now: Callable[[], datetim
                 announce(f"Missed reminder: {row['text']}")
             else:
                 rid = row["id"]
-                _handles[rid] = _schedule((due - t).total_seconds(), _fire_later(rid, row["text"]))
+                _handles[rid] = _schedule(_seconds_until(due, t), _fire_later(rid, row["text"]))
                 kept.append(row)
         if len(kept) != len(rows):
             _write(None, kept)

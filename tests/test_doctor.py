@@ -1,8 +1,10 @@
-"""Tests for iris/doctor.py: the overlay and Piper speech checks, and main() marking a missing tkinter as optional.
+"""Tests for iris/doctor.py: the overlay, Piper speech and speed checks, and main() marking a missing tkinter as
+optional.
 
 The autouse conftest fixture points IRIS_CONFIG at a tmp config, and payload={"reachable": False} keeps
 checks() from asking any model server."""
 import importlib.util
+import json
 
 from iris import doctor
 
@@ -61,9 +63,9 @@ def test_shortcut_missing_reports_the_none_line(tmp_path, monkeypatch):
 
 def test_shortcut_present_reports_found(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_DESKTOP_DIR", str(tmp_path))
-    (tmp_path / "Iris.cmd").touch()
+    (tmp_path / "Iris.lnk").touch()  # iris shortcut writes a .lnk now, not the old voice-mode Iris.cmd
     rows = doctor.checks(payload={"reachable": False})
-    assert (True, "shortcut: Iris.cmd on the desktop") in rows
+    assert (True, "shortcut: Iris.lnk on the desktop") in rows
 
 
 def test_the_installed_app_has_no_shortcut_check(tmp_path, monkeypatch):
@@ -71,6 +73,19 @@ def test_the_installed_app_has_no_shortcut_check(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor, "bundled", lambda: True)
     rows = doctor.checks(payload={"reachable": False})
     assert not any(line.startswith("shortcut") for _, line in rows)
+
+
+def test_start_at_login_off_when_the_startup_folder_is_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path))
+    rows = doctor.checks(payload={"reachable": False})
+    assert (True, "start at login: off; iris startup on starts the tray app at login (optional)") in rows
+
+
+def test_start_at_login_on_reports_the_file_it_found(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path))
+    (tmp_path / "Iris.vbs").write_text("", encoding="utf-8")
+    rows = doctor.checks(payload={"reachable": False})
+    assert (True, f"start at login: on ({tmp_path / 'Iris.vbs'})") in rows
 
 def _voice_extras(monkeypatch, missing=()):
     """Report the voice extras as installed (CI has none), so doctor reaches its speech check; `missing` stay absent."""
@@ -117,3 +132,45 @@ def test_piper_not_installed_says_what_to_install(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_TTS", "piper")
     rows = doctor.checks(payload={"reachable": False})
     assert (False, "speech: Piper not installed: pip install -e .[piper]") in rows
+
+
+def test_packs_line_when_every_available_pack_is_installed(monkeypatch):
+    from iris import packs
+
+    monkeypatch.setattr(packs, "packs", lambda: [{"id": "kokoro", "available": True, "installed": True},
+                                                  {"id": "x", "available": False, "installed": False}])
+    assert doctor._packs_line() == (True, "voice packs: kokoro")
+
+
+def test_speed_line_reports_the_median_and_model_share(tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    first = {"event": "timing", "ms": 1000, "llm_ms": 900, "tools_ms": 0, "slowest_tool": None, "slowest_tool_ms": 0}
+    second = {"event": "timing", "ms": 2000, "llm_ms": 1500, "tools_ms": 600, "slowest_tool": "click",
+              "slowest_tool_ms": 600}
+    journal.write_text("\n".join(json.dumps(x) for x in (first, second)), encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    rows = doctor.checks(payload={"reachable": False})
+    assert rows[-1] == (True, "speed: last 2 requests, median 1.5 s (model 80%)")
+
+
+def test_speed_line_says_no_timed_requests_yet_for_an_empty_journal(tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    journal.write_text("", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    rows = doctor.checks(payload={"reachable": False})
+    assert rows[-1] == (True, "speed: no timed requests yet")
+
+
+def test_speed_line_reports_the_error_when_the_journal_is_a_directory(tmp_path, monkeypatch, capsys):
+    journal = tmp_path / "journal.jsonl"
+    journal.mkdir()
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    rows = doctor.checks(payload={"reachable": False})
+    bad = [row for row in rows if row[1].startswith("speed:")]
+    assert len(bad) == 1 and not bad[0][0]
+    assert bad[0][1].startswith("speed: could not read the journal (")
+    monkeypatch.setattr(doctor, "checks", lambda: [bad[0]])
+    assert doctor.main() == 0  # speed is optional: a broken journal does not change the exit code
+    out = capsys.readouterr().out.splitlines()
+    assert len(out) == 1 and out[0].startswith("-- ")
+

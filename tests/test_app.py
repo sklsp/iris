@@ -9,7 +9,9 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -92,9 +94,9 @@ def test_show_running_restores_and_focuses_the_matching_window(monkeypatch):
             focused.append(hwnd)
 
     fake = FakeUser32()
-    monkeypatch.setattr(app.ctypes, "WinDLL", lambda name, use_last_error=False: fake)
-    monkeypatch.setattr(app.ctypes, "WINFUNCTYPE", lambda *args: (lambda fn: fn))
-    monkeypatch.setattr(app.ctypes, "create_unicode_buffer", lambda n: SimpleNamespace(value=""))
+    monkeypatch.setattr(ctypes, "WinDLL", lambda name, use_last_error=False: fake)
+    monkeypatch.setattr(ctypes, "WINFUNCTYPE", lambda *args: (lambda fn: fn))
+    monkeypatch.setattr(ctypes, "create_unicode_buffer", lambda n: SimpleNamespace(value=""))
     assert app.show_running("Iris") is True
     assert shown == [(1, 9)]
     assert focused == [1]
@@ -153,7 +155,8 @@ class FakeEvent:
         self.closed = True
 
 
-def make_loop(holder: dict, on_exit=None, mutex: str | None = None) -> app.VoiceLoop:
+def make_loop(holder: dict[str, Any], on_exit: Callable[[int, str], None] | None = None,
+              mutex: str | None = None) -> app.VoiceLoop:
     def popen(cmd, **kw):
         holder["cmd"], holder["kw"] = cmd, kw
         holder["proc"] = FakeProc()
@@ -171,7 +174,7 @@ def make_loop(holder: dict, on_exit=None, mutex: str | None = None) -> app.Voice
 
 
 def test_voice_loop_starts_one_supervised_child_in_a_job():
-    h: dict = {}
+    h: dict[str, Any] = {}
     loop = make_loop(h)
     assert loop.start() == "Iris is listening."
     assert loop.running
@@ -188,7 +191,7 @@ def test_voice_loop_starts_one_supervised_child_in_a_job():
 
 
 def test_voice_loop_stop_kills_a_child_that_does_not_quit():
-    h: dict = {"obeys": False}
+    h: dict[str, Any] = {"obeys": False}
     loop = make_loop(h)
     loop.start()
     loop.stop(seconds=0.05)
@@ -200,14 +203,16 @@ def test_stop_without_start_does_nothing():
 
 
 def test_voice_loop_reports_an_unexpected_exit_with_the_last_log_lines():
-    h: dict = {}
+    h: dict[str, Any] = {}
     exits = []
     loop = make_loop(h, on_exit=lambda code, lines: exits.append((code, lines)))
     loop.start()
     app.log_dir().joinpath("voice.log").write_text("loading\nboom: no microphone\n", encoding="utf-8")
     h["proc"].code = 3
     h["proc"].done.set()
-    loop._watcher.join(5)
+    watcher = loop._watcher
+    assert watcher is not None
+    watcher.join(5)
     assert exits == [(3, "loading\nboom: no microphone")]
     assert not loop.running
 
@@ -216,7 +221,7 @@ def test_voice_loop_refuses_while_voice_mode_runs_in_a_terminal():
     name = unique("terminal")
     held = app.take_mutex(name)
     assert held
-    h: dict = {}
+    h: dict[str, Any] = {}
     assert "already running in a terminal" in make_loop(h, mutex=name).start()
     assert "proc" not in h
 
@@ -226,7 +231,7 @@ def test_voice_log_rotates_once_it_is_big(monkeypatch):
     log = app.log_dir() / "voice.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text("x" * 20, encoding="utf-8")
-    h: dict = {}
+    h: dict[str, Any] = {}
     loop = make_loop(h)
     loop.start()
     loop.stop()
@@ -313,7 +318,7 @@ def test_tray_menu_runs_the_app_actions_off_the_menu_thread():
     fake_app = SimpleNamespace(voice=SimpleNamespace(running=False), open=lambda: calls.append("open"),
                                toggle_listening=lambda: calls.append("listen"),
                                settings=lambda: calls.append("settings"), quit=lambda: calls.append("quit"))
-    tray = app.Tray(fake_app, fake_forms())
+    tray = app.Tray(cast(app.App, fake_app), fake_forms())
     tray.start()
     assert tray.icon.Visible and tray.icon.Text == "Iris"
     items = tray.menu.Items.added
@@ -333,7 +338,7 @@ def test_tray_menu_runs_the_app_actions_off_the_menu_thread():
 
 
 def test_tray_notify_and_close_before_start_do_nothing():
-    tray = app.Tray(SimpleNamespace(), fake_forms())
+    tray = app.Tray(cast(app.App, SimpleNamespace()), fake_forms())
     tray.notify("early")
     tray.close()
 
@@ -383,8 +388,13 @@ def test_app_run_serves_the_dashboard_in_a_window_and_cleans_up(monkeypatch):
     monkeypatch.setenv("IRIS_DASHBOARD_PORT", "0")
     wv, voice = FakeWebview(), FakeVoice()
     started = []
-    voice.start = lambda: started.append(1) or "Iris is listening."
-    a = app.App(wv, forms=fake_forms(), voice=voice)
+
+    def start():
+        started.append(1)
+        return "Iris is listening."
+
+    monkeypatch.setattr(voice, "start", start)
+    a = app.App(wv, forms=fake_forms(), voice=cast(app.VoiceLoop, voice))
     assert a.run() == 0
     assert wv.title == "Iris" and wv.url.startswith("http://127.0.0.1:") and wv.url.endswith("/") and wv.url == a.url
     assert wv.kw["hidden"] is False
@@ -396,8 +406,12 @@ def test_app_run_serves_the_dashboard_in_a_window_and_cleans_up(monkeypatch):
 def test_first_run_opens_the_setup_tab_and_waits_to_listen(monkeypatch):
     monkeypatch.setenv("IRIS_DASHBOARD_PORT", "0")
     wv, voice = FakeWebview(), FakeVoice()
-    voice.start = lambda: pytest.fail("no listening before setup is finished")
-    a = app.App(wv, voice=voice)
+
+    def start():
+        pytest.fail("no listening before setup is finished")
+
+    monkeypatch.setattr(voice, "start", start)
+    a = app.App(wv, voice=cast(app.VoiceLoop, voice))
     a.run()
     assert wv.url.endswith("/#setup")
 
@@ -406,11 +420,13 @@ def test_the_app_tells_about_a_newer_release_through_the_tray(monkeypatch):
     from iris import update
 
     monkeypatch.setattr(update, "_fetch", lambda: {"tag_name": "v99.0.0", "html_url": "u"})
-    a = app.App(FakeWebview(), forms=fake_forms(), voice=FakeVoice(), listen=False)
-    a.tray.start()
-    a.tray.start = lambda: None
+    a = app.App(FakeWebview(), forms=fake_forms(), voice=cast(app.VoiceLoop, FakeVoice()), listen=False)
+    tray = a.tray
+    assert tray is not None  # forms were passed, so the app has a tray icon
+    tray.start()
+    monkeypatch.setattr(tray, "start", lambda: None)  # _started must not start a second tray thread
     a._started()
-    assert wait_for(lambda: any("v99.0.0" in b for b in a.tray.icon.balloons))
+    assert wait_for(lambda: any("v99.0.0" in b for b in tray.icon.balloons))
 
 
 def test_app_falls_back_to_a_free_port_and_starts_hidden_in_the_background(monkeypatch):
@@ -420,28 +436,33 @@ def test_app_falls_back_to_a_free_port_and_starts_hidden_in_the_background(monke
     try:
         monkeypatch.setenv("IRIS_DASHBOARD_PORT", str(taken.server_address[1]))
         wv = FakeWebview()
-        app.App(wv, voice=FakeVoice(), background=True, listen=False).run()
+        app.App(wv, voice=cast(app.VoiceLoop, FakeVoice()), background=True, listen=False).run()
         assert not wv.url.endswith(f":{taken.server_address[1]}/")
         assert wv.kw["hidden"] is True
     finally:
         taken.server_close()
 
 
-def test_app_tells_the_tray_when_listening_could_not_start():
-    a = app.App(FakeWebview(), forms=fake_forms(), voice=FakeVoice("Voice mode is already running in a terminal."))
-    a.tray.start()
-    a.tray.start = lambda: None
+def test_app_tells_the_tray_when_listening_could_not_start(monkeypatch):
+    message = "Voice mode is already running in a terminal."
+    a = app.App(FakeWebview(), forms=fake_forms(), voice=cast(app.VoiceLoop, FakeVoice(message)))
+    tray = a.tray
+    assert tray is not None  # forms were passed, so the app has a tray icon
+    tray.start()
+    monkeypatch.setattr(tray, "start", lambda: None)  # _started must not start a second tray thread
     a._started()
-    assert a.tray.icon.balloons == ["Voice mode is already running in a terminal."]
+    assert tray.icon.balloons == ["Voice mode is already running in a terminal."]
 
 
 def test_closing_hides_to_the_tray_and_says_so_once():
-    a = app.App(FakeWebview(), forms=fake_forms(), voice=FakeVoice())
+    a = app.App(FakeWebview(), forms=fake_forms(), voice=cast(app.VoiceLoop, FakeVoice()))
     a.window = FakeWindow()
-    a.tray.start()
+    tray = a.tray
+    assert tray is not None  # forms were passed, so the app has a tray icon
+    tray.start()
     assert a._on_closing() is False and a._on_closing() is False
     assert wait_for(lambda: a.window.calls.count("hide") == 2)
-    assert len(a.tray.icon.balloons) == 1 and "keeps running" in a.tray.icon.balloons[0]
+    assert len(tray.icon.balloons) == 1 and "keeps running" in tray.icon.balloons[0]
     a._quitting = True
     assert a._on_closing() is True
 
@@ -453,15 +474,17 @@ def test_closing_quits_when_the_tray_icon_failed_to_start(monkeypatch):
         raise RuntimeError("no shell")
 
     monkeypatch.setattr(forms, "NotifyIcon", no_shell)
-    a = app.App(FakeWebview(), forms=forms, voice=FakeVoice())
+    a = app.App(FakeWebview(), forms=forms, voice=cast(app.VoiceLoop, FakeVoice()))
     a.window = FakeWindow()
-    monkeypatch.setattr(a.tray.ready, "wait", lambda timeout=None: False)  # the ten-second wait is over at once
-    assert a.tray.start() is False and not a.tray.ready.is_set()
+    tray = a.tray
+    assert tray is not None  # forms were passed, so the app has a tray icon
+    monkeypatch.setattr(tray.ready, "wait", lambda timeout=None: False)  # the ten-second wait is over at once
+    assert tray.start() is False and not tray.ready.is_set()
     assert a._on_closing() is True  # no icon to come back from: the close quits Iris instead of hiding it
 
 
 def test_closing_quits_when_there_is_no_tray_at_all():
-    a = app.App(FakeWebview(), voice=FakeVoice())
+    a = app.App(FakeWebview(), voice=cast(app.VoiceLoop, FakeVoice()))
     a.window = FakeWindow()
     assert a.tray is None  # no forms in the tests, so there is no tray icon to come back from
     assert a._on_closing() is True
@@ -474,12 +497,14 @@ def test_tray_run_does_not_crash_when_the_icon_fails(monkeypatch):
         raise RuntimeError("no shell")
 
     monkeypatch.setattr(forms, "NotifyIcon", no_shell)
-    a = app.App(FakeWebview(), forms=forms, voice=FakeVoice())
-    a.tray._run()  # the failed icon is caught and printed, not raised into the tray thread
+    a = app.App(FakeWebview(), forms=forms, voice=cast(app.VoiceLoop, FakeVoice()))
+    tray = a.tray
+    assert tray is not None  # forms were passed, so the app has a tray icon
+    tray._run()  # the failed icon is caught and printed, not raised into the tray thread
 
 
 def test_open_restores_only_a_minimized_window():
-    a = app.App(FakeWebview(), voice=FakeVoice())
+    a = app.App(FakeWebview(), voice=cast(app.VoiceLoop, FakeVoice()))
     a.window = FakeWindow()
     a.open()
     assert a.window.calls == ["show"]
@@ -489,7 +514,7 @@ def test_open_restores_only_a_minimized_window():
 
 
 def test_settings_opens_the_settings_tab():
-    a = app.App(FakeWebview(), voice=FakeVoice())
+    a = app.App(FakeWebview(), voice=cast(app.VoiceLoop, FakeVoice()))
     a.window = FakeWindow()
     a.settings()
     assert a.window.calls == ["show", "evaluate_js"]
@@ -500,7 +525,7 @@ def test_restart_voice_stops_then_starts_and_is_offered_to_the_dashboard(monkeyp
 
     monkeypatch.setenv("IRIS_DASHBOARD_PORT", "0")
     voice = FakeVoice()
-    a = app.App(FakeWebview(), voice=voice, listen=False)
+    a = app.App(FakeWebview(), voice=cast(app.VoiceLoop, voice), listen=False)
     seen = {}
 
     def start(func, **kw):
@@ -514,15 +539,17 @@ def test_restart_voice_stops_then_starts_and_is_offered_to_the_dashboard(monkeyp
 
 def test_toggle_listening_and_quit():
     voice = FakeVoice()
-    a = app.App(FakeWebview(), forms=fake_forms(), voice=voice)
+    a = app.App(FakeWebview(), forms=fake_forms(), voice=cast(app.VoiceLoop, voice))
     a.window = FakeWindow()
-    a.tray.start()
+    tray = a.tray
+    assert tray is not None  # forms were passed, so the app has a tray icon
+    tray.start()
     a.toggle_listening()
-    assert voice.running and a.tray.icon.balloons[-1] == "Iris is listening."
+    assert voice.running and tray.icon.balloons[-1] == "Iris is listening."
     a.toggle_listening()
-    assert not voice.running and "microphone is free" in a.tray.icon.balloons[-1]
+    assert not voice.running and "microphone is free" in tray.icon.balloons[-1]
     a._voice_exited(2, "last line")
-    assert "exit code 2" in a.tray.icon.balloons[-1]
+    assert "exit code 2" in tray.icon.balloons[-1]
     a.quit()
     assert a.window.calls == ["destroy"] and voice.stops == 2
     a._voice_exited(0, "")  # after Quit: no balloon
@@ -544,7 +571,7 @@ def test_main_brings_the_running_app_forward(monkeypatch):
 
 
 def test_main_runs_the_app(monkeypatch):
-    seen = {}
+    seen: dict[str, Any] = {}
     monkeypatch.setitem(sys.modules, "webview", SimpleNamespace())
     monkeypatch.setattr(app, "take_mutex", lambda name: 1)
     monkeypatch.setattr(app, "_set_app_id", lambda: seen.setdefault("app_id", True))

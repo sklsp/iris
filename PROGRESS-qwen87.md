@@ -1,2 +1,0 @@
-- [x] Q1. typing: test_app (2440 passed in 109.92s (0:01:49))
-- [x] Q2. typing: test_voice_behaviour (2440 passed in 108.62s (0:01:48))

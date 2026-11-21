@@ -437,6 +437,11 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
         <h2>Settings<span class="log-path" id="settings-path"></span></h2>
         <div class="set-intro">Saved to config.toml, which stays the place to edit by hand too. Voice settings apply
           when listening starts again; everything else on the next request.</div>
+        <div class="set-row" id="startup-row">
+          <label for="startup-check">Start Iris in the tray at login</label>
+          <input type="checkbox" id="startup-check">
+          <div class="set-help" id="startup-note"></div>
+        </div>
         <form id="settings-form" class="set-form"><div class="empty">loading...</div></form>
         <div class="set-bar"><button type="submit" form="settings-form" class="mbtn" id="settings-save">Save</button>
           <span id="settings-msg" class="set-msg"></span>
@@ -1514,6 +1519,30 @@ function renderSettings(d){
   form.replaceChildren(...groups.values());
 }
 async function loadSettings(){ renderSettings(await j("/api/settings")); }
+
+// --- start at login: one switch above the form, saved straight away -------------
+async function loadStartup(){
+  const d = await j("/api/startup");
+  const box = $("startup-check"), note = $("startup-note");
+  if (!d){ box.disabled = true; return; }
+  box.checked = !!d.on;
+  box.disabled = !!d.managed;
+  note.textContent = d.managed ? "The installer manages its own startup entry." : (d.path || "");
+}
+$("startup-check").onchange = async () => {
+  const box = $("startup-check"), msg = $("settings-msg");
+  const wanted = box.checked;
+  const r = await postModel("/api/startup", {on: wanted});
+  if (r && typeof r.on === "boolean"){
+    box.checked = r.on;
+    msg.className = "set-msg ok";
+    msg.textContent = r.on ? "Iris starts in the tray at login." : "Iris no longer starts at login.";
+  } else {
+    box.checked = !wanted;   // put it back: the change did not go through
+    msg.className = "set-msg bad";
+    msg.textContent = (r && r.error) || "could not save the start-at-login switch";
+  }
+};
 function sameValue(a, b){ return JSON.stringify(a ?? null) === JSON.stringify(b ?? null); }
 async function saveSettings(){
   if (!settingsData) return;
@@ -1729,7 +1758,7 @@ function showTab(name){
   for (const p of PANES) $(p + "-pane").classList.toggle("hidden", p !== name);
   if (name === "eval") loadEval();   // the eval tab fetches when shown, not on every poll
   if (name === "skills") loadSkills();
-  if (name === "settings") loadSettings();
+  if (name === "settings"){ loadSettings(); loadStartup(); }
   if (name === "setup") loadSetup();
   clearInterval(logsTimer);
   if (name === "logs"){ loadLogs(); logsTimer = setInterval(loadLogs, 3000); }   // only polls while visible

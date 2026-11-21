@@ -954,6 +954,84 @@ def test_iris_model_post_needs_the_token_and_origin(srv, tmp_path, monkeypatch):
     assert code == 403
 
 
+# --- start at login (the Startup folder) ------------------------------------------
+
+def _clean_startup_env(monkeypatch, tmp_path):
+    """Point the Startup folder at a temp dir so tests never touch the real one."""
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path / "startup"))
+
+
+def test_startup_get_reports_off_when_the_folder_is_empty(srv, tmp_path, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_startup_env(monkeypatch, tmp_path)
+
+    status, _, raw = get(base + "/api/startup")   # a read route: no token needed
+    assert status == 200 and json.loads(raw) == {"on": False, "path": None}
+
+
+def test_startup_get_reports_on_with_the_vbs_path(srv, tmp_path, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_startup_env(monkeypatch, tmp_path)
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "startup" / "Iris.vbs").write_text("x", encoding="utf-8")
+
+    status, _, raw = get(base + "/api/startup")
+    body = json.loads(raw)
+    assert status == 200 and body["on"] is True
+    assert body["path"].endswith("Iris.vbs")
+
+
+def test_startup_post_on_writes_the_vbs_into_the_startup_folder(srv, tmp_path, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_startup_env(monkeypatch, tmp_path)
+
+    code, body = post(base + "/api/startup", {"on": True}, token=srv.token, origin=base)
+    assert code == 200 and body["on"] is True
+    vbs = tmp_path / "startup" / "Iris.vbs"
+    assert vbs.exists()
+    assert "-m iris app --background" in vbs.read_text(encoding="utf-8")
+
+
+def test_startup_post_off_removes_the_vbs(srv, tmp_path, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_startup_env(monkeypatch, tmp_path)
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "startup" / "Iris.vbs").write_text("x", encoding="utf-8")
+
+    code, body = post(base + "/api/startup", {"on": False}, token=srv.token, origin=base)
+    assert code == 200 and body["on"] is False
+    assert not (tmp_path / "startup" / "Iris.vbs").exists()
+
+
+@pytest.mark.parametrize("body", [{}, {"on": "yes"}, {"on": 1}])
+def test_startup_post_bad_body_is_400(srv, tmp_path, monkeypatch, body):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_startup_env(monkeypatch, tmp_path)
+
+    code, _ = post(base + "/api/startup", body, token=srv.token, origin=base)
+    assert code == 400
+
+
+def test_startup_action_refuses_a_body_that_is_not_an_object():
+    # the HTTP handler refuses non-object JSON before it gets here; the function checks on its own anyway
+    with pytest.raises(d.ModelActionError) as err:
+        d.startup_action([True])  # type: ignore[arg-type]  # the wrong type is the point
+    assert err.value.code == 400
+
+
+def test_startup_is_managed_under_the_installer_build(srv, tmp_path, monkeypatch):
+    base = f"http://{HOST}:{srv.server_address[1]}"
+    _clean_startup_env(monkeypatch, tmp_path)
+    from iris import doctor
+
+    monkeypatch.setattr(doctor, "bundled", lambda: True)   # the same module object the dashboard holds
+
+    status, _, raw = get(base + "/api/startup")
+    assert status == 200 and json.loads(raw)["managed"] is True
+    code, body = post(base + "/api/startup", {"on": True}, token=srv.token, origin=base)
+    assert code == 409 and "installer" in body["error"]
+
+
 def test_resolve_model_re_resolves_on_every_call(tmp_path, monkeypatch):
     """The choice is read on every request: a file edit applies without a restart."""
     from iris.llm import resolve_model

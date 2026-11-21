@@ -1,2 +1,2 @@
 - [x] Q1. startup: functions the dashboard can call (2446 passed in 109.26s (0:01:49))
-- [ ] Q2. dashboard: a start-at-login switch in Settings
+- [x] Q2. dashboard: a start-at-login switch in Settings (2458 passed in 80.43s; /api/startup GET+POST, 12 new tests incl. the generic auth coverage)

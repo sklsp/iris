@@ -56,6 +56,22 @@ def test_uncommitted_files_are_counted(tmp_path):
     assert repo_status(repo).uncommitted == 2
 
 
+def test_repo_status_reads_utf8_subjects_and_file_names(tmp_path):
+    """git output is decoded as UTF-8, so a non-ASCII subject and file name survive the locale code page."""
+    repo = tmp_path / "cafe"
+    repo.mkdir()
+    git(repo, "init", "-b", "main")
+    git(repo, "config", "user.email", "iris@test.local")
+    git(repo, "config", "user.name", "Iris test")
+    (repo / "a.txt").write_text("hello", encoding="utf-8")
+    git(repo, "add", "a.txt")
+    git(repo, "commit", "-m", "fix café ☕")
+    (repo / "notities-é.txt").write_text("new", encoding="utf-8")
+    s = repo_status(repo)
+    assert s.exists and s.last_commit == "fix café ☕"  # the subject comes back exactly as committed
+    assert s.uncommitted == 1  # the accented file name is counted, not garbled
+
+
 def test_stuck_needs_both_uncommitted_changes_and_an_old_commit(tmp_path):
     fresh = make_repo(tmp_path, "fresh", minutes_ago=5)
     (fresh / "b.txt").write_text("new", encoding="utf-8")

@@ -246,7 +246,7 @@ def run_lms(args: list[str]) -> tuple[int, str]:
     exe = _lms_exe()
     if not exe:
         raise ModelActionError(503, "no lms executable found: set IRIS_LMS_BIN or put lms on PATH")
-    proc = subprocess.run([exe, *args], capture_output=True, text=True,
+    proc = subprocess.run([exe, *args], capture_output=True, text=True, encoding="utf-8", errors="replace",
                           timeout=LMS_TIMEOUT_SECONDS)
     return proc.returncode, (proc.stderr or proc.stdout or "").strip()
 

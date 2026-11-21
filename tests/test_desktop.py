@@ -3,13 +3,15 @@
 Fakes only (no real desktop).
 """
 
+import os
 import subprocess
 from datetime import datetime
+from http.client import HTTPMessage
 from pathlib import Path
 
 import pytest
 
-from iris import agent, desktop, tools
+from iris import agent, desktop, llm, tools
 
 
 class _User32:
@@ -44,7 +46,7 @@ def test_clipboard_read_returns_the_text(tmp_path, monkeypatch):
         calls.append((cmd, kw))
         return subprocess.CompletedProcess(cmd, 0, stdout="hello world\n", stderr="")
 
-    monkeypatch.setattr(desktop.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     assert desktop.clipboard_read() == "hello world"
     cmd, kw = calls[0]
     assert cmd == ["powershell", "-NoProfile", "-Command", desktop._UTF8 + "Get-Clipboard -Raw"]
@@ -52,14 +54,16 @@ def test_clipboard_read_returns_the_text(tmp_path, monkeypatch):
 
 
 def test_clipboard_read_empty_says_the_clipboard_is_empty(monkeypatch):
-    monkeypatch.setattr(desktop.subprocess, "run",
-                        lambda *a, **k: subprocess.CompletedProcess(None, 0, stdout="", stderr=""))
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(["powershell"], 0, stdout="", stderr=""))
     assert desktop.clipboard_read() == "The clipboard is empty."
 
 
 def test_clipboard_read_truncates_to_20000_characters(monkeypatch):
-    monkeypatch.setattr(desktop.subprocess, "run",
-                        lambda *a, **k: subprocess.CompletedProcess(None, 0, stdout="x" * 25000 + "\n", stderr=""))
+    def fake_run(*a, **k):
+        return subprocess.CompletedProcess(["powershell"], 0, stdout="x" * 25000 + "\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
     assert desktop.clipboard_read() == "x" * 20000
 
 
@@ -67,7 +71,7 @@ def test_clipboard_read_timeout_is_an_error(monkeypatch):
     def boom(*a, **k):
         raise subprocess.TimeoutExpired("powershell", 10)
 
-    monkeypatch.setattr(desktop.subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
     assert desktop.clipboard_read() == ("error: reading the clipboard timed out; another "
                                         "program may be holding it, try again")
 
@@ -76,7 +80,7 @@ def test_clipboard_read_os_error_is_an_error(monkeypatch):
     def boom(*a, **k):
         raise OSError("no powershell here")
 
-    monkeypatch.setattr(desktop.subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
     assert desktop.clipboard_read() == ("error: could not read the clipboard; another "
                                         "program may be holding it, try again")
 
@@ -90,7 +94,7 @@ def test_clipboard_write_passes_the_text_through_the_environment(monkeypatch):
         calls.append((cmd, kw))
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(desktop.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     assert desktop.clipboard_write("geheim café") == "put 11 characters on the clipboard"
     cmd, kw = calls[0]
     assert cmd == ["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value $env:IRIS_CLIP"]
@@ -100,8 +104,8 @@ def test_clipboard_write_passes_the_text_through_the_environment(monkeypatch):
 
 
 def test_clipboard_write_failure_is_an_error(monkeypatch):
-    monkeypatch.setattr(desktop.subprocess, "run",
-                        lambda *a, **k: subprocess.CompletedProcess(None, 1, stdout="", stderr="x"))
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(["powershell"], 1, stdout="", stderr="x"))
     assert desktop.clipboard_write("t") == ("error: could not write the clipboard; another "
                                             "program may be holding it, try again")
 
@@ -110,7 +114,7 @@ def test_clipboard_write_timeout_is_an_error(monkeypatch):
     def boom(*a, **k):
         raise subprocess.TimeoutExpired("powershell", 10)
 
-    monkeypatch.setattr(desktop.subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
     assert desktop.clipboard_write("t") == ("error: writing to the clipboard timed out; another "
                                             "program may be holding it, try again")
 
@@ -119,7 +123,7 @@ def test_clipboard_write_os_error_is_an_error(monkeypatch):
     def boom(*a, **k):
         raise OSError("no powershell here")
 
-    monkeypatch.setattr(desktop.subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
     assert desktop.clipboard_write("t") == ("error: could not write the clipboard; another "
                                             "program may be holding it, try again")
 
@@ -193,7 +197,7 @@ def test_screenshot_passes_the_path_through_the_environment_never_the_script(tmp
         calls.append((cmd, kw))
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(desktop.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     target = tmp_path / "shot'; Remove-Item x; '.png"  # a path that would run as PowerShell if pasted in
     assert desktop.screenshot(str(target)) == f"saved {target}"
     cmd, kw = calls[0]
@@ -216,21 +220,21 @@ def test_screenshot_tier_follows_the_new_file_rules(tmp_path, monkeypatch):
 
 
 def test_screenshot_default_goes_to_pictures_iris_with_a_timestamp(tmp_path, monkeypatch):
-    class _Path(desktop.Path):
+    class _Path(Path):
         @classmethod
         def home(cls):
             return tmp_path
 
     monkeypatch.setattr(desktop, "Path", _Path)
     monkeypatch.setattr(tools, "_wall_now", lambda: datetime(2026, 10, 31, 14, 5))
-    monkeypatch.setattr(desktop.subprocess, "run",
-                        lambda *a, **k: subprocess.CompletedProcess(None, 0, stdout="", stderr=""))
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(["powershell"], 0, stdout="", stderr=""))
     assert desktop.screenshot() == f"saved {tmp_path / 'Pictures' / 'Iris' / 'screenshot-20261031-140500.png'}"
 
 
 def test_screenshot_failure_is_an_error(tmp_path, monkeypatch):
-    monkeypatch.setattr(desktop.subprocess, "run",
-                        lambda *a, **k: subprocess.CompletedProcess(None, 1, stdout="", stderr="x"))
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(["powershell"], 1, stdout="", stderr="x"))
     assert desktop.screenshot(str(tmp_path / "shot.png")) == "error: could not save a screenshot"
 
 
@@ -238,7 +242,7 @@ def test_screenshot_timeout_is_an_error(tmp_path, monkeypatch):
     def boom(*a, **k):
         raise subprocess.TimeoutExpired("powershell", 30)
 
-    monkeypatch.setattr(desktop.subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
     assert desktop.screenshot(str(tmp_path / "shot.png")) == "error: could not save a screenshot"
 
 
@@ -372,7 +376,7 @@ def test_open_app_starts_the_start_menu_shortcut(tmp_path, monkeypatch):
     menu = _menu(tmp_path, "Spotify.lnk")
     monkeypatch.setenv("IRIS_START_MENU", str(menu))
     started = []
-    monkeypatch.setattr(tools.os, "startfile", lambda name: started.append(name))
+    monkeypatch.setattr(os, "startfile", lambda name: started.append(name))
     assert tools.open_app("spotify") == "started Spotify"
     assert started == [str(menu / "Spotify.lnk")]
 
@@ -382,7 +386,7 @@ def test_open_app_falls_back_to_shell_execute_without_a_match(tmp_path, monkeypa
     menu.mkdir()  # empty: no shortcut for this name
     monkeypatch.setenv("IRIS_START_MENU", str(menu))
     started = []
-    monkeypatch.setattr(tools.os, "startfile", lambda name: started.append(name))
+    monkeypatch.setattr(os, "startfile", lambda name: started.append(name))
     assert tools.open_app("notepad") == "started 'notepad'"
     assert started == ["notepad"]
 
@@ -407,7 +411,7 @@ def test_close_window_is_confirm():
 
 def test_email_draft_opens_a_mailto_url(tmp_path, monkeypatch):
     opened = []
-    monkeypatch.setattr(desktop.os, "startfile", lambda url: opened.append(url))
+    monkeypatch.setattr(os, "startfile", lambda url: opened.append(url))
     out = desktop.email_draft(to="jay@example.com", subject="Hello there", body="Line one\nLine two")
     assert out == "opened a draft to jay@example.com; check it and press send yourself"
     assert opened == ["mailto:jay%40example.com?subject=Hello%20there&body=Line%20one%0ALine%20two"]
@@ -420,14 +424,14 @@ def test_email_draft_description_never_sends():
 
 def test_email_draft_cuts_the_body_at_1500_characters(monkeypatch):
     opened = []
-    monkeypatch.setattr(desktop.os, "startfile", lambda url: opened.append(url))
+    monkeypatch.setattr(os, "startfile", lambda url: opened.append(url))
     desktop.email_draft(to="j@x.com", subject="", body="a" * 2000)
     assert opened[0].endswith("body=" + "a" * 1500 + "...")
 
 
 def test_email_draft_keeps_a_body_of_exactly_1500_whole(monkeypatch):
     opened = []
-    monkeypatch.setattr(desktop.os, "startfile", lambda url: opened.append(url))
+    monkeypatch.setattr(os, "startfile", lambda url: opened.append(url))
     desktop.email_draft(to="j@x.com", subject="", body="a" * 1500)
     assert opened[0].endswith("body=" + "a" * 1500)
 
@@ -509,18 +513,18 @@ def test_capture_passes_the_rectangle_and_path_through_the_environment(monkeypat
         Path(kw["env"]["IRIS_SHOT_PATH"]).write_bytes(b"PNG")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(desktop.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     assert desktop._capture((-1920, 0, 3840, 1080)) == b"PNG"
     assert seen["IRIS_SHOT_RECT"] == "-1920,0,3840,1080"
     assert "$env:IRIS_SHOT_RECT" in desktop._LOOK_PS and "1600" in desktop._LOOK_PS
-    monkeypatch.setattr(desktop.subprocess, "run",
+    monkeypatch.setattr(subprocess, "run",
                         lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom"))
     assert desktop._capture((0, 0, 1, 1)) == b""
 
     def slow(cmd, **kw):
         raise subprocess.TimeoutExpired(cmd, 30)
 
-    monkeypatch.setattr(desktop.subprocess, "run", slow)
+    monkeypatch.setattr(subprocess, "run", slow)
     assert desktop._capture((0, 0, 1, 1)) == b""
 
 
@@ -529,20 +533,20 @@ def test_look_at_screen_asks_the_model_and_reports_failures(monkeypatch):
 
     _fake_mouse(monkeypatch)
     monkeypatch.setattr(desktop, "_capture", lambda area: b"PNG")
-    monkeypatch.setattr(desktop.llm, "see", lambda png, q: f"saw {png!r} for {q}")
+    monkeypatch.setattr(llm, "see", lambda png, q: f"saw {png!r} for {q}")
     assert desktop.look_at_screen("what is open?") == "saw b'PNG' for what is open?"
-    monkeypatch.setattr(desktop.llm, "see", lambda png, q: "")
+    monkeypatch.setattr(llm, "see", lambda png, q: "")
     assert desktop.look_at_screen("x") == "error: the model saw nothing it could describe"
 
     def http(png, q):
-        raise urllib.error.HTTPError("u", 400, "bad", None, None)
+        raise urllib.error.HTTPError("u", 400, "bad", HTTPMessage(), None)
 
     def down(png, q):
         raise urllib.error.URLError("refused")
 
-    monkeypatch.setattr(desktop.llm, "see", http)
+    monkeypatch.setattr(llm, "see", http)
     assert "may not read images" in desktop.look_at_screen("x")
-    monkeypatch.setattr(desktop.llm, "see", down)
+    monkeypatch.setattr(llm, "see", down)
     assert desktop.look_at_screen("x") == ("error: could not reach the model to look at the screen; "
                                            "is the model server running?")
     monkeypatch.setattr(desktop, "_capture", lambda area: b"")
@@ -553,10 +557,10 @@ def test_click_on_screen_maps_the_models_0_to_1000_point_onto_the_area(monkeypat
     m = _fake_mouse(monkeypatch)
     monkeypatch.setattr(desktop, "_area", lambda window: (100, 200, 1000, 800))
     monkeypatch.setattr(desktop, "_capture", lambda area: b"PNG")
-    monkeypatch.setattr(desktop.llm, "locate", lambda png, target: "500,250")
+    monkeypatch.setattr(llm, "locate", lambda png, target: "500,250")
     assert desktop.click_on_screen("the OK button").startswith("clicked 'the OK button' at (600, 400)")
     assert m.calls == [("pos", 600, 400), ("mouse", 2), ("mouse", 4)]
-    monkeypatch.setattr(desktop.llm, "locate", lambda png, target: "")
+    monkeypatch.setattr(llm, "locate", lambda png, target: "")
     assert desktop.click_on_screen("a unicorn") == "error: could not find 'a unicorn' on the screen"
     monkeypatch.setattr(desktop, "_capture", lambda area: b"")
     assert desktop.click_on_screen("x") == "error: could not capture the screen"

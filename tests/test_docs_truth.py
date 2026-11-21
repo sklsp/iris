@@ -19,7 +19,7 @@ def _command_words(text):
 
     Only a word that starts a backtick span, starts a code line, or follows `python -m ` counts: elsewhere an
     iris word is a path list (ruff check iris tests) or part of a longer name."""
-    words = set()
+    words: set[str] = set()
     for span in re.findall(r"`([^`\n]+)`", text):
         _add(words, span)
     for block in re.findall(r"```[^\n]*\n(.*?)```", text, flags=re.S):

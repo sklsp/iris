@@ -3,6 +3,7 @@ python-docx, python-pptx and openpyxl on tmp_path only."""
 
 import sys
 from datetime import date
+from typing import Any
 
 from docx import Document
 from openpyxl import Workbook, load_workbook
@@ -25,6 +26,12 @@ def _cfg(tmp_path, monkeypatch, text):
     monkeypatch.setenv("IRIS_CONFIG", str(cfg))
 
 
+def _style_name(p):
+    """The style name of a paragraph; python-docx types the style as optional, but a saved document always has one."""
+    assert p.style is not None
+    return p.style.name
+
+
 # --- make_document ---------------------------------------------------------------
 
 def test_make_document_makes_a_docx_with_title_and_markdown(tmp_path):
@@ -34,11 +41,11 @@ def test_make_document_makes_a_docx_with_title_and_markdown(tmp_path):
     assert office.make_document(str(p), "My Title", content) == f"made {p} (9 paragraphs)"
 
     paras = Document(str(p)).paragraphs
-    assert (paras[0].text, paras[0].style.name) == ("My Title", "Title")
-    assert [(q.text, q.style.name) for q in paras[1:4]] == [
+    assert (paras[0].text, _style_name(paras[0])) == ("My Title", "Title")
+    assert [(q.text, _style_name(q)) for q in paras[1:4]] == [
         ("One", "Heading 1"), ("Two", "Heading 2"), ("Three", "Heading 3")]
-    assert [(q.text, q.style.name) for q in paras[4:6]] == [("a bullet", "List Bullet"), ("another", "List Bullet")]
-    assert [(q.text, q.style.name) for q in paras[6:8]] == [("first", "List Number"), ("second", "List Number")]
+    assert [(q.text, _style_name(q)) for q in paras[4:6]] == [("a bullet", "List Bullet"), ("another", "List Bullet")]
+    assert [(q.text, _style_name(q)) for q in paras[6:8]] == [("first", "List Number"), ("second", "List Number")]
     assert (paras[8].text, paras[9].text) == ("plain line one plain line two", "after blank")
 
 
@@ -142,7 +149,7 @@ def test_make_presentation_without_python_pptx_says_install_the_extra(tmp_path, 
 
 def test_make_spreadsheet_makes_named_sheets_with_bold_gray_header(tmp_path):
     p = tmp_path / "data.xlsx"
-    sheets = [{"name": "A", "rows": [["h1", "h2"], ["x", 1]]}, {"name": "B", "rows": [["only"]]}]
+    sheets: list[dict[str, Any]] = [{"name": "A", "rows": [["h1", "h2"], ["x", 1]]}, {"name": "B", "rows": [["only"]]}]
     assert office.make_spreadsheet(str(p), sheets) == f"made {p} (2 sheets)"
 
     wb = load_workbook(str(p))

@@ -1,10 +1,11 @@
 """The confirm questions of the tools the main agent tests never call, and the credential check of important mode."""
 import json
+from typing import cast
 
 from iris import agent as agent_mod
 from iris import browser as browser_mod
 from iris.agent import Agent, Journal
-from iris.llm import Reply, ToolCall
+from iris.llm import LMStudio, Reply, ToolCall
 from iris.tools import CONFIRM, NEVER, Tool
 
 
@@ -31,10 +32,20 @@ def answer(text):
 def ask(tmp_path, name, args, tier=CONFIRM):
     """One request in which the model calls the tool once; returns (the questions asked, what ran)."""
     ran = []
-    tools = {name: Tool(name, "", {}, [], tier, lambda **kw: ran.append((name, kw)) or f"{name} done")}
+
+    def run_tool(**kw):
+        ran.append((name, kw))
+        return f"{name} done"
+
+    tools = {name: Tool(name, "", {}, [], tier, run_tool)}
     llm = ScriptedLLM(call(name, **args), answer("Done."))
     asked = []
-    Agent(llm, lambda q: asked.append(q) or True, Journal(tmp_path / "j.jsonl"), tools).handle(f"do {name}")
+
+    def confirm(q):
+        asked.append(q)
+        return True
+
+    Agent(cast(LMStudio, llm), confirm, Journal(tmp_path / "j.jsonl"), tools).handle(f"do {name}")
     return asked, ran
 
 
@@ -147,7 +158,8 @@ def test_out_of_steps_survives_a_failing_retry_without_tools(tmp_path):
     # the journal gets an llm_error event, and Iris has nothing extra to say
     tools = {"calculate": Tool("calculate", "", {}, [], CONFIRM, lambda **kw: "2")}
     journal = Journal(tmp_path / "j.jsonl")
-    agent_obj = Agent(_FailingRetryLLM(call("calculate", expression="1+1")), lambda q: True, journal, tools)
+    llm = cast(LMStudio, _FailingRetryLLM(call("calculate", expression="1+1")))
+    agent_obj = Agent(llm, lambda q: True, journal, tools)
     out = agent_obj._out_of_steps([t.schema() for t in tools.values()])
     assert isinstance(out, str) and out == ""
     events = [json.loads(line) for line in (tmp_path / "j.jsonl").read_text(encoding="utf-8").splitlines()]

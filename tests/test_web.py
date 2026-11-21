@@ -1,7 +1,9 @@
 """Tests for iris.web.http_get with a fake urlopen (no network)."""
 
+import io
 import urllib.error
 import urllib.request
+from http.client import HTTPMessage
 from pathlib import Path
 
 import pytest
@@ -55,12 +57,12 @@ def test_a_redirect_to_a_local_address_is_refused(target):
     handler = web._redirect_handler()()  # _redirect_handler returns the lazily built class; this is an instance of it
     req = urllib.request.Request("https://example.com/")
     with pytest.raises(ValueError):
-        handler.redirect_request(req, None, 302, "Found", {}, target)
+        handler.redirect_request(req, io.BytesIO(), 302, "Found", HTTPMessage(), target)
 
 
 def test_a_redirect_to_a_public_address_is_followed():
     req = urllib.request.Request("https://example.com/")
-    new = web._redirect_handler()().redirect_request(req, None, 302, "Found", {}, "https://example.org/page")
+    new = web._redirect_handler()().redirect_request(req, io.BytesIO(), 302, "Found", HTTPMessage(), "https://example.org/page")
     assert new is not None and new.full_url == "https://example.org/page"
 
 
@@ -481,7 +483,7 @@ def test_a_name_that_does_not_resolve_is_left_to_urlopen(monkeypatch, fake_urlop
 
 def test_read_text_keeps_the_page_after_options_without_end_tags():
     html = "<html><title>T</title><body><select><option>One<option>Two</select><p>After the menu</p></body></html>"
-    assert web.read_text("u", get=lambda u: (200, "text/html", html)) == "Title: T\nAfter the menu"
+    assert web.read_text("u", get=lambda u: ("https://example.com/", "text/html", html)) == "Title: T\nAfter the menu"
 
 
 _REAL_RESOLVE = web._resolve  # captured at import time, before conftest fakes it for the other tests
@@ -509,7 +511,7 @@ def test_web_read_after_a_404_says_to_search_instead_of_guessing(monkeypatch):
     from iris import tools
 
     def boom(url, max_bytes=1024 * 1024, timeout=15.0):
-        raise urllib.error.HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
+        raise urllib.error.HTTPError(url, 404, "Not Found", hdrs=HTTPMessage(), fp=None)
 
     monkeypatch.setattr(web, "http_get", boom)
     result = tools.web_read("https://www.justwatch.com/nl/film/the-shining-1980")
@@ -522,7 +524,7 @@ def test_web_read_after_a_410_says_the_same(monkeypatch):
     from iris import tools
 
     def boom(url, max_bytes=1024 * 1024, timeout=15.0):
-        raise urllib.error.HTTPError(url, 410, "Gone", hdrs=None, fp=None)
+        raise urllib.error.HTTPError(url, 410, "Gone", hdrs=HTTPMessage(), fp=None)
 
     monkeypatch.setattr(web, "http_get", boom)
     result = tools.web_read("http://example.com/gone")
@@ -534,7 +536,7 @@ def test_web_read_after_a_429_says_to_read_another_result(monkeypatch):
     from iris import tools
 
     def boom(url, max_bytes=1024 * 1024, timeout=15.0):
-        raise urllib.error.HTTPError(url, 429, "Too Many Requests", hdrs=None, fp=None)
+        raise urllib.error.HTTPError(url, 429, "Too Many Requests", hdrs=HTTPMessage(), fp=None)
 
     monkeypatch.setattr(web, "http_get", boom)
     result = tools.web_read("http://example.com/busy")
@@ -546,7 +548,7 @@ def test_web_read_other_http_errors_are_plain(monkeypatch):
     from iris import tools
 
     def boom(url, max_bytes=1024 * 1024, timeout=15.0):
-        raise urllib.error.HTTPError(url, 500, "Server Error", hdrs=None, fp=None)
+        raise urllib.error.HTTPError(url, 500, "Server Error", hdrs=HTTPMessage(), fp=None)
 
     monkeypatch.setattr(web, "http_get", boom)
     assert tools.web_read("http://example.com/broken") == "error: HTTP Error 500: Server Error"

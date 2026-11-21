@@ -3,11 +3,13 @@
 import os
 import tomllib
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from iris import __version__, config, registry
 from iris.agent import Agent, Journal, system_prompt
+from iris.llm import LMStudio
 from iris.tools import TOOLS
 
 
@@ -54,7 +56,7 @@ class _LLM:
 def test_agent_asks_for_its_tools_on_every_request(tmp_path):
     offered = [{"a": TOOLS["calculate"]}]
     llm = _LLM()
-    agent = Agent(llm, lambda q: True, Journal(tmp_path / "j.jsonl"), lambda: offered[-1])
+    agent = Agent(cast(LMStudio, llm), lambda q: True, Journal(tmp_path / "j.jsonl"), lambda: offered[-1])
     agent.handle("one")
     offered.append({"a": TOOLS["calculate"], "b": TOOLS["timer_list"]})
     agent.handle("two")

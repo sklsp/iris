@@ -3,6 +3,7 @@
 import json
 
 import iris.weather as w
+import iris.web as iweb
 from iris import tools
 
 GEO = {"results": [{"name": "Rotterdam", "latitude": 51.9, "longitude": 4.48}]}
@@ -29,7 +30,7 @@ def _fake_http_get(monkeypatch):
             return url, "application/json", json.dumps(GEO)
         return url, "application/json", json.dumps(FORECAST)
 
-    monkeypatch.setattr(w.web, "http_get", fake)
+    monkeypatch.setattr(iweb, "http_get", fake)
     return seen
 
 
@@ -70,7 +71,7 @@ def test_no_place_and_no_configured_city_asks_for_one(tmp_path, monkeypatch):
     def fake(url, timeout=15, max_bytes=2_000_000):
         raise AssertionError("no network call may be made without a place")
 
-    monkeypatch.setattr(w.web, "http_get", fake)
+    monkeypatch.setattr(iweb, "http_get", fake)
     assert w.weather() == "error: say which place, or set city in config.toml"
 
 
@@ -86,7 +87,7 @@ def test_unknown_place_is_an_error(monkeypatch):
             return url, "application/json", "{}"  # no results key
         raise AssertionError("the forecast must not be asked for an unknown place")
 
-    monkeypatch.setattr(w.web, "http_get", fake)
+    monkeypatch.setattr(iweb, "http_get", fake)
     assert w.weather("Xyzzyville") == "error: no place called 'Xyzzyville'"
 
 
@@ -100,7 +101,7 @@ def test_a_network_failure_is_an_error(monkeypatch):
     def fake(url, timeout=15, max_bytes=2_000_000):
         raise OSError("connection refused")
 
-    monkeypatch.setattr(w.web, "http_get", fake)
+    monkeypatch.setattr(iweb, "http_get", fake)
     assert w.weather("Rotterdam") == "error: could not reach the weather service"
 
 
@@ -110,7 +111,7 @@ def test_a_forecast_key_error_is_an_error(monkeypatch):
             return url, "application/json", json.dumps(GEO)
         raise AssertionError("the forecast is faked; no network call may be made")
 
-    monkeypatch.setattr(w.web, "http_get", fake)
+    monkeypatch.setattr(iweb, "http_get", fake)
 
     def broken(lat, lon, days):
         raise KeyError("current")
@@ -125,7 +126,7 @@ def test_a_forecast_os_error_is_an_error(monkeypatch):
             return url, "application/json", json.dumps(GEO)
         raise AssertionError("the forecast is faked; no network call may be made")
 
-    monkeypatch.setattr(w.web, "http_get", fake)
+    monkeypatch.setattr(iweb, "http_get", fake)
 
     def broken(lat, lon, days):
         raise OSError("connection reset")

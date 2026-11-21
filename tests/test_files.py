@@ -109,7 +109,7 @@ def test_find_files_stops_after_scanning_20000_entries(tmp_path, monkeypatch):
     def walk(root):
         yield (str(root), [], [f"n{i:05d}.dat" for i in range(20_000)])
 
-    monkeypatch.setattr(files.os, "walk", walk)
+    monkeypatch.setattr(os, "walk", walk)
     assert files.find_files("zzz") == "No files named zzz found.\n[stopped after scanning 20000 entries]"
 
 

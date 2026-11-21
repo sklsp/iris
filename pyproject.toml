@@ -60,7 +60,8 @@ ignore = [
 "installer/dlls.py" = ["PERF401"]  # protected file; fix by hand
 
 [tool.mypy]
-files = ["iris"]
+files = ["iris", "tests"]
+exclude = ["tests/fixtures/"]
 python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
@@ -83,6 +84,33 @@ disallow_incomplete_defs = false
 no_implicit_reexport = false
 strict_equality = false
 extra_checks = false
+
+[[tool.mypy.overrides]]
+# annotating 2400 test functions is not the goal
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+# not yet typed; each run removes some
+module = [
+    "tests.test_tier_lock",
+    "tests.test_skills",
+    "tests.test_policy",
+    "tests.test_safety",
+    "tests.test_agent",
+    "tests.test_voice",
+    "tests.test_app",
+    "tests.test_desktop",
+    "tests.test_overlay",
+    "tests.test_voice_behaviour",
+    "tests.test_packs",
+    "tests.test_browser_branches",
+    "tests.test_voice_branches",
+    "tests.test_browser",
+]
+ignore_errors = true
 
 [tool.pytest.ini_options]
 # a deprecated call in Iris's own code fails now, not when a new Python removes it

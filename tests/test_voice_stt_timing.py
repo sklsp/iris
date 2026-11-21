@@ -1,7 +1,9 @@
 """VoiceSession._transcribe timing: the whole call lands in last_stt_ms, a second call overwrites it,
 and an empty transcript still sets it. No device is opened and no model is loaded: _whisper is faked."""
 
-from iris.voice import VoiceSession
+from typing import cast
+
+from iris.voice import Speaker, VoiceSession
 
 
 class _Seg:
@@ -37,7 +39,7 @@ class _StubSpeaker:
 
 
 def _session(step=1.0, segments=()):
-    s = VoiceSession(speaker=_StubSpeaker(), clock=_StepClock(step))
+    s = VoiceSession(speaker=cast(Speaker, _StubSpeaker()), clock=_StepClock(step))
     s._whisper = _FakeWhisper(segments)  # no device, no model: the timing still covers a real load when it happens
     return s
 

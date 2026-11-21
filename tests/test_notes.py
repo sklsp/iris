@@ -4,6 +4,7 @@ Reminders in ~/.iris/reminders.json (IRIS_REMINDERS overrides): set, list, cance
 
 import json
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -173,7 +174,7 @@ def test_describe_falls_back_to_the_query_when_several_match(notes_file):
 
 def test_default_path_is_under_home(monkeypatch, tmp_path):
     monkeypatch.delenv("IRIS_NOTES", raising=False)
-    monkeypatch.setattr(notes.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
     assert notes._path() == tmp_path / ".iris" / "notes.md"
 
 
@@ -314,7 +315,7 @@ def test_start_reminders_schedules_future_and_announces_missed(reminders_file):
     reminders_file.write_text(json.dumps([
         {"id": 1, "due": "2026-10-31T08:00", "text": "old thing"},
         {"id": 2, "due": "2026-10-31T10:00", "text": "later thing"}]), encoding="utf-8")
-    said = []
+    said: list[str] = []
     sched = _Sched()
     reminders.start_reminders(said.append, now=_now_905, schedule=sched)
     assert said == ["Missed reminder: old thing"]  # due while Iris was off: announced at once
@@ -327,7 +328,7 @@ def test_start_reminders_schedules_future_and_announces_missed(reminders_file):
 
 
 def test_start_reminders_with_nothing_pending_does_nothing(reminders_file):
-    said = []
+    said: list[str] = []
     sched = _Sched()
     reminders.start_reminders(said.append, now=_now_905, schedule=sched)
     assert said == [] and sched.calls == []
@@ -335,7 +336,7 @@ def test_start_reminders_with_nothing_pending_does_nothing(reminders_file):
 
 def test_cancelled_reminder_never_announces(reminders_file):
     reminders_file.write_text(json.dumps([{"id": 1, "due": "2026-10-31T10:00", "text": "buy milk"}]), encoding="utf-8")
-    said = []
+    said: list[str] = []
     sched = _Sched()
     reminders.start_reminders(said.append, now=_now_905, schedule=sched)
     assert reminders.reminder_cancel(1).startswith("cancelled")
@@ -344,7 +345,7 @@ def test_cancelled_reminder_never_announces(reminders_file):
 
 
 def test_reminder_set_while_running_schedules_at_once(reminders_file, monkeypatch):
-    said = []
+    said: list[str] = []
     sched = _Sched()
     reminders.start_reminders(said.append, now=_now_905, schedule=sched)
     monkeypatch.setattr(reminders, "_wall_now", _now_905)
@@ -363,7 +364,7 @@ def test_reminder_tiers_pin_safe():
 
 def test_reminder_default_path_is_under_home(reminders_file, monkeypatch, tmp_path):
     monkeypatch.delenv("IRIS_REMINDERS", raising=False)
-    monkeypatch.setattr(reminders.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
     assert reminders._path() == tmp_path / ".iris" / "reminders.json"
 
 
@@ -413,10 +414,15 @@ def test_a_reminder_months_ahead_waits_in_steps_and_can_be_cancelled(monkeypatch
     t = reminders._start_thread(0.12, lambda: fired.append(1))
     t.join(2)
     assert fired == [1]  # a few short steps, then the call
-    waits = []
+    waits: list[float] = []
     long = reminders._Wait(60 * 86_400, lambda: fired.append(2))  # 60 days: over TIMEOUT_MAX on Windows
     real_wait = long.finished.wait
-    long.finished.wait = lambda timeout=None: waits.append(timeout) or real_wait(0.01)
+
+    def stepped_wait(timeout=None):
+        waits.append(timeout)
+        return real_wait(0.01)
+
+    monkeypatch.setattr(long.finished, "wait", stepped_wait)
     long.start()
     time.sleep(0.05)
     long.cancel()

@@ -51,8 +51,11 @@ def test_seconds_until_counts_a_daylight_saving_change():
     now = datetime(2026, 3, 28, 12, 0)
     due = datetime(2026, 3, 29, 12, 0)
     assert reminders._seconds_until(due, now) == (due.astimezone() - now.astimezone()).total_seconds()
-    if now.astimezone().utcoffset() != due.astimezone().utcoffset():
-        shift = (due.astimezone().utcoffset() - now.astimezone().utcoffset()).total_seconds()
+    off_now = now.astimezone().utcoffset()
+    off_due = due.astimezone().utcoffset()
+    assert off_now is not None and off_due is not None  # astimezone() always returns an aware datetime
+    if off_now != off_due:
+        shift = (off_due - off_now).total_seconds()
         assert reminders._seconds_until(due, now) == 86400.0 - shift
 
 
@@ -60,7 +63,7 @@ def test_seconds_until_counts_a_daylight_saving_change():
 
 
 def test_reminder_set_passes_the_seconds_until_value_to_the_schedule(reminders_file, monkeypatch):
-    said = []
+    said: list[str] = []
     sched = _Sched()
     reminders.start_reminders(said.append, now=_now_before_spring, schedule=sched)
     monkeypatch.setattr(reminders, "_wall_now", _now_before_spring)

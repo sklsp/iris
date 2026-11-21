@@ -22,6 +22,7 @@
 - `iris shortcut` now puts an `Iris.lnk` on your desktop that starts the app with its icon and no console; a second start just brings the running window forward, and any older Iris.cmd is removed.
 - ruff now also checks the SIM, PIE, C4, RET and PERF rule sets on iris/ and tests/, and every finding was fixed without changing behaviour.
 - ruff now also checks the PTH and RUF rule sets on iris/ and tests/, and every finding was fixed without changing behaviour; the protected files keep their per-file ignores for the new rules too.
+- Tests are type-checked by mypy as well; 14 test modules still sit on the ignore list until they are typed.
 
 ## 1.0.0 (release date): steady, safer and measured
 

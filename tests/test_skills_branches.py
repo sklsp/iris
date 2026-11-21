@@ -39,7 +39,7 @@ def test_start_build_without_a_builder_starts_the_hub(monkeypatch):
         return "started hub"
 
     mod = types.ModuleType("iris.autopilot")
-    mod.start_in_hub = start_in_hub
+    monkeypatch.setattr(mod, "start_in_hub", start_in_hub, raising=False)
     monkeypatch.setitem(sys.modules, "iris.autopilot", mod)
     folder = skills.save_plan("Say hi through the hub", "hub_skill", "safe", "A run() that greets.", set())
     assert skills.start_build("hub_skill") == "started hub"

@@ -1,11 +1,15 @@
 """Web pages through the DevTools Protocol, against a fake browser: no real browser, socket or network."""
 
+import http.client
 import json
+import os
+import threading
 import time
 import urllib.error
-from typing import ClassVar
+from typing import ClassVar, cast
 
 import pytest
+import websocket
 
 from iris import browser, tools
 
@@ -111,7 +115,8 @@ def test_a_slow_answer_keeps_the_socket_so_the_browser_does_not_ask_allow_again(
             raise TimeoutError("timed out")
 
     c = object.__new__(browser.Connection)
-    c.ws, c._id, c._slow, c._lock = SlowSocket(), 0, (TimeoutError,), browser.threading.Lock()
+    slow = (TimeoutError, websocket.WebSocketTimeoutException)  # the real default in Connection.__init__
+    c.ws, c._id, c._slow, c._lock = SlowSocket(), 0, slow, threading.Lock()
     monkeypatch.setattr(browser, "_conn", c)
     monkeypatch.setattr(browser, "_ws_url", lambda: pytest.fail("reconnected"))
     with pytest.raises(browser.BrowserError, match=r"did not answer Runtime.evaluate within 2 s"):
@@ -193,14 +198,14 @@ def test_the_connection_comes_from_devtoolsactiveport(tmp_path, monkeypatch):
         browser._ws_url()
     (tmp_path / "DevToolsActivePort").write_text("9555\n/devtools/browser/abc\n", encoding="utf-8")
 
-    def http(code):
+    def _fake_http(code):
         def urlopen(url, timeout=None):
-            raise urllib.error.HTTPError(url, code, "x", None, None)
+            raise urllib.error.HTTPError(url, code, "x", http.client.HTTPMessage(), None)
         return urlopen
 
-    monkeypatch.setattr("urllib.request.urlopen", http(404))
+    monkeypatch.setattr("urllib.request.urlopen", _fake_http(404))
     assert browser._ws_url() == "ws://127.0.0.1:9555/devtools/browser/abc"
-    monkeypatch.setattr("urllib.request.urlopen", http(403))
+    monkeypatch.setattr("urllib.request.urlopen", _fake_http(403))
     with pytest.raises(browser.BrowserError, match="click Allow"):
         browser._ws_url()
 
@@ -218,15 +223,22 @@ def test_one_yes_covers_the_site_and_the_question_names_the_button(fake, tmp_pat
         def chat(self, messages, tools_):
             return next(replies)
 
-    asked = []
-    a = Agent(LLM(), lambda q: asked.append(q) or True, Journal(tmp_path / "j.jsonl"), dict(tools.TOOLS))
+    from iris.llm import LMStudio  # only for the cast below; no real model is loaded
+
+    asked: list[str] = []
+
+    def ask(q):
+        asked.append(q)
+        return True
+
+    a = Agent(cast(LMStudio, LLM()), ask, Journal(tmp_path / "j.jsonl"), dict(tools.TOOLS))
     a.handle("Zoek een horrorfilm op Netflix voor mij")
     assert asked == ["Klik op 'Zoeken' op www.netflix.com? Een ja geldt voor alle klikken en typen in "
                      "www.netflix.com tijdens deze opdracht."]
 
 
 def test_search_runs_in_a_background_tab_that_is_closed_after(fake, monkeypatch):
-    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
     assert browser.search("f1 winnaar") == fake.search["results"]
     create = next(c[1] for c in fake.calls if c[0] == "Target.createTarget")
     assert create["background"] is True and "q=f1+winnaar" in create["url"]
@@ -234,7 +246,7 @@ def test_search_runs_in_a_background_tab_that_is_closed_after(fake, monkeypatch)
 
 
 def test_search_stops_at_a_human_check_and_still_closes_the_tab(fake, monkeypatch):
-    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
     fake.search = {"human": True, "results": []}
     with pytest.raises(browser.BrowserError, match="human check"):
         browser.search("f1")
@@ -242,14 +254,14 @@ def test_search_stops_at_a_human_check_and_still_closes_the_tab(fake, monkeypatc
 
 
 def test_results_that_mention_a_captcha_are_still_results(fake, monkeypatch):
-    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
     fake.search = {"human": True, "results": [{"title": "Why reCAPTCHA fails", "url": "https://x.example/captcha",
                                                "snippet": "When the captcha says you are not a robot..."}]}
     assert browser.search("why does recaptcha fail")[0]["title"] == "Why reCAPTCHA fails"
 
 
 def test_web_search_uses_the_browser_and_falls_back_to_duckduckgo(fake, monkeypatch):
-    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
     assert "1. Uitslag GP Mexico\n   https://f1.example/mexico\n   Verstappen won." in tools.web_search("f1")
 
     def no_browser(query):
@@ -264,7 +276,7 @@ def test_web_search_uses_the_browser_and_falls_back_to_duckduckgo(fake, monkeypa
 
 
 def test_open_url_returns_the_new_page_so_no_read_step_is_needed(fake, monkeypatch):
-    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
     out = tools.open_url("https://www.netflix.com/search?q=horror")
     assert out.startswith("opened https://www.netflix.com/search?q=horror\n\nTab: Home - Netflix")
     assert '[2] button "Zoeken"' in out and browser.item(2)["name"] == "Zoeken"  # the tiers know the page too
@@ -273,13 +285,13 @@ def test_open_url_returns_the_new_page_so_no_read_step_is_needed(fake, monkeypat
 
 
 def test_open_url_without_browser_access_opens_the_default_browser(monkeypatch):
-    opened = []
+    opened: list[str] = []
 
     def no_browser(url):
         raise browser.BrowserError("not allowed")
 
     monkeypatch.setattr(browser, "open_page", no_browser)
-    monkeypatch.setattr(tools.os, "startfile", opened.append, raising=False)
+    monkeypatch.setattr(os, "startfile", opened.append, raising=False)
     assert tools.open_url("https://example.com/") == "opened https://example.com/"
     assert opened == ["https://example.com/"]
     with pytest.raises(ValueError, match="only http and https"):
@@ -287,7 +299,7 @@ def test_open_url_without_browser_access_opens_the_default_browser(monkeypatch):
 
 
 def test_in_voice_mode_a_request_waits_briefly_for_the_watcher_instead_of_a_minute(monkeypatch):
-    monkeypatch.setattr(browser, "_watching", browser.threading.Event())
+    monkeypatch.setattr(browser, "_watching", threading.Event())
     browser._watching.set()
     monkeypatch.setattr(browser, "WATCH_WAIT", 0.2)
     monkeypatch.setattr(browser, "_ws_url", lambda: pytest.fail("a request must not connect itself"))
@@ -298,9 +310,11 @@ def test_in_voice_mode_a_request_waits_briefly_for_the_watcher_instead_of_a_minu
 def test_the_watcher_connects_says_the_question_is_waiting_and_reconnects_after_a_restart(monkeypatch):
     import threading
 
-    made, said, stop = [], [], threading.Event()
+    made = []
+    said: list[str] = []
+    stop = threading.Event()
 
-    class Slow:  # a handshake that waits for the user's click
+    class Slow(browser.Connection):  # a handshake that waits for the user's click
         def __init__(self, url, handshake=60):
             time.sleep(0.15)
             self.alive = True
@@ -375,7 +389,7 @@ def test_a_watcher_started_without_a_stop_is_remembered_so_the_test_can_end_it(b
 
 
 def test_a_second_page_on_the_same_site_reuses_the_tab_iris_opened(fake, monkeypatch):
-    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
     tools.open_url("https://www.netflix.com/search?q=weapons")
     out = tools.open_url("https://www.netflix.com/search?q=sinners")
     methods = [c[0] for c in fake.calls]
@@ -388,7 +402,7 @@ def test_a_second_page_on_the_same_site_reuses_the_tab_iris_opened(fake, monkeyp
 
 
 def test_the_users_own_tab_of_a_site_is_never_taken_over(fake, monkeypatch):
-    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
     tools.open_url("https://www.netflix.com/search?q=horror")  # tab A is the user's own Netflix tab
     assert not [c for c in fake.calls if c[0] == "Page.navigate"]
     assert browser._opened == {"www.netflix.com": "S"}

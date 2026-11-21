@@ -1,0 +1,2 @@
+- [x] Q1. typing: test_browser and test_voice_branches (2440 passed in 108.96s (0:01:48))
+- [ ] Q2. typing: test_browser_branches and test_packs

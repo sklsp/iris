@@ -100,7 +100,6 @@ module = [
     "tests.test_policy",
     "tests.test_safety",
     "tests.test_agent",
-    "tests.test_voice",
 ]
 ignore_errors = true
 

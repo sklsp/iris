@@ -111,7 +111,7 @@ class Journal:
         file is kept; a failed size check or move must never lose an entry, so log on as before."""
         try:
             if self.path.exists() and self.path.stat().st_size >= self.MAX_BYTES:
-                os.replace(self.path, self.path.with_name(self.path.name + ".1"))
+                self.path.replace(self.path.with_name(self.path.name + ".1"))
         except OSError:  # the entry matters more than a small file; append to the current one instead
             pass
 

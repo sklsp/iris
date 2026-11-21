@@ -219,7 +219,7 @@ class VoiceLoop:
             path = self.log_path
             path.parent.mkdir(parents=True, exist_ok=True)
             if path.exists() and path.stat().st_size > LOG_MAX_BYTES:
-                os.replace(path, path.with_name(path.name + ".1"))
+                path.replace(path.with_name(path.name + ".1"))
             event = self._event_factory()
             env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONUTF8": "1", "IRIS_STOP_EVENT": event.name}
             with path.open("ab") as log:  # the child keeps its own handle
@@ -483,7 +483,7 @@ def log_when_windowless() -> Path | None:
     path = log_dir() / "app.log"
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and path.stat().st_size > LOG_MAX_BYTES:
-        os.replace(path, path.with_name(path.name + ".1"))
+        path.replace(path.with_name(path.name + ".1"))
     stream = path.open("a", encoding="utf-8", errors="replace", buffering=1)
     sys.stdout = sys.stdout or stream
     sys.stderr = sys.stderr or stream

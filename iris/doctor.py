@@ -109,7 +109,7 @@ def checks(payload: dict[str, Any] | None = None) -> list[tuple[bool, str]]:
             out.append((piper and not missing, "speech: Piper " + line))
         elif engine == "kokoro":
             have = importlib.util.find_spec("kokoro_onnx") is not None and all(
-                os.path.exists(f) for f in (v.KOKORO_MODEL, v.KOKORO_VOICES))
+                Path(f).exists() for f in (v.KOKORO_MODEL, v.KOKORO_VOICES))
             out.append((have, "speech: Kokoro" if have else
                         f"speech: Kokoro needs pip install -e .[tts] and its two model files in {v.KOKORO_DIR}; "
                         "SAPI speaks instead"))

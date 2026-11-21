@@ -333,7 +333,7 @@ def set_iris_model(body: dict[str, Any]) -> dict[str, Any]:
     data["model"] = model
     tmp = path.with_name(path.name + ".tmp")  # write aside, then swap: a crash never leaves half a file
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    tmp.replace(path)
     _log_model_event("select", model, "ok")
     return iris_model_payload()
 

@@ -112,7 +112,7 @@ def _keep_unreadable(p: Path) -> None:
             return
     except (ValueError, OSError):
         pass
-    os.replace(p, p.with_name(f"{p.name}.unreadable-{datetime.now():%Y%m%d-%H%M%S}"))
+    p.replace(p.with_name(f"{p.name}.unreadable-{datetime.now():%Y%m%d-%H%M%S}"))
 
 
 def _write(path: Path | None, rows: list[dict[str, Any]]) -> None:
@@ -121,7 +121,7 @@ def _write(path: Path | None, rows: list[dict[str, Any]]) -> None:
     _keep_unreadable(p)
     tmp = p.with_name(p.name + ".tmp")  # write aside, then swap: a crash mid-write never empties the list
     tmp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, p)
+    tmp.replace(p)
 
 
 def _parse_when(when: str, now: datetime) -> datetime | None:

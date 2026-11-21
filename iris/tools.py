@@ -290,7 +290,7 @@ def followups(today: str = "") -> str:
     day = today or date.today().isoformat()
     done = {"klant", "geen interesse", "niet benaderen"}
     due = []
-    with open(file, encoding="utf-8-sig") as f:
+    with file.open(encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             nxt = (row.get("next") or "").strip()
             status = (row.get("status") or "").strip()

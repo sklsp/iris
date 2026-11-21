@@ -223,7 +223,7 @@ def launch() -> Overlay:
     log_path = config.config_path().parent / "overlay.log"
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_path, "a", encoding="utf-8") as log:  # the child keeps its own handle
+        with log_path.open("a", encoding="utf-8") as log:  # the child keeps its own handle
             proc = subprocess.Popen([sys.executable, "-m", "iris.overlay"], stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=log, text=True, encoding="ascii",
                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))

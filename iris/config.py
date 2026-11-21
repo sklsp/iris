@@ -133,7 +133,7 @@ def log_crash(where: str, exc: BaseException) -> Path:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists() and path.stat().st_size > CRASH_LOG_MAX_BYTES:
-            os.replace(path, path.with_name(path.name + ".1"))
+            path.replace(path.with_name(path.name + ".1"))
         with path.open("a", encoding="utf-8", errors="replace") as f:
             f.write(f"--- {datetime.now():%Y-%m-%d %H:%M:%S} {where}\n")
             f.write("".join(traceback.format_exception(exc)))

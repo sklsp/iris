@@ -12,6 +12,7 @@ import re
 import struct
 import sys
 import traceback
+from pathlib import Path
 
 FAILED = 0xFFFFFFFF
 FIRST_VOICE = "Hallo, ik ben Iris. Hello, I am Iris, and I speak Dutch and English."
@@ -60,8 +61,8 @@ def main(voice: str) -> None:
     dtype = next(tts.base_lm.parameters()).dtype
     tts.base_lm.setup_cache(1, CACHE, tts.device, dtype)
     tts.residual_lm.setup_cache(1, CACHE, tts.device, dtype)
-    if not os.path.exists(voice):
-        os.makedirs(os.path.dirname(voice) or ".", exist_ok=True)
+    if not Path(voice).exists():
+        Path(voice).parent.mkdir(parents=True, exist_ok=True)
         sf.write(voice, model.generate(text=FIRST_VOICE, inference_timesteps=steps), rate)
     model.generate(text="Klaar.", inference_timesteps=steps, reference_wav_path=voice)  # compile before answer one
     out.write(struct.pack("<I", rate))

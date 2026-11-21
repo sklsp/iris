@@ -227,9 +227,9 @@ def test_read_settings_reads_a_replaced_file_of_the_same_size_and_time(tmp_path,
     llm._cache = None
     stamp = path.stat().st_mtime_ns
     assert llm.read_settings() == {"model": "aaaa"}
-    tmp = tmp_path / "settings.json.tmp"  # the settings page saves through a temp file and os.replace
+    tmp = tmp_path / "settings.json.tmp"  # the settings page saves through a temp file and Path.replace
     tmp.write_text(json.dumps({"model": "bbbb"}), encoding="utf-8")
-    os.replace(tmp, path)
+    tmp.replace(path)
     os.utime(path, ns=(stamp, stamp))
     assert llm.read_settings() == {"model": "bbbb"}
 

@@ -51,8 +51,8 @@ VAD_THRESHOLD = float(os.environ.get("IRIS_VAD_THRESHOLD", 0.01))  # RMS below t
 # for half the download. Nothing is downloaded automatically: drop the two files in ~/.iris by hand
 # and Iris uses them, otherwise it keeps speaking with Windows SAPI.
 KOKORO_DIR = os.environ.get("IRIS_KOKORO_DIR", str(Path.home() / ".iris"))
-KOKORO_MODEL = os.path.join(KOKORO_DIR, "kokoro-v1.0.fp16.onnx")
-KOKORO_VOICES = os.path.join(KOKORO_DIR, "voices-v1.0.bin")
+KOKORO_MODEL = str(Path(KOKORO_DIR) / "kokoro-v1.0.fp16.onnx")  # Kokoro takes string paths
+KOKORO_VOICES = str(Path(KOKORO_DIR) / "voices-v1.0.bin")
 KOKORO_VOICE = os.environ.get("IRIS_KOKORO_VOICE", "af_heart")
 _KOKORO_FILES = {
     "kokoro-v1.0.fp16.onnx": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.fp16.onnx",
@@ -156,7 +156,7 @@ class WakeWord:
         if self.name in openwakeword.MODELS:
             path = openwakeword.MODELS[self.name]["model_path"]
         onnx = path.replace(".tflite", ".onnx")
-        if not os.path.exists(onnx):
+        if not Path(onnx).exists():
             if self.name not in openwakeword.MODELS:  # your own model file: download_models([]) would fetch them all
                 raise FileNotFoundError(f"no wake word model at {onnx}; check wakeword in config.toml")
             print(f"Downloading wake word model {self.name} (first run only)...")
@@ -693,7 +693,7 @@ def _claim(path: Path, done: Path) -> Path | None:
     done.mkdir(exist_ok=True)
     target = done / path.name
     try:
-        os.replace(path, target)
+        path.replace(target)
     except OSError:
         return None
     try:
@@ -1007,7 +1007,7 @@ class Speaker:
         if self._kokoro is None:
             from kokoro_onnx import Kokoro
 
-            missing = [os.path.basename(p) for p in (KOKORO_MODEL, KOKORO_VOICES) if not os.path.exists(p)]
+            missing = [Path(p).name for p in (KOKORO_MODEL, KOKORO_VOICES) if not Path(p).exists()]
             if missing:
                 urls = " ".join(_KOKORO_FILES[n] for n in missing if n in _KOKORO_FILES)
                 raise FileNotFoundError(f"missing {', '.join(missing)} in {KOKORO_DIR}; get them from {urls}")

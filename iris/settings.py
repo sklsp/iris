@@ -268,7 +268,7 @@ def write(updates: dict[str, Any], path: Path | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(out, encoding="utf-8")
-    os.replace(tmp, path)
+    tmp.replace(path)
     config.forget()  # a rewrite of the same size within one tick would keep the old cache key
 
 

@@ -4,6 +4,7 @@ import http.client
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import threading
@@ -12,7 +13,9 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import cast
 
+import psutil
 import pytest
 
 import iris.dashboard as d
@@ -238,7 +241,7 @@ def test_api_journal_missing_file_is_empty(tmp_path, monkeypatch):
 
 def test_api_journal_counts_a_returned_error(tmp_path, monkeypatch):
     from iris.agent import Agent, Journal
-    from iris.llm import Reply, ToolCall
+    from iris.llm import LMStudio, Reply, ToolCall
     from iris.tools import SAFE, Tool
 
     journal = tmp_path / "journal.jsonl"
@@ -254,7 +257,8 @@ def test_api_journal_counts_a_returned_error(tmp_path, monkeypatch):
         def chat(self, messages, tools):
             return replies.pop(0)
 
-    Agent(LLM(), lambda q: True, Journal(journal), {"boom": boom}).handle("do it")
+    llm = cast(LMStudio, LLM())
+    Agent(llm, lambda q: True, Journal(journal), {"boom": boom}).handle("do it")
     data = journal_payload()
     assert data["today"] == {"requests": 1, "confirmations": 0, "refusals": 0, "errors": 1}
 
@@ -515,9 +519,9 @@ def test_api_runs_route_returns_200_and_the_same_json(server, tmp_path, monkeypa
 
 def test_api_lmstudio_unreachable_reports_false(monkeypatch):
     def refused(url, timeout=None):  # nothing answered; a real closed port would cost ~2s on Windows
-        raise d.urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+        raise urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
 
-    monkeypatch.setattr(d.urllib.request, "urlopen", refused)
+    monkeypatch.setattr(urllib.request, "urlopen", refused)
     assert lmstudio_payload() == {"reachable": False}
 
 
@@ -537,9 +541,9 @@ def test_a_closed_local_port_is_seen_at_once_and_the_plain_list_is_not_tried(mon
 
     def refused(url, timeout=None):
         asked.append(url)
-        raise d.urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+        raise urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
 
-    monkeypatch.setattr(d.urllib.request, "urlopen", refused)
+    monkeypatch.setattr(urllib.request, "urlopen", refused)
     assert lmstudio_payload() == {"reachable": False} and len(asked) == 1  # down: no second wait for /v1/models
 
 
@@ -559,7 +563,7 @@ def test_api_lmstudio_lists_models_with_state_and_type(monkeypatch):
 
     v0 = b'{"data": [{"id": "qwen3.8-27b", "state": "loaded", "type": "vlm"}, ' \
          b'{"id": "iq3_xxs", "state": "not-loaded", "type": "llm"}]}'
-    monkeypatch.setattr(d.urllib.request, "urlopen", lambda url, timeout=None: FakeResp(v0))
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=None: FakeResp(v0))
     data = lmstudio_payload()
     assert data["reachable"] is True and data["states_known"] is True
     assert data["models"] == [
@@ -583,7 +587,7 @@ def test_api_lmstudio_falls_back_to_v1_without_states(monkeypatch):
             raise OSError("no v0 endpoint")
         return FakeResp()
 
-    monkeypatch.setattr(d.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     data = lmstudio_payload()
     assert data["reachable"] is True and data["states_known"] is False
     assert [m["id"] for m in data["models"]] == ["qwen3.8-27b", "llama-3.1-8b"]
@@ -716,7 +720,12 @@ def test_post_with_a_matching_referer_is_allowed(srv, monkeypatch, tmp_path):
     base = f"http://{HOST}:{srv.server_address[1]}"
     fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
     calls = []
-    monkeypatch.setattr(d, "run_lms", lambda args: (calls.append(args) or (0, "")))
+
+    def fake_run_lms(args):
+        calls.append(args)
+        return (0, "")
+
+    monkeypatch.setattr(d, "run_lms", fake_run_lms)
     monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "j.jsonl"))
     code, _ = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, referer=base + "/")
     assert code == 200 and calls == [["load", "m1"]]
@@ -726,7 +735,12 @@ def test_post_unknown_model_is_400_and_lms_never_runs(srv, monkeypatch):
     base = f"http://{HOST}:{srv.server_address[1]}"
     fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
     calls = []
-    monkeypatch.setattr(d, "run_lms", lambda args: (calls.append(args) or (0, "")))
+
+    def fake_run_lms(args):
+        calls.append(args)
+        return (0, "")
+
+    monkeypatch.setattr(d, "run_lms", fake_run_lms)
     code, body = post(base + "/api/models/load", {"model": "nope"}, token=srv.token, origin=base)
     assert code == 400 and "unknown model" in body["error"]
     assert calls == []
@@ -760,7 +774,12 @@ def test_post_unload_all_skips_model_validation(srv, monkeypatch):
     base = f"http://{HOST}:{srv.server_address[1]}"
     fake_v0(monkeypatch, [])  # even with an empty list, "all" is a valid unload target
     calls = []
-    monkeypatch.setattr(d, "run_lms", lambda args: (calls.append(args) or (0, "")))
+
+    def fake_run_lms(args):
+        calls.append(args)
+        return (0, "")
+
+    monkeypatch.setattr(d, "run_lms", fake_run_lms)
     code, body = post(base + "/api/models/unload", {"model": "all"}, token=srv.token, origin=base)
     assert code == 200 and calls == [["unload", "--all"]] and body["model"] == "all"
 
@@ -820,13 +839,13 @@ def test_lms_exe_comes_from_the_env_var(monkeypatch):
 
 def test_lms_exe_falls_back_to_path_when_unset(monkeypatch):
     monkeypatch.delenv("IRIS_LMS_BIN", raising=False)
-    monkeypatch.setattr(d.shutil, "which", lambda name: "C:/on/path/lms.exe")
+    monkeypatch.setattr(shutil, "which", lambda name: "C:/on/path/lms.exe")
     assert d._lms_exe() == "C:/on/path/lms.exe"
 
 
 def test_lms_exe_is_empty_when_neither_env_var_nor_path(monkeypatch):
     monkeypatch.delenv("IRIS_LMS_BIN", raising=False)
-    monkeypatch.setattr(d.shutil, "which", lambda name: None)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
     assert d._lms_exe() == ""
 
 
@@ -834,7 +853,7 @@ def test_model_action_without_an_lms_executable_is_503(srv, monkeypatch):
     base = f"http://{HOST}:{srv.server_address[1]}"
     fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
     monkeypatch.delenv("IRIS_LMS_BIN", raising=False)
-    monkeypatch.setattr(d.shutil, "which", lambda name: None)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
     code, body = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, origin=base)
     assert code == 503 and "IRIS_LMS_BIN" in body["error"]
 
@@ -961,7 +980,7 @@ CREATE TABLE sessions (
 """
 
 
-def make_sessions_db(path: Path, rows: list[tuple]) -> Path:
+def make_sessions_db(path: Path, rows: list[tuple[object, ...]]) -> Path:
     """A temporary sessions.db with the real schema; tests never touch ~/.iris."""
     con = sqlite3.connect(str(path))
     try:
@@ -986,7 +1005,7 @@ def sess_row(sid="s1", *, ended=None, status="completed", pid=4242, model="qwen3
 
 def alive_pids(monkeypatch, pids):
     """psutil.pid_exists as a set lookup, so the tests never depend on real processes."""
-    monkeypatch.setattr(d.psutil, "pid_exists", lambda pid: pid in pids)
+    monkeypatch.setattr(psutil, "pid_exists", lambda pid: pid in pids)
 
 
 def test_live_session_is_running(tmp_path, monkeypatch):
@@ -1594,7 +1613,11 @@ def test_cline_start_while_one_runs_is_409(srv, monkeypatch):
     import iris.autopilot as ap
 
     calls: list[tuple[str, str]] = []
-    monkeypatch.setattr(ap, "cline_start", lambda a, r="": calls.append((a, r)) or "started")
+    def fake_cline_start(a, r=""):
+        calls.append((a, r))
+        return "started"
+
+    monkeypatch.setattr(ap, "cline_start", fake_cline_start)
     base = f"http://{HOST}:{srv.server_address[1]}"
     with d._cline_start_lock:   # hold the lock for the whole request
         code, body = post(base + "/api/cline/start", {"agent": "leadscan"}, token=srv.token, origin=base)

@@ -10,10 +10,13 @@ and concept_sites timeouts.
 
 import ctypes
 import json
+import os
 import subprocess
 import sys
+import time
 import types
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -27,29 +30,28 @@ class _FakeVM:
 
 
 def _install_fake_psutil(monkeypatch, cpu=43.0):
-    calls = []
+    calls: list[float | None] = []
 
     mod = types.ModuleType("psutil")
-    mod.virtual_memory = lambda: _FakeVM()
-    mod.cpu_percent = lambda interval=None: calls.append(interval) or cpu
+
+    def fake_cpu_percent(interval=None):
+        calls.append(interval)
+        return cpu
+
+    monkeypatch.setattr(mod, "virtual_memory", lambda: _FakeVM(), raising=False)
+    monkeypatch.setattr(mod, "cpu_percent", fake_cpu_percent, raising=False)
     monkeypatch.setattr(tools, "psutil", mod)  # system_data uses the module-level name now
     return calls
 
 
 def _fake_nvidia(monkeypatch, stdout):
-    seen = []
+    seen: list[tuple[list[str], dict[str, object]]] = []
 
     def fake_run(cmd, **kw):
         seen.append((cmd, kw))
+        return types.SimpleNamespace(stdout=stdout)
 
-        class R:
-            pass
-
-        r = R()
-        r.stdout = stdout
-        return r
-
-    monkeypatch.setattr(tools.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     return seen
 
 
@@ -73,7 +75,7 @@ def test_system_data_reports_no_gpus_when_nvidia_smi_is_missing(monkeypatch):
     def boom(cmd, **kw):
         raise OSError("nvidia-smi not found")
 
-    monkeypatch.setattr(tools.subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
     assert tools.system_data()["gpus"] == []
 
 
@@ -91,7 +93,7 @@ def test_system_status_says_nvidia_unavailable(monkeypatch):
     def boom(cmd, **kw):
         raise OSError("no nvidia-smi")
 
-    monkeypatch.setattr(tools.subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
     assert tools.system_status() == "CPU 43%, RAM 8.0/16.0 GB\nGPU: nvidia-smi not available"
 
 
@@ -163,24 +165,13 @@ class FakeControl:
 
     @property
     def element_info(self):
-        class EI:
-            pass
-
-        ei = EI()
-        ei.control_type = self.kind
-        return ei
+        return types.SimpleNamespace(control_type=self.kind)
 
     @property
     def iface_value(self):
         if self.iface_raises:
             raise RuntimeError("no Value pattern")
-
-        class IV:
-            pass
-
-        iv = IV()
-        iv.CurrentValue = self._value
-        return iv
+        return types.SimpleNamespace(CurrentValue=self._value)
 
     def invoke(self):
         self.invoke_calls += 1
@@ -237,7 +228,7 @@ def _install_desktop(monkeypatch, desktop):
         seen["backend"] = backend
         return desktop
 
-    mod.Desktop = Desktop
+    monkeypatch.setattr(mod, "Desktop", Desktop, raising=False)
     monkeypatch.setitem(sys.modules, "pywinauto", mod)
     return seen
 
@@ -369,8 +360,12 @@ def test_escape_keys_wraps_every_special_character():
 
 # --- open_app -------------------------------------------------------------------
 def test_open_app_uses_shell_execute(monkeypatch):
-    started = []
-    monkeypatch.setattr(tools.os, "startfile", lambda name: started.append(name))
+    started: list[str] = []
+
+    def fake_startfile(name):
+        started.append(name)
+
+    monkeypatch.setattr(os, "startfile", fake_startfile)
 
     assert tools.open_app("notepad") == "started 'notepad'"
     assert started == ["notepad"]
@@ -392,11 +387,12 @@ def test_scroll_at_moves_cursor_and_spins_the_wheel(monkeypatch):
     class Windll:
         user32 = User32()
 
-    monkeypatch.setattr(ctypes, "windll", Windll())
+    windll = Windll()
+    monkeypatch.setattr(ctypes, "windll", windll)
     tools._scroll_at(10, 20, -240)
 
-    assert ctypes.windll.user32.pos == [(10, 20)]
-    assert ctypes.windll.user32.wheel == [(0x0800, 0, -240, 0)]
+    assert windll.user32.pos == [(10, 20)]
+    assert windll.user32.wheel == [(0x0800, 0, -240, 0)]
 
 
 # --- _under ---------------------------------------------------------------------
@@ -406,13 +402,13 @@ def test_under_handles_unresolvable_roots():
             raise OSError("cannot resolve")
 
     assert tools._under(Path.home() / "a", Path.home()) is True
-    assert tools._under(Path("C:/x"), BadRoot()) is False
+    assert tools._under(Path("C:/x"), cast(Path, BadRoot())) is False  # a root whose resolve() blows up
 
 
 # --- trash_file name collision ----------------------------------------------------
 def test_trash_file_renames_on_collision(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_TRASH_DIR", str(tmp_path / "trash"))
-    monkeypatch.setattr(tools.time, "strftime", lambda fmt: "20261023-120000")
+    monkeypatch.setattr(time, "strftime", lambda fmt: "20261023-120000")
 
     f = tmp_path / "report.txt"
     f.write_text("data")
@@ -437,7 +433,7 @@ def test_concept_sites_reports_timeout(tmp_path, monkeypatch):
     def boom(cmd, **kw):
         raise subprocess.TimeoutExpired(cmd, 120)
 
-    monkeypatch.setattr(tools.subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
     monkeypatch.setenv("IRIS_CONCEPTKIT_DIR", str(tmp_path))
     assert tools.concept_sites() == "error: conceptkit took longer than 2 minutes; try again later"
 

@@ -109,12 +109,6 @@ module = [
     "tests.test_browser_branches",
     "tests.test_voice_branches",
     "tests.test_browser",
-    "tests.test_tools_behaviour",
-    "tests.test_dashboard",
-    "tests.test_voxcpm",
-    "tests.test_autopilot",
-    "tests.test_tools",
-    "tests.test_notes",
 ]
 ignore_errors = true
 

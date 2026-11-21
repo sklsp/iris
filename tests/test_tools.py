@@ -2,12 +2,18 @@
 
 import io
 import json
+import os
+import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from iris import tools
+from iris.policy import _press_keys_tier, _unload_tier
 from tests.doc_text import doc_text
 from tests.test_agent_timing import FakeClock
 from tests.test_timers import make_timers
@@ -50,17 +56,17 @@ def test_press_keys_tier_is_confirm(fake_window):
 
 @pytest.mark.parametrize("app", ["Outlook - Inbox", "Gmail - Chat", "WhatsApp", "Discord", "Microsoft Teams", "Slack"])
 def test_enter_in_mail_chat_is_never(app):
-    assert tools._press_keys_tier({"window": app, "keys": "{ENTER}"}) == tools.NEVER
+    assert _press_keys_tier({"window": app, "keys": "{ENTER}"}) == tools.NEVER
 
 
 @pytest.mark.parametrize("app", ["Notepad", "VS Code", "Chrome - Docs"])
 def test_enter_elsewhere_stays_confirm(app):
-    assert tools._press_keys_tier({"window": app, "keys": "{ENTER}"}) == tools.CONFIRM
+    assert _press_keys_tier({"window": app, "keys": "{ENTER}"}) == tools.CONFIRM
 
 
 def test_non_enter_in_mail_chat_is_only_confirm():
     # Ctrl+S in Outlook is fine; only the send combination (Enter) is refused.
-    assert tools._press_keys_tier({"window": "Outlook", "keys": "^s"}) == tools.CONFIRM
+    assert _press_keys_tier({"window": "Outlook", "keys": "^s"}) == tools.CONFIRM
 
 
 # --- focus_window -------------------------------------------------------------
@@ -113,7 +119,7 @@ def test_scroll_rejects_bad_direction(fake_window):
 @pytest.mark.parametrize("url", ["file:///C:/secret.txt", "javascript:alert(1)", "data:text/html,<b>x</b>"])
 def test_open_url_refuses_non_http(url, monkeypatch):
     started = []
-    monkeypatch.setattr(tools.os, "startfile", lambda u: started.append(u))
+    monkeypatch.setattr(os, "startfile", lambda u: started.append(u))
     with pytest.raises(ValueError):
         tools.open_url(url)
     assert started == []
@@ -122,7 +128,7 @@ def test_open_url_refuses_non_http(url, monkeypatch):
 @pytest.mark.parametrize("url", ["https://example.com", "http://localhost:8080"])
 def test_open_url_allows_http_and_https(url, monkeypatch):
     started = []
-    monkeypatch.setattr(tools.os, "startfile", lambda u: started.append(u))
+    monkeypatch.setattr(os, "startfile", lambda u: started.append(u))
     assert tools.open_url(url) == f"opened {url}"
     assert started == [url]
 
@@ -185,7 +191,7 @@ def test_a_failed_move_leaves_no_record_behind(home, monkeypatch):
     def stuck(src, dst):
         raise PermissionError("the file is open in another program")
 
-    monkeypatch.setattr(tools.shutil, "move", stuck)
+    monkeypatch.setattr(shutil, "move", stuck)
     with pytest.raises(PermissionError):
         tools.trash_file(str(f))
     assert f.exists() and list((home / "trash").iterdir()) == []
@@ -642,7 +648,7 @@ UNLOAD_TIER = [
 @pytest.mark.parametrize("args, expected", UNLOAD_TIER, ids=[a["model"] for a, _ in UNLOAD_TIER])
 def test_unload_escalates_to_never_for_all_or_the_running_model(monkeypatch, args, expected):
     monkeypatch.setattr("iris.llm.effective_model", lambda: "qwen3.8-27b")
-    assert tools._unload_tier(args) == expected
+    assert _unload_tier(args) == expected
 
 
 def test_lmstudio_unload_returns_unloaded_text(monkeypatch):
@@ -758,7 +764,7 @@ def test_journal_today_missing_file(tmp_path, monkeypatch):
 
 def test_journal_today_counts_a_returned_error(tmp_path, monkeypatch):
     from iris.agent import Agent, Journal
-    from iris.llm import Reply, ToolCall
+    from iris.llm import LMStudio, Reply, ToolCall
 
     p = tmp_path / "journal.jsonl"
     monkeypatch.setenv("IRIS_JOURNAL", str(p))
@@ -773,7 +779,8 @@ def test_journal_today_counts_a_returned_error(tmp_path, monkeypatch):
         def chat(self, messages, tools):
             return replies.pop(0)
 
-    Agent(LLM(), lambda q: True, Journal(p), {"boom": boom}, clock=FakeClock()).handle("do it")
+    llm = cast(LMStudio, LLM())
+    Agent(llm, lambda q: True, Journal(p), {"boom": boom}, clock=FakeClock()).handle("do it")
     day = json.loads(p.read_text(encoding="utf-8").splitlines()[0])["t"][:10]
     # the agent writes one timing entry per request; with the fixed clock its values are literal (Q1)
     assert tools.journal_today(today=day) == (
@@ -854,16 +861,11 @@ def test_concept_sites_lists_and_checks(tmp_path, monkeypatch):
 
     def fake_run(cmd, **kw):
         calls.append(cmd)
+        return SimpleNamespace(
+            stdout=("lotus: Restaurant Lotus, poort 5191\n" if cmd[-1] == "list"
+                    else "Geen problemen gevonden.\n"))
 
-        class R:
-            pass
-
-        r = R()
-        r.stdout = ("lotus: Restaurant Lotus, poort 5191\n" if cmd[-1] == "list"
-                    else "Geen problemen gevonden.\n")
-        return r
-
-    monkeypatch.setattr(tools.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setenv("IRIS_CONCEPTKIT_DIR", str(tmp_path))
     assert tools.concept_sites() == (
         "Sites:\nlotus: Restaurant Lotus, poort 5191\n\nChecks:\nGeen problemen gevonden.")
@@ -1335,6 +1337,7 @@ def test_every_tool_accepts_the_parameters_its_schema_offers():
 
 
 def test_comfy_queue_tells_a_refused_workflow_from_a_stopped_comfyui(tmp_path, monkeypatch):
+    import http.client
     import urllib.error
     import urllib.request
 
@@ -1342,7 +1345,7 @@ def test_comfy_queue_tells_a_refused_workflow_from_a_stopped_comfyui(tmp_path, m
     monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())
 
     def refused(req, timeout=None):
-        raise urllib.error.HTTPError(req.full_url, 400, "Bad Request", None, None)
+        raise urllib.error.HTTPError(req.full_url, 400, "Bad Request", http.client.HTTPMessage(), None)
 
     monkeypatch.setattr(urllib.request, "urlopen", refused)
     assert tools.comfy_queue("anime") == "error: ComfyUI refused anime (HTTP 400); open it in ComfyUI to see why"

@@ -6,9 +6,11 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
+from iris.agent import Journal
 from iris.autopilot import (
     _count_started,
     _started_at_epoch,
@@ -304,7 +306,7 @@ def test_cline_sessions_timeout_gives_none(monkeypatch):
 
 def test_cline_sessions_passes_the_exact_argv_and_kwargs(monkeypatch):
     _clear_cli_env(monkeypatch)
-    calls: list[tuple[list[str], dict]] = []
+    calls: list[tuple[list[str], dict[str, object]]] = []
 
     def fake_run(argv, **kwargs):
         calls.append((argv, kwargs))
@@ -503,7 +505,7 @@ def test_start_in_hub_finds_a_late_session_on_the_third_check(monkeypatch):
 
     seen = 0
 
-    def late_sessions() -> list[dict]:
+    def late_sessions() -> list[dict[str, Any]]:
         nonlocal seen
         seen += 1
         return [] if seen < 3 else sessions  # the session appears in the history a few seconds late
@@ -558,7 +560,7 @@ def test_start_in_hub_a_late_first_session_needs_no_second_dispatch(monkeypatch)
 
     seen = 0
 
-    def late_sessions() -> list[dict]:
+    def late_sessions() -> list[dict[str, Any]]:
         nonlocal seen
         seen += 1
         return [] if seen < 3 else sessions  # the session appears in the history a few seconds late
@@ -591,7 +593,7 @@ def test_start_in_hub_retries_the_dispatch_once_when_the_first_is_lost(monkeypat
         now_calls += 1
         return HUB_NOW if now_calls == 1 else HUB_NOW + 100
 
-    def late_sessions() -> list[dict]:
+    def late_sessions() -> list[dict[str, Any]]:
         return [] if calls < 2 else sessions  # nothing in the history until the second dispatch happens
 
     out = start_in_hub(
@@ -614,7 +616,7 @@ def test_start_in_hub_retries_when_round_one_read_but_found_nothing(monkeypatch)
         calls += 1
         return SimpleNamespace(stdout="", stderr="hub timed out after 120s\n", returncode=0)
 
-    def empty_then_found() -> list[dict]:
+    def empty_then_found() -> list[dict[str, Any]]:
         # round one reads an empty history (a successful read); the session appears only after the retry dispatches
         return [] if calls < 2 else sessions
 
@@ -673,7 +675,7 @@ def test_start_in_hub_first_round_success_does_not_reread_the_history(monkeypatc
 
     reads = 0
 
-    def counting_sessions() -> list[dict]:
+    def counting_sessions() -> list[dict[str, Any]]:
         nonlocal reads
         reads += 1
         return sessions
@@ -706,7 +708,7 @@ def test_start_in_hub_retry_with_one_session_says_nothing(monkeypatch):
 
     reads = 0
 
-    def empty_then_found() -> list[dict]:
+    def empty_then_found() -> list[dict[str, Any]]:
         # round one reads an empty history; the session appears only after the retry dispatches
         nonlocal reads
         reads += 1
@@ -742,7 +744,7 @@ def test_start_in_hub_retry_with_two_sessions_warns_about_the_double_start(monke
 
     reads = 0
 
-    def empty_then_first_then_both() -> list[dict]:
+    def empty_then_first_then_both() -> list[dict[str, Any]]:
         # round one is empty; the retry's polls see one session; the extra read sees both (a double start)
         nonlocal reads
         reads += 1
@@ -773,7 +775,7 @@ def test_start_in_hub_retry_with_an_unreadable_extra_read_says_nothing(monkeypat
 
     reads = 0
 
-    def empty_then_found_then_none() -> list[dict] | None:
+    def empty_then_found_then_none() -> list[dict[str, Any]] | None:
         # round one is empty; the retry's polls find it; the extra read fails (None) and must not warn
         nonlocal reads
         reads += 1
@@ -929,7 +931,7 @@ def test_cline_start_is_a_confirm_tool():
 
 class FakeJournal:
     def __init__(self) -> None:
-        self.entries: list[dict] = []
+        self.entries: list[dict[str, Any]] = []
 
     def log(self, **entry) -> None:
         self.entries.append(entry)
@@ -990,12 +992,13 @@ def test_watch_a_no_never_starts(tmp_path, monkeypatch):
         started.append((agent_name, repo))
         return "should not happen"
 
-    journal = FakeJournal()
+    fake_journal = FakeJournal()
+    journal = cast(Journal, fake_journal)
     out = watch("acme", "cline", fake_confirm, sleep=lambda s: None, start=fake_start, journal=journal)
     assert out == "the user said no"
     assert asked == ["acme is done (PROGRESS-iris6.md done: 15 items). Start the next cline prompt?"]
     assert started == []
-    assert journal.entries == [
+    assert fake_journal.entries == [
         {
             "event": "autopilot",
             "source": "cli",
@@ -1019,7 +1022,8 @@ def test_watch_with_an_empty_queue_never_asks(tmp_path, monkeypatch):
         asked.append(question)
         return True
 
-    journal = FakeJournal()
+    fake_journal = FakeJournal()
+    journal = cast(Journal, fake_journal)
     out = watch(
         "acme",
         "cline",
@@ -1030,7 +1034,7 @@ def test_watch_with_an_empty_queue_never_asks(tmp_path, monkeypatch):
     )
     assert out == "nothing queued for cline"
     assert asked == []  # nothing waiting means no question at all
-    assert journal.entries == [
+    assert fake_journal.entries == [
         {
             "event": "autopilot",
             "source": "cli",
@@ -1071,7 +1075,8 @@ def test_watch_logs_an_autopilot_event(tmp_path, monkeypatch):
     path = _queue_file(tmp_path)
     monkeypatch.setenv("IRIS_QUEUE", str(path))
     monkeypatch.setattr(autopilot, "run_done", lambda repo: (True, "PROGRESS-iris6.md done: 15 items"))
-    journal = FakeJournal()
+    fake_journal = FakeJournal()
+    journal = cast(Journal, fake_journal)
 
     seen: list[tuple[str, str]] = []
 
@@ -1082,7 +1087,7 @@ def test_watch_logs_an_autopilot_event(tmp_path, monkeypatch):
     out = watch("acme", "cline", lambda q: True, sleep=lambda s: None, start=fake_start, journal=journal)
     assert out == "started the next prompt"
     assert seen == [("cline", "acme")]  # started in the repo that just finished
-    assert journal.entries == [
+    assert fake_journal.entries == [
         {
             "event": "autopilot",
             "source": "cli",

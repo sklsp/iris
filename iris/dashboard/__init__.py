@@ -27,9 +27,12 @@ IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by th
     /api/eval/history the trend over the last 10 saved runs in that same folder: success rate per run,
                   per-task pass counts with one entry per run, and the flaky tasks; cached 30 s
     /api/queue    the prompts waiting in the agent queue, oldest first (read only)
+    /api/startup  whether Iris starts in the tray at login and where its Startup-folder file is;
+                  an installer build answers with "managed": true on top, because it manages that entry itself
 
-POST (the only writes): /api/models/load {model}, /api/models/unload {model | "all"}
-and /api/iris/model {model}, which writes the model key of ~/.iris/settings.json.
+POST (the only writes): /api/models/load {model}, /api/models/unload {model | "all"},
+/api/iris/model {model}, which writes the model key of ~/.iris/settings.json, and
+/api/startup {on}, which writes or removes Iris.vbs in the Startup folder.
 Every POST must carry the X-Iris-Token header (a random token generated at server start
 and injected into the served page) and an Origin or Referer of this very dashboard;
 anything else is a 403. The model id must be one LM Studio reports right now, else 400.
@@ -224,6 +227,7 @@ WRITE_ROUTES = (
     "/api/skills/approve", "/api/skills/remove",
     "/api/settings", "/api/app/voice/restart",
     "/api/setup/server", "/api/setup/mic", "/api/setup/speaker", "/api/setup/done", "/api/packs/install",
+    "/api/startup",
 )   # the only POST routes: model control, the prompt queue, Cline, skill review, settings and the app's voice loop
 # set by `iris app`: "restart_voice" -> a callable; empty under `iris dashboard`
 APP_HOOKS: dict[str, Callable[[], str]] = {}
@@ -847,6 +851,40 @@ def app_voice_restart() -> dict[str, Any]:
     return {"ok": True, "message": hook()}
 
 
+# --- start at login ---------------------------------------------------------------
+
+def startup_payload() -> dict[str, Any]:
+    """Whether Iris starts in the tray at login and where its Startup-folder file is; an installer build
+    manages that entry itself, so it answers with "managed": true on top."""
+    from iris import doctor
+    from iris.__main__ import startup_state  # lazy: __main__ pulls in the agent and voice modules
+
+    path = startup_state()
+    payload: dict[str, Any] = {"on": path is not None, "path": path}
+    if doctor.bundled():
+        payload["managed"] = True
+    return payload
+
+
+def startup_action(body: dict[str, Any]) -> dict[str, Any]:
+    """Write or remove the Startup-folder entry; an installer build manages it itself (409)."""
+    from iris import doctor
+    from iris.__main__ import startup_disable, startup_enable  # lazy, as in startup_payload
+
+    if not isinstance(body, dict):
+        raise ModelActionError(400, "the body must be a JSON object")
+    on = body.get("on")
+    if not isinstance(on, bool):
+        raise ModelActionError(400, "on must be true or false")
+    if doctor.bundled():  # the installer manages its own startup entry
+        raise ModelActionError(409, "the installer manages its own startup entry")
+    if on:
+        startup_enable()
+    else:
+        startup_disable()
+    return startup_payload()
+
+
 # --- the server -----------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -887,6 +925,8 @@ class Handler(BaseHTTPRequestHandler):
             from iris import settings
 
             self._json(settings.payload())
+        elif path == "/api/startup":
+            self._json(startup_payload())   # readable via GET; writes go through the POST below
         elif path in WRITE_ROUTES:
             self._json({"error": "write routes only accept POST"}, code=405)
         elif path == "/api/system":
@@ -986,6 +1026,8 @@ class Handler(BaseHTTPRequestHandler):
                 payload = settings.save(body.get("values") or {})
             elif path == "/api/app/voice/restart":
                 payload = app_voice_restart()
+            elif path == "/api/startup":
+                payload = startup_action(body)
             elif path == "/api/packs/install":
                 from iris import packs
 

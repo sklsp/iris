@@ -24,6 +24,7 @@
 - ruff now also checks the PTH and RUF rule sets on iris/ and tests/, and every finding was fixed without changing behaviour; the protected files keep their per-file ignores for the new rules too.
 - Tests are type-checked by mypy as well; 14 test modules still sit on the ignore list until they are typed.
 - git, Cline CLI and lms output are decoded as UTF-8 with replacement, so the dashboard's agent status and autopilot survive any text on a non-UTF-8 locale code page.
+- The dashboard's Settings tab has a "Start Iris in the tray at login" switch that writes or removes the Startup-folder entry (`/api/startup`); an installer build answers that it manages its own entry.
 
 ## 1.0.0 (release date): steady, safer and measured
 

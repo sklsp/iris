@@ -515,6 +515,54 @@ def test_startup_off_removes_vbs_cmd_and_lnk(tmp_path, monkeypatch, capsys):
         assert not (old / name).exists()
 
 
+def test_startup_state_names_the_first_file_that_exists(tmp_path, monkeypatch):
+    from iris.__main__ import STARTUP_NAMES, startup_state
+
+    d = tmp_path / "Startup"
+    d.mkdir()
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(d))
+    assert startup_state() is None  # empty folder: nothing starts at login
+    (d / "Iris.cmd").write_text("x", encoding="utf-8")
+    assert startup_state() == str(d / "Iris.cmd")  # the old names count too
+    for name in STARTUP_NAMES:
+        (d / name).write_text("x", encoding="utf-8")
+    assert startup_state() == str(d / "Iris.vbs")  # vbs is first in STARTUP_NAMES
+
+
+def test_startup_enable_writes_vbs_and_removes_the_old_names(tmp_path, monkeypatch):
+    import sys
+
+    from iris.__main__ import startup_enable
+
+    d = tmp_path / "Startup"
+    d.mkdir()
+    (d / "Iris.cmd").write_text("old", encoding="utf-8")
+    (d / "Iris.lnk").write_bytes(b"old")
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(d))
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(exe))
+    vbs = startup_enable()
+    assert vbs == d / "Iris.vbs"
+    expected = f'CreateObject("WScript.Shell").Run """{exe}"" -m iris app --background", 0, False\n'
+    assert (d / "Iris.vbs").read_text(encoding="utf-8") == expected
+    assert not (d / "Iris.cmd").exists() and not (d / "Iris.lnk").exists()
+
+
+def test_startup_disable_removes_every_name(tmp_path, monkeypatch):
+    from iris.__main__ import startup_disable
+
+    d = tmp_path / "Startup"
+    d.mkdir()
+    for name in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+        (d / name).write_text("x", encoding="utf-8")
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(d))
+    startup_disable()
+    for name in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+        assert not (d / name).exists()
+    startup_disable()  # already off is fine
+
+
 def test_shortcut_writes_a_lnk_with_the_paths_in_the_environment(tmp_path, monkeypatch, capsys):
     import subprocess
 

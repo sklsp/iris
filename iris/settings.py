@@ -91,7 +91,7 @@ def _gpus() -> list[dict[str, Any]]:
         from iris.tools import system_data
 
         return [{"index": g["index"], "name": g["name"]} for g in system_data()["gpus"]]
-    except Exception:  # noqa: BLE001 - no nvidia-smi is a normal PC, not an error
+    except Exception:  # no nvidia-smi is a normal PC, not an error
         return []
 
 

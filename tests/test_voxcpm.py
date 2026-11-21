@@ -4,6 +4,7 @@ import sys
 import threading
 import time
 import types
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -82,7 +83,7 @@ def test_without_its_python_voxcpm_says_how_to_install_it(tmp_path):
 class FakeOut:
     """A sound device that pulls audio from the callback 100 frames at a time, as PortAudio does."""
 
-    made = []
+    made: ClassVar = []
 
     def __init__(self, samplerate, channels, dtype, callback, pull=True):
         self.cb, self.played, self.latency, self.pull, self._run = callback, [], 0.0, pull, False

@@ -4,6 +4,7 @@ import sys
 import threading
 import time
 import types
+from itertools import pairwise
 
 import pytest
 
@@ -145,7 +146,7 @@ def test_speaker_kokoro_lets_each_chunk_finish_before_the_next(monkeypatch):
     spk = Speaker(engine="kokoro")
     spk._kokoro = FakeKokoroModel([np.zeros(2400, dtype="float32") for _ in range(3)])  # 0.1 s each at 24 kHz
     assert spk.speak("hello", stop_event=threading.Event()) is True
-    gaps = [b - a for a, b in zip(starts, starts[1:], strict=False)]
+    gaps = [b - a for a, b in pairwise(starts)]
     assert len(starts) == 3 and min(gaps) >= 0.09  # a new play never cut the one before it off
 
 
@@ -748,7 +749,7 @@ def test_no_microphone_is_one_sentence_and_still_stops_the_workers(monkeypatch):
             closed.append(True)
 
     s = VoiceSession(speaker=Spk())
-    with pytest.raises(SystemExit, match="No microphone could be opened .*Windows Sound settings"):
+    with pytest.raises(SystemExit, match=r"No microphone could be opened .*Windows Sound settings"):
         s.__enter__()
     s.__exit__(None, None, None)  # __main__ always calls this in its finally
     assert closed == [True]
@@ -764,7 +765,7 @@ def test_a_missing_custom_wake_model_is_an_error_not_a_download_of_every_model(m
     fake.Model = lambda **kw: object()
     monkeypatch.setitem(sys.modules, "openwakeword", fake)
     missing = str(tmp_path / "my_wake.onnx")
-    with pytest.raises(FileNotFoundError, match="no wake word model at .*my_wake.onnx"):
+    with pytest.raises(FileNotFoundError, match=r"no wake word model at .*my_wake.onnx"):
         voice.WakeWord(missing)._model()
     assert downloads == []
     voice.WakeWord("hey_jarvis")._model()

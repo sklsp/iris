@@ -201,7 +201,7 @@ def reminder_list() -> str:
     return "\n".join(f"- {due:%Y-%m-%d %H:%M} {r['text']} (id {r['id']})" for due, r in parsed)
 
 
-def reminder_cancel(id: int) -> str:  # noqa: A002 - the name the tool schema gives the model, like timer_cancel
+def reminder_cancel(id: int) -> str:  # the name the tool schema gives the model, like timer_cancel
     """Cancel one pending reminder by its id; it stops waiting and leaves the file."""
     rid = id
     with _lock:

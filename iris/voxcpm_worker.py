@@ -78,7 +78,7 @@ def main(voice: str) -> None:
                     out.write(struct.pack("<I", len(audio)) + audio.tobytes())
                     out.flush()
             out.write(struct.pack("<I", 0))
-        except Exception:  # noqa: BLE001 - one bad answer must not end the voice
+        except Exception:  # one bad answer must not end the voice
             traceback.print_exc()
             out.write(struct.pack("<I", FAILED))
         out.flush()

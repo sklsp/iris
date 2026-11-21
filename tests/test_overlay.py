@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import types
+from itertools import pairwise
 from unittest import mock
 
 import numpy as np
@@ -734,7 +735,7 @@ def test_the_glow_fades_away_from_the_edge_and_stays_in_the_margin(mode):
         assert all(c.startswith("#") and len(c) == 7 for c in colours)
         # outermost (or deepest) first: each band is closer to the outline's colour than the one before it
         for bands in ([c for c, _ in outer], inner):
-            assert all(_far(a, base) > _far(b, base) for a, b in zip(bands, bands[1:], strict=False))
+            assert all(_far(a, base) > _far(b, base) for a, b in pairwise(bands))
         assert all(0 < w <= full for (_, w), (full, _) in zip(outer, OUTER, strict=True))
     assert max(w for w, _ in OUTER) / 2 <= Panel.MARGIN  # the widest outer stroke still fits round the panel
 
@@ -773,8 +774,8 @@ def test_split_ring_cuts_the_outline_into_even_connected_pieces():
     ring = rounded_rect(0, 0, 500, 100, 20)
     pieces = split_ring(ring, 40, chords=5)
     assert len(pieces) == 40 and all(len(p) == 6 for p in pieces)
-    assert all(a[-1] == b[0] for a, b in zip(pieces, pieces[1:], strict=False)) and pieces[-1][-1] == pieces[0][0]
-    lengths = [sum(math.dist(a, b) for a, b in zip(p, p[1:], strict=False)) for p in pieces]
+    assert all(a[-1] == b[0] for a, b in pairwise(pieces)) and pieces[-1][-1] == pieces[0][0]
+    lengths = [sum(math.dist(a, b) for a, b in pairwise(p)) for p in pieces]
     assert max(lengths) - min(lengths) < 0.5  # about 30 px each
 
 

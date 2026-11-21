@@ -52,7 +52,8 @@ def _ws_url() -> str:
             lines = (base / "DevToolsActivePort").read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             continue
-        port, path = (lines + ["", ""])[0].strip(), (lines + ["", ""])[1].strip()
+        padded = [*lines, "", ""]
+        port, path = padded[0].strip(), padded[1].strip()
         if not port.isdigit():
             continue
         try:
@@ -173,7 +174,7 @@ def watch(announce: Callable[[str], object] | None = None, every: float = 5, ask
                 pause = every
             except BrowserError:
                 pass  # closed, not allowed, or busy: look again soon
-            except Exception:  # noqa: BLE001 - a broken socket, or the question was refused or left open
+            except Exception:  # a broken socket, or the question was refused or left open
                 if _conn is None:
                     pause = min(max(pause * 2, 30), 600)  # do not ask again every few seconds after a Cancel
                 _conn = None
@@ -192,7 +193,7 @@ def _call(method: str, params: dict[str, Any] | None = None, session: str | None
         return _connect().send(method, params, session, wait)
     except BrowserError:
         raise
-    except Exception:  # noqa: BLE001 - a dropped socket: connect again once
+    except Exception:  # a dropped socket: connect again once
         _conn = None
         return _connect().send(method, params, session, wait)
 

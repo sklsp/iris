@@ -408,10 +408,10 @@ def read_window(title: str) -> str:
 def _value(c: Any) -> str:
     try:
         return c.iface_value.CurrentValue or ""
-    except Exception:  # noqa: BLE001 - controls without the Value pattern
+    except Exception:  # controls without the Value pattern
         try:
             return str(c.window_text())
-        except Exception:  # noqa: BLE001
+        except Exception:
             return ""
 
 
@@ -449,7 +449,7 @@ def click(window: str, control: str) -> str:
     _named_in_full(control, c)
     try:
         c.invoke()
-    except Exception as exc:  # noqa: BLE001 - not every control supports Invoke; fall back to a real click
+    except Exception as exc:  # not every control supports Invoke; fall back to a real click
         text = str(exc).lower()
         unsupported = isinstance(exc, NotImplementedError) or type(exc).__name__ == "NoPatternInterfaceError"
         if unsupported or "not supported" in text or "pattern" in text:  # pywinauto's error has no message

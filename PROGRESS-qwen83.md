@@ -1,2 +1,2 @@
 - [x] Q1. lint: PTH (2440 passed in 110.59s (0:01:50))
-- [ ] Q2. lint: RUF
+- [x] Q2. lint: RUF (2440 passed in 110.94s (0:01:50))

@@ -382,7 +382,7 @@ class VoiceSession:
         try:
             self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", blocksize=FRAME, callback=cb)
             self._stream.__enter__()
-        except Exception as exc:  # noqa: BLE001 - PortAudioError and friends: one line, not a traceback
+        except Exception as exc:  # PortAudioError and friends: one line, not a traceback
             self._stream = None
             raise SystemExit(f"No microphone could be opened ({exc}). Plug one in, or pick the default input "
                              "device in Windows Sound settings, then start voice mode again.") from exc
@@ -493,7 +493,7 @@ class VoiceSession:
             waiter.join(stall)
             if waiter.is_alive():
                 sd.stop()  # the device stalled: never let a chime hold listening
-        except Exception:  # noqa: BLE001 - the chime is a nicety; listening goes on without it
+        except Exception:  # the chime is a nicety; listening goes on without it
             pass
 
     def follow_up(self) -> str | None:
@@ -947,7 +947,7 @@ class Speaker:
             self._sounding()  # SAPI gives no better signal than the moment say() is asked for
             engine.say(text)
             engine.runAndWait()
-        except Exception:  # noqa: BLE001 - speech is a nicety; the printed line is the answer
+        except Exception:  # speech is a nicety; the printed line is the answer
             pass
         return True
 
@@ -980,7 +980,7 @@ class Speaker:
             if ok:
                 self._note_success("piper")  # a fully spoken answer resets Piper's failure streak
             return ok
-        except Exception as exc:  # noqa: BLE001 - fall back to SAPI so Iris keeps talking
+        except Exception as exc:  # fall back to SAPI so Iris keeps talking
             print(f"Piper failed ({exc}); using Windows SAPI instead.")
             self._note_failure("piper", "Piper", "sapi")  # switches the voice only after three in a row
             return self._speak_sapi(text)
@@ -994,7 +994,7 @@ class Speaker:
             if ok:
                 self._note_success("voxcpm")  # a fully spoken answer resets VoxCPM's failure streak
             return ok
-        except Exception as exc:  # noqa: BLE001 - fall back to Piper so Iris keeps talking
+        except Exception as exc:  # fall back to Piper so Iris keeps talking
             print(f"VoxCPM failed ({exc}); using Piper instead.")
             self._note_failure("voxcpm", "VoxCPM", "piper")  # switches the voice only after three in a row
             if self.engine != "voxcpm" and self._vox is not None:  # switched away for good: free its GPU memory now
@@ -1046,7 +1046,7 @@ class Speaker:
             if ok:
                 self._note_success("kokoro")  # a fully spoken answer resets Kokoro's failure streak
             return ok
-        except Exception as exc:  # noqa: BLE001 - fall back to SAPI so Iris keeps talking
+        except Exception as exc:  # fall back to SAPI so Iris keeps talking
             print(f"Kokoro failed ({exc}); using Windows SAPI instead.")
             self._note_failure("kokoro", "Kokoro", "sapi")  # switches the voice only after three in a row
             return self._speak_sapi(text)

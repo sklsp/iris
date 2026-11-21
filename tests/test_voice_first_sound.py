@@ -4,10 +4,11 @@ import sys
 import threading
 import time
 import types
+from typing import Any, cast
 
 import pytest
 
-from iris.voice import RATE, Speaker, _play_stream, _play_wav
+from iris.voice import RATE, PiperProcess, Speaker, VoxProcess, _play_stream, _play_wav
 
 np = pytest.importorskip("numpy")  # synthetic-audio tests need real numpy; CI installs only [dev]
 
@@ -38,10 +39,16 @@ def _wav(path, seconds=0.1, rate=8000):
 
 def _fake_wav_device(monkeypatch):
     """A sounddevice whose play() returns at once and whose stream is already finished."""
-    calls = []
+    calls: list[tuple[Any, ...]] = []
+
+    def fake_play(audio, rate):
+        calls.append(("play", len(audio), rate))
+
+    def fake_stop():
+        calls.append(("stop",))
+
     monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
-        play=lambda audio, rate: calls.append(("play", len(audio), rate)),
-        get_stream=lambda: types.SimpleNamespace(active=False), stop=lambda: calls.append(("stop",))))
+        play=fake_play, get_stream=lambda: types.SimpleNamespace(active=False), stop=fake_stop))
     return calls
 
 
@@ -69,14 +76,10 @@ def _fake_pulling_device(monkeypatch):
         def close(self):
             pass
 
-    sd = types.ModuleType("sounddevice")
-    sd.OutputStream = PullingOut
-    monkeypatch.setitem(sys.modules, "sounddevice", sd)
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(OutputStream=PullingOut))
 
 
 def _fake_pyttsx3(monkeypatch):
-    fake = types.ModuleType("pyttsx3")
-
     class Engine:
         def say(self, t):
             pass
@@ -84,8 +87,10 @@ def _fake_pyttsx3(monkeypatch):
         def runAndWait(self):
             pass
 
-    fake.init = lambda: Engine()
-    monkeypatch.setitem(sys.modules, "pyttsx3", fake)
+    def make_engine():
+        return Engine()
+
+    monkeypatch.setitem(sys.modules, "pyttsx3", types.SimpleNamespace(init=make_engine))
 
 
 class _FakePiperProcess:
@@ -114,7 +119,7 @@ def test_piper_records_when_the_first_sound_starts(tmp_path, monkeypatch):
     _fake_wav_device(monkeypatch)
     spk = Speaker(engine="sapi", clock=FakeClock(0.25))  # speak() reads t0, the first sound lands one step later
     spk.engine = "piper"
-    spk._piper["en"] = _FakePiperProcess(_wav(tmp_path / "a.wav"))
+    spk._piper["en"] = cast(PiperProcess, _FakePiperProcess(_wav(tmp_path / "a.wav")))
     assert spk.speak("hello there") is True
     assert spk.last_first_sound_ms == 250
 
@@ -122,7 +127,8 @@ def test_piper_records_when_the_first_sound_starts(tmp_path, monkeypatch):
 def test_voxcpm_records_when_the_stream_starts(monkeypatch):
     _fake_pulling_device(monkeypatch)
     spk = Speaker(engine="sapi", clock=FakeClock(1.5))  # the first chunk takes a while to be made
-    spk.engine, spk._vox = "voxcpm", _FakeVoxProcess(RATE)
+    spk.engine = "voxcpm"
+    spk._vox = cast(VoxProcess, _FakeVoxProcess(RATE))
     assert spk.speak("a long enough answer") is True
     assert spk.last_first_sound_ms == 1500
 
@@ -171,7 +177,7 @@ def test_a_second_speak_resets_the_value(tmp_path, monkeypatch):
             # would fall back to SAPI (which CI runners cannot speak with)
             return _wav(tmp_path / f"{len(seen_during)}.wav")
 
-    spk._piper["en"] = RecordingPiper(None)
+    spk._piper["en"] = cast(PiperProcess, RecordingPiper(None))
     assert spk.speak("first answer") is True
     assert spk.last_first_sound_ms == 250
     assert spk.speak("second answer") is True

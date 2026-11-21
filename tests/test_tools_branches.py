@@ -2,6 +2,7 @@
 file, cline_start handing off to the autopilot, _wall_now itself, capability_check on a blocked skill and click's
 fallback when invoke is or is not supported. No real ComfyUI, Cline session, network or desktop."""
 
+import subprocess
 import sys
 import types
 from datetime import datetime
@@ -26,7 +27,7 @@ def test_cline_start_hands_the_agent_and_repo_to_autopilot(monkeypatch):
         return "started cline for coder"
 
     mod = types.ModuleType("iris.autopilot")
-    mod.cline_start = fake_start
+    monkeypatch.setattr(mod, "cline_start", fake_start, raising=False)
     monkeypatch.setitem(sys.modules, "iris.autopilot", mod)
     assert tools.cline_start("coder", "W:/repos/x") == "started cline for coder"
     assert calls == [("coder", "W:/repos/x")]
@@ -109,7 +110,7 @@ def test_system_data_does_not_wait_for_the_cpu(monkeypatch):
     def boom(cmd, **kw):
         raise OSError("no nvidia-smi")
 
-    monkeypatch.setattr(tools.subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
 
     d = tools.system_data()
 

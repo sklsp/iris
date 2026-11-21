@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 
 collect_ignore_glob = ["fixtures/*"]  # data in old formats, such as a skill with its own test_skill.py
@@ -26,8 +28,6 @@ def _journal_in_tmp(tmp_path, monkeypatch):
     import iris.browser
 
     monkeypatch.setattr(iris.browser, "_conn", None)
-    import threading
-
     monkeypatch.setattr(threading, "excepthook", threading.excepthook)  # main() installs its own; put it back after
     monkeypatch.setattr(iris.browser, "_watching", threading.Event())  # a voice-mode test may have started watch()
     import iris.web  # nor DNS: every name resolves to a public documentation address unless a test says otherwise
@@ -44,7 +44,8 @@ def _journal_in_tmp(tmp_path, monkeypatch):
     monkeypatch.setattr(iris.update, "_fetch", offline)
 
 
-_BROWSER_WATCHERS: list = []  # (stop event, thread, interval) of every browser.watch a test started
+_BROWSER_WATCHERS: list[tuple[threading.Event, threading.Thread, float]] = []
+# (stop event, thread, interval) of every browser.watch a test started
 
 
 @pytest.fixture
@@ -57,8 +58,6 @@ def browser_watchers():
 def _stop_browser_watchers(monkeypatch):
     """Every browser watcher a test starts is stopped when the test ends: main() in voice mode calls
     browser.watch with no stop event, and a leaked watcher would touch later tests' fakes."""
-    import threading
-
     import iris.browser
 
     real_watch = iris.browser.watch

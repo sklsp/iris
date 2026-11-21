@@ -8,13 +8,13 @@ import json
 import sys
 import threading
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 import iris.__main__ as imain
 import iris.dashboard as idash
 import iris.eval as ieval
+import iris.skills as iskills
 import iris.timings as itimings
 import iris.tools as itools
 import iris.voice as ivoice
@@ -47,32 +47,23 @@ class FakeAgent:
         return f"answer:{request}"
 
 
-def _install_agent(monkeypatch):
+def _install_agent(monkeypatch, ask_confirm=False):
     """Patch Agent/LMStudio/Journal in the __main__ namespace; return a holder dict."""
     holder = {}
 
     def agent_factory(llm, confirm, journal):
-        holder["agent"] = FakeAgent(llm, confirm, journal)
-        return holder["agent"]
+        agent = FakeAgent(llm, confirm, journal)
+        if ask_confirm:  # some tests exercise the confirm callback
+            agent.ask_confirm = True
+        holder["agent"] = agent
+        return agent
 
     monkeypatch.setattr(imain, "Agent", agent_factory)
     monkeypatch.setattr(imain, "LMStudio", lambda: FakeLM())
     monkeypatch.setattr(imain, "Journal", FakeJournal)
     # main() starts the skill watcher; a real one would outlive the test and poll later tests' skill folders
-    monkeypatch.setattr(imain.skills, "watch", lambda say: None)
+    monkeypatch.setattr(iskills, "watch", lambda say: None)
     return holder
-
-
-def _ask_confirm_agent(monkeypatch):
-    """Wrap the installed Agent factory so every created agent asks for confirmation."""
-    original_factory = imain.Agent
-
-    def factory(llm, confirm, journal):
-        a = original_factory(llm, confirm, journal)
-        a.ask_confirm = True
-        return a
-
-    monkeypatch.setattr(imain, "Agent", factory)
 
 
 def _scripted_input(monkeypatch, values):
@@ -223,8 +214,7 @@ def test_text_mode_answers_requests_until_quit_word(tmp_path, monkeypatch, capsy
 
 
 def test_text_mode_confirm_prompt_reads_yes_no(tmp_path, monkeypatch, capsys):
-    holder = _install_agent(monkeypatch)
-    _ask_confirm_agent(monkeypatch)
+    holder = _install_agent(monkeypatch, ask_confirm=True)
     monkeypatch.setattr(sys, "argv", ["iris", "--journal", str(tmp_path / "j.jsonl")])
     prompts = _scripted_input(monkeypatch, ["do the thing", "yes", "quit"])
 
@@ -261,8 +251,7 @@ def test_empty_request_is_ignored_and_loop_continues(tmp_path, monkeypatch):
 
 
 def test_push_to_talk_mode_drives_voice_and_agent(tmp_path, monkeypatch):
-    holder = _install_agent(monkeypatch)
-    _ask_confirm_agent(monkeypatch)
+    holder = _install_agent(monkeypatch, ask_confirm=True)
     voice_holder = {}
 
     def voice_factory():
@@ -286,8 +275,7 @@ def test_push_to_talk_mode_drives_voice_and_agent(tmp_path, monkeypatch):
 
 
 def test_voice_mode_uses_session_context_manager_and_async_speech(tmp_path, monkeypatch):
-    holder = _install_agent(monkeypatch)
-    _ask_confirm_agent(monkeypatch)
+    holder = _install_agent(monkeypatch, ask_confirm=True)
     session_holder = {}
 
     def session_factory():
@@ -365,8 +353,7 @@ def test_voice_mode_confirm_cancels_the_hold_line_before_asking(tmp_path, monkey
     """A yes/no question is never talked over by a hold line."""
     import iris.agent as iagent
 
-    holder = _install_agent(monkeypatch)
-    _ask_confirm_agent(monkeypatch)
+    holder = _install_agent(monkeypatch, ask_confirm=True)
     session_holder = {}
 
     def session_factory():
@@ -400,10 +387,16 @@ def test_main_installs_timers_that_speak_through_say(tmp_path, monkeypatch, caps
     from iris.timers import Timers
 
     holder = _install_agent(monkeypatch)
-    started: list[tuple[float, object]] = []
+
+    class TimerHandle:
+        def __init__(self, fn):
+            self.run = fn
+            self.cancel = lambda: None
+
+    started: list[tuple[float, TimerHandle]] = []
 
     def fake_start(seconds, fn):
-        handle = SimpleNamespace(run=fn, cancel=lambda: None)
+        handle = TimerHandle(fn)
         started.append((seconds, handle))
         return handle
 
@@ -625,6 +618,10 @@ def test_a_request_cancelled_from_the_overlay_is_not_spoken(tmp_path, monkeypatc
             self.cancelled = threading.Event()
 
     class CancellableAgent(FakeAgent):
+        def __init__(self, llm, confirm, journal):
+            super().__init__(llm, confirm, journal)
+            self.cancel = threading.Event()  # main replaces it with the session's flag
+
         def handle(self, request):
             self.cancel.clear()  # like the real Agent: a new request starts uncancelled
             if request == "zoek iets lang":
@@ -654,8 +651,13 @@ def test_a_request_cancelled_from_the_overlay_is_not_spoken(tmp_path, monkeypatc
 def test_app_subcommand_delegates(monkeypatch):
     import iris.app
 
-    seen = {}
-    monkeypatch.setattr(iris.app, "main", lambda argv: seen.setdefault("argv", argv) and 0)
+    seen: dict[str, object] = {}
+
+    def fake_app_main(argv):
+        seen["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(iris.app, "main", fake_app_main)
     monkeypatch.setattr(sys, "argv", ["iris", "app", "--background"])
     with pytest.raises(SystemExit):
         imain.main()
@@ -806,7 +808,7 @@ def test_ctrl_c_while_busy_dumps_every_thread_and_reraises(tmp_path, monkeypatch
     monkeypatch.setattr(imain, "LMStudio", lambda: FakeLM())
     monkeypatch.setattr(imain, "Journal", FakeJournal)
     monkeypatch.setattr(iris.reminders, "start_reminders", lambda say: None)
-    monkeypatch.setattr(imain.skills, "watch", lambda say: None)
+    monkeypatch.setattr(iskills, "watch", lambda say: None)
     monkeypatch.setattr(faulthandler, "dump_traceback", fake_dump_traceback)
     monkeypatch.setattr(sys, "argv", ["iris", "--journal", str(tmp_path / "j.jsonl")])
     _scripted_input(monkeypatch, ["hello"])

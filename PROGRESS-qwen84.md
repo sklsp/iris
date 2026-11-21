@@ -1,0 +1,2 @@
+- [x] Q1. typing: tests join mypy, small files first (2440 passed in 110.67s (0:01:50))
+- [ ] Q2. typing: the middle files

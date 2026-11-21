@@ -4,6 +4,7 @@ probe, recording, voice and GitHub answer is a fake."""
 from __future__ import annotations
 
 import json
+import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -47,8 +48,13 @@ def test_probe_reads_an_openai_style_model_list(monkeypatch):
             return json.dumps({"data": [{"id": "a"}, {"id": ""}, {"id": "b"}]}).encode()
 
     assert firstrun.probe("http://127.0.0.1:9/v1", timeout=0.2) is None  # nothing listens on port 9
-    seen = []
-    monkeypatch.setattr(firstrun.urllib.request, "urlopen", lambda url, timeout: seen.append(url) or Resp())
+    seen: list[str] = []
+
+    def fake_urlopen(url, timeout):
+        seen.append(url)
+        return Resp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     assert firstrun.probe("http://x/v1/") == ["a", "b"] and seen == ["http://x/v1/models"]
 
 
@@ -125,7 +131,7 @@ def test_mic_test_uses_sounddevice_when_no_recorder_is_given(monkeypatch):
     """The default recorder records MIC_SECONDS of mono float32 at 16 kHz through sounddevice."""
     import sys
 
-    asked = {}
+    asked: dict[str, object] = {}
 
     class _FakeSD:
         def rec(self, frames, samplerate, channels, dtype):
@@ -144,7 +150,7 @@ def test_mic_test_uses_sounddevice_when_no_recorder_is_given(monkeypatch):
 
 
 def test_speaker_test():
-    said = []
+    said: list[str] = []
     assert firstrun.speaker_test(said.append)["ok"] and said == [firstrun.SPEAKER_TEXT]
 
     def broken(text):
@@ -242,7 +248,7 @@ def test_same_or_older_release_is_not_newer():
 
 
 def test_tell_once_says_it_once_per_version(monkeypatch):
-    told = []
+    told: list[str] = []
     monkeypatch.setattr(update, "_fetch", lambda: {"tag_name": "v99.0.0", "html_url": "u"})
     update.tell_once(told.append)
     update.tell_once(told.append)
@@ -284,8 +290,9 @@ def test_setup_routes_dispatch_each_step(monkeypatch):
         with urllib.request.urlopen(base + "/api/setup", timeout=10) as r:
             assert json.loads(r.read())["step"] == "get"
         for step in ("server", "mic", "speaker", "done"):
+            # token is set on the real server class, not the base type make_server names
             req = urllib.request.Request(base + "/api/setup/" + step, b'{"url": "u"}', method="POST", headers={
-                "Content-Type": "application/json", "X-Iris-Token": s.token, "Origin": base})
+                "Content-Type": "application/json", "X-Iris-Token": s.__dict__["token"], "Origin": base})
             with urllib.request.urlopen(req, timeout=10) as r:
                 assert json.loads(r.read())["step"] == step
     finally:

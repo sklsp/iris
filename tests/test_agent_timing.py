@@ -1,7 +1,8 @@
 import json
+from typing import Any, cast
 
 from iris.agent import Agent, Journal
-from iris.llm import Reply, ToolCall
+from iris.llm import LMStudio, Reply, ToolCall
 from iris.tools import SAFE, Tool
 
 
@@ -86,7 +87,7 @@ def test_a_plain_answer_times_the_model_call_only(tmp_path):
 
 
 def test_one_tool_call_times_the_tool_and_names_it_slowest(tmp_path):
-    ran = []
+    ran: list[tuple[str, dict[str, Any]]] = []
     a = agent(tmp_path, ScriptedLLM(call("status"), answer("Done.")), FakeClock(), ran=ran)
     assert a.handle("check the status") == "Done."
     assert ran == [("status", {})]  # the tool really ran once, so its time is real
@@ -104,14 +105,15 @@ def test_a_model_error_still_writes_the_timing_entry(tmp_path):
 
 
 def test_a_cancelled_request_still_writes_the_timing_entry(tmp_path):
-    box = {}
+    box: dict[str, Agent] = {}
 
     class CancellingLLM:
         def chat(self, messages, tools):
             box["agent"].cancel.set()  # the overlay's cancel button, pressed while the model was thinking
             return answer("too late.")
 
-    a = Agent(CancellingLLM(), lambda q: True, Journal(tmp_path / "j.jsonl"), fake_tools(), clock=FakeClock())
+    llm = cast(LMStudio, CancellingLLM())
+    a = Agent(llm, lambda q: True, Journal(tmp_path / "j.jsonl"), fake_tools(), clock=FakeClock())
     box["agent"] = a
     assert a.handle("do the thing") == ""
     assert timing_entries(tmp_path) == [{"event": "timing", "ms": 375, "llm_ms": 125, "llm_calls": 1,
@@ -120,7 +122,7 @@ def test_a_cancelled_request_still_writes_the_timing_entry(tmp_path):
 
 
 def test_two_tool_calls_write_one_entry_each_before_the_request_timing(tmp_path):
-    ran = []
+    ran: list[tuple[str, dict[str, Any]]] = []
     a = agent(tmp_path, ScriptedLLM(calls("status", "click"), answer("Done.")), FakeClock(), ran=ran)
     assert a.handle("do both") == "Done."
     assert ran == [("status", {}), ("click", {})]  # both really ran, so their times are real

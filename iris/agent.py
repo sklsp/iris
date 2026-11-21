@@ -111,7 +111,7 @@ class Journal:
         file is kept; a failed size check or move must never lose an entry, so log on as before."""
         try:
             if self.path.exists() and self.path.stat().st_size >= self.MAX_BYTES:
-                os.replace(self.path, self.path.with_name(self.path.name + ".1"))
+                self.path.replace(self.path.with_name(self.path.name + ".1"))
         except OSError:  # the entry matters more than a small file; append to the current one instead
             pass
 
@@ -401,7 +401,7 @@ class Agent:
                     'like {"window": "Notepad"}')
         try:
             tier = tool.tier_of(call.args)
-        except Exception as exc:  # noqa: BLE001 - arguments the tier rules can not read (path=""): never run it
+        except Exception as exc:  # arguments the tier rules can not read (path=""): never run it
             self.journal.log(event="tool", tool=call.name, args=call.args, tier="unknown", outcome="error",
                              error=repr(exc), error_kind="bad_args")
             return f"error: {exc}"
@@ -421,7 +421,7 @@ class Agent:
             else:
                 try:
                     question = _describe(call.name, call.args, self._lang)
-                except Exception:  # noqa: BLE001 - a question that can not be put plainly is still asked
+                except Exception:  # a question that can not be put plainly is still asked
                     question = f"Run {call.name} with {call.args}?"
                 if sensitive:
                     question += _sensitive_note(self._lang)
@@ -439,7 +439,7 @@ class Agent:
             return f"error: {exc}"
         try:
             result = tool.fn(**call.args)
-        except Exception as exc:  # noqa: BLE001 - every failure goes back to the model as data
+        except Exception as exc:  # every failure goes back to the model as data
             self.journal.log(**entry, outcome="error", error=repr(exc))
             return f"error: {exc}"
         # outside the try on purpose: a journal that can not be written stops the turn instead of reporting a tool error

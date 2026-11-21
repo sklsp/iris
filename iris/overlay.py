@@ -21,6 +21,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import IO, Any
 
 from iris import config
@@ -174,7 +175,7 @@ class Overlay:
                 if is_cancel(line) and self.on_cancel is not None:
                     try:
                         self.on_cancel()
-                    except Exception as exc:  # noqa: BLE001 - a failing cancel must not stop the next one
+                    except Exception as exc:  # a failing cancel must not stop the next one
                         print(f"(cancelling did not work: {exc!r})")
         except (OSError, ValueError):  # the pipe broke or was closed
             pass
@@ -223,7 +224,7 @@ def launch() -> Overlay:
     log_path = config.config_path().parent / "overlay.log"
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_path, "a", encoding="utf-8") as log:  # the child keeps its own handle
+        with log_path.open("a", encoding="utf-8") as log:  # the child keeps its own handle
             proc = subprocess.Popen([sys.executable, "-m", "iris.overlay"], stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=log, text=True, encoding="ascii",
                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -423,7 +424,7 @@ def split_ring(points: list[tuple[float, float]], pieces: int, chords: int = 6) 
     """A closed polygon cut into `pieces` of equal length, each a line of `chords` short chords, in order round it:
     piece i ends where piece i + 1 starts and the last ends where the first starts."""
     loop = points + points[:1]
-    lengths = [math.dist(a, b) for a, b in zip(loop, loop[1:], strict=False)]
+    lengths = [math.dist(a, b) for a, b in pairwise(loop)]
     total, n = sum(lengths), pieces * chords
     samples, i, walked = [], 0, 0.0
     for j in range(n):
@@ -489,7 +490,7 @@ class Panel:
             self.win.no_focus()
             try:
                 self.win.no_activate_on_click()
-            except Exception as exc:  # noqa: BLE001 - WS_EX_NOACTIVATE still keeps the focus where it is
+            except Exception as exc:  # WS_EX_NOACTIVATE still keeps the focus where it is
                 print(f"no WM_MOUSEACTIVATE hook: {exc!r}", file=sys.stderr)
             self.win.hide()
             if before:
@@ -506,7 +507,7 @@ class Panel:
         try:
             if self._frame():
                 return
-        except Exception:  # noqa: BLE001 - one bad frame must not stop the loop: it would outlive Iris on screen
+        except Exception:  # one bad frame must not stop the loop: it would outlive Iris on screen
             import traceback
 
             traceback.print_exc()  # overlay.log

@@ -217,7 +217,7 @@ def _write_csv(p: Path, sheets: list[dict[str, Any]]) -> str:
 
         trash_file(str(p))
     p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "w", newline="", encoding="utf-8-sig") as f:
+    with p.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         for row in rows:
             w.writerow(["'" + v if isinstance(v, str) and v.startswith(_FORMULA_START) else v for v in row])

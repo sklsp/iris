@@ -165,7 +165,7 @@ def main() -> None:
     threading.excepthook = thread_failed
     try:
         _main()
-    except Exception as exc:  # noqa: BLE001 - the last stop: write it down, say where, exit non-zero
+    except Exception as exc:  # the last stop: write it down, say where, exit non-zero
         path = config.log_crash("iris " + " ".join(sys.argv[1:]), exc)
         print(f"Iris stopped on an error: {exc}. The details are in {path}.", file=sys.stderr)
         raise SystemExit(1) from None

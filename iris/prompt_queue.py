@@ -43,7 +43,7 @@ def save(data: dict[str, Any], path: Path | None = None) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, p)
+    tmp.replace(p)
 
 
 def add(agent: str, text: str, now: str = "", path: Path | None = None) -> int:

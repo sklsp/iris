@@ -718,7 +718,7 @@ def test_post_with_a_matching_referer_is_allowed(srv, monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(d, "run_lms", lambda args: (calls.append(args) or (0, "")))
     monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "j.jsonl"))
-    code, body = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, referer=base + "/")
+    code, _ = post(base + "/api/models/load", {"model": "m1"}, token=srv.token, referer=base + "/")
     assert code == 200 and calls == [["load", "m1"]]
 
 
@@ -920,7 +920,7 @@ def test_iris_model_post_missing_or_bad_id_is_400(srv, tmp_path, monkeypatch, bo
     _clean_model_env(monkeypatch, tmp_path)
     fake_v0(monkeypatch, [("m1", "not-loaded", "llm")])
 
-    code, b = post(base + "/api/iris/model", body, token=srv.token, origin=base)
+    code, _ = post(base + "/api/iris/model", body, token=srv.token, origin=base)
     assert code == 400
 
 
@@ -1806,12 +1806,12 @@ def test_a_failing_write_answers_500_with_its_reason(srv, monkeypatch):
 def test_settings_refuse_infinite_numbers(value):
     from iris import settings
 
-    clean, errors = settings.validate({"voxcpm_gpu": value, "silence": value})
+    _, errors = settings.validate({"voxcpm_gpu": value, "silence": value})
     assert set(errors) == {"voxcpm_gpu", "silence"}
 
 
 def test_the_page_with_its_token_is_never_cached(server):
-    status, headers, body = get(server + "/")
+    status, headers, _ = get(server + "/")
     assert status == 200 and headers.get("Cache-Control") == "no-store"
 
 

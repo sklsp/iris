@@ -92,6 +92,6 @@ def note_remove(query: str) -> str:
     del lines[first_idx]
     tmp = p.with_name(p.name + ".tmp")  # write aside, then swap: a crash mid-write never loses the other notes
     tmp.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
-    os.replace(tmp, p)
+    tmp.replace(p)
     dt, _ = hits[0]
     return f"removed a note ({dt:%Y-%m-%d %H:%M})"

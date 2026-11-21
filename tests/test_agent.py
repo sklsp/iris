@@ -401,7 +401,7 @@ def test_a_refusal_from_the_server_is_journaled_with_its_reason(tmp_path):
     llm = RaisingLLM(urllib.error.HTTPError("http://127.0.0.1:1234", 400, "Bad Request", None, body))
     a = agent(tmp_path, llm, [])
     a.handle("check")
-    error = [e for e in journal(tmp_path) if e["event"] == "llm_error"][0]["error"]
+    error = next(e for e in journal(tmp_path) if e["event"] == "llm_error")["error"]
     assert "400" in error and "context length 65536 exceeded" in error
 
 

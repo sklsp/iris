@@ -112,7 +112,7 @@ def _keep_unreadable(p: Path) -> None:
             return
     except (ValueError, OSError):
         pass
-    os.replace(p, p.with_name(f"{p.name}.unreadable-{datetime.now():%Y%m%d-%H%M%S}"))
+    p.replace(p.with_name(f"{p.name}.unreadable-{datetime.now():%Y%m%d-%H%M%S}"))
 
 
 def _write(path: Path | None, rows: list[dict[str, Any]]) -> None:
@@ -121,7 +121,7 @@ def _write(path: Path | None, rows: list[dict[str, Any]]) -> None:
     _keep_unreadable(p)
     tmp = p.with_name(p.name + ".tmp")  # write aside, then swap: a crash mid-write never empties the list
     tmp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, p)
+    tmp.replace(p)
 
 
 def _parse_when(when: str, now: datetime) -> datetime | None:
@@ -201,7 +201,7 @@ def reminder_list() -> str:
     return "\n".join(f"- {due:%Y-%m-%d %H:%M} {r['text']} (id {r['id']})" for due, r in parsed)
 
 
-def reminder_cancel(id: int) -> str:  # noqa: A002 - the name the tool schema gives the model, like timer_cancel
+def reminder_cancel(id: int) -> str:  # the name the tool schema gives the model, like timer_cancel
     """Cancel one pending reminder by its id; it stops waiting and leaves the file."""
     rid = id
     with _lock:

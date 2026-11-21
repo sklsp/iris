@@ -730,9 +730,8 @@ def test_start_in_hub_retry_with_two_sessions_warns_about_the_double_start(monke
     first = [
         {"sessionId": "abc", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 1), "prompt": "fix the bug"}
     ]
-    both = first + [
-        {"sessionId": "def", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 2), "prompt": "fix the bug"}
-    ]
+    both = [*first,
+            {"sessionId": "def", "source": "cline-cli-zen", "startedAt": _iso(HUB_NOW + 2), "prompt": "fix the bug"}]
 
     calls = 0
 

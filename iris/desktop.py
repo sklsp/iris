@@ -97,7 +97,7 @@ def screenshot(path: str = "") -> str:
         p = Path.home() / "Pictures" / "Iris" / f"screenshot-{_wall_now():%Y%m%d-%H%M%S}.png"
     else:
         p = files.resolve_target(path, ".png")
-    os.makedirs(p.parent, exist_ok=True)
+    p.parent.mkdir(parents=True, exist_ok=True)
     # the path goes in through the environment, never into the script text, so it can not run as PowerShell
     try:
         r = subprocess.run(["powershell", "-NoProfile", "-Command", _SCREENSHOT_PS],

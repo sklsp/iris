@@ -51,8 +51,8 @@ VAD_THRESHOLD = float(os.environ.get("IRIS_VAD_THRESHOLD", 0.01))  # RMS below t
 # for half the download. Nothing is downloaded automatically: drop the two files in ~/.iris by hand
 # and Iris uses them, otherwise it keeps speaking with Windows SAPI.
 KOKORO_DIR = os.environ.get("IRIS_KOKORO_DIR", str(Path.home() / ".iris"))
-KOKORO_MODEL = os.path.join(KOKORO_DIR, "kokoro-v1.0.fp16.onnx")
-KOKORO_VOICES = os.path.join(KOKORO_DIR, "voices-v1.0.bin")
+KOKORO_MODEL = str(Path(KOKORO_DIR) / "kokoro-v1.0.fp16.onnx")  # Kokoro takes string paths
+KOKORO_VOICES = str(Path(KOKORO_DIR) / "voices-v1.0.bin")
 KOKORO_VOICE = os.environ.get("IRIS_KOKORO_VOICE", "af_heart")
 _KOKORO_FILES = {
     "kokoro-v1.0.fp16.onnx": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.fp16.onnx",
@@ -156,7 +156,7 @@ class WakeWord:
         if self.name in openwakeword.MODELS:
             path = openwakeword.MODELS[self.name]["model_path"]
         onnx = path.replace(".tflite", ".onnx")
-        if not os.path.exists(onnx):
+        if not Path(onnx).exists():
             if self.name not in openwakeword.MODELS:  # your own model file: download_models([]) would fetch them all
                 raise FileNotFoundError(f"no wake word model at {onnx}; check wakeword in config.toml")
             print(f"Downloading wake word model {self.name} (first run only)...")
@@ -382,7 +382,7 @@ class VoiceSession:
         try:
             self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", blocksize=FRAME, callback=cb)
             self._stream.__enter__()
-        except Exception as exc:  # noqa: BLE001 - PortAudioError and friends: one line, not a traceback
+        except Exception as exc:  # PortAudioError and friends: one line, not a traceback
             self._stream = None
             raise SystemExit(f"No microphone could be opened ({exc}). Plug one in, or pick the default input "
                              "device in Windows Sound settings, then start voice mode again.") from exc
@@ -493,7 +493,7 @@ class VoiceSession:
             waiter.join(stall)
             if waiter.is_alive():
                 sd.stop()  # the device stalled: never let a chime hold listening
-        except Exception:  # noqa: BLE001 - the chime is a nicety; listening goes on without it
+        except Exception:  # the chime is a nicety; listening goes on without it
             pass
 
     def follow_up(self) -> str | None:
@@ -693,7 +693,7 @@ def _claim(path: Path, done: Path) -> Path | None:
     done.mkdir(exist_ok=True)
     target = done / path.name
     try:
-        os.replace(path, target)
+        path.replace(target)
     except OSError:
         return None
     try:
@@ -947,7 +947,7 @@ class Speaker:
             self._sounding()  # SAPI gives no better signal than the moment say() is asked for
             engine.say(text)
             engine.runAndWait()
-        except Exception:  # noqa: BLE001 - speech is a nicety; the printed line is the answer
+        except Exception:  # speech is a nicety; the printed line is the answer
             pass
         return True
 
@@ -980,7 +980,7 @@ class Speaker:
             if ok:
                 self._note_success("piper")  # a fully spoken answer resets Piper's failure streak
             return ok
-        except Exception as exc:  # noqa: BLE001 - fall back to SAPI so Iris keeps talking
+        except Exception as exc:  # fall back to SAPI so Iris keeps talking
             print(f"Piper failed ({exc}); using Windows SAPI instead.")
             self._note_failure("piper", "Piper", "sapi")  # switches the voice only after three in a row
             return self._speak_sapi(text)
@@ -994,7 +994,7 @@ class Speaker:
             if ok:
                 self._note_success("voxcpm")  # a fully spoken answer resets VoxCPM's failure streak
             return ok
-        except Exception as exc:  # noqa: BLE001 - fall back to Piper so Iris keeps talking
+        except Exception as exc:  # fall back to Piper so Iris keeps talking
             print(f"VoxCPM failed ({exc}); using Piper instead.")
             self._note_failure("voxcpm", "VoxCPM", "piper")  # switches the voice only after three in a row
             if self.engine != "voxcpm" and self._vox is not None:  # switched away for good: free its GPU memory now
@@ -1007,7 +1007,7 @@ class Speaker:
         if self._kokoro is None:
             from kokoro_onnx import Kokoro
 
-            missing = [os.path.basename(p) for p in (KOKORO_MODEL, KOKORO_VOICES) if not os.path.exists(p)]
+            missing = [Path(p).name for p in (KOKORO_MODEL, KOKORO_VOICES) if not Path(p).exists()]
             if missing:
                 urls = " ".join(_KOKORO_FILES[n] for n in missing if n in _KOKORO_FILES)
                 raise FileNotFoundError(f"missing {', '.join(missing)} in {KOKORO_DIR}; get them from {urls}")
@@ -1046,7 +1046,7 @@ class Speaker:
             if ok:
                 self._note_success("kokoro")  # a fully spoken answer resets Kokoro's failure streak
             return ok
-        except Exception as exc:  # noqa: BLE001 - fall back to SAPI so Iris keeps talking
+        except Exception as exc:  # fall back to SAPI so Iris keeps talking
             print(f"Kokoro failed ({exc}); using Windows SAPI instead.")
             self._note_failure("kokoro", "Kokoro", "sapi")  # switches the voice only after three in a row
             return self._speak_sapi(text)

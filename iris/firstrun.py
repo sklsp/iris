@@ -101,7 +101,7 @@ def mic_test(record: Callable[[float], Any] | None = None) -> dict[str, Any]:
         audio = np.asarray(record(MIC_SECONDS), dtype="float32").reshape(-1)
     except ImportError:
         return {"ok": False, "level": 0, "message": "The voice parts are not installed (pip install -e .[voice])."}
-    except Exception as exc:  # noqa: BLE001 - no device, device busy: the message is the answer
+    except Exception as exc:  # no device, device busy: the message is the answer
         return {"ok": False, "level": 0, "message": f"No microphone could be opened: {exc}"}
     from iris.voice import VAD_THRESHOLD
 
@@ -123,7 +123,7 @@ def speaker_test(say: Callable[[str], object] | None = None) -> dict[str, Any]:
 
             say = Speaker("sapi").speak
         say(SPEAKER_TEXT)
-    except Exception as exc:  # noqa: BLE001 - no audio device or no SAPI voice
+    except Exception as exc:  # no audio device or no SAPI voice
         return {"ok": False, "message": f"Could not play sound: {exc}"}
     return {"ok": True, "message": "Played. If you heard nothing, check the default output device in Windows."}
 

@@ -3,6 +3,7 @@
 import json
 import time
 import urllib.error
+from typing import ClassVar
 
 import pytest
 
@@ -55,7 +56,7 @@ class FakeBrowser:
             self.href = params["url"]
         return {}
 
-    search = {"human": False, "results": [{"title": "Uitslag GP Mexico", "url": "https://f1.example/mexico",
+    search: ClassVar = {"human": False, "results": [{"title": "Uitslag GP Mexico", "url": "https://f1.example/mexico",
                                            "snippet": "Verstappen won."}]}
 
 
@@ -113,7 +114,7 @@ def test_a_slow_answer_keeps_the_socket_so_the_browser_does_not_ask_allow_again(
     c.ws, c._id, c._slow, c._lock = SlowSocket(), 0, (TimeoutError,), browser.threading.Lock()
     monkeypatch.setattr(browser, "_conn", c)
     monkeypatch.setattr(browser, "_ws_url", lambda: pytest.fail("reconnected"))
-    with pytest.raises(browser.BrowserError, match="did not answer Runtime.evaluate within 2 s"):
+    with pytest.raises(browser.BrowserError, match=r"did not answer Runtime.evaluate within 2 s"):
         browser._call("Runtime.evaluate", {}, "s", 2)
     assert browser._conn is c
 
@@ -227,7 +228,7 @@ def test_one_yes_covers_the_site_and_the_question_names_the_button(fake, tmp_pat
 def test_search_runs_in_a_background_tab_that_is_closed_after(fake, monkeypatch):
     monkeypatch.setattr(browser.time, "sleep", lambda s: None)
     assert browser.search("f1 winnaar") == fake.search["results"]
-    create = [c[1] for c in fake.calls if c[0] == "Target.createTarget"][0]
+    create = next(c[1] for c in fake.calls if c[0] == "Target.createTarget")
     assert create["background"] is True and "q=f1+winnaar" in create["url"]
     assert ("Target.closeTarget", {"targetId": "S"}, None) in fake.calls
 
@@ -267,7 +268,7 @@ def test_open_url_returns_the_new_page_so_no_read_step_is_needed(fake, monkeypat
     out = tools.open_url("https://www.netflix.com/search?q=horror")
     assert out.startswith("opened https://www.netflix.com/search?q=horror\n\nTab: Home - Netflix")
     assert '[2] button "Zoeken"' in out and browser.item(2)["name"] == "Zoeken"  # the tiers know the page too
-    create = [c[1] for c in fake.calls if c[0] == "Target.createTarget"][0]
+    create = next(c[1] for c in fake.calls if c[0] == "Target.createTarget")
     assert create == {"url": "https://www.netflix.com/search?q=horror"}  # in front, not a background tab
 
 

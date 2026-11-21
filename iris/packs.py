@@ -107,7 +107,7 @@ def _whisper_installed() -> bool:
         for name in whisper_names():
             download_model(name, local_files_only=True)
         return True
-    except Exception:  # noqa: BLE001 - not cached, or the voice parts are missing
+    except Exception:  # not cached, or the voice parts are missing
         return False
 
 
@@ -198,10 +198,10 @@ def steps(pack_id: str) -> list[tuple[str, list[str] | Callable[[Job], None]]]:
             f"import openwakeword.utils as u; u.download_models([{_wake_name()!r}])"))]
     if pack_id == "gpu":
         return [("Installing cuBLAS and cuDNN (about 2 GB)",
-                 pip + ["--target", str(gpu_dir()), "nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"])]
+                 [*pip, "--target", str(gpu_dir()), "nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"])]
     if pack_id == "piper":
         voices = list(voice.piper_voices().values())
-        return [("Installing Piper as a separate program", pip + ["--target", str(piper_runtime()), "piper-tts"]),
+        return [("Installing Piper as a separate program", [*pip, "--target", str(piper_runtime()), "piper-tts"]),
                 ("Downloading the voices", [sys.executable, "-m", "piper.download_voices", *voices,
                                             "--data-dir", str(voice.PIPER_DIR)])]
     if pack_id == "voxcpm":
@@ -288,7 +288,7 @@ def run(job: Job, popen: Callable[..., subprocess.Popen[str]] = subprocess.Popen
         marker.unlink(missing_ok=True)
         job.say("== Done")
         job.state = "done"
-    except Exception as exc:  # noqa: BLE001 - the user reads what went wrong on the Setup tab
+    except Exception as exc:  # the user reads what went wrong on the Setup tab
         job.say(f"== Stopped: {exc}")
         job.state = "failed"
 

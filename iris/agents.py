@@ -80,7 +80,7 @@ def load_config(path: Path | str | None = None) -> Config:
     """Read agents.toml; a missing or unreadable file falls back to the built-in defaults."""
     p = Path(path) if path else CONFIG
     try:
-        with open(p, "rb") as f:
+        with p.open("rb") as f:
             data = tomllib.load(f)
     except (OSError, tomllib.TOMLDecodeError):
         return Config()

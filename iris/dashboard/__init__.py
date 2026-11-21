@@ -194,14 +194,14 @@ def lmstudio_payload() -> dict[str, Any]:
     except urllib.error.URLError as exc:
         if isinstance(exc.reason, OSError):  # nothing answered at all: the plain list would fail the same way
             return {"reachable": False}
-    except Exception:  # noqa: BLE001 - bad JSON and the like: try the plain list
+    except Exception:  # bad JSON and the like: try the plain list
         pass
     try:
         data = _fetch_json(V1_MODELS_URL)
         models = [{"id": str(m.get("id", "")), "state": None, "type": None}
                   for m in data.get("data", [])]
         return {"reachable": True, "states_known": False, "models": models}
-    except Exception:  # noqa: BLE001 - unreachable or bad JSON both mean "not reachable"
+    except Exception:  # unreachable or bad JSON both mean "not reachable"
         return {"reachable": False}
 
 
@@ -246,7 +246,7 @@ def run_lms(args: list[str]) -> tuple[int, str]:
     exe = _lms_exe()
     if not exe:
         raise ModelActionError(503, "no lms executable found: set IRIS_LMS_BIN or put lms on PATH")
-    proc = subprocess.run([exe] + args, capture_output=True, text=True,
+    proc = subprocess.run([exe, *args], capture_output=True, text=True,
                           timeout=LMS_TIMEOUT_SECONDS)
     return proc.returncode, (proc.stderr or proc.stdout or "").strip()
 
@@ -333,7 +333,7 @@ def set_iris_model(body: dict[str, Any]) -> dict[str, Any]:
     data["model"] = model
     tmp = path.with_name(path.name + ".tmp")  # write aside, then swap: a crash never leaves half a file
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    tmp.replace(path)
     _log_model_event("select", model, "ok")
     return iris_model_payload()
 
@@ -869,7 +869,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not chunk:
                     break
                 length -= len(chunk)
-        except Exception:  # noqa: BLE001 - a lying Content-Length must never kill the handler
+        except Exception:  # a lying Content-Length must never kill the handler
             pass
 
     def do_GET(self) -> None:  # GET stays read-only; the write routes refuse it with a 405
@@ -1002,7 +1002,7 @@ class Handler(BaseHTTPRequestHandler):
         except ModelActionError as exc:
             self._json({"error": exc.message}, code=exc.code)
             return
-        except Exception as exc:  # noqa: BLE001 - any other failure is an answer too, never a dropped connection
+        except Exception as exc:  # any other failure is an answer too, never a dropped connection
             self._json({"error": f"{type(exc).__name__}: {exc}"}, code=500)
             return
         self._json(payload)

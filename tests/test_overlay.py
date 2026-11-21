@@ -319,12 +319,13 @@ class _Stream:
 
 def test_voice_session_starts_and_stops_the_overlay(monkeypatch):
     monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(InputStream=_Stream))
-    rec: Any = Recorder()  # Any, so the identity assert against s.overlay type-checks
+    recorder = Recorder()
+    rec: Any = recorder  # Any, so the identity assert against s.overlay type-checks
     monkeypatch.setattr("iris.voice.launch", lambda: rec)
     s = VoiceSession(speaker=cast(Speaker, _Speaker()))
     with s:
         assert s.overlay is rec
-    assert rec.closed
+    assert recorder.closed  # not rec: the assert above narrows it to Overlay on some mypy versions
 
 
 def _session(text, **kw):

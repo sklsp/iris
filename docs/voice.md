@@ -37,8 +37,9 @@ extra packages) and writes errors to `~/.iris/overlay.log`; if it fails or is cl
 `iris shortcut` puts an `Iris.lnk` on your desktop with the Iris icon: double-click it and the app starts in its
 window and tray, with no console; a second start just brings the running window forward. `iris startup on` starts the
 tray app at login through an `Iris.vbs`, with no console window;
-`iris startup off` stops that. Let LM Studio start its local server at login too (its settings have an option for
-it), or Iris has no model to talk to.
+`iris startup off` stops that. The dashboard's Settings tab has the same switch; in the installer build it is
+disabled, because the installer manages its own startup entry. Let LM Studio start its local server at login too (its
+settings have an option for it), or Iris has no model to talk to.
 
 ### Wake word
 

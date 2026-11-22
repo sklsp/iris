@@ -125,7 +125,9 @@ From source, for development and for the command line.
    .venv\Scripts\iris --voice       # say "hey jarvis", then your request
    .venv\Scripts\iris dashboard     # status, activity, eval and skill review at http://127.0.0.1:8765
    .venv\Scripts\iris shortcut      # an Iris.lnk on your desktop: double-click to open the app, no console
-   .venv\Scripts\iris startup on    # an Iris.vbs in the Startup folder starts the tray app at login, no console
+   .venv\Scripts\iris startup on    # an Iris.vbs in the Startup folder starts the tray app at login, no console;
+                                    # the Settings tab has the same switch (the installer build manages its own
+                                    # startup entry, so it is disabled there)
    .venv\Scripts\iris app           # the desktop app (install the .[app] extra): dashboard window, tray, voice mode
    .venv\Scripts\iris timings       # how long recent requests took: median and p90, model share, slowest tools
    ```
@@ -325,8 +327,9 @@ set IRIS_DASHBOARD_PORT=9000                        # same, via environment vari
 The server binds to loopback only. Every data endpoint answers GET (the Activity tab's Speed panel reads `/api/timings`); the writes are the two model actions,
 `POST /api/models/load` and `POST /api/models/unload`, the queue edits, `POST /api/queue/add`, `/delete` and `/move`,
 `POST /api/cline/start`, approving or removing a skill (`POST /api/skills/approve` and `/remove`), saving settings
-(`POST /api/settings`), the Setup tab's steps (`POST /api/setup/...`), starting a voice pack download
-(`POST /api/packs/install`) and, in the app, restarting voice mode (`POST /api/app/voice/restart`). All of them
+(`POST /api/settings`), turning start at login on or off (`POST /api/startup`), the Setup tab's steps
+(`POST /api/setup/...`), starting a voice pack download (`POST /api/packs/install`) and, in the app, restarting
+voice mode (`POST /api/app/voice/restart`). All of them
 require a loopback Origin or Referer plus the per-start `X-Iris-Token` header, so
 a page opened from anywhere else cannot trigger them; every other method gets a 405. A start additionally needs a click
 on its button and a confirm dialog, so it never happens on its own. The journal file is opened read-only, there are no

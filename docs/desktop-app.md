@@ -65,9 +65,10 @@ flowchart LR
   read-only **Logs** tab on the dashboard tails that file, `overlay.log` and the VoxCPM `worker.log`.
 
 `iris startup on` writes an `Iris.vbs` in the Startup folder (pythonw, `-m iris app --background`, hidden, so only
-the tray icon shows). `iris shortcut` writes an `Iris.lnk` on the desktop (`-m iris app`, the Iris icon; a second
-start brings the running window forward). The app gives its child programs one hidden console, so git, nvidia-smi
-and powershell never flash a window. The installer build makes its own Start menu and startup entries (section 3).
+the tray icon shows); the dashboard's Settings tab has the same switch. `iris shortcut` writes an `Iris.lnk` on the
+desktop (`-m iris app`, the Iris icon; a second start brings the running window forward). The app gives its child
+programs one hidden console, so git, nvidia-smi and powershell never flash a window. The installer build makes its
+own Start menu and startup entries (section 3), so there the switch is disabled.
 
 ## 3. Packaging: a private CPython plus Inno Setup
 

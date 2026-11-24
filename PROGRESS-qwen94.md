@@ -1,0 +1,1 @@
+- [x] Q1. docs: manual checks for the new features (2475 passed in 109.51s (0:01:49))

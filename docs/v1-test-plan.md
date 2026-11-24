@@ -124,6 +124,16 @@ Each with what you should see.
 - [ ] **A Word task.** "Maak een Word-document notities.docx met de tekst hallo." A file in Documents\Iris.
 - [ ] **A browser task.** "Zoek op YouTube naar lofi muziek." One YouTube tab with the results.
 - [ ] **A file task.** "Wat staat er in mijn Documenten?" A listing.
+- [ ] **Start at login.** `iris startup on`, sign out and in: the tray icon appears, no console window;
+      `iris startup off` removes it (`iris startup status` says so).
+- [ ] **Settings switch.** The "Start Iris in the tray at login" checkbox on the Settings tab turns the same thing
+      on and off (check with `iris startup status`).
+- [ ] **Desktop shortcut.** `iris shortcut` puts Iris.lnk on the desktop with the Iris icon; double-click opens the
+      app with no console; a second double-click brings the open window forward.
+- [ ] **No flashing windows.** With the dashboard open for a minute, no console window flashes up (the app's child
+      programs share one hidden console).
+- [ ] **Nightshift line.** With nightshift_command and nightshift_runs set in `~\.iris\agents.toml`, the agents view
+      shows "nightshift <name>: running/stopped, ..." for the newest run; with them unset the line is absent.
 - [ ] **Crash log.** If anything above failed with an error, `~\.iris\logs\crash.log` has its traceback (the Logs tab
       shows it).
 

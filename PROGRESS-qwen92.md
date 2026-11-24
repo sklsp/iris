@@ -1,2 +1,0 @@
-- [x] Q1. agents: read the active nightshift run (2470 passed in 110.81s (0:01:50))
-- [x] Q2. dashboard: show it on the agents view (2472 passed in 79.09s (0:01:19); ruff + mypy clean)

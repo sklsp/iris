@@ -457,6 +457,39 @@ def test_api_agents_stuck_rows_first(tmp_path, monkeypatch):
     assert rows[0]["uncommitted"] == 1 and rows[0]["branch"] == "main"
 
 
+def test_agents_payload_has_no_nightshift_key_when_the_feature_is_off(tmp_path, monkeypatch):
+    import iris.agents as agents_mod
+    from tests.test_agents import make_repo, write_config
+
+    repo = make_repo(tmp_path, "fresh")
+    monkeypatch.setattr(agents_mod, "CONFIG", write_config(tmp_path, repos=[str(repo)], worktrees=[]))
+
+    assert "nightshift" not in agents_payload()   # no nightshift_command in agents.toml: the glance is off
+
+
+def test_agents_payload_carries_the_nightshift_run_when_configured(tmp_path, monkeypatch):
+    import iris.agents as agents_mod
+    from tests.test_agents import make_repo
+
+    repo = make_repo(tmp_path, "fresh")
+    cfg = tmp_path / "agents.toml"
+    lines = [f"repos = [{str(repo)!r}]".replace("'", '"'),  # repr doubles the backslashes: valid TOML on Windows
+             'worktrees = []', "stuck_minutes = 60",
+             'nightshift_command = ["python", "-m", "nightshift"]',
+             'nightshift_runs = ["C:/runs"]']
+    cfg.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setattr(agents_mod, "CONFIG", cfg)
+
+    fake = {"name": "qwen92", "done": 1, "total": 2, "blocked": 0, "next_item": 2,
+            "next_title": "dashboard: show it on the agents view", "current_minutes": 7,
+            "gate": "pass", "dir": "C:/runs/qwen92"}
+    monkeypatch.setattr(agents_mod, "nightshift_run", lambda cfg=None: fake)
+
+    data = agents_payload()
+    assert data["nightshift"] == fake   # the runner's result, untouched; the rows are still there
+    assert [r["name"] for r in data["rows"]] == ["fresh"]
+
+
 @pytest.fixture(scope="module")
 def runs_repos(tmp_path_factory):
     """alpha and zeta are not done, beta is done, gamma has no PROGRESS file at all. Built once for both /api/runs

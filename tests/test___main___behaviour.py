@@ -8,13 +8,14 @@ import json
 import sys
 import threading
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 import iris.__main__ as imain
 import iris.dashboard as idash
 import iris.eval as ieval
+import iris.skills as iskills
+import iris.timings as itimings
 import iris.tools as itools
 import iris.voice as ivoice
 
@@ -46,32 +47,23 @@ class FakeAgent:
         return f"answer:{request}"
 
 
-def _install_agent(monkeypatch):
+def _install_agent(monkeypatch, ask_confirm=False):
     """Patch Agent/LMStudio/Journal in the __main__ namespace; return a holder dict."""
     holder = {}
 
     def agent_factory(llm, confirm, journal):
-        holder["agent"] = FakeAgent(llm, confirm, journal)
-        return holder["agent"]
+        agent = FakeAgent(llm, confirm, journal)
+        if ask_confirm:  # some tests exercise the confirm callback
+            agent.ask_confirm = True
+        holder["agent"] = agent
+        return agent
 
     monkeypatch.setattr(imain, "Agent", agent_factory)
     monkeypatch.setattr(imain, "LMStudio", lambda: FakeLM())
     monkeypatch.setattr(imain, "Journal", FakeJournal)
     # main() starts the skill watcher; a real one would outlive the test and poll later tests' skill folders
-    monkeypatch.setattr(imain.skills, "watch", lambda say: None)
+    monkeypatch.setattr(iskills, "watch", lambda say: None)
     return holder
-
-
-def _ask_confirm_agent(monkeypatch):
-    """Wrap the installed Agent factory so every created agent asks for confirmation."""
-    original_factory = imain.Agent
-
-    def factory(llm, confirm, journal):
-        a = original_factory(llm, confirm, journal)
-        a.ask_confirm = True
-        return a
-
-    monkeypatch.setattr(imain, "Agent", factory)
 
 
 def _scripted_input(monkeypatch, values):
@@ -106,6 +98,7 @@ class FakeSession:
     def __init__(self, script):
         self.script = list(script)
         self.async_said = []
+        self.async_panels = []
         self.blocking_said = []
         self.entered = 0
         self.exited = 0
@@ -113,8 +106,9 @@ class FakeSession:
     def next_request(self):
         return self.script.pop(0)
 
-    def speak_async(self, text):
+    def speak_async(self, text, panel=True):
         self.async_said.append(text)
+        self.async_panels.append(panel)
 
     def speak(self, text):
         self.blocking_said.append(text)
@@ -185,6 +179,21 @@ def test_dashboard_without_port_serves_default(monkeypatch):
     assert calls == [{"port": None}]
 
 
+def test_timings_subcommand_delegates_and_propagates_exit_code(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["iris", "timings", "--last", "25"])
+    seen = {}
+
+    def fake_timings_main(argv):
+        seen["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(itimings, "timings_main", fake_timings_main)
+    with pytest.raises(SystemExit) as exc:
+        imain.main()
+    assert exc.value.code == 0
+    assert seen["argv"] == ["--last", "25"]
+
+
 
 def test_text_mode_answers_requests_until_quit_word(tmp_path, monkeypatch, capsys):
     holder = _install_agent(monkeypatch)
@@ -205,8 +214,7 @@ def test_text_mode_answers_requests_until_quit_word(tmp_path, monkeypatch, capsy
 
 
 def test_text_mode_confirm_prompt_reads_yes_no(tmp_path, monkeypatch, capsys):
-    holder = _install_agent(monkeypatch)
-    _ask_confirm_agent(monkeypatch)
+    holder = _install_agent(monkeypatch, ask_confirm=True)
     monkeypatch.setattr(sys, "argv", ["iris", "--journal", str(tmp_path / "j.jsonl")])
     prompts = _scripted_input(monkeypatch, ["do the thing", "yes", "quit"])
 
@@ -243,8 +251,7 @@ def test_empty_request_is_ignored_and_loop_continues(tmp_path, monkeypatch):
 
 
 def test_push_to_talk_mode_drives_voice_and_agent(tmp_path, monkeypatch):
-    holder = _install_agent(monkeypatch)
-    _ask_confirm_agent(monkeypatch)
+    holder = _install_agent(monkeypatch, ask_confirm=True)
     voice_holder = {}
 
     def voice_factory():
@@ -268,8 +275,7 @@ def test_push_to_talk_mode_drives_voice_and_agent(tmp_path, monkeypatch):
 
 
 def test_voice_mode_uses_session_context_manager_and_async_speech(tmp_path, monkeypatch):
-    holder = _install_agent(monkeypatch)
-    _ask_confirm_agent(monkeypatch)
+    holder = _install_agent(monkeypatch, ask_confirm=True)
     session_holder = {}
 
     def session_factory():
@@ -292,15 +298,105 @@ def test_voice_mode_uses_session_context_manager_and_async_speech(tmp_path, monk
     assert session.exited == 1
 
 
+def test_voice_mode_says_a_hold_line_when_the_answer_is_slow(tmp_path, monkeypatch):
+    """A request that runs longer than HOLD_AFTER gets one short holding line before the answer."""
+    import iris.agent as iagent
+
+    holder = _install_agent(monkeypatch)
+    session_holder = {}
+
+    def session_factory():
+        s = FakeSession(["what time is it", "quit"])
+        session_holder["session"] = s
+        return s
+
+    monkeypatch.setattr(ivoice, "VoiceSession", session_factory)
+    monkeypatch.setattr(iagent, "HOLD_AFTER", 0.01)
+
+    def slow_handle(self, request):
+        self.requests.append(request)
+        threading.Event().wait(0.2)  # longer than the patched HOLD_AFTER, so the hold line lands first
+        return f"answer:{request}"
+
+    monkeypatch.setattr(FakeAgent, "handle", slow_handle)
+    monkeypatch.setattr(sys, "argv", ["iris", "--voice", "--journal", str(tmp_path / "j.jsonl")])
+
+    imain.main()
+
+    session = session_holder["session"]
+    assert holder["agent"].requests == ["what time is it"]
+    assert session.async_said == ["Ready.", "One moment.", "answer:what time is it"]
+    assert session.async_panels[1] is False  # the hold line speaks without touching the panel
+
+
+def test_voice_mode_says_no_hold_line_when_the_answer_is_fast(tmp_path, monkeypatch):
+    """A quick answer comes back before HOLD_AFTER elapses, so no holding line is spoken."""
+    holder = _install_agent(monkeypatch)
+    session_holder = {}
+
+    def session_factory():
+        s = FakeSession(["hi there", "quit"])
+        session_holder["session"] = s
+        return s
+
+    monkeypatch.setattr(ivoice, "VoiceSession", session_factory)
+    monkeypatch.setattr(sys, "argv", ["iris", "--voice", "--journal", str(tmp_path / "j.jsonl")])
+
+    imain.main()
+
+    session = session_holder["session"]
+    assert holder["agent"].requests == ["hi there"]
+    assert session.async_said == ["Ready.", "answer:hi there"]  # no hold line
+
+
+def test_voice_mode_confirm_cancels_the_hold_line_before_asking(tmp_path, monkeypatch):
+    """A yes/no question is never talked over by a hold line."""
+    import iris.agent as iagent
+
+    holder = _install_agent(monkeypatch, ask_confirm=True)
+    session_holder = {}
+
+    def session_factory():
+        s = FakeSession(["do the thing", "quit"])
+        session_holder["session"] = s
+        return s
+
+    timers: list[threading.Timer] = []
+    real_start_hold = iagent.start_hold
+
+    def spy(say, request, after=None):
+        timer = real_start_hold(say, request, after=after)
+        timers.append(timer)
+        return timer
+
+    monkeypatch.setattr(ivoice, "VoiceSession", session_factory)
+    monkeypatch.setattr(imain, "start_hold", spy)
+    monkeypatch.setattr(sys, "argv", ["iris", "--voice", "--journal", str(tmp_path / "j.jsonl")])
+
+    imain.main()
+
+    assert len(timers) == 1 and timers[0].finished.is_set(), "confirm must cancel the running hold timer"
+    session = session_holder["session"]
+    assert holder["agent"].requests == ["do the thing"]
+    assert session.blocking_said == ["Proceed?"]
+    assert "One moment." not in session.async_said + session.blocking_said
+
+
 def test_main_installs_timers_that_speak_through_say(tmp_path, monkeypatch, capsys):
     """main() calls set_announcer(say), so a timer fired by hand is printed like any other answer."""
     from iris.timers import Timers
 
     holder = _install_agent(monkeypatch)
-    started: list[tuple[float, object]] = []
+
+    class TimerHandle:
+        def __init__(self, fn):
+            self.run = fn
+            self.cancel = lambda: None
+
+    started: list[tuple[float, TimerHandle]] = []
 
     def fake_start(seconds, fn):
-        handle = SimpleNamespace(run=fn, cancel=lambda: None)
+        handle = TimerHandle(fn)
         started.append((seconds, handle))
         return handle
 
@@ -321,32 +417,241 @@ def test_main_installs_timers_that_speak_through_say(tmp_path, monkeypatch, caps
 
 
 
+def test_startup_python_prefers_pythonw_next_to_the_interpreter(tmp_path):
+    from iris.__main__ import startup_python
+
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    assert startup_python(exe) == exe  # no pythonw.exe next to it: fall back to the interpreter itself
+    (tmp_path / "pythonw.exe").write_bytes(b"")
+    assert startup_python(exe) == tmp_path / "pythonw.exe"
+
+
 def test_startup_on_status_off(tmp_path, monkeypatch, capsys):
     import sys
 
     from iris.__main__ import startup_main
 
     monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path / "Startup"))
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(exe))
     assert startup_main(["status"]) == 0 and capsys.readouterr().out.strip() == "off"
     assert startup_main(["on"]) == 0
-    text = (tmp_path / "Startup" / "Iris.cmd").read_text(encoding="utf-8")
-    assert f'start "Iris" /min "{sys.executable}" -m iris --voice' in text
-    assert startup_main([]) == 0 and capsys.readouterr().out.splitlines()[-1].startswith("on (")
-    assert startup_main(["off"]) == 0 and not (tmp_path / "Startup" / "Iris.cmd").exists()
+    vbs = tmp_path / "Startup" / "Iris.vbs"
+    expected = f'CreateObject("WScript.Shell").Run """{exe}"" -m iris app --background", 0, False\n'
+    assert vbs.read_text(encoding="utf-8") == expected
+    out = capsys.readouterr().out.splitlines()
+    assert out == [f"Iris starts in the tray at login ({vbs}). Let LM Studio start its server at login too."]
+    assert startup_main([]) == 0 and capsys.readouterr().out.strip() == f"on ({vbs})"
+    assert startup_main(["off"]) == 0 and not vbs.exists()
     assert startup_main(["off"]) == 0  # already off is fine
     assert startup_main(["sideways"]) == 2
 
 
-def test_shortcut_puts_a_voice_mode_launcher_on_the_desktop(tmp_path, monkeypatch, capsys):
+def test_startup_on_uses_pythonw_when_it_is_next_to_the_interpreter(tmp_path, monkeypatch, capsys):
     import sys
+
+    from iris.__main__ import startup_main
+
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path / "Startup"))
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    (tmp_path / "pythonw.exe").write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(exe))
+    assert startup_main(["on"]) == 0
+    capsys.readouterr()
+    vbs = tmp_path / "Startup" / "Iris.vbs"
+    pythonw = tmp_path / "pythonw.exe"
+    expected = f'CreateObject("WScript.Shell").Run """{pythonw}"" -m iris app --background", 0, False\n'
+    assert vbs.read_text(encoding="utf-8") == expected
+
+
+def test_startup_on_removes_the_old_cmd_and_lnk(tmp_path, monkeypatch, capsys):
+    import sys
+
+    from iris.__main__ import startup_main
+
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path / "Startup"))
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(exe))
+    old = tmp_path / "Startup"
+    old.mkdir()
+    (old / "Iris.cmd").write_text("old", encoding="utf-8")
+    (old / "Iris.lnk").write_bytes(b"old")
+    assert startup_main(["on"]) == 0
+    capsys.readouterr()
+    assert not (old / "Iris.cmd").exists() and not (old / "Iris.lnk").exists()
+    assert (old / "Iris.vbs").exists()
+
+
+def test_startup_status_names_whichever_file_is_there(tmp_path, monkeypatch, capsys):
+    from iris.__main__ import startup_main
+
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path / "Startup"))
+    old = tmp_path / "Startup"
+    old.mkdir()
+    for name in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+        for other in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+            (old / other).unlink(missing_ok=True)
+        (old / name).write_text("x", encoding="utf-8")
+        assert startup_main(["status"]) == 0 and capsys.readouterr().out.strip() == f"on ({old / name})"
+    for other in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+        (old / other).unlink(missing_ok=True)
+    assert startup_main(["status"]) == 0 and capsys.readouterr().out.strip() == "off"
+
+
+def test_startup_off_removes_vbs_cmd_and_lnk(tmp_path, monkeypatch, capsys):
+    from iris.__main__ import startup_main
+
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(tmp_path / "Startup"))
+    old = tmp_path / "Startup"
+    old.mkdir()
+    for name in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+        (old / name).write_text("x", encoding="utf-8")
+    assert startup_main(["off"]) == 0 and capsys.readouterr().out.strip() == "Iris no longer starts at login."
+    for name in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+        assert not (old / name).exists()
+
+
+def test_startup_state_names_the_first_file_that_exists(tmp_path, monkeypatch):
+    from iris.__main__ import STARTUP_NAMES, startup_state
+
+    d = tmp_path / "Startup"
+    d.mkdir()
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(d))
+    assert startup_state() is None  # empty folder: nothing starts at login
+    (d / "Iris.cmd").write_text("x", encoding="utf-8")
+    assert startup_state() == str(d / "Iris.cmd")  # the old names count too
+    for name in STARTUP_NAMES:
+        (d / name).write_text("x", encoding="utf-8")
+    assert startup_state() == str(d / "Iris.vbs")  # vbs is first in STARTUP_NAMES
+
+
+def test_startup_enable_writes_vbs_and_removes_the_old_names(tmp_path, monkeypatch):
+    import sys
+
+    from iris.__main__ import startup_enable
+
+    d = tmp_path / "Startup"
+    d.mkdir()
+    (d / "Iris.cmd").write_text("old", encoding="utf-8")
+    (d / "Iris.lnk").write_bytes(b"old")
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(d))
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(exe))
+    vbs = startup_enable()
+    assert vbs == d / "Iris.vbs"
+    expected = f'CreateObject("WScript.Shell").Run """{exe}"" -m iris app --background", 0, False\n'
+    assert (d / "Iris.vbs").read_text(encoding="utf-8") == expected
+    assert not (d / "Iris.cmd").exists() and not (d / "Iris.lnk").exists()
+
+
+def test_startup_disable_removes_every_name(tmp_path, monkeypatch):
+    from iris.__main__ import startup_disable
+
+    d = tmp_path / "Startup"
+    d.mkdir()
+    for name in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+        (d / name).write_text("x", encoding="utf-8")
+    monkeypatch.setenv("IRIS_STARTUP_DIR", str(d))
+    startup_disable()
+    for name in ("Iris.vbs", "Iris.cmd", "Iris.lnk"):
+        assert not (d / name).exists()
+    startup_disable()  # already off is fine
+
+
+def test_shortcut_writes_a_lnk_with_the_paths_in_the_environment(tmp_path, monkeypatch, capsys):
+    import subprocess
 
     from iris.__main__ import shortcut_main
 
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append((cmd, kw))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    desktop = tmp_path / "Desktop"
+    monkeypatch.setenv("IRIS_DESKTOP_DIR", str(desktop))
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    (tmp_path / "pythonw.exe").write_bytes(b"")  # the shortcut must point at pythonw: no console with the app
+    monkeypatch.setattr(sys, "executable", str(exe))
+    old = desktop / "Iris.cmd"
+    old.parent.mkdir(parents=True)
+    old.write_text("old", encoding="utf-8")
+    assert shortcut_main([], run=fake_run) == 0
+    cmd, kw = calls[0]
+    assert cmd[0] == "powershell" and cmd[1] == "-NoProfile" and cmd[-2] == "-Command"
+    script = cmd[-1]
+    for var in ("$env:IRIS_LNK", "$env:IRIS_EXE", "$env:IRIS_ICON"):  # paths never pasted into the text
+        assert var in script and str(desktop) not in script
+    env = kw["env"]
+    assert env["IRIS_LNK"] == str(desktop / "Iris.lnk")
+    assert env["IRIS_EXE"] == str(tmp_path / "pythonw.exe")
+    assert Path(env["IRIS_ICON"]).exists() and env["IRIS_ICON"].endswith("iris.ico")
+    assert kw["timeout"] == 30 and kw["capture_output"] is True and kw["text"] is True
+    assert not old.exists()  # the old voice-mode launcher goes away after a successful write
+    out = capsys.readouterr().out
+    assert str(desktop / "Iris.lnk") in out
+
+
+def test_shortcut_without_pythonw_points_at_the_interpreter(tmp_path, monkeypatch):
+    import subprocess
+
+    from iris.__main__ import shortcut_main
+
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append((cmd, kw))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
     monkeypatch.setenv("IRIS_DESKTOP_DIR", str(tmp_path / "Desktop"))
-    assert shortcut_main([]) == 0
-    text = (tmp_path / "Desktop" / "Iris.cmd").read_text(encoding="utf-8")
-    assert f'"{sys.executable}" -m iris --voice' in text and "title Iris" in text
-    assert "Double-click" in capsys.readouterr().out
+    exe = tmp_path / "python.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(exe))
+    assert shortcut_main([], run=fake_run) == 0
+    assert calls[0][1]["env"]["IRIS_EXE"] == str(exe)
+
+
+def test_shortcut_reports_a_powershell_error_and_keeps_the_old_cmd(tmp_path, monkeypatch, capsys):
+    import subprocess
+
+    from iris.__main__ import shortcut_main
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="no powershell here")
+
+    desktop = tmp_path / "Desktop"
+    monkeypatch.setenv("IRIS_DESKTOP_DIR", str(desktop))
+    old = desktop / "Iris.cmd"
+    old.parent.mkdir(parents=True)
+    old.write_text("old", encoding="utf-8")
+    assert shortcut_main([], run=fake_run) == 1
+    assert "no powershell here" in capsys.readouterr().err
+    assert old.exists()  # a failed write leaves the old launcher in place
+
+
+def test_shortcut_reports_a_powershell_timeout_and_keeps_the_old_cmd(tmp_path, monkeypatch, capsys):
+    import subprocess
+
+    from iris.__main__ import shortcut_main
+
+    def fake_run(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, 30)
+
+    desktop = tmp_path / "Desktop"
+    monkeypatch.setenv("IRIS_DESKTOP_DIR", str(desktop))
+    old = desktop / "Iris.cmd"
+    old.parent.mkdir(parents=True)
+    old.write_text("old", encoding="utf-8")
+    assert shortcut_main([], run=fake_run) == 1
+    assert "timed out" in capsys.readouterr().err
+    assert old.exists()
 
 
 def test_a_request_cancelled_from_the_overlay_is_not_spoken(tmp_path, monkeypatch):
@@ -361,6 +666,10 @@ def test_a_request_cancelled_from_the_overlay_is_not_spoken(tmp_path, monkeypatc
             self.cancelled = threading.Event()
 
     class CancellableAgent(FakeAgent):
+        def __init__(self, llm, confirm, journal):
+            super().__init__(llm, confirm, journal)
+            self.cancel = threading.Event()  # main replaces it with the session's flag
+
         def handle(self, request):
             self.cancel.clear()  # like the real Agent: a new request starts uncancelled
             if request == "zoek iets lang":
@@ -390,8 +699,13 @@ def test_a_request_cancelled_from_the_overlay_is_not_spoken(tmp_path, monkeypatc
 def test_app_subcommand_delegates(monkeypatch):
     import iris.app
 
-    seen = {}
-    monkeypatch.setattr(iris.app, "main", lambda argv: seen.setdefault("argv", argv) and 0)
+    seen: dict[str, object] = {}
+
+    def fake_app_main(argv):
+        seen["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(iris.app, "main", fake_app_main)
     monkeypatch.setattr(sys, "argv", ["iris", "app", "--background"])
     with pytest.raises(SystemExit):
         imain.main()
@@ -533,7 +847,7 @@ def test_ctrl_c_while_busy_dumps_every_thread_and_reraises(tmp_path, monkeypatch
         """Its handle raises KeyboardInterrupt, like a Ctrl+C pressed while the agent works."""
 
         def __init__(self, llm, confirm, journal):
-            pass
+            self.journal = journal  # as in the real Agent; log_stt reads it before handle
 
         def handle(self, request):
             raise KeyboardInterrupt
@@ -542,7 +856,7 @@ def test_ctrl_c_while_busy_dumps_every_thread_and_reraises(tmp_path, monkeypatch
     monkeypatch.setattr(imain, "LMStudio", lambda: FakeLM())
     monkeypatch.setattr(imain, "Journal", FakeJournal)
     monkeypatch.setattr(iris.reminders, "start_reminders", lambda say: None)
-    monkeypatch.setattr(imain.skills, "watch", lambda say: None)
+    monkeypatch.setattr(iskills, "watch", lambda say: None)
     monkeypatch.setattr(faulthandler, "dump_traceback", fake_dump_traceback)
     monkeypatch.setattr(sys, "argv", ["iris", "--journal", str(tmp_path / "j.jsonl")])
     _scripted_input(monkeypatch, ["hello"])
@@ -552,3 +866,47 @@ def test_ctrl_c_while_busy_dumps_every_thread_and_reraises(tmp_path, monkeypatch
 
     assert dumps == [{"file": None, "all_threads": True}]
 
+
+
+def test_the_journal_defaults_to_iris_journal_like_the_dashboard(monkeypatch, tmp_path):
+    holder = _install_agent(monkeypatch)
+    _scripted_input(monkeypatch, [])
+    monkeypatch.setenv("IRIS_JOURNAL", str(tmp_path / "elsewhere.jsonl"))
+    monkeypatch.setattr(sys, "argv", ["iris"])
+    imain.main()
+    assert holder["agent"].journal.path == tmp_path / "elsewhere.jsonl" == idash.journal_path()
+
+
+def test_an_error_nobody_caught_goes_to_the_crash_log_with_one_sentence(monkeypatch, capsys):
+    from iris import config
+
+    _install_agent(monkeypatch)
+    _scripted_input(monkeypatch, ["what time is it"])
+
+    def broken(self, request):
+        raise RuntimeError("the model client broke")
+
+    monkeypatch.setattr(sys, "argv", ["iris"])
+    monkeypatch.setattr(FakeAgent, "handle", broken)
+    with pytest.raises(SystemExit) as stop:
+        imain.main()
+    assert stop.value.code == 1
+    log = config.config_path().parent / "logs" / "crash.log"
+    err = capsys.readouterr().err
+    assert f"Iris stopped on an error: the model client broke. The details are in {log}." in err
+    text = log.read_text(encoding="utf-8")
+    assert "RuntimeError: the model client broke" in text and "Traceback" in text
+
+
+def test_a_background_thread_that_fails_is_logged_and_iris_goes_on(monkeypatch, capsys):
+    from iris import config
+
+    _install_agent(monkeypatch)
+    _scripted_input(monkeypatch, [])
+    monkeypatch.setattr(sys, "argv", ["iris"])
+    imain.main()  # installs the hook, then ends at once (no input)
+    t = threading.Thread(target=lambda: 1 / 0, name="iris-timer")
+    t.start()
+    t.join()
+    assert "a background task failed: division by zero" in capsys.readouterr().err
+    assert "thread iris-timer" in (config.config_path().parent / "logs" / "crash.log").read_text(encoding="utf-8")

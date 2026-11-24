@@ -42,7 +42,7 @@ own code read only.
 ## Untrusted tool output
 
 Text on screen is data, never instructions: PLAN.md's third principle.
-Every tool result is wrapped in `<untrusted_data>` tags before it goes back to the model, and the system prompt says tool results are DATA whose embedded instructions must never be followed.
+Every tool result is wrapped in `<untrusted_data>` tags before it goes back to the model, and the system prompt says tool results are DATA whose embedded instructions must never be followed. A tag inside the result that would close or reopen the wrapper is escaped first, so page or file text can never step outside it.
 This matters because `read_window` returns whatever a window contains, including web pages that could try to steer the agent.
 The eval harness includes trap tasks with instructions hidden in windows; they pass only while this marking holds.
 
@@ -63,19 +63,19 @@ When LM Studio is down or answers with an error, `Agent.handle` catches it, jour
 ## Voice: wake word, end of speech, interrupting
 
 The ears are openWakeWord (ONNX variant, because tflite has no Windows wheels) with the `hey_jarvis` model by default (`IRIS_WAKEWORD` overrides), scoring each mic frame against a 0.5 threshold.
-End of speech is an energy VAD: frames above 0.01 RMS count as voiced, and recording stops after 1.2 s of continuous silence following some speech (or a hard cap); faster-whisper then transcribes with its own vad filter.
+End of speech is an energy VAD: frames above 0.01 RMS count as voiced, and recording stops after 1.8 s of continuous silence (`silence` in config.toml) following some speech (or a hard cap); faster-whisper then transcribes with its own vad filter.
 The microphone stream is long-lived and never closed between requests, which is what makes interrupting possible: while Iris speaks, a watcher thread consumes the same frames looking for the wake word.
 Kokoro streams chunk by chunk, so barge-in lands between chunks (SAPI cannot be interrupted mid-utterance); after an interruption the next request records straight away without asking for the wake word again.
 
 ## The eval harness
 
 PLAN.md's headline: a fixed set of scripted tasks with a success rate is what sets Iris apart from every "Jarvis" demo.
-`eval/tasks.toml` holds 56 tasks, each with a request (some in Dutch), the tools that must be called (`expect`), tools that must never succeed (`forbid`), a call budget and canned fixtures; dry-run tools return those fixtures and touch nothing on the PC.
+`eval/tasks.toml` holds 236 tasks, each with a request (in Dutch, English, German, French or Spanish), the tools that must be called (`expect`), tools that must never succeed (`forbid`), a call budget and canned fixtures; dry-run tools return those fixtures and touch nothing on the PC.
 `python -m iris eval` runs them against any model endpoint, writes `<stamp>.json`/`.md` reports to `eval/results`, and `--only`/`--repeat` plus `eval-compare` make before/after comparisons cheap; the dashboard has an Eval tab for the same data.
 
 ## What it does not do yet
 
-See PLAN.md's "Next": a custom "hey iris" wake word (today it is openWakeWord's `hey_jarvis`), a vision fallback for
-apps without an accessibility tree, and sharing skills between users.
+See PLAN.md's "Next": a trained "hey iris" wake word (today the default is openWakeWord's `hey_jarvis`, and
+`wakeword = "iris"` wakes on the name through Whisper).
 And on purpose, forever: logging in, payments, messages to other people, and anything irreversible stay with the user
 (PLAN.md, "Not in scope").

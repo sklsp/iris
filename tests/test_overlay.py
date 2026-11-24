@@ -11,6 +11,8 @@ import sys
 import threading
 import time
 import types
+from itertools import pairwise
+from typing import Any, cast
 from unittest import mock
 
 import numpy as np
@@ -43,7 +45,7 @@ from iris.overlay import (
     split_ring,
     tail,
 )
-from iris.voice import FRAME, VoiceSession
+from iris.voice import FRAME, Speaker, VoiceSession, WakeWord
 
 
 class Recorder:
@@ -258,7 +260,7 @@ def test_a_stuck_overlay_process_never_blocks_sending_and_is_killed_on_close():
     for _ in range(5000):  # far more than a pipe buffer: the writer blocks, send() must not
         o.send("answer", "x" * 200)
     assert time.monotonic() - t0 < 1
-    o.close()
+    o.close(wait=0.1)  # a real hang would cost two seconds of waiting; the kill path is what this test checks
     assert proc.poll() is not None
 
 
@@ -278,7 +280,7 @@ def test_launch_is_a_silent_overlay_when_switched_off(monkeypatch):
 
 def test_launch_starts_python_m_iris_overlay(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_OVERLAY", "1")
-    started = {}
+    started: dict[str, object] = {}
 
     def fake_popen(args, **kw):
         started.update(args=args, **kw)
@@ -317,21 +319,22 @@ class _Stream:
 
 def test_voice_session_starts_and_stops_the_overlay(monkeypatch):
     monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(InputStream=_Stream))
-    rec = Recorder()
+    recorder = Recorder()
+    rec: Any = recorder  # Any, so the identity assert against s.overlay type-checks
     monkeypatch.setattr("iris.voice.launch", lambda: rec)
-    s = VoiceSession(speaker=_Speaker())
+    s = VoiceSession(speaker=cast(Speaker, _Speaker()))
     with s:
         assert s.overlay is rec
-    assert rec.closed
+    assert recorder.closed  # not rec: the assert above narrows it to Overlay on some mypy versions
 
 
 def _session(text, **kw):
     # -1, not 0: Windows' clock ticks every ~16 ms, so after one frame no time may have passed and 0 > 0 waits forever
-    s = VoiceSession(speaker=_Speaker(), max_record_seconds=-1, **kw)
-    s.overlay = Recorder()
+    s = VoiceSession(speaker=cast(Speaker, _Speaker()), max_record_seconds=-1, **kw)
+    s.overlay = cast(Overlay, Recorder())
     s._transcribe = lambda audio: text  # type: ignore[method-assign]
     s._drain = lambda: None  # type: ignore[method-assign]  # keep the frames a test puts in
-    s.wake = _Wake(False)
+    s.wake = cast(WakeWord, _Wake(False))
     return s
 
 
@@ -358,7 +361,7 @@ def test_a_follow_up_question_sends_listening(monkeypatch):
             yield np.full(FRAME, 0.2, dtype="float32")
 
     frames = loud_frames()
-    s._frames.get = lambda timeout=None: next(frames)  # type: ignore[method-assign]
+    s._frames.get = lambda timeout=None: next(frames)
     assert s.follow_up() == "en morgen?"
     assert s.overlay.sent == ["listening", ("heard", "en morgen?")]
 
@@ -379,9 +382,32 @@ def test_an_interrupted_answer_does_not_idle():
         stop_event.wait(2.0)  # talk until the wake word cuts in
         return False
 
-    s.speaker.speak = speak  # type: ignore[method-assign]
+    s.speaker.speak = speak
     assert s.speak("Er was eens...") is True
     assert s.overlay.sent == [("answer", "Er was eens..."), "interrupted"]
+
+
+def test_a_hold_line_speaks_without_touching_the_panel():
+    s = _session("")
+    s.speak_async("One moment.", panel=False).join()
+    assert s.overlay.sent == []  # no "answer", no "idle": the panel keeps showing Thinking...
+    assert not s._answered  # left as it was: a hold line opens no follow-up window
+    assert s.speaker.said == ["One moment."]  # the mouth still spoke it
+
+
+def test_a_hold_line_does_not_watch_for_the_wake_word():
+    s = _session("")
+    s.wake = _Wake(True)  # Jay says the wake word while the hold line plays
+    s._frames.put(np.zeros(FRAME, dtype="float32"))
+
+    def speak(text, stop_event=None):
+        stop_event.wait(0.2)  # talk long enough for a watcher to hear it if there is one
+        return True
+
+    s.speaker.speak = speak
+    s.speak_async("One moment.", panel=False).join()
+    assert not s._wake_seen  # no barge-in was recorded, so the next request still waits for a wake word
+    assert s.overlay.sent == []  # and the overlay never heard "interrupted" either
 
 
 def test_voice_mode_carries_on_with_a_dead_overlay():
@@ -420,7 +446,7 @@ def test_window_tools_never_see_the_overlay(monkeypatch):
 
 
 def test_read_events_passes_known_events_and_ends_with_none():
-    out: queue.Queue = queue.Queue()
+    out: queue.Queue[dict[str, Any] | None] = queue.Queue()
     overlay.read_events(io.StringIO('{"event": "listening"}\ngarbage\n{"event": "idle"}\n'), out)
     assert [out.get_nowait() for _ in range(3)] == [{"event": "listening"}, {"event": "idle"}, None]
 
@@ -430,7 +456,7 @@ def test_read_events_ends_on_a_broken_stream():
         def __iter__(self):
             raise OSError("pipe gone")
 
-    out: queue.Queue = queue.Queue()
+    out: queue.Queue[dict[str, Any] | None] = queue.Queue()
     overlay.read_events(Broken(), out)  # type: ignore[arg-type]
     assert out.get_nowait() is None
 
@@ -514,7 +540,7 @@ def test_panel_sets_up_a_window_that_never_takes_focus():
 
 def test_panel_shows_a_turn_and_hides_after_idle():
     tk, u, clock = _fake_tk(), User32(), Clock()
-    events: queue.Queue = queue.Queue()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     p = Panel(tk, events, clock=clock, user32=u)
     root, canvas = tk.Tk.return_value, tk.Canvas.return_value
     u.calls.clear()
@@ -553,7 +579,7 @@ def test_panel_without_win32_uses_tk_to_show_and_hide():
             raise RuntimeError(name)
 
     tk.Tk.return_value.attributes.side_effect = attributes
-    events: queue.Queue = queue.Queue()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     p = Panel(tk, events, clock=clock)
     root = tk.Tk.return_value
     assert p.win is None
@@ -569,20 +595,40 @@ def test_panel_without_win32_uses_tk_to_show_and_hide():
     root.withdraw.assert_called()
 
 
+def test_a_frame_that_fails_never_stops_the_panel_from_seeing_iris_go(capsys, monkeypatch):
+    tk, clock = _fake_tk(), Clock()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
+    p = Panel(tk, events, clock=clock)
+    root = tk.Tk.return_value
+
+    def bad_font():  # one frame breaks while drawing
+        raise RuntimeError("bad font")
+
+    monkeypatch.setattr(p, "layout", bad_font)
+    events.put({"event": "listening"})
+    root.after.reset_mock()
+    p.step()
+    root.after.assert_called_once()  # the next frame is still scheduled
+    assert "bad font" in capsys.readouterr().err
+    events.put(None)  # Iris closed the pipe
+    p.step()
+    root.destroy.assert_called_once()
+
+
 def test_panel_replaces_characters_an_old_tk_cannot_draw():
     tk = _fake_tk()
     canvas = tk.Canvas.return_value
     canvas.create_text.side_effect = [RuntimeError("character U+1f600 is above the range"), 1, 2]
-    events: queue.Queue = queue.Queue()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     p = Panel(tk, events, user32=User32())
     events.put({"event": "heard", "text": "lach \U0001f600"})
     p.step()
     assert canvas.create_text.call_args_list[1].kwargs["text"] == "You: lach ?"
 
 
-def test_panel_survives_a_failing_dpi_call():
+def test_panel_survives_a_failing_dpi_call(monkeypatch):
     u = User32()
-    u.SetProcessDPIAware = mock.Mock(side_effect=OSError)
+    monkeypatch.setattr(u, "SetProcessDPIAware", mock.Mock(side_effect=OSError))
     Panel(_fake_tk(), queue.Queue(), user32=u)
 
 
@@ -695,9 +741,9 @@ def test_the_glow_fades_away_from_the_edge_and_stays_in_the_margin(mode):
         assert all(c.startswith("#") and len(c) == 7 for c in colours)
         # outermost (or deepest) first: each band is closer to the outline's colour than the one before it
         for bands in ([c for c, _ in outer], inner):
-            assert all(_far(a, base) > _far(b, base) for a, b in zip(bands, bands[1:], strict=False))
+            assert all(_far(a, base) > _far(b, base) for a, b in pairwise(bands))
         assert all(0 < w <= full for (_, w), (full, _) in zip(outer, OUTER, strict=True))
-    assert Panel.MARGIN >= max(w for w, _ in OUTER) / 2  # the widest outer stroke still fits round the panel
+    assert max(w for w, _ in OUTER) / 2 <= Panel.MARGIN  # the widest outer stroke still fits round the panel
 
 
 def test_the_outline_is_one_colour_except_while_thinking():
@@ -734,8 +780,8 @@ def test_split_ring_cuts_the_outline_into_even_connected_pieces():
     ring = rounded_rect(0, 0, 500, 100, 20)
     pieces = split_ring(ring, 40, chords=5)
     assert len(pieces) == 40 and all(len(p) == 6 for p in pieces)
-    assert all(a[-1] == b[0] for a, b in zip(pieces, pieces[1:], strict=False)) and pieces[-1][-1] == pieces[0][0]
-    lengths = [sum(math.dist(a, b) for a, b in zip(p, p[1:], strict=False)) for p in pieces]
+    assert all(a[-1] == b[0] for a, b in pairwise(pieces)) and pieces[-1][-1] == pieces[0][0]
+    lengths = [sum(math.dist(a, b) for a, b in pairwise(p)) for p in pieces]
     assert max(lengths) - min(lengths) < 0.5  # about 30 px each
 
 
@@ -746,7 +792,8 @@ def _geometry(root):
 
 
 def test_panel_draws_the_glow_and_outline_in_the_see_through_margin():
-    tk, events = _fake_tk(), queue.Queue()
+    tk = _fake_tk()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     p = Panel(tk, events, clock=Clock())
     canvas, root = tk.Canvas.return_value, tk.Tk.return_value
     events.put({"event": "listening"})
@@ -767,7 +814,8 @@ def test_panel_draws_the_glow_and_outline_in_the_see_through_margin():
 
 
 def test_each_frame_touches_only_what_changed():
-    tk, events, clock = _fake_tk(), queue.Queue(), Clock()
+    tk, clock = _fake_tk(), Clock()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     p = Panel(tk, events, clock=clock)
     canvas = tk.Canvas.return_value
     events.put({"event": "listening"})
@@ -785,7 +833,8 @@ def test_each_frame_touches_only_what_changed():
 
 
 def test_the_outline_is_coloured_per_piece_while_thinking_and_at_once_otherwise():
-    tk, events, clock = _fake_tk(), queue.Queue(), Clock()
+    tk, clock = _fake_tk(), Clock()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     p = Panel(tk, events, clock=clock)
     canvas = tk.Canvas.return_value
     events.put({"event": "listening"})
@@ -807,7 +856,8 @@ def test_the_outline_is_coloured_per_piece_while_thinking_and_at_once_otherwise(
 
 
 def test_the_indicator_sits_level_with_the_first_line_in_the_outline_colour():
-    tk, events, clock = _fake_tk(), queue.Queue(), Clock()
+    tk, clock = _fake_tk(), Clock()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     canvas = tk.Canvas.return_value
     canvas.bbox.return_value = (64, 28, 300, 46)
     p = Panel(tk, events, clock=clock)
@@ -821,7 +871,8 @@ def test_the_indicator_sits_level_with_the_first_line_in_the_outline_colour():
 
 
 def test_the_indicator_is_centred_when_there_is_no_text():
-    tk, events = _fake_tk(), queue.Queue()
+    tk = _fake_tk()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     canvas = tk.Canvas.return_value
     p = Panel(tk, events, clock=Clock())
     events.put({"event": "answer", "text": ""})  # nothing to write: only the speaking bars
@@ -846,7 +897,8 @@ def _button_items(canvas):
 
 @pytest.mark.parametrize("event, shown", [("listening", True), ("thinking", True), ("answer", True), ("idle", False)])
 def test_the_cancel_button_shows_only_while_there_is_a_request(event, shown):
-    tk, events = _fake_tk(), queue.Queue()
+    tk = _fake_tk()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     p = Panel(tk, events, clock=Clock())
     canvas = tk.Canvas.return_value
     events.put({"event": "heard", "text": "hoe laat is het"})
@@ -859,7 +911,8 @@ def test_the_cancel_button_shows_only_while_there_is_a_request(event, shown):
 
 
 def test_the_cancel_button_sits_right_level_with_the_first_line_and_clear_of_the_text():
-    tk, events = _fake_tk(), queue.Queue()
+    tk = _fake_tk()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     canvas = tk.Canvas.return_value
     canvas.bbox.return_value = (64, 28, 300, 46)
     p = Panel(tk, events, clock=Clock())
@@ -875,7 +928,8 @@ def test_the_cancel_button_sits_right_level_with_the_first_line_and_clear_of_the
 
 
 def test_a_click_on_the_cancel_button_tells_iris_and_lets_the_panel_go():
-    tk, events, out, clock = _fake_tk(), queue.Queue(), io.StringIO(), Clock()
+    tk, out, clock = _fake_tk(), io.StringIO(), Clock()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     p = Panel(tk, events, clock=clock, out=out)
     canvas = tk.Canvas.return_value
     click = _binding(canvas, "<Button-1>")
@@ -897,7 +951,8 @@ def test_a_click_with_iris_gone_still_lets_the_panel_go():
         def write(self, text):
             raise OSError("pipe gone")
 
-    tk, events = _fake_tk(), queue.Queue()
+    tk = _fake_tk()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     p = Panel(tk, events, clock=Clock(), out=Broken())
     events.put({"event": "listening"})
     p.step()
@@ -907,7 +962,8 @@ def test_a_click_with_iris_gone_still_lets_the_panel_go():
 
 
 def test_the_cancel_button_lights_up_in_the_state_colour_under_the_mouse():
-    tk, events, clock = _fake_tk(), queue.Queue(), Clock()
+    tk, clock = _fake_tk(), Clock()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     p = Panel(tk, events, clock=clock)
     canvas = tk.Canvas.return_value
     enter, leave = _binding(canvas, "<Enter>"), _binding(canvas, "<Leave>")
@@ -980,7 +1036,7 @@ def test_reading_cancel_lines_survives_a_broken_pipe():
 
 def test_launch_gives_the_overlay_a_pipe_back(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_OVERLAY", "1")
-    started = {}
+    started: dict[str, object] = {}
 
     def fake_popen(args, **kw):
         started.update(kw)
@@ -1003,9 +1059,9 @@ def test_win32_keeps_a_click_from_activating_the_panel():
     assert u.named("CallWindowProcW")[0][1:3] == (1, 42)  # through the procedure it replaced
 
 
-def test_a_panel_without_the_click_hook_still_starts():
+def test_a_panel_without_the_click_hook_still_starts(monkeypatch):
     u = User32()
-    u.SetWindowLongPtrW = mock.Mock(side_effect=OSError("no hook"))
+    monkeypatch.setattr(u, "SetWindowLongPtrW", mock.Mock(side_effect=OSError("no hook")))
     p = Panel(_fake_tk(), queue.Queue(), user32=u)
     assert p.win is not None and u.named("SetWindowDisplayAffinity")
 
@@ -1040,7 +1096,7 @@ def test_the_voice_session_listens_to_the_overlays_cancel(monkeypatch):
     monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(InputStream=_Stream))
     o = Overlay()
     monkeypatch.setattr("iris.voice.launch", lambda: o)
-    s = VoiceSession(speaker=_Speaker())
+    s = VoiceSession(speaker=cast(Speaker, _Speaker()))
     with s:
         assert o.on_cancel == s.cancel
 
@@ -1053,7 +1109,7 @@ def test_a_cancel_while_speaking_stops_the_speech_at_once():
         started.set()
         return not stop_event.wait(30)  # a long answer, until something stops it
 
-    s.speaker.speak = speak  # type: ignore[method-assign]
+    s.speaker.speak = speak
     s.speak_async("Er was eens een heel lang verhaal...")
     assert started.wait(5)
     t0 = time.perf_counter()
@@ -1066,13 +1122,13 @@ def test_a_cancel_while_speaking_stops_the_speech_at_once():
 
 def test_a_cancel_while_listening_ends_the_recording_without_transcribing():
     s = _session("never")
-    s._transcribe = mock.Mock(side_effect=AssertionError("must not transcribe"))  # type: ignore[method-assign]
+    s._transcribe = mock.Mock(side_effect=AssertionError("must not transcribe"))
 
     def click_then_frame(timeout=None):
         s.cancel()  # the click lands while Iris records
         return np.zeros(FRAME, dtype="float32")
 
-    s._frames.get = click_then_frame  # type: ignore[method-assign]
+    s._frames.get = click_then_frame
     assert s.next_command() == ""
     assert s.overlay.sent == ["listening", "idle"]  # no "heard": the panel is going
 
@@ -1085,7 +1141,7 @@ def test_a_cancelled_confirm_question_waits_for_no_answer():
         started.set()
         return not stop_event.wait(30)
 
-    s.speaker.speak = speak  # type: ignore[method-assign]
+    s.speaker.speak = speak
     s.speak_async("Zal ik het bestand weggooien?")
     assert started.wait(5)
     s.cancel()
@@ -1101,7 +1157,7 @@ def test_a_cancel_while_whisper_works_drops_the_text():
         s.cancel()
         return "hoe laat is het"
 
-    s._transcribe = transcribe  # type: ignore[method-assign]
+    s._transcribe = transcribe
     s._frames.put(np.zeros(FRAME, dtype="float32"))
     assert s.next_command() == ""
     assert "heard" not in s.overlay.sent and ("heard", "hoe laat is het") not in s.overlay.sent

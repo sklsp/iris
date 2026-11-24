@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import io
 import os
 import subprocess
@@ -10,6 +11,7 @@ import sys
 import time
 import zipfile
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -46,18 +48,35 @@ def test_the_name_wake_word_needs_no_model_and_adds_whisper_tiny(plain, monkeypa
     assert by_id(packs.packs())["voxcpm"]["available"] is True
 
 
+def test_a_changed_voice_setting_is_seen_without_a_restart(monkeypatch):
+    """The Setup tab reads the model and voices from config.toml at call time, so a change on the Settings
+    tab applies to the next install or check without restarting Iris."""
+    cfg = config.config_path()
+    cfg.write_text('piper_nl = "nl_A"\nwhisper_model = "w_A"\n', encoding="utf-8")
+    assert packs.whisper_names()[0] == "w_A"
+    voices = cast(list[str], packs.steps("piper")[1][1])
+    assert "nl_A" in voices and "en_US-joe-medium" in voices
+    cfg.write_text('piper_nl = "nl_B"\nwhisper_model = "w_B"\n', encoding="utf-8")
+    st = cfg.stat()  # same size, and a fast runner can write twice within one timestamp: move the mtime on
+    os.utime(cfg, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+    assert packs.whisper_names()[0] == "w_B"
+    voices = cast(list[str], packs.steps("piper")[1][1])
+    assert "nl_B" in voices and "en_US-joe-medium" in voices
+
+
 def test_steps_keep_every_pack_in_its_own_folder(monkeypatch):
-    monkeypatch.setattr(voice, "WHISPER_MODEL", "small")
-    gpu = packs.steps("gpu")[0][1]
+    config.config_path().write_text('whisper_model = "small"\n', encoding="utf-8")  # a fixed name: no GPU probe
+    gpu = cast(list[str], packs.steps("gpu")[0][1])
     assert gpu[:3] == [sys.executable, "-m", "pip"] and gpu[gpu.index("--target") + 1] == str(packs.gpu_dir())
     piper = packs.steps("piper")
-    assert piper[0][1][piper[0][1].index("--target") + 1] == str(packs.piper_runtime())
-    assert piper[1][1][:3] == [sys.executable, "-m", "piper.download_voices"]
-    assert "download_model('small')" in packs.steps("whisper")[0][1][-1]
-    assert "download_models(['hey_jarvis'])" in packs.steps("wake")[0][1][-1]
+    first = cast(list[str], piper[0][1])
+    assert first[first.index("--target") + 1] == str(packs.piper_runtime())
+    assert cast(list[str], piper[1][1])[:3] == [sys.executable, "-m", "piper.download_voices"]
+    assert "download_model('small')" in cast(list[str], packs.steps("whisper")[0][1])[-1]
+    assert "download_models(['hey_jarvis'])" in cast(list[str], packs.steps("wake")[0][1])[-1]
     vox = packs.steps("voxcpm")
-    assert vox[0][1] is packs._fetch_uv and vox[1][1][1:4] == ["venv", "-p", "3.11"]
-    assert vox[3][1][-1] == "https://download.pytorch.org/whl/cu124"
+    assert vox[0][1] is packs._fetch_uv and cast(list[str], vox[1][1])[1:4] == ["venv", "-p", "3.11"]
+    assert cast(list[str], vox[3][1])[-1] == "https://download.pytorch.org/whl/cu124"
     with pytest.raises(KeyError):
         packs.steps("nope")
 
@@ -69,6 +88,29 @@ class FakeProc:
 
     def wait(self):
         return self.returncode
+
+
+class HungProc:
+    """A process whose pipe never closes and which never exits, like a pip stuck on the network."""
+
+    def __init__(self):
+        self.killed = False
+
+    @property
+    def stdout(self):
+        return _hang()
+
+    def kill(self):
+        self.killed = True
+
+    def wait(self):
+        return -15  # run only waits after it has killed us
+
+
+def _hang():
+    while True:
+        time.sleep(0.02)
+        yield ""
 
 
 def test_run_streams_output_and_stops_at_the_first_failure(monkeypatch):
@@ -94,6 +136,54 @@ def test_run_calls_function_steps(monkeypatch):
     assert job.state == "done" and list(job.lines) == ["== unpack", "unpacked", "== Done"]
 
 
+def test_a_step_past_its_deadline_is_killed_and_the_job_fails(monkeypatch):
+    monkeypatch.setattr(packs, "STEP_TIMEOUT", 0.05)
+    monkeypatch.setattr(packs, "steps", lambda pack: [("A step that never ends", ["hang"])])
+    hung = HungProc()
+    job = packs.Job("whisper")
+    packs.run(job, lambda cmd, **kw: cast(subprocess.Popen[str], hung))
+    assert job.state == "failed" and hung.killed is True
+    assert "== Stopped: timed out after 30 minutes: A step that never ends" in list(job.lines)
+
+
+def test_an_install_interrupted_after_step_one_is_not_installed(plain, monkeypatch):
+    monkeypatch.setattr(packs, "_piper_installed", lambda: True)  # partial artifacts fool the content check
+    monkeypatch.setattr(packs, "steps", lambda pack: [("one", ["a"]), ("two", ["b"])])
+    outputs = iter([FakeProc(["ok"], 0), FakeProc([], 1)])
+    job = packs.Job("piper")
+    packs.run(job, lambda cmd, **kw: cast(subprocess.Popen[str], next(outputs)))
+    assert job.state == "failed" and packs.installing_marker("piper").exists()
+    assert by_id(packs.packs())["piper"]["installed"] is False  # interrupted: never Done
+
+
+def test_a_finished_install_removes_the_marker(monkeypatch):
+    monkeypatch.setattr(packs, "steps", lambda pack: [("one", ["a"])])
+    job = packs.Job("piper")
+    packs.run(job, lambda cmd, **kw: cast(subprocess.Popen[str], FakeProc(["ok"], 0)))
+    assert job.state == "done" and not packs.installing_marker("piper").exists()
+
+
+def test_a_rerun_writes_the_marker_before_its_first_step(monkeypatch):
+    seen = []
+    monkeypatch.setattr(packs, "steps", lambda pack: [("one", ["a"])])
+    job = packs.Job("piper")
+
+    def popen(cmd, **kw):
+        seen.append(packs.installing_marker("piper").exists())
+        return FakeProc([], 3)
+
+    packs.run(job, popen)
+    assert seen == [True] and job.state == "failed"
+
+
+def test_a_pack_installed_before_markers_existed_still_counts(plain, monkeypatch):
+    monkeypatch.setattr(packs, "_piper_installed", lambda: True)
+    assert by_id(packs.packs())["piper"]["installed"] is True  # no marker at all: an older finished install
+    packs.installing_marker("piper").parent.mkdir(parents=True)
+    packs.installing_marker("piper").write_text("installing\n", encoding="utf-8")
+    assert by_id(packs.packs())["piper"]["installed"] is False  # a started, unfinished install
+
+
 def test_start_runs_one_install_at_a_time(plain, monkeypatch):
     monkeypatch.setattr(packs, "_job", None)
     assert packs.start("gpu") == {"ok": False, "error": "no pack gpu for this PC"}
@@ -105,6 +195,7 @@ def test_start_runs_one_install_at_a_time(plain, monkeypatch):
     while not started and time.perf_counter() < end:
         time.sleep(0.01)
     assert started == ["piper"]
+    assert packs._job is not None  # the piper job start() made above
     packs._job.state = "done"
     assert packs.start("whisper", runner=lambda job: None)["ok"]
     assert packs.payload()["job"]["pack"] == "whisper"
@@ -158,6 +249,7 @@ def test_installed_checks(tmp_path, monkeypatch):
     monkeypatch.setattr(packs, "_wake_files", lambda: (_ for _ in ()).throw(KeyError("own model")))
     assert packs._wake_installed() is False
     monkeypatch.setitem(sys.modules, "faster_whisper.utils", None)
+    monkeypatch.setattr(packs, "_has_nvidia", lambda: False)  # no GPU probe in a test
     assert packs._whisper_installed() is False
     monkeypatch.setattr(voice, "_cuda_available", lambda: True)
     assert packs._gpu_installed() is True
@@ -168,12 +260,13 @@ def test_whisper_is_installed_when_every_model_downloads(monkeypatch):
 
     calls = []
     utils = types.ModuleType("faster_whisper.utils")
-    utils.download_model = lambda name, local_files_only=False: calls.append(name)
+    monkeypatch.setattr(utils, "download_model", lambda name, local_files_only=False: calls.append(name), raising=False)
     parent = types.ModuleType("faster_whisper")
-    parent.utils = utils
+    monkeypatch.setattr(parent, "utils", utils, raising=False)
     monkeypatch.setitem(sys.modules, "faster_whisper", parent)
     monkeypatch.setitem(sys.modules, "faster_whisper.utils", utils)
-    monkeypatch.setattr(voice, "WHISPER_MODEL", "small")  # a fixed name: no GPU probe, one model to check
+    # a fixed name: no GPU probe, one model to check
+    config.config_path().write_text('whisper_model = "small"\n', encoding="utf-8")
     assert packs._whisper_installed() is True
     assert calls[0] == "small"
 
@@ -202,9 +295,10 @@ def test_piper_runs_with_the_packs_runtime_on_its_path(tmp_path, monkeypatch):
     class P:
         stdin = None
 
-    monkeypatch.setattr(voice.subprocess, "Popen", lambda cmd, **kw: seen.update(kw) or P())
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: seen.update(kw) or P())
     voice.PiperProcess(tmp_path / "v.onnx")
-    assert seen["env"] is None  # nothing installed by the app: the normal environment
+    assert seen["env"] is not None  # always an env now: UTF-8 stdin in every locale
+    assert seen["env"]["PYTHONIOENCODING"] == "utf-8" and seen["env"]["PYTHONUTF8"] == "1"
     voice.piper_runtime().mkdir(parents=True)
     voice.PiperProcess(tmp_path / "v.onnx")
     assert seen["env"]["PYTHONPATH"].startswith(str(voice.piper_runtime()))
@@ -212,7 +306,7 @@ def test_piper_runs_with_the_packs_runtime_on_its_path(tmp_path, monkeypatch):
 
 def test_cuda_dlls_come_from_the_gpu_pack_too(monkeypatch):
     added = []
-    monkeypatch.setattr(voice.os, "add_dll_directory", lambda d: added.append(d), raising=False)
+    monkeypatch.setattr(os, "add_dll_directory", lambda d: added.append(d), raising=False)
     monkeypatch.setenv("PATH", "")
     d = config.config_path().parent / "gpu" / "nvidia" / "cudnn" / "bin"
     d.mkdir(parents=True)
@@ -235,10 +329,72 @@ def test_packs_routes(monkeypatch):
     try:
         with urllib.request.urlopen(base + "/api/packs", timeout=10) as r:
             assert json.loads(r.read()) == {"ok": True, "packs": []}
+        # token is set on the real server class, not the base type make_server names
         req = urllib.request.Request(base + "/api/packs/install", b'{"id": "wake"}', method="POST", headers={
-            "Content-Type": "application/json", "X-Iris-Token": s.token, "Origin": base})
+            "Content-Type": "application/json", "X-Iris-Token": s.__dict__["token"], "Origin": base})
         with urllib.request.urlopen(req, timeout=10) as r:
             assert json.loads(r.read()) == {"ok": True, "started": "wake"}
     finally:
         s.shutdown()
         s.server_close()
+
+
+def test_wake_files_are_found_on_disk_without_importing_openwakeword(tmp_path, monkeypatch):
+    """doctor asks for the wake model before the voice loop has imported openwakeword: it is found on disk."""
+    import types
+
+    pkg = tmp_path / "openwakeword"
+    models = pkg / "resources" / "models"
+    models.mkdir(parents=True)
+    for f in ("hey_jarvis_v0.1.onnx", *packs.FEATURE_MODELS):
+        (models / f).write_bytes(b"x")
+    monkeypatch.delitem(sys.modules, "openwakeword", raising=False)  # the real package must not be used
+    monkeypatch.setattr(packs, "_wake_name", lambda: "hey_jarvis")
+    real = importlib.util.find_spec  # saved before patching: importlib.util is shared by the whole process
+
+    def find_spec(name, *args, **kwargs):
+        if name == "openwakeword":
+            return types.SimpleNamespace(submodule_search_locations=[str(pkg)])
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
+    assert [p.name for p in packs._wake_files()] == ["hey_jarvis_v0.1.onnx", "melspectrogram.onnx",
+                                                     "embedding_model.onnx"]
+    assert packs._wake_installed() is True
+    assert "openwakeword" not in sys.modules  # found on disk, never imported
+
+
+def test_a_wake_model_not_downloaded_yet_is_not_installed(tmp_path, monkeypatch):
+    import types
+
+    pkg = tmp_path / "openwakeword"
+    models = pkg / "resources" / "models"
+    models.mkdir(parents=True)
+    for f in packs.FEATURE_MODELS:  # the feature models are there, but not hey_jarvis_v0.1.onnx
+        (models / f).write_bytes(b"x")
+    monkeypatch.delitem(sys.modules, "openwakeword", raising=False)
+    monkeypatch.setattr(packs, "_wake_name", lambda: "hey_jarvis")
+    real = importlib.util.find_spec
+
+    def find_spec(name, *args, **kwargs):
+        if name == "openwakeword":
+            return types.SimpleNamespace(submodule_search_locations=[str(pkg)])
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
+    assert packs._wake_installed() is False  # the wake model itself is missing: a KeyError in _wake_files
+
+
+def test_wake_files_without_openwakeword_raise_import_error(monkeypatch):
+    monkeypatch.delitem(sys.modules, "openwakeword", raising=False)
+    real = importlib.util.find_spec
+
+    def find_spec(name, *args, **kwargs):
+        if name == "openwakeword":
+            return None  # not installed at all
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
+    with pytest.raises(ImportError):
+        packs._wake_files()
+    assert packs._wake_installed() is False

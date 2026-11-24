@@ -2,12 +2,20 @@
 
 import io
 import json
+import os
+import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from iris import tools
+from iris.policy import _press_keys_tier, _unload_tier
+from tests.doc_text import doc_text
+from tests.test_agent_timing import FakeClock
 from tests.test_timers import make_timers
 
 
@@ -48,17 +56,17 @@ def test_press_keys_tier_is_confirm(fake_window):
 
 @pytest.mark.parametrize("app", ["Outlook - Inbox", "Gmail - Chat", "WhatsApp", "Discord", "Microsoft Teams", "Slack"])
 def test_enter_in_mail_chat_is_never(app):
-    assert tools._press_keys_tier({"window": app, "keys": "{ENTER}"}) == tools.NEVER
+    assert _press_keys_tier({"window": app, "keys": "{ENTER}"}) == tools.NEVER
 
 
 @pytest.mark.parametrize("app", ["Notepad", "VS Code", "Chrome - Docs"])
 def test_enter_elsewhere_stays_confirm(app):
-    assert tools._press_keys_tier({"window": app, "keys": "{ENTER}"}) == tools.CONFIRM
+    assert _press_keys_tier({"window": app, "keys": "{ENTER}"}) == tools.CONFIRM
 
 
 def test_non_enter_in_mail_chat_is_only_confirm():
     # Ctrl+S in Outlook is fine; only the send combination (Enter) is refused.
-    assert tools._press_keys_tier({"window": "Outlook", "keys": "^s"}) == tools.CONFIRM
+    assert _press_keys_tier({"window": "Outlook", "keys": "^s"}) == tools.CONFIRM
 
 
 # --- focus_window -------------------------------------------------------------
@@ -78,6 +86,13 @@ def test_missing_window_error_tells_the_model_to_stop_retrying(monkeypatch):
     assert str(exc.value) == (
         "no window whose title contains 'Spotify'; it is not open now. Call list_windows once to check, "
         "then tell the user instead of retrying.")
+
+
+def test_focus_window_description_says_not_open_is_not_retried():
+    desc = tools.TOOLS["focus_window"].description
+    phrase = ("When it answers that the window is not open, check list_windows at most once and tell"
+              " the user; do not retry or open the app unless they asked to open it.")
+    assert phrase in desc
 
 
 # --- scroll -------------------------------------------------------------------
@@ -104,7 +119,7 @@ def test_scroll_rejects_bad_direction(fake_window):
 @pytest.mark.parametrize("url", ["file:///C:/secret.txt", "javascript:alert(1)", "data:text/html,<b>x</b>"])
 def test_open_url_refuses_non_http(url, monkeypatch):
     started = []
-    monkeypatch.setattr(tools.os, "startfile", lambda u: started.append(u))
+    monkeypatch.setattr(os, "startfile", lambda u: started.append(u))
     with pytest.raises(ValueError):
         tools.open_url(url)
     assert started == []
@@ -113,9 +128,15 @@ def test_open_url_refuses_non_http(url, monkeypatch):
 @pytest.mark.parametrize("url", ["https://example.com", "http://localhost:8080"])
 def test_open_url_allows_http_and_https(url, monkeypatch):
     started = []
-    monkeypatch.setattr(tools.os, "startfile", lambda u: started.append(u))
+    monkeypatch.setattr(os, "startfile", lambda u: started.append(u))
     assert tools.open_url(url) == f"opened {url}"
     assert started == [url]
+
+
+def test_open_url_description_says_answer_from_the_search_result():
+    desc = tools.TOOLS["open_url"].description
+    assert "After a search URL the result already holds the results:" in desc
+    assert "do not read, scroll or search the page again" in desc
 
 
 # --- files (trash + undo) -----------------------------------------------------
@@ -137,6 +158,43 @@ def test_trash_then_restore_roundtrip(home):
     assert f.exists() and f.read_text() == "hello"
     assert out.startswith("restored")
     assert list((home / "trash").iterdir()) == []
+
+
+def test_a_trashed_json_file_can_be_restored(home):
+    f = home / "data.json"
+    f.write_text('{"a": 1}')
+    tools.trash_file(str(f))
+    assert tools.restore_trash("data").startswith("restored") and f.read_text() == '{"a": 1}'
+    assert list((home / "trash").iterdir()) == []
+
+
+def test_an_item_never_lands_in_the_trash_without_its_record(home, monkeypatch):
+    f = home / "report.txt"
+    f.write_text("hello")
+    real = Path.write_text
+
+    def full_disk(self, *a, **kw):
+        if self.name.endswith(".json"):
+            raise OSError(28, "No space left on device")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "write_text", full_disk)
+    with pytest.raises(OSError):
+        tools.trash_file(str(f))
+    assert f.read_text() == "hello"  # still in place: no trash item that restore_trash could not put back
+
+
+def test_a_failed_move_leaves_no_record_behind(home, monkeypatch):
+    f = home / "report.txt"
+    f.write_text("hello")
+
+    def stuck(src, dst):
+        raise PermissionError("the file is open in another program")
+
+    monkeypatch.setattr(shutil, "move", stuck)
+    with pytest.raises(PermissionError):
+        tools.trash_file(str(f))
+    assert f.exists() and list((home / "trash").iterdir()) == []
 
 
 def test_restore_by_name_filter(home):
@@ -200,14 +258,14 @@ def test_readme_documents_every_tool_with_its_tier():
         assert rows[tool.name] == tool.tier, f"{tool.name} is {rows[tool.name]} in the README, {tool.tier} in code"
 
 
-def test_readme_documents_the_wake_word_and_how_to_run():
-    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
-    assert "hey_jarvis" in readme and "IRIS_WAKEWORD" in readme  # the wake word and how to change it
+def test_docs_document_the_wake_word_and_how_to_run():
+    text = doc_text()  # the wake word text moved to docs/voice.md with the Voice section
+    assert "hey_jarvis" in text and "IRIS_WAKEWORD" in text  # the wake word and how to change it
     for cmd in ("python -m iris", "--voice", "--push-to-talk"):
-        assert cmd in readme
+        assert cmd in text
     for var in ("IRIS_TTS", "IRIS_LLM_URL", "IRIS_WHISPER_DEVICE", "IRIS_TRASH_DIR", "IRIS_AGENTS_TOML",
                 "IRIS_REPOS", "IRIS_TRASH_ROOTS"):
-        assert var in readme
+        assert var in text
 
 
 
@@ -418,7 +476,8 @@ def test_comfy_queue_bad_name_never_touches_disk_or_network(tmp_path, monkeypatc
     monkeypatch.setattr(urllib.request, "urlopen", fake)
     # no workflows folder exists at all: a bad name must fail before any disk access
     for name in ("../evil", "a b", "a/b", "a.b", ""):
-        assert tools.comfy_queue(name) == "error: bad workflow name"
+        assert tools.comfy_queue(name) == ("error: a workflow name has only letters, digits, - and _; "
+                                           "comfy_workflows lists them")
 
 
 def test_comfy_queue_missing_workflow(tmp_path, monkeypatch):
@@ -457,7 +516,8 @@ def test_comfy_queue_without_gpu_room_does_not_post(tmp_path, monkeypatch):
 
     monkeypatch.setattr(tools, "system_data", lambda: tight)
     monkeypatch.setattr(urllib.request, "urlopen", fake)
-    assert tools.comfy_queue("anime") == "error: the GPU is busy or hot; try again later"
+    assert tools.comfy_queue("anime") == ("error: no GPU is free for it (only 3576 MiB free; 84 C, too hot); "
+                                          "try again later")
     assert calls == []
 
 
@@ -474,7 +534,8 @@ def test_comfy_queue_without_any_gpu_does_not_post(tmp_path, monkeypatch):
     monkeypatch.setattr(tools, "system_data", lambda: {"cpu_percent": 5.0, "ram_used_gb": 8.0,
                                                        "ram_total_gb": 32.0, "gpus": []})
     monkeypatch.setattr(urllib.request, "urlopen", fake)
-    assert tools.comfy_queue("anime") == "error: the GPU is busy or hot; try again later"
+    assert tools.comfy_queue("anime") == ("error: no NVIDIA GPU found (nvidia-smi listed none); ComfyUI workflows "
+                                          "need one")
     assert calls == []
 
 
@@ -511,7 +572,8 @@ def test_lmstudio_models_states_unknown(monkeypatch):
 
 def test_lmstudio_models_not_reachable(monkeypatch):
     monkeypatch.setattr("iris.dashboard.lmstudio_payload", lambda: {"reachable": False})
-    assert tools.lmstudio_models() == "LM Studio is not reachable."
+    assert tools.lmstudio_models() == ("LM Studio is not reachable; start LM Studio and its local server, then ask "
+                                       "again.")
 
 
 # --- lmstudio_load -------------------------------------------------------------
@@ -586,7 +648,7 @@ UNLOAD_TIER = [
 @pytest.mark.parametrize("args, expected", UNLOAD_TIER, ids=[a["model"] for a, _ in UNLOAD_TIER])
 def test_unload_escalates_to_never_for_all_or_the_running_model(monkeypatch, args, expected):
     monkeypatch.setattr("iris.llm.effective_model", lambda: "qwen3.8-27b")
-    assert tools._unload_tier(args) == expected
+    assert _unload_tier(args) == expected
 
 
 def test_lmstudio_unload_returns_unloaded_text(monkeypatch):
@@ -652,7 +714,8 @@ def test_followups_none_due(leadscan):
 
 def test_followups_without_crm(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_LEADSCAN_DIR", str(tmp_path))
-    assert tools.followups() == "No leadscan CRM found."
+    assert tools.followups() == (f"No leadscan CRM found at {tmp_path / 'out' / 'pipeline.csv'}; set leadscan_dir "
+                                 "in config.toml to its folder.")
 
 
 
@@ -701,7 +764,7 @@ def test_journal_today_missing_file(tmp_path, monkeypatch):
 
 def test_journal_today_counts_a_returned_error(tmp_path, monkeypatch):
     from iris.agent import Agent, Journal
-    from iris.llm import Reply, ToolCall
+    from iris.llm import LMStudio, Reply, ToolCall
 
     p = tmp_path / "journal.jsonl"
     monkeypatch.setenv("IRIS_JOURNAL", str(p))
@@ -716,10 +779,13 @@ def test_journal_today_counts_a_returned_error(tmp_path, monkeypatch):
         def chat(self, messages, tools):
             return replies.pop(0)
 
-    Agent(LLM(), lambda q: True, Journal(p), {"boom": boom}).handle("do it")
+    llm = cast(LMStudio, LLM())
+    Agent(llm, lambda q: True, Journal(p), {"boom": boom}, clock=FakeClock()).handle("do it")
     day = json.loads(p.read_text(encoding="utf-8").splitlines()[0])["t"][:10]
+    # the agent writes one timing entry per request; with the fixed clock its values are literal (Q1)
     assert tools.journal_today(today=day) == (
-        "Today: 1 requests, 1 tool calls (0 ok, 0 refused, 0 declined, 1 errors).")
+        "Today: 1 requests, 1 tool calls (0 ok, 0 refused, 0 declined, 1 errors). "
+        "Median answer time today: 0.9 s over 1 requests, 29% of it in the model.")
 
 
 def test_journal_today_counts_model_errors(tmp_path, monkeypatch):
@@ -748,6 +814,38 @@ def test_journal_today_ignores_model_errors_from_other_days(tmp_path, monkeypatc
         "Today: 1 requests, 0 tool calls (0 ok, 0 refused, 0 declined, 0 errors).")
 
 
+def test_journal_today_adds_the_speed_sentence(tmp_path, monkeypatch):
+    lines = [
+        {"event": "timing", "ms": 1500, "llm_ms": 900, "tools_ms": 600, "t": "2026-10-17T09:00:00"},
+        {"event": "timing", "ms": 2500, "llm_ms": 1500, "tools_ms": 1000, "t": "2026-10-17T10:00:00"},
+        {"event": "timing", "ms": 3500, "llm_ms": 2500, "tools_ms": 1000, "t": "2026-10-17T11:00:00"},
+        {"event": "timing", "ms": 9999, "llm_ms": 9999, "tools_ms": 0, "t": "2026-10-16T09:00:00"},
+    ]
+    p = tmp_path / "journal.jsonl"
+    p.write_text("\n".join(json.dumps(e) for e in lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(p))
+    assert tools.journal_today("2026-10-17") == (
+        "Today: 0 requests, 0 tool calls (0 ok, 0 refused, 0 declined, 0 errors). "
+        "Median answer time today: 2.5 s over 3 requests, 65% of it in the model.")
+
+
+def test_journal_today_without_timing_entries_gives_the_old_text(tmp_path, monkeypatch):
+    _write_journal(tmp_path, monkeypatch)
+    assert tools.journal_today("2026-10-17") == (
+        "Today: 2 requests, 4 tool calls (1 ok, 1 refused, 1 declined, 1 errors).")
+
+
+def test_journal_today_survives_a_broken_timing_entry(tmp_path, monkeypatch):
+    lines = [
+        {"event": "request", "text": "open notepad", "t": "2026-10-17T09:00:00"},
+        {"event": "timing", "llm_ms": 500, "t": "2026-10-17T09:00:01"},  # no ms field
+    ]
+    p = tmp_path / "journal.jsonl"
+    p.write_text("\n".join(json.dumps(e) for e in lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(p))
+    assert tools.journal_today("2026-10-17") == (
+        "Today: 1 requests, 0 tool calls (0 ok, 0 refused, 0 declined, 0 errors).")
+
 
 # --- concept_sites ---------------------------------------------------------------
 def test_concept_sites_without_repo(tmp_path, monkeypatch):
@@ -763,16 +861,11 @@ def test_concept_sites_lists_and_checks(tmp_path, monkeypatch):
 
     def fake_run(cmd, **kw):
         calls.append(cmd)
+        return SimpleNamespace(
+            stdout=("lotus: Restaurant Lotus, poort 5191\n" if cmd[-1] == "list"
+                    else "Geen problemen gevonden.\n"))
 
-        class R:
-            pass
-
-        r = R()
-        r.stdout = ("lotus: Restaurant Lotus, poort 5191\n" if cmd[-1] == "list"
-                    else "Geen problemen gevonden.\n")
-        return r
-
-    monkeypatch.setattr(tools.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setenv("IRIS_CONCEPTKIT_DIR", str(tmp_path))
     assert tools.concept_sites() == (
         "Sites:\nlotus: Restaurant Lotus, poort 5191\n\nChecks:\nGeen problemen gevonden.")
@@ -876,6 +969,63 @@ def test_queue_take_and_remove_descriptions_point_to_the_right_tool():
     assert "call queue_list first" in remove
 
 
+def test_queue_take_points_numbered_removals_to_queue_remove():
+    take = tools.TOOLS["queue_take"].description
+    remove = tools.TOOLS["queue_remove"].description
+    assert "A request to take a prompt out of the queue by its number is queue_remove." in take
+    assert "take it out of the queue" in remove
+    assert "haal uit de wachtrij" in remove
+
+
+def test_queue_take_description_covers_fetching_the_next_prompt():
+    take = tools.TOOLS["queue_take"].description
+    assert "without listing the queue first" in take
+
+
+# --- make_presentation and make_spreadsheet descriptions -------------------------
+def test_make_office_descriptions_do_not_ask_what_to_put_in():
+    pres = tools.TOOLS["make_presentation"].description
+    sheet = tools.TOOLS["make_spreadsheet"].description
+    phrase = ("When the request gives no details and one quick look finds none,"
+              " make it anyway with sensible general content and say so in the answer; do not ask first.")
+    assert phrase in pres
+    assert phrase in sheet
+
+
+# --- request_capability description ---------------------------------------------
+def test_request_capability_description_covers_smart_devices_and_online_services():
+    desc = tools.TOOLS["request_capability"].description
+    phrase = ("A smart device or online service with no tool here (lamps, a thermostat, "
+              "a streaming account) is such a request: call this straight away, do not look"
+              " for an app or a window first.")
+    assert phrase in desc
+
+
+def test_request_capability_description_keeps_the_plan_to_six_short_lines():
+    desc = tools.TOOLS["request_capability"].description
+    assert "at most six short lines" in desc
+
+
+# --- weather description --------------------------------------------------------
+def test_weather_description_says_one_call_holds_tomorrow_too():
+    desc = tools.TOOLS["weather"].description
+    phrase = ("One call holds today and the coming days, and tomorrow is the first date after"
+              " today in it: answer from that result, do not call it again or search the web.")
+    assert phrase in desc
+
+
+# --- close_window description ---------------------------------------------------
+def test_close_window_description_says_call_it_directly():
+    desc = tools.TOOLS["close_window"].description
+    assert "no list_windows or focus_window first" in desc
+
+
+# --- find_files description -----------------------------------------------------
+def test_find_files_description_says_one_search_covers_variants():
+    desc = tools.TOOLS["find_files"].description
+    assert "do not repeat with variants" in desc
+
+
 # --- registry guards -----------------------------------------------------------
 def test_every_tool_is_documented():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
@@ -896,6 +1046,18 @@ def test_read_only_tools_are_safe():
 
 
 # --- calculate ---------------------------------------------------------------
+def test_calculate_never_shows_a_rounded_or_complex_result_as_exact():
+    assert tools.calculate("(-8)**(1/3)") == "error: no real answer (a negative number to a fractional power)"
+    assert tools.calculate("(-1)**0.5").startswith("error: no real answer")
+    assert tools.calculate("10**100/3") == "10**100/3 = 3.33333333333e+99"
+    assert tools.calculate("4e15/2") == "4e15/2 = 2e+15"
+    assert tools.calculate("10/2") == "10/2 = 5"
+
+
+def test_calculate_too_many_digits_to_print_is_an_error():
+    assert tools.calculate("*".join(["99**100"] * 23)) == "error: number too large"
+
+
 def test_calculate_multiplication():
     assert tools.calculate("17*23") == "17*23 = 391"
 
@@ -1157,3 +1319,45 @@ def test_restore_brings_back_the_last_trashed_not_the_newest_file(home):
         os.utime(f, (2_000_000_000 if "last-week" in f.name else 1_900_000_000,) * 2)
     tools.restore_trash()
     assert old.exists() and not new.exists()
+
+
+def test_every_tool_accepts_the_parameters_its_schema_offers():
+    """The model calls a tool with the names in its schema; a function whose parameter is named differently (rid
+    for id) fails on every real call, which the eval's dry tools never see."""
+    import inspect
+
+    for tool in tools.TOOLS.values():
+        sig = inspect.signature(tool.fn)
+        sample = dict.fromkeys(tool.params, 1)
+        try:
+            sig.bind(**{p: sample[p] for p in tool.required})
+            sig.bind(**sample)
+        except TypeError as exc:
+            raise AssertionError(f"{tool.name}: {exc}") from None
+
+
+def test_comfy_queue_tells_a_refused_workflow_from_a_stopped_comfyui(tmp_path, monkeypatch):
+    import http.client
+    import urllib.error
+    import urllib.request
+
+    _queue_folder(tmp_path, monkeypatch)
+    monkeypatch.setattr(tools, "system_data", lambda: _two_gpus())
+
+    def refused(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 400, "Bad Request", http.client.HTTPMessage(), None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", refused)
+    assert tools.comfy_queue("anime") == "error: ComfyUI refused anime (HTTP 400); open it in ComfyUI to see why"
+
+
+def test_journal_today_for_a_past_day_ignores_later_days(tmp_path, monkeypatch):
+    lines = [
+        {"event": "timing", "ms": 2000, "llm_ms": 1000, "tools_ms": 1000, "t": "2026-10-17T09:00:00"},
+        {"event": "timing", "ms": 8000, "llm_ms": 8000, "tools_ms": 0, "t": "2026-10-18T09:00:00"},  # a later day
+    ]
+    p = tmp_path / "journal.jsonl"
+    p.write_text("\n".join(json.dumps(e) for e in lines) + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(p))
+    assert tools.journal_today("2026-10-17").endswith(
+        "Median answer time today: 2.0 s over 1 requests, 50% of it in the model.")

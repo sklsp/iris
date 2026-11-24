@@ -7,12 +7,14 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 from iris import config
 from iris.registry import PLUGINS
 
 # Iris runs without these; everything else must pass
-OPTIONAL = ("voice", "config", "skill builder", "vision", "hearing", "speech", "browser", "overlay", "shortcut")
+OPTIONAL = ("voice", "config", "skill builder", "vision", "hearing", "speech", "browser", "overlay", "shortcut",
+            "speed")
 
 
 def bundled() -> bool:
@@ -20,7 +22,7 @@ def bundled() -> bool:
     return (Path(sys.prefix) / "Iris.exe").exists()
 
 
-def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
+def checks(payload: dict[str, Any] | None = None) -> list[tuple[bool, str]]:
     """(ok, line) per check; payload is the LM Studio model list (tests pass one in)."""
     from iris.dashboard import lmstudio_payload
     from iris.llm import effective_model
@@ -30,8 +32,21 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
     out.append((sys.platform == "win32", f"platform {sys.platform} (Iris drives Windows through UI Automation)"))
     out.append((importlib.util.find_spec("pywinauto") is not None, "pywinauto installed"))
     cfg = config.load()
-    out.append((config.config_path().exists(),
-                f"config {config.config_path()} (optional; the defaults are used without it)"))
+    problem = config.error()
+    if problem:
+        out.append((False, f"broken config: {config.config_path()} can not be read, so every setting in it is "
+                           f"ignored: {problem}"))
+    else:
+        out.append((config.config_path().exists(),
+                    f"config {config.config_path()} (optional; the defaults are used without it)"))
+    bad = config.bad_numbers()
+    if bad:
+        out.append((False, f"settings that are not numbers, so their defaults are used: {', '.join(bad)}; fix them "
+                           "on the Settings tab or in config.toml"))
+    gone = [f for f in cfg["folders"] if not Path(f).expanduser().is_dir()]
+    if gone:
+        out.append((False, f"folders in config.toml that do not exist: {', '.join(gone)}; fix folders on the Settings "
+                           "tab"))
     unknown = [p for p in cfg["plugins"] if p not in PLUGINS]
     out.append((not unknown, f"plugins {cfg['plugins'] or 'none'}"
                 + (f"; unknown: {', '.join(unknown)} (known: {', '.join(PLUGINS)})" if unknown else "")))
@@ -92,10 +107,19 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
             else:
                 line = f"voices missing: python -m piper.download_voices {' '.join(missing)} --data-dir {v.PIPER_DIR}"
             out.append((piper and not missing, "speech: Piper " + line))
+        elif engine == "kokoro":
+            have = importlib.util.find_spec("kokoro_onnx") is not None and all(
+                Path(f).exists() for f in (v.KOKORO_MODEL, v.KOKORO_VOICES))
+            out.append((have, "speech: Kokoro" if have else
+                        f"speech: Kokoro needs pip install -e .[tts] and its two model files in {v.KOKORO_DIR}; "
+                        "SAPI speaks instead"))
         else:
             out.append((False, f"speech: {engine}; " + ("a voice pack on the Setup tab (Piper or VoxCPM2)" if app
                                                         else 'tts = "piper" in config.toml')
                         + " for natural Dutch and English voices"))
+        if importlib.util.find_spec("pyttsx3") is None:  # SAPI is what every other voice falls back to
+            out.append((False, "no fallback voice: pyttsx3 (Windows SAPI) is missing; pip install -e .[voice]"))
+        out.append(_packs_line())
     from iris import overlay
 
     if overlay.enabled():
@@ -111,12 +135,47 @@ def checks(payload: dict | None = None) -> list[tuple[bool, str]]:
                 else "pip install -e .[browser]" if not ws else
                 "open brave://inspect/#remote-debugging and tick 'Allow remote debugging' for fast web pages")))
     if not bundled():  # the installer makes its own Start menu and desktop shortcuts
-        from iris.__main__ import desktop_dir
+        from iris.__main__ import SHORTCUT_NAME, desktop_dir
 
-        have = (desktop_dir() / "Iris.cmd").exists()
-        out.append((have, "shortcut: Iris.cmd on the desktop" if have else
+        have = (desktop_dir() / SHORTCUT_NAME).exists()
+        out.append((have, f"shortcut: {SHORTCUT_NAME} on the desktop" if have else
                     "shortcut: none on the desktop; iris shortcut puts one there (optional)"))
+    from iris.__main__ import startup_state
+
+    state = startup_state()
+    out.append((True, f"start at login: on ({state})" if state else
+                "start at login: off; iris startup on starts the tray app at login (optional)"))
+    out.append(_speed_line())
     return out
+
+
+def _packs_line() -> tuple[bool, str]:
+    """The optional voice packs (Setup tab): which are there and which this PC could still get."""
+    from iris import packs
+
+    rows = [r for r in packs.packs() if r["available"]]
+    have = [r["id"] for r in rows if r["installed"]]
+    missing = [r["id"] for r in rows if not r["installed"]]
+    if not missing:
+        return True, f"voice packs: {', '.join(have) or 'none needed'}"
+    return False, (f"voice packs: {', '.join(have) or 'none'} installed; not yet {', '.join(missing)} (the Setup tab "
+                   "shows each with its size and license)")
+
+
+def _speed_line() -> tuple[bool, str]:
+    """How long recent requests took, from the journal through iris.timings; optional, so a broken journal only
+    marks this line."""
+    from iris.dashboard import journal_path
+    from iris.timings import read_timings, summarize
+
+    try:
+        summary = summarize(read_timings(journal_path(), last=50))
+    except Exception as err:  # a torn or unreadable journal must not fail doctor
+        return False, f"speed: could not read the journal ({err})"
+    if summary["count"] == 0:
+        return True, "speed: no timed requests yet"
+    return (True, f"speed: last {summary['count']} requests, median {summary['ms_median'] / 1000:.1f} s "
+                  f"(model {round(summary['llm_share'] * 100)}%)")
 
 
 def main() -> int:

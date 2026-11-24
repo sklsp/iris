@@ -10,6 +10,7 @@ Events in: listening, heard (text), thinking, answer (text), idle, interrupted. 
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
@@ -20,6 +21,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import IO, Any
 
 from iris import config
@@ -55,7 +57,7 @@ def tail(text: str, chars: int, lines: int = 3) -> str:
     return "…" + out if cut else out
 
 
-def parse(line: str) -> dict | None:
+def parse(line: str) -> dict[str, Any] | None:
     """One event from one line, or None for anything that is not a known event."""
     try:
         event = json.loads(line)
@@ -80,7 +82,7 @@ class View:
         """Whether the panel is up at all."""
         return self.mode != "hidden"
 
-    def apply(self, event: dict, now: float) -> None:
+    def apply(self, event: dict[str, Any], now: float) -> None:
         """Fold one event into the view: a new request clears the old one, and idle starts the fade-out clock."""
         kind, text = event.get("event"), str(event.get("text") or "")
         if kind in ("listening", "interrupted"):  # a new request starts: the old one goes
@@ -137,7 +139,7 @@ class Overlay:
     process. When that process is missing, dead or stuck, events go nowhere and the voice loop never notices.
     Another daemon thread reads what the overlay writes back: a click on its cancel button calls on_cancel."""
 
-    def __init__(self, proc: subprocess.Popen | None = None, on_cancel: Callable[[], None] | None = None):
+    def __init__(self, proc: subprocess.Popen[str] | None = None, on_cancel: Callable[[], None] | None = None):
         self._proc = proc
         self.on_cancel = on_cancel
         self._queue: queue.Queue[str | None] = queue.Queue(maxsize=64)
@@ -150,12 +152,12 @@ class Overlay:
         """Queue an event for the overlay process; it returns at once, so a slow or dead panel never blocks Iris."""
         if self._proc is None:
             return
-        try:  # JSON's ASCII escapes: no console code page can garble Dutch or an emoji on the way
+        # JSON's ASCII escapes: no console code page can garble Dutch or an emoji on the way
+        # the overlay stopped reading; drop events rather than wait for it
+        with contextlib.suppress(queue.Full):
             self._queue.put_nowait(json.dumps({"event": event, "text": text}) + "\n")
-        except queue.Full:
-            pass  # the overlay stopped reading; drop events rather than wait for it
 
-    def _write(self, proc: subprocess.Popen) -> None:
+    def _write(self, proc: subprocess.Popen[str]) -> None:
         pipe = proc.stdin
         while pipe is not None and (line := self._queue.get()) is not None:
             try:
@@ -173,24 +175,22 @@ class Overlay:
                 if is_cancel(line) and self.on_cancel is not None:
                     try:
                         self.on_cancel()
-                    except Exception as exc:  # noqa: BLE001 - a failing cancel must not stop the next one
+                    except Exception as exc:  # a failing cancel must not stop the next one
                         print(f"(cancelling did not work: {exc!r})")
         except (OSError, ValueError):  # the pipe broke or was closed
             pass
 
-    def close(self) -> None:
-        """Let the overlay go: end of input makes it quit; one that hangs is killed after two seconds."""
+    def close(self, wait: float = 2) -> None:
+        """Let the overlay go: end of input makes it quit; one that hangs is killed after `wait` seconds."""
         proc, self._proc = self._proc, None
         if proc is None:
             return
-        try:
+        with contextlib.suppress(queue.Full):
             self._queue.put_nowait(None)
-        except queue.Full:
-            pass
         # in a thread: a writer stuck on a full pipe holds its lock, and close() would wait for it forever
         threading.Thread(target=_close_quietly, args=(proc.stdin,), daemon=True).start()
         try:
-            proc.wait(timeout=2)
+            proc.wait(timeout=wait)
         except subprocess.TimeoutExpired:
             try:
                 proc.kill()  # which also frees a stuck writer: its pipe breaks
@@ -224,7 +224,7 @@ def launch() -> Overlay:
     log_path = config.config_path().parent / "overlay.log"
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_path, "a", encoding="utf-8") as log:  # the child keeps its own handle
+        with log_path.open("a", encoding="utf-8") as log:  # the child keeps its own handle
             proc = subprocess.Popen([sys.executable, "-m", "iris.overlay"], stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=log, text=True, encoding="ascii",
                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -235,7 +235,7 @@ def launch() -> Overlay:
 
 
 # --- the overlay process ---------------------------------------------------------------------------------------------
-def read_events(stream: IO[str], out: queue.Queue) -> None:
+def read_events(stream: IO[str], out: queue.Queue[dict[str, Any] | None]) -> None:
     """Every known event from stream into out, then None once Iris closes the pipe (or dies)."""
     try:
         for line in stream:
@@ -290,7 +290,7 @@ class Win32:
         def on_message(hwnd: int | None, msg: int, w: int, lp: int) -> int:
             if msg == self.WM_MOUSEACTIVATE:
                 return self.MA_NOACTIVATE
-            return call(previous, hwnd, msg, w, lp)
+            return int(call(previous, hwnd, msg, w, lp))
 
         self._wndproc = wndproc(on_message)
         previous = set_proc(self.hwnd, self.GWLP_WNDPROC, ctypes.cast(self._wndproc, ctypes.c_void_p).value)
@@ -318,7 +318,7 @@ def _user32() -> Any:
     try:
         import ctypes
 
-        return ctypes.windll.user32  # type: ignore[attr-defined]
+        return ctypes.windll.user32
     except (ImportError, AttributeError):  # not Windows
         return None
 
@@ -424,7 +424,7 @@ def split_ring(points: list[tuple[float, float]], pieces: int, chords: int = 6) 
     """A closed polygon cut into `pieces` of equal length, each a line of `chords` short chords, in order round it:
     piece i ends where piece i + 1 starts and the last ends where the first starts."""
     loop = points + points[:1]
-    lengths = [math.dist(a, b) for a, b in zip(loop, loop[1:], strict=False)]
+    lengths = [math.dist(a, b) for a, b in pairwise(loop)]
     total, n = sum(lengths), pieces * chords
     samples, i, walked = [], 0, 0.0
     for j in range(n):
@@ -449,25 +449,21 @@ class Panel:
 
     WIDTH, MARGIN, PAD, INDENT, RADIUS, POLL_MS = 560, 10, 18, 54, 20, 40  # WIDTH: the window, glow margin included
 
-    def __init__(self, tk: Any, events: queue.Queue, clock=time.monotonic, user32: Any = None,
-                 out: IO[str] | None = None):
+    def __init__(self, tk: Any, events: queue.Queue[dict[str, Any] | None], user32: Any = None,
+                 out: IO[str] | None = None, clock: Callable[[], float] = time.monotonic) -> None:
         self.tk, self.events, self.clock, self.view, self.tint = tk, events, clock, View(), Tint()
         self.out, self.hover = out, False
         if user32 is not None:
-            try:
+            with contextlib.suppress(Exception):  # blurry is better than no panel
                 user32.SetProcessDPIAware()  # sharp text; Tk then scales its point sizes to the real DPI
-            except Exception:  # noqa: BLE001 - blurry is better than no panel
-                pass
         root = self.root = tk.Tk()
         root.withdraw()
         root.title(TITLE)
         root.overrideredirect(True)
         root.configure(bg=KEY)
         root.attributes("-topmost", True)
-        try:
+        with contextlib.suppress(tk.TclError):
             root.attributes("-transparentcolor", KEY)  # Windows only: the panel gets round corners
-        except tk.TclError:
-            pass
         root.attributes("-alpha", 0.0)
         self.scale = max(1.0, float(root.winfo_fpixels("1i")) / 96)
         self.width, self.margin = int(self.WIDTH * self.scale), int(self.MARGIN * self.scale)
@@ -482,7 +478,7 @@ class Panel:
         self._outer: list[Any] = []
         self._inner: list[Any] = []
         self._edge: list[Any] = []
-        self._drawn: dict[tuple[str, int], tuple] = {}  # what each outline item shows now, so a frame skips the rest
+        self._drawn: dict[tuple[str, int], tuple[Any, ...]] = {}  # what an outline item shows now; skips redrawing
         self.win: Win32 | None = None
         if user32 is not None:
             # Tk makes the real top-level window only when it is first mapped, so map it once, see-through, give it
@@ -494,7 +490,7 @@ class Panel:
             self.win.no_focus()
             try:
                 self.win.no_activate_on_click()
-            except Exception as exc:  # noqa: BLE001 - WS_EX_NOACTIVATE still keeps the focus where it is
+            except Exception as exc:  # WS_EX_NOACTIVATE still keeps the focus where it is
                 print(f"no WM_MOUSEACTIVATE hook: {exc!r}", file=sys.stderr)
             self.win.hide()
             if before:
@@ -506,7 +502,19 @@ class Panel:
         self.root.mainloop()
 
     def step(self) -> None:
-        """One frame: take the new events, draw, fade or hide. Stops the process when Iris closes the pipe."""
+        """One frame: take the new events, draw, fade or hide. Stops the process when Iris closes the pipe. A frame
+        that fails is logged and the next one still comes, so the panel always sees Iris close the pipe."""
+        try:
+            if self._frame():
+                return
+        except Exception:  # one bad frame must not stop the loop: it would outlive Iris on screen
+            import traceback
+
+            traceback.print_exc()  # overlay.log
+        self.root.after(self.POLL_MS, self.step)
+
+    def _frame(self) -> bool:
+        """Draw one frame; True when Iris closed the pipe and the panel is gone."""
         now, changed = self.clock(), False
         while True:
             try:
@@ -515,7 +523,7 @@ class Panel:
                 break
             if event is None:
                 self.root.destroy()
-                return
+                return True
             self.view.apply(event, now)
             changed = True
         self.view.tick(now)
@@ -529,7 +537,7 @@ class Panel:
                 self._show()
         elif self.shown:
             self._hide()
-        self.root.after(self.POLL_MS, self.step)
+        return False
 
     def layout(self) -> None:
         """Write the two lines, size the panel to them, lay its glow and outline round it and put it bottom-center
@@ -702,7 +710,7 @@ def main(stdin: IO[str] | None = None, tk: Any = None, user32: Any = None) -> in
             print("no tkinter in this Python; the overlay needs it", file=sys.stderr)
             return 1
         user32 = _user32()
-    events: queue.Queue = queue.Queue()
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     threading.Thread(target=read_events, args=(stdin or sys.stdin, events), daemon=True).start()
     Panel(tk, events, user32=user32, out=sys.stdout).run()
     return 0

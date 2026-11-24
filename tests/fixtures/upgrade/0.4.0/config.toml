@@ -1,0 +1,4 @@
+name = "Jay"
+city = "Rotterdam"
+folders = ["D:/Projects"]
+plugins = ["lmstudio"]

@@ -5,14 +5,15 @@ python -m iris dashboard       read-only status page at http://127.0.0.1:8765 (a
 python -m iris app             the desktop app: the dashboard in a window, a tray icon, voice mode supervised
                                (pip install -e .[app]; --background starts in the tray only)
 python -m iris autopilot       wait for a run in --repo to finish, then ask before starting the next queued prompt
+python -m iris timings         how long recent requests took: median and p90, model share, slowest tools (--last N)
 python -m iris init            write a starter ~/.iris/config.toml (asks your name and city)
 python -m iris doctor          check the setup (LM Studio, model, config, plugins, voice) and say what to fix
 python -m iris eval            run the eval tasks against the model (--repeat N, --only ID, --category NAME;
                                eval publish puts the latest score in the README, eval history shows the trend)
 python -m iris eval-compare A B  what changed between two eval reports (eval/results/*.json)
 python -m iris config          print every setting, its value and where it comes from (file, default, environment)
-python -m iris startup on      start voice mode at login in a minimized console (off, status)
-python -m iris shortcut        put an Iris.cmd on the desktop that starts voice mode with a double-click
+python -m iris startup on      start the tray app at login, with no console (off, status)
+python -m iris shortcut        put an Iris.lnk on the desktop that starts the app with a double-click
 python -m iris skill list      the skills Iris built; `skill export NAME` zips an approved one to share,
                                `skill import FILE [--tier safe]` adds a shared one for review (confirm by default)"""
 
@@ -20,14 +21,16 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 import threading
 import zipfile
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 from iris import __version__, skills, tools
-from iris.agent import Agent, Journal
+from iris.agent import Agent, Journal, start_hold
 from iris.llm import LMStudio
 from iris.voice import is_yes, speak
 
@@ -38,19 +41,62 @@ def startup_dir() -> Path:
                 or Path(os.environ.get("APPDATA", Path.home())) / "Microsoft/Windows/Start Menu/Programs/Startup")
 
 
+def startup_python(exe: Path) -> Path:
+    """The interpreter for the login script: pythonw.exe next to exe when it exists (no console), else exe."""
+    pythonw = exe.with_name("pythonw.exe")
+    return pythonw if pythonw.exists() else exe
+
+
+# The files `iris startup on` may leave in the Startup folder; doctor reports which one is there.
+STARTUP_NAMES = ("Iris.vbs", "Iris.cmd", "Iris.lnk")
+
+# The desktop file `iris shortcut` writes; doctor reports whether it is there.
+SHORTCUT_NAME = "Iris.lnk"
+
+
+def startup_state() -> str | None:
+    """The path of the first STARTUP_NAMES file in the Startup folder, or None when none is there."""
+    d = startup_dir()
+    for name in STARTUP_NAMES:
+        if (d / name).exists():
+            return str(d / name)
+    return None
+
+
+def startup_enable() -> Path:
+    """Write Iris.vbs to the Startup folder, remove the old names it replaces, and return its path."""
+    vbs = startup_dir() / "Iris.vbs"
+    vbs.parent.mkdir(parents=True, exist_ok=True)
+    exe = startup_python(Path(sys.executable))
+    line = f'CreateObject("WScript.Shell").Run """{exe}"" -m iris app --background", 0, False\n'
+    vbs.write_text(line, encoding="utf-8")
+    for name in STARTUP_NAMES[1:]:
+        (startup_dir() / name).unlink(missing_ok=True)
+    return vbs
+
+
+def startup_disable() -> None:
+    """Remove every file `iris startup on` may have left in the Startup folder."""
+    d = startup_dir()
+    for name in STARTUP_NAMES:
+        (d / name).unlink(missing_ok=True)
+
+
 def startup_main(argv: list[str]) -> int:
-    """`iris startup on|off|status`: start voice mode at login, in a minimized console you can see and close."""
-    cmd = startup_dir() / "Iris.cmd"
+    """`iris startup on|off|status`: start the tray app at login, with no console window."""
     what = argv[0] if argv else "status"
     if what == "on":
-        cmd.parent.mkdir(parents=True, exist_ok=True)
-        cmd.write_text(f'@echo off\nstart "Iris" /min "{sys.executable}" -m iris --voice\n', encoding="utf-8")
-        print(f"Iris starts in voice mode at login ({cmd}). Let LM Studio start its server at login too.")
+        vbs = startup_enable()
+        print(f"Iris starts in the tray at login ({vbs}). Let LM Studio start its server at login too.")
     elif what == "off":
-        cmd.unlink(missing_ok=True)
+        startup_disable()
         print("Iris no longer starts at login.")
     elif what == "status":
-        print(f"on ({cmd})" if cmd.exists() else "off")
+        state = startup_state()
+        if state is not None:
+            print(f"on ({state})")
+        else:
+            print("off")
     else:
         print("usage: iris startup on|off|status", file=sys.stderr)
         return 2
@@ -64,17 +110,33 @@ def desktop_dir() -> Path:
     import ctypes
 
     buf = ctypes.create_unicode_buffer(260)
-    ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, buf)  # type: ignore[attr-defined]  # DESKTOPDIRECTORY
+    ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, buf)  # DESKTOPDIRECTORY
     return Path(buf.value or Path.home() / "Desktop")
 
 
-def shortcut_main(argv: list[str]) -> int:
-    """`iris shortcut`: an Iris.cmd on the desktop that starts voice mode in its own window; closing it stops Iris."""
-    cmd = desktop_dir() / "Iris.cmd"
-    cmd.parent.mkdir(parents=True, exist_ok=True)
-    cmd.write_text(f'@echo off\ntitle Iris\nset PYTHONUTF8=1\n"{sys.executable}" -m iris --voice\npause\n',
-                   encoding="utf-8")
-    print(f"Double-click {cmd} to start Iris in voice mode. Delete it to remove the shortcut.")
+def shortcut_main(argv: list[str], run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> int:
+    """`iris shortcut`: an Iris.lnk on the desktop that starts the app (no console, its own icon); a second start
+    just brings the running window forward."""
+    lnk = desktop_dir() / SHORTCUT_NAME
+    lnk.parent.mkdir(parents=True, exist_ok=True)
+    exe = startup_python(Path(sys.executable))  # pythonw when it is there: no console with the app either
+    icon = Path(__file__).parent / "assets" / "iris.ico"
+    # the paths go in through the environment (Windows passes it as Unicode), never into the script text
+    script = ("$w = New-Object -ComObject WScript.Shell; $s = $w.CreateShortcut($env:IRIS_LNK); "
+              "$s.TargetPath = $env:IRIS_EXE; $s.Arguments = '-m iris app'; "
+              "$s.IconLocation = $env:IRIS_ICON; $s.Description = 'Iris'; $s.Save()")
+    env = {**os.environ, "IRIS_LNK": str(lnk), "IRIS_EXE": str(exe), "IRIS_ICON": str(icon)}
+    try:
+        r = run(["powershell", "-NoProfile", "-Command", script], env=env, capture_output=True, text=True,
+                timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired:
+        print("could not write the shortcut: powershell timed out", file=sys.stderr)
+        return 1
+    if r.returncode != 0:
+        print(r.stderr, file=sys.stderr)
+        return 1
+    (desktop_dir() / "Iris.cmd").unlink(missing_ok=True)  # the old voice-mode launcher is replaced by this one
+    print(f"Double-click {lnk} to start Iris. Delete it to remove the shortcut.")
     return 0
 
 
@@ -109,6 +171,41 @@ def skill_main(argv: list[str]) -> int:
 
 
 def main() -> None:
+    """Run Iris. An error nobody caught goes to logs/crash.log with its traceback, and the user gets one sentence
+    that says where; an error in a background thread (a timer, a watcher) is logged the same way and voice mode
+    carries on."""
+    from iris import config
+
+    def thread_failed(args: threading.ExceptHookArgs) -> None:
+        if args.exc_value is not None and not isinstance(args.exc_value, SystemExit):
+            path = config.log_crash(f"thread {args.thread.name if args.thread else '?'}", args.exc_value)
+            print(f"(a background task failed: {args.exc_value}; the details are in {path})", file=sys.stderr)
+
+    threading.excepthook = thread_failed
+    try:
+        _main()
+    except Exception as exc:  # the last stop: write it down, say where, exit non-zero
+        path = config.log_crash("iris " + " ".join(sys.argv[1:]), exc)
+        print(f"Iris stopped on an error: {exc}. The details are in {path}.", file=sys.stderr)
+        raise SystemExit(1) from None
+
+
+def log_stt(journal: Journal, session: object) -> None:
+    """The speech-recognition time of the turn just heard (stt event), so a timing summary can show it; text mode
+    has no session and logs nothing."""
+    ms = getattr(session, "last_stt_ms", None)
+    if isinstance(ms, int):
+        journal.log(event="stt", ms=ms)
+
+
+def log_tts(journal: Journal, ms: int | None) -> None:
+    """The time from an answer being ready until its first sound (a tts event); nothing when the speaker never
+    reported one."""
+    if isinstance(ms, int):
+        journal.log(event="tts", ms=ms)
+
+
+def _main() -> None:
     """Dispatch a subcommand such as dashboard or doctor; without one, run the request loop in text, push-to-talk
     or wake-word mode."""
     if len(sys.argv) > 1 and sys.argv[1] == "eval":
@@ -161,13 +258,21 @@ def main() -> None:
         from iris.autopilot import autopilot_main
 
         raise SystemExit(autopilot_main(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "timings":
+        from iris.timings import timings_main
+
+        raise SystemExit(timings_main(sys.argv[2:]))
     ap = argparse.ArgumentParser(prog="iris", description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--version", action="version", version=f"iris {__version__}")
     ap.add_argument("--voice", action="store_true")
     ap.add_argument("--push-to-talk", action="store_true")
-    ap.add_argument("--journal", default=str(Path.home() / ".iris" / "journal.jsonl"))
+    ap.add_argument("--journal", default=None)  # resolved after parsing: importing iris.dashboard loads http.server
     ap.add_argument("--supervised", action="store_true", help=argparse.SUPPRESS)  # started by `iris app`
     a = ap.parse_args()
+    if a.journal is None:  # the default lives in iris.dashboard, imported only when it is needed
+        from iris.dashboard import journal_path
+
+        a.journal = str(journal_path())
     Path(a.journal).parent.mkdir(parents=True, exist_ok=True)
     if a.voice:
         from iris.app import VOICE_MUTEX, quit_when_set, take_mutex
@@ -178,6 +283,7 @@ def main() -> None:
                              name="iris-supervised", daemon=True).start()
 
     session = None
+    hold_timer: list[threading.Timer | None] = [None]  # the running hold-line timer, shared by the loop and confirm
     hear: Callable[[], str]
     say: Callable[[str], bool | threading.Thread | None]  # the three modes return different things; none is used
     if not (a.voice or a.push_to_talk):
@@ -204,6 +310,10 @@ def main() -> None:
         say = session.speak_async  # non-blocking: Iris talks while the next request is processed
 
         def confirm(question: str) -> bool:
+            timer = hold_timer[0]
+            if timer is not None:  # a hold line never talks over a yes/no question
+                timer.cancel()
+                hold_timer[0] = None
             session.speak(question)
             return is_yes(session.next_command())
 
@@ -218,6 +328,8 @@ def main() -> None:
         browser.watch(say)  # the browser's Allow question comes now, once, not in the middle of a request
 
     agent = Agent(LMStudio(), confirm, Journal(Path(a.journal)))
+    if session is not None:
+        session.on_spoken = partial(log_tts, agent.journal)  # each answer's first-sound time goes to the journal
     cancelled = getattr(session, "cancelled", None)  # set by the overlay's cancel button, see VoiceSession.cancel
     if cancelled is not None:
         agent.cancel = cancelled  # one flag: the agent checks it before every model and tool call
@@ -233,7 +345,16 @@ def main() -> None:
             if request.lower() in {"quit", "exit", "stop", "stoppen"}:
                 break
             if request:
-                answer = agent.handle(request)
+                if session is not None:
+                    hold_timer[0] = start_hold(partial(session.speak_async, panel=False), request)
+                log_stt(agent.journal, session)  # where speech recognition spent its time; text mode has no session
+                try:
+                    answer = agent.handle(request)
+                finally:
+                    timer = hold_timer[0]
+                    if timer is not None:  # the answer or an error came; no holding line needed
+                        timer.cancel()
+                        hold_timer[0] = None
                 if cancelled is None or not cancelled.is_set():  # a cancelled request says nothing
                     say(answer)
     except KeyboardInterrupt:
@@ -247,5 +368,5 @@ def main() -> None:
             session.__exit__(None, None, None)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

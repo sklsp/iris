@@ -3,10 +3,12 @@ Windows SAPI or Kokoro to speak."""
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import queue
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -24,17 +26,23 @@ from iris.overlay import Overlay, launch
 if TYPE_CHECKING:
     import numpy as np
 
+
+def whisper_model() -> str | None:
+    """The Whisper model from config.toml, read at call time so a change on the Settings tab needs no restart."""
+    return config.setting("IRIS_WHISPER", "whisper_model") or None
+
+
 # None means automatic: large-v3-turbo on the GPU when CUDA works (pip install -e .[gpu]), small on the CPU otherwise.
-WHISPER_MODEL = config.setting("IRIS_WHISPER", "whisper_model") or None
+WHISPER_MODEL = whisper_model()
 WHISPER_DEVICE = os.environ.get("IRIS_WHISPER_DEVICE")  # "cpu" or "cuda" to force one
 RATE = 16000
 FRAME = 1280  # 80 ms at 16 kHz, the frame size openWakeWord wants
 
 # IRIS_WAKEWORD picks a built-in openWakeWord name, an .onnx file, or "iris" for NameWake (no model needed).
 # Read at construction time so tests can override it.
-WAKE_THRESHOLD = float(config.setting("IRIS_WAKE_THRESHOLD", "wake_threshold", "0.5"))
+WAKE_THRESHOLD = config.number("IRIS_WAKE_THRESHOLD", "wake_threshold", 0.5)
 # Stop recording after this much continuous silence (IRIS_SILENCE). 1.2 s cut people off when they paused to think.
-SILENCE_SECONDS = float(config.setting("IRIS_SILENCE", "silence", "1.8"))
+SILENCE_SECONDS = config.number("IRIS_SILENCE", "silence", 1.8)
 SPEECH_TIMEOUT = 60.0  # the longest one answer may take to say before Iris carries on without it
 FOLLOW_UP_SECONDS = 8.0  # after an answer, a question that starts this soon needs no wake word (IRIS_FOLLOW_UP)
 VAD_THRESHOLD = float(os.environ.get("IRIS_VAD_THRESHOLD", 0.01))  # RMS below this counts as silence
@@ -43,8 +51,8 @@ VAD_THRESHOLD = float(os.environ.get("IRIS_VAD_THRESHOLD", 0.01))  # RMS below t
 # for half the download. Nothing is downloaded automatically: drop the two files in ~/.iris by hand
 # and Iris uses them, otherwise it keeps speaking with Windows SAPI.
 KOKORO_DIR = os.environ.get("IRIS_KOKORO_DIR", str(Path.home() / ".iris"))
-KOKORO_MODEL = os.path.join(KOKORO_DIR, "kokoro-v1.0.fp16.onnx")
-KOKORO_VOICES = os.path.join(KOKORO_DIR, "voices-v1.0.bin")
+KOKORO_MODEL = str(Path(KOKORO_DIR) / "kokoro-v1.0.fp16.onnx")  # Kokoro takes string paths
+KOKORO_VOICES = str(Path(KOKORO_DIR) / "voices-v1.0.bin")
 KOKORO_VOICE = os.environ.get("IRIS_KOKORO_VOICE", "af_heart")
 _KOKORO_FILES = {
     "kokoro-v1.0.fp16.onnx": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.fp16.onnx",
@@ -55,8 +63,17 @@ _KOKORO_FILES = {
 # Piper's own command line in a separate process. Get a voice with
 #   python -m piper.download_voices nl_NL-ronnie-medium --data-dir %USERPROFILE%/.iris/piper
 PIPER_DIR = Path(os.environ.get("IRIS_PIPER_DIR") or (Path.home() / ".iris" / "piper"))
-PIPER_VOICES = {"nl": config.setting("IRIS_PIPER_NL", "piper_nl", "nl_NL-ronnie-medium"),
-                "en": config.setting("IRIS_PIPER_EN", "piper_en", "en_US-joe-medium")}
+
+
+def piper_voices() -> dict[str, str]:
+    """The Piper voices from config.toml, read at call time so a change on the Settings tab needs no restart."""
+    return {"nl": config.setting("IRIS_PIPER_NL", "piper_nl", "nl_NL-ronnie-medium"),
+            "en": config.setting("IRIS_PIPER_EN", "piper_en", "en_US-joe-medium")}
+
+
+# The default voices for each language; config.toml (piper_nl / piper_en) can point to any other voice
+# from the same list.
+PIPER_VOICES = piper_voices()
 
 
 def piper_runtime() -> Path:
@@ -139,10 +156,11 @@ class WakeWord:
         if self.name in openwakeword.MODELS:
             path = openwakeword.MODELS[self.name]["model_path"]
         onnx = path.replace(".tflite", ".onnx")
-        if not os.path.exists(onnx):
+        if not Path(onnx).exists():
+            if self.name not in openwakeword.MODELS:  # your own model file: download_models([]) would fetch them all
+                raise FileNotFoundError(f"no wake word model at {onnx}; check wakeword in config.toml")
             print(f"Downloading wake word model {self.name} (first run only)...")
-            names = [self.name] if self.name in openwakeword.MODELS else []
-            openwakeword.utils.download_models(names)
+            openwakeword.utils.download_models([self.name])
         self._m = openwakeword.Model(wakeword_models=[onnx])
         return self._m
 
@@ -188,7 +206,7 @@ def _cuda_available() -> bool:
             return False
         _cuda_dlls()
         for dll in ("cublas64_12.dll", "cudnn64_9.dll"):
-            ctypes.WinDLL(dll)  # type: ignore[attr-defined]
+            ctypes.WinDLL(dll)
         return True
     except (ImportError, OSError, AttributeError, RuntimeError):
         return False
@@ -206,7 +224,7 @@ def _whisper_model(name: str | None, device: str | None, gpu_default: str = "lar
     model = name or (gpu_default if device == "cuda" else cpu_default)
     compute = "float16" if device == "cuda" else "int8"
     gpu = config.setting("IRIS_WHISPER_GPU", "whisper_gpu")
-    extra = {"device_index": int(gpu)} if device == "cuda" and gpu else {}
+    extra = {"device_index": int(gpu)} if device == "cuda" and gpu.isdigit() else {}
     return WhisperModel(model, device=device, compute_type=compute, **extra)
 
 
@@ -285,6 +303,7 @@ class Voice:
         import sounddevice as sd
 
         chunks, stop = [], threading.Event()
+        no_console = False  # input() died (no stdin): there is no console to press Enter in
 
         def cb(indata: np.ndarray, frames: int, t: Any, status: Any) -> None:
             chunks.append(indata.copy())
@@ -292,12 +311,19 @@ class Voice:
         print(prompt)
 
         def _stop_on_enter() -> None:
-            input()
+            nonlocal no_console
+            try:
+                input()
+            except (EOFError, OSError):  # the desktop app and pipes have no stdin; Enter can never come
+                no_console = True
             stop.set()
 
         with sd.InputStream(samplerate=RATE, channels=1, dtype="float32", callback=cb):
             threading.Thread(target=_stop_on_enter, daemon=True).start()
             stop.wait()
+        if no_console:
+            print("Push-to-talk needs a console window; use the wake word instead.")
+            return ""
         if not chunks:
             return ""
         audio = np.concatenate(chunks)[:, 0]
@@ -316,13 +342,17 @@ class VoiceSession:
 
     def __init__(self, whisper_model: str | None = None, wake_word: str | None = None,
                  vad_threshold: float | None = None, silence_seconds: float = SILENCE_SECONDS,
-                 max_record_seconds: float = 30, speaker: Speaker | None = None):
+                 max_record_seconds: float = 30, speaker: Speaker | None = None,
+                 clock: Callable[[], float] = time.perf_counter):
         self.whisper_name = whisper_model or WHISPER_MODEL
         self.wake = make_wake(wake_word, vad_threshold)
         self.vad_threshold = vad_threshold
         self.silence_seconds = silence_seconds
         self.max_record_seconds = max_record_seconds
         self.speaker = speaker or Speaker()
+        self.clock = clock  # time source for the transcription timing; tests pass a stepping fake
+        self.last_stt_ms: int | None = None  # milliseconds of the last _transcribe, model load included
+        self.on_spoken: Callable[[int | None], None] | None = None  # set by main to log the first-sound time
         self._frames: queue.Queue[np.ndarray] = queue.Queue(maxsize=1024)  # ~80 s, drops oldest when full
         self._stream: Any = None  # sounddevice.InputStream; opened in __enter__ (no type stubs)
         self._whisper: Any = None  # faster_whisper.WhisperModel; loaded lazily (no type stubs)
@@ -331,6 +361,8 @@ class VoiceSession:
         self._wake_seen = False  # a wake word landed while Iris was talking (barge-in)
         self._answered = False  # Iris spoke since the last request: a follow-up may come without the wake word
         self._stop: threading.Event | None = None  # stops the speech that is playing now
+        self._speak_lock = threading.Lock()  # timers, reminders and the skill watcher speak from their own threads
+        self._listening = threading.Event()  # next_request reads the frames now: a speech must not watch them too
         self.cancelled = threading.Event()  # this request was cancelled; cleared when the next one starts
         self.overlay = Overlay()  # sends nothing until __enter__ starts the overlay (opt-in, see iris.overlay)
 
@@ -342,28 +374,45 @@ class VoiceSession:
             try:
                 self._frames.put_nowait(frame)
             except queue.Full:
-                try:
+                with contextlib.suppress(queue.Empty):
                     self._frames.get_nowait()  # drop the oldest so memory stays bounded
-                except queue.Empty:
-                    pass
-                try:
+                with contextlib.suppress(queue.Full):
                     self._frames.put_nowait(frame)
-                except queue.Full:
-                    pass
 
-        self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", blocksize=FRAME, callback=cb)
-        self._stream.__enter__()
+        try:
+            self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", blocksize=FRAME, callback=cb)
+            self._stream.__enter__()
+        except Exception as exc:  # PortAudioError and friends: one line, not a traceback
+            self._stream = None
+            raise SystemExit(f"No microphone could be opened ({exc}). Plug one in, or pick the default input "
+                             "device in Windows Sound settings, then start voice mode again.") from exc
         self.overlay = launch()
         self.overlay.on_cancel = self.cancel
         return self
 
     def __exit__(self, *exc: object) -> None:
         self.overlay.close()
+        close = getattr(self.speaker, "close", None)
+        if callable(close):
+            close()  # the VoxCPM2 worker and Piper: they hold the GPU and would outlive a voice mode run in a terminal
         if self._stream is not None:
-            try:
+            with contextlib.suppress(Exception):  # closing the mic must never mask a real error
                 self._stream.__exit__(*exc)
-            except Exception:  # noqa: BLE001 - closing the mic must never mask a real error
-                pass
+
+    MIC_SILENT_SECONDS = 10.0  # no frame at all for this long: the microphone stopped (unplugged, taken away)
+
+    def _frame(self) -> np.ndarray:
+        """The next 80 ms of sound. Waits in short steps, so Ctrl+C and the app's stop get in, and ends voice mode with
+        one sentence when the microphone sends nothing at all any more."""
+        waited = 0.0
+        while True:
+            try:
+                return self._frames.get(timeout=0.25)
+            except queue.Empty:
+                waited += 0.25
+                if waited >= self.MIC_SILENT_SECONDS:
+                    raise SystemExit("The microphone stopped sending sound (unplugged, or taken by another app). "
+                                     "Plug it back in, then start voice mode again.") from None
 
     def _drain(self) -> None:
         while True:
@@ -378,6 +427,9 @@ class VoiceSession:
             self._speech.join(SPEECH_TIMEOUT)  # bounded: a stuck speech thread must never freeze Iris
             if self._speech.is_alive():
                 print("(speech got stuck; carrying on without it)")
+                stop = self._stop
+                if stop is not None:
+                    stop.set()  # the stuck speech keeps playing otherwise and talks over the next answer
                 self._speech = None
         return self._interrupted
 
@@ -395,6 +447,13 @@ class VoiceSession:
     def next_request(self) -> str:
         """Block until the user says the wake word and then an utterance; returns the transcript."""
         self.wait_for_speech()  # never race the wake watcher for frames
+        self._listening.set()
+        try:
+            return self._next_request()
+        finally:
+            self._listening.clear()
+
+    def _next_request(self) -> str:
         self.cancelled.clear()  # a new request; a cancel of the last one is done with
         if self._wake_seen:  # barge-in: the user said the wake word while Iris was talking
             self._wake_seen = False
@@ -407,15 +466,19 @@ class VoiceSession:
                 return text
         print("Say the wake word...")
         while True:  # phase 1: wait for the wake word
-            if self.wake.detect(self._frames.get()):
+            if self.wake.detect(self._frame()):
                 break
+        stop = self._stop  # a timer or reminder that is talking now: the wake word stops it, as during an answer
+        if stop is not None:
+            stop.set()
         self.cancelled.clear()  # a click that came while Iris waited for the wake word cancels nothing
         self.chime()
         return self.next_command()
 
-    def chime(self) -> None:
+    def chime(self, stall: float = 1.0) -> None:
         """A short tone right after the wake word, so the user hears that Iris is listening (IRIS_CHIME=0 mutes
-        it). It finishes before recording starts, so it never ends up in the request."""
+        it). It finishes before recording starts, so it never ends up in the request; a stalled sound device can
+        hold it for at most `stall` seconds."""
         if os.environ.get("IRIS_CHIME", "1") == "0":
             return
         try:
@@ -424,8 +487,13 @@ class VoiceSession:
 
             t = np.arange(int(0.12 * 22050)) / 22050
             tone = (0.4 * np.sin(2 * np.pi * 880 * t) * np.minimum(1, (0.12 - t) * 40)).astype("float32")
-            sd.play(tone, 22050, blocking=True)
-        except Exception:  # noqa: BLE001 - the chime is a nicety; listening goes on without it
+            sd.play(tone, 22050)
+            waiter = threading.Thread(target=sd.wait, daemon=True)
+            waiter.start()
+            waiter.join(stall)
+            if waiter.is_alive():
+                sd.stop()  # the device stalled: never let a chime hold listening
+        except Exception:  # the chime is a nicety; listening goes on without it
             pass
 
     def follow_up(self) -> str | None:
@@ -434,7 +502,7 @@ class VoiceSession:
         for Iris only reaches her within that short window."""
         import numpy as np
 
-        window = float(config.setting("IRIS_FOLLOW_UP", "follow_up", str(FOLLOW_UP_SECONDS)))
+        window = config.number("IRIS_FOLLOW_UP", "follow_up", FOLLOW_UP_SECONDS)
         if window <= 0:
             return None
         print(f"Listening for a follow-up ({window:g} s, no wake word needed)...")
@@ -465,7 +533,7 @@ class VoiceSession:
         self._drain()  # drop the wake word itself so it does not end up in the transcript
         return self._record([])
 
-    def _record(self, chunks: list) -> str:
+    def _record(self, chunks: list[np.ndarray]) -> str:
         """Record until 1.2 s of silence follows speech (or a hard cap), then transcribe without the wake phrase."""
         import numpy as np
 
@@ -476,7 +544,7 @@ class VoiceSession:
             det.feed(frame)
         t0 = time.time()
         while True:
-            frame = self._frames.get()  # every 80 ms, so a cancel ends the recording at once
+            frame = self._frame()  # every 80 ms, so a cancel ends the recording at once
             if self.cancelled.is_set():
                 return ""  # the overlay already went idle; nothing to transcribe
             chunks.append(frame)
@@ -501,31 +569,43 @@ class VoiceSession:
         self.speak_async(text)
         return self.wait_for_speech()
 
-    def speak_async(self, text: str) -> threading.Thread:
+    def speak_async(self, text: str, panel: bool = True) -> threading.Thread:
         """Speak in a background thread, so the agent can listen for the next request while Iris talks.
 
         A wake word during the speech stops it; the next next_request() then records straight away
-        instead of waiting for a new wake word."""
-        self.wait_for_speech()  # one speech at a time
-        self._interrupted = False
-        self._answered = True
-        thread = threading.Thread(target=self._speak_and_watch, args=(text,), daemon=True)
-        self._speech = thread
-        thread.start()
+        instead of waiting for a new wake word. With panel=False the overlay is left alone (a hold
+        line under "Thinking...") and no follow-up window opens."""
+        with self._speak_lock:  # one speech at a time, whichever thread asks
+            self.wait_for_speech()
+            self._interrupted = False
+            if panel:
+                self._answered = True
+            thread = threading.Thread(target=self._speak_and_watch, args=(text, panel), daemon=True)
+            self._speech = thread
+            thread.start()
         return thread
 
-    def _speak_and_watch(self, text: str) -> None:
-        self.overlay.send("answer", text)  # before the watcher starts, so an interruption always comes after it
+    def _speak_and_watch(self, text: str, panel: bool = True) -> None:
+        if panel:  # a hold line must not move the panel off "Thinking..."
+            self.overlay.send("answer", text)  # before the watcher starts, so an interruption always comes after it
         stop = self._stop = threading.Event()
+        # while next_request listens (a timer speaking from its own thread), it owns the frames and hears the wake word;
+        # a hold line is not watched either, so "One moment." can never send "interrupted" or skip the next wake word
+        watch = panel and not self._listening.is_set()
         watcher = threading.Thread(target=self._watch_for_wake, args=(stop,), daemon=True)
-        watcher.start()
+        if watch:
+            watcher.start()
         try:
             finished = self.speaker.speak(text, stop_event=stop)
         finally:
             stop.set()  # release the watcher whether or not it was interrupted
-        watcher.join(timeout=1.0)
+        if panel and self.on_spoken is not None:
+            with contextlib.suppress(Exception):  # a logging hook must never break speech or the overlay
+                self.on_spoken(getattr(self.speaker, "last_first_sound_ms", None))
+        if watch:
+            watcher.join(timeout=1.0)
         self._interrupted = not finished
-        if finished:  # not when a wake word or a cancel cut it short: the panel moved on
+        if panel and finished:  # not when a wake word or a cancel cut it short: the panel moved on
             self.overlay.send("idle")
 
     def _watch_for_wake(self, stop: threading.Event) -> None:
@@ -541,11 +621,33 @@ class VoiceSession:
                 stop.set()
 
     def _transcribe(self, audio: np.ndarray) -> str:
+        """Speech to text. The whole call is timed into last_stt_ms (the first one includes loading the model,
+        which is real waiting time too), so a turn's journal can show where speech recognition spent its time."""
 
+        t0 = self.clock()
         if self._whisper is None:
             self._whisper = _whisper_model(self.whisper_name, WHISPER_DEVICE)
         segments, _ = self._whisper.transcribe(audio, vad_filter=True)
-        return " ".join(s.text.strip() for s in segments).strip()
+        text = " ".join(s.text.strip() for s in segments).strip()
+        self.last_stt_ms = round((self.clock() - t0) * 1000)
+        return text
+
+
+def _stop_process(proc: subprocess.Popen[Any], seconds: float) -> None:
+    """End a speech worker: close its input (it then quits on its own), and terminate or kill it if it does not."""
+    try:
+        if proc.stdin is not None:
+            proc.stdin.close()
+    except OSError:
+        pass
+    try:
+        proc.wait(seconds)
+    except subprocess.TimeoutExpired:
+        proc.terminate()
+        try:
+            proc.wait(seconds)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 
 class PiperProcess:
@@ -555,11 +657,17 @@ class PiperProcess:
     def __init__(self, model: Path):
         self.dir = Path(tempfile.mkdtemp(prefix="iris-piper-"))
         runtime = piper_runtime()  # the app's Piper pack keeps Piper in its own folder, outside Iris's packages
-        env = {**os.environ, "PYTHONPATH": str(runtime) + os.pathsep + os.environ.get("PYTHONPATH", "")} \
-            if runtime.is_dir() else None
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}  # UTF-8 stdin in every locale
+        if runtime.is_dir():
+            env["PYTHONPATH"] = str(runtime) + os.pathsep + os.environ.get("PYTHONPATH", "")
         self.proc = subprocess.Popen([sys.executable, "-m", "piper", "-m", str(model), "-d", str(self.dir)],
                                      stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                      text=True, encoding="utf-8", env=env)
+
+    def close(self) -> None:
+        """Stop Piper and remove its temp folder."""
+        _stop_process(self.proc, 2)
+        shutil.rmtree(self.dir, ignore_errors=True)
 
     def wav(self, text: str, timeout: float = 20) -> Path:
         """Send one line of text to Piper and wait for the WAV file it writes, claiming it once complete."""
@@ -585,7 +693,7 @@ def _claim(path: Path, done: Path) -> Path | None:
     done.mkdir(exist_ok=True)
     target = done / path.name
     try:
-        os.replace(path, target)
+        path.replace(target)
     except OSError:
         return None
     try:
@@ -616,9 +724,15 @@ class VoxProcess:
         self.rate = 0
         self.startup = startup  # loading and compiling the model takes 30 s to a few minutes the first time
         self.ready = threading.Event()
-        self._frames: queue.Queue = queue.Queue()
+        self._frames: queue.Queue[Any] = queue.Queue()
         self._behind = 0  # answers cut short whose rest is still coming back
         threading.Thread(target=self._read, daemon=True).start()
+
+    def close(self) -> None:
+        """Stop the worker so its GPU memory is freed; a ready one gets five seconds to quit on its own, but one that
+        is still loading its model does not read stdin yet and is ended at once."""
+        ready = getattr(self, "ready", None)  # tests build VoxProcess without an event; missing counts as not ready
+        _stop_process(self.proc, 5 if ready is not None and ready.is_set() else 0.5)
 
     def _read(self) -> None:
         import numpy as np
@@ -683,14 +797,15 @@ def _lead_needed(expected: float, speed: float, margin: float = VOXCPM_MARGIN) -
 
 
 def _play_stream(chunks: Iterable[np.ndarray], rate: int, expected: float, stop_event: threading.Event | None,
-                 slack: float = 3.0) -> bool:
+                 slack: float = 3.0, on_start: Callable[[], None] | None = None) -> bool:
     """Play streamed float32 audio of about `expected` seconds once enough is made that the rest arrives in time (see
     _lead_needed). If it still runs dry, it pauses until REBUFFER_SECONDS are ready instead of stuttering. Like
-    _play_wav it stops for a wake word and never hangs on a stalled sound device."""
+    _play_wav it stops for a wake word and never hangs on a stalled sound device. on_start fires when the output
+    stream starts, so the caller can note the moment the user first hears something."""
     import numpy as np
     import sounddevice as sd
 
-    pending: queue.Queue = queue.Queue()
+    pending: queue.Queue[np.ndarray] = queue.Queue()
     left = np.zeros(0, dtype="float32")
     waiting, finished = False, threading.Event()
 
@@ -728,9 +843,13 @@ def _play_stream(chunks: Iterable[np.ndarray], rate: int, expected: float, stop_
             work = time.perf_counter() - t0
             if stream is None and work > 0 and made / rate >= _lead_needed(expected, made / rate / work):
                 stream = start()
+                if on_start is not None:
+                    on_start()
         finished.set()
         if stream is None:
             stream = start()
+            if on_start is not None:
+                on_start()
         deadline = time.monotonic() + made / rate + slack
         while not pending.empty() or len(left):
             if stopped():
@@ -755,12 +874,16 @@ class Speaker:
     cut it short. SAPI cannot be interrupted mid-utterance, so barge-in only lands between chunks
     in Kokoro mode (which streams)."""
 
-    def __init__(self, engine: str | None = None):
+    def __init__(self, engine: str | None = None, clock: Callable[[], float] = time.perf_counter):
         self.engine = engine or os.environ.get("IRIS_TTS") or config.get("tts", "sapi")
+        self.clock = clock  # the time source for first-sound timing; tests pass a stepping fake
+        self.last_first_sound_ms: int | None = None  # ms from speak() to the first sound of the last answer
+        self._speak_t0: float = 0.0  # when the current speak() started, in clock time
         self._kokoro: Any = None  # kokoro_onnx.Kokoro; loaded lazily (no type stubs)
         self._piper: dict[str, PiperProcess] = {}
         self._vox: VoxProcess | None = None
         self._lang = "en"  # the language of the last answer, for a short one whose language is unclear
+        self._failures: dict[str, int] = {}  # consecutive failures per engine; three in a row switches the voice
         if self.engine == "voxcpm":  # start loading now: it takes half a minute or more
             try:
                 self._vox = VoxProcess()
@@ -769,27 +892,62 @@ class Speaker:
                 self.engine = "piper"
         if self.engine == "piper":  # start the voices now: loading a model takes seconds, the first answer should not
             for lang in PIPER_VOICES:
-                try:
+                # speak() says what is missing when that language is needed
+                with contextlib.suppress(FileNotFoundError):
                     self._piper_voice(lang)
-                except FileNotFoundError:
-                    pass  # speak() says what is missing when that language is needed
+
+    def close(self) -> None:
+        """Stop every speech worker this speaker started (VoxCPM2, Piper)."""
+        workers: list[PiperProcess | VoxProcess] = [*self._piper.values()]
+        if self._vox is not None:
+            workers.append(self._vox)
+        self._piper, self._vox = {}, None
+        for w in workers:
+            with contextlib.suppress(Exception):  # stopping one worker must not keep the others running
+                w.close()
+
+    def _note_failure(self, key: str, display: str, fallback: str) -> None:
+        """Count one failure of engine `key`; after three in a row the voice switches to `fallback` for good. Only the
+        chosen engine is ever switched away from: a stand-in (Piper while VoxCPM loads) failing must not do it."""
+        count = self._failures.get(key, 0) + 1
+        self._failures[key] = count
+        if count >= 3 and self.engine == key:
+            print(f"{display} failed {count} times; using {fallback} from now on.")
+            self.engine = fallback
+
+    def _note_success(self, key: str) -> None:
+        """A fully spoken answer resets the failure streak of its engine."""
+        if self._failures.get(key):
+            self._failures[key] = 0
 
     def speak(self, text: str, stop_event: threading.Event | None = None) -> bool:
         """Print the answer and speak it with the best engine available; True unless a wake word cut it short."""
         print(f"Iris: {text}")
+        self.last_first_sound_ms = None  # this answer's first sound is not known yet
+        self._speak_t0 = self.clock()
         if self.engine == "voxcpm" and self._vox is not None:
             return self._speak_voxcpm(self._vox, text, stop_event)
         if self.engine == "piper":
             return self._speak_piper(text, stop_event)
         if self.engine == "kokoro":
             return self._speak_kokoro(text, stop_event)
+        return self._speak_sapi(text)
+
+    def _sounding(self) -> None:
+        """Note when the user first hears this answer; only the first call after speak() records anything."""
+        if self.last_first_sound_ms is None:
+            self.last_first_sound_ms = round((self.clock() - self._speak_t0) * 1000)
+
+    def _speak_sapi(self, text: str) -> bool:
+        """Windows SAPI. Speech is a nicety, so any failure just means the printed line stands."""
         try:
             import pyttsx3
 
             engine = pyttsx3.init()
+            self._sounding()  # SAPI gives no better signal than the moment say() is asked for
             engine.say(text)
             engine.runAndWait()
-        except Exception:  # noqa: BLE001 - speech is a nicety; the printed line is the answer
+        except Exception:  # speech is a nicety; the printed line is the answer
             pass
         return True
 
@@ -818,27 +976,38 @@ class Speaker:
             self._lang = lang
         try:
             path = self._piper_voice(self._lang).wav(text)
-            return _play_wav(path, stop_event)
-        except Exception as exc:  # noqa: BLE001 - fall back to SAPI so Iris keeps talking
+            ok = _play_wav(path, stop_event, on_start=self._sounding)
+            if ok:
+                self._note_success("piper")  # a fully spoken answer resets Piper's failure streak
+            return ok
+        except Exception as exc:  # fall back to SAPI so Iris keeps talking
             print(f"Piper failed ({exc}); using Windows SAPI instead.")
-            self.engine = "sapi"
-            return self.speak(text, stop_event)
+            self._note_failure("piper", "Piper", "sapi")  # switches the voice only after three in a row
+            return self._speak_sapi(text)
 
     def _speak_voxcpm(self, vox: VoxProcess, text: str, stop_event: threading.Event | None) -> bool:
         if not vox.ready.is_set():  # still loading (a minute or more): Piper says this one rather than keep you waiting
             return self._speak_piper(text, stop_event)
         try:
-            return _play_stream(vox.stream(text), vox.rate, len(text) / CHARS_PER_SECOND, stop_event)
-        except Exception as exc:  # noqa: BLE001 - fall back to Piper so Iris keeps talking
+            ok = _play_stream(vox.stream(text), vox.rate, len(text) / CHARS_PER_SECOND, stop_event,
+                              on_start=self._sounding)
+            if ok:
+                self._note_success("voxcpm")  # a fully spoken answer resets VoxCPM's failure streak
+            return ok
+        except Exception as exc:  # fall back to Piper so Iris keeps talking
             print(f"VoxCPM failed ({exc}); using Piper instead.")
-            self.engine = "piper"
+            self._note_failure("voxcpm", "VoxCPM", "piper")  # switches the voice only after three in a row
+            if self.engine != "voxcpm" and self._vox is not None:  # switched away for good: free its GPU memory now
+                with contextlib.suppress(Exception):  # stopping the worker must not hide the fallback
+                    self._vox.close()
+                self._vox = None
             return self._speak_piper(text, stop_event)
 
     def _kokoro_model(self) -> Any:
         if self._kokoro is None:
             from kokoro_onnx import Kokoro
 
-            missing = [os.path.basename(p) for p in (KOKORO_MODEL, KOKORO_VOICES) if not os.path.exists(p)]
+            missing = [Path(p).name for p in (KOKORO_MODEL, KOKORO_VOICES) if not Path(p).exists()]
             if missing:
                 urls = " ".join(_KOKORO_FILES[n] for n in missing if n in _KOKORO_FILES)
                 raise FileNotFoundError(f"missing {', '.join(missing)} in {KOKORO_DIR}; get them from {urls}")
@@ -854,24 +1023,40 @@ class Speaker:
             async def play() -> bool:
                 import sounddevice as sd
 
+                first = True
                 async for chunk, sr in model.create_stream(text, voice=KOKORO_VOICE):
                     if stop_event is not None and stop_event.is_set():
                         return False
-                    # blocks per chunk: streaming with an interrupt point between chunks
+                    if first:  # the moment the user hears something
+                        self._sounding()
+                        first = False
+                    # sd.play returns at once and the next play would cut this chunk off: wait for its end,
+                    # stopping at once for a wake word. asyncio.sleep keeps the loop free so create_stream can
+                    # make the next chunk while this one plays
                     sd.play(chunk.astype("float32"), sr)
+                    end = time.perf_counter() + len(chunk) / sr
+                    while time.perf_counter() < end:
+                        if stop_event is not None and stop_event.is_set():
+                            getattr(sd, "stop", lambda: None)()
+                            return False
+                        await asyncio.sleep(0.02)
                 return True
 
-            return asyncio.run(play())
-        except Exception as exc:  # noqa: BLE001 - fall back to SAPI so Iris keeps talking
+            ok = asyncio.run(play())
+            if ok:
+                self._note_success("kokoro")  # a fully spoken answer resets Kokoro's failure streak
+            return ok
+        except Exception as exc:  # fall back to SAPI so Iris keeps talking
             print(f"Kokoro failed ({exc}); using Windows SAPI instead.")
-            self.engine = "sapi"
-            return self.speak(text, stop_event)
+            self._note_failure("kokoro", "Kokoro", "sapi")  # switches the voice only after three in a row
+            return self._speak_sapi(text)
 
 
-def _play_wav(path: Path, stop_event: threading.Event | None, slack: float = 3.0) -> bool:
+def _play_wav(path: Path, stop_event: threading.Event | None, slack: float = 3.0,
+              on_start: Callable[[], None] | None = None) -> bool:
     """Play a 16-bit mono WAV in the background and wait for it, stopping when a wake word sets stop_event. Playback
     never blocks Iris: if the sound device stalls (another app holding it), it is cut off `slack` seconds after the
-    audio should have ended. The file is removed after."""
+    audio should have ended. The file is removed after. on_start fires right before playback starts."""
     import numpy as np
     import sounddevice as sd
 
@@ -881,6 +1066,8 @@ def _play_wav(path: Path, stop_event: threading.Event | None, slack: float = 3.0
             audio = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype("float32") / 32768
     finally:
         path.unlink(missing_ok=True)
+    if on_start is not None:
+        on_start()
     sd.play(audio, rate)
     deadline = time.monotonic() + len(audio) / rate + slack
     try:

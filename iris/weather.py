@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from typing import Any
 from urllib.parse import quote
 
 from iris import config, web
@@ -46,21 +47,21 @@ def _forecast_url(lat: float, lon: float, days: int) -> str:
             f"&current={current}&daily={daily}&timezone=auto&forecast_days={days}")
 
 
-def _forecast(lat: float, lon: float, days: int) -> tuple[dict, dict]:
+def _forecast(lat: float, lon: float, days: int) -> tuple[dict[str, Any], dict[str, Any]]:
     """The current and daily blocks of the forecast for these coordinates."""
     _, _, text = web.http_get(_forecast_url(lat, lon, days))
     data = json.loads(text)
     return data["current"], data["daily"]
 
 
-def _now_line(name: str, cur: dict) -> str:
+def _now_line(name: str, cur: dict[str, Any]) -> str:
     """The now line, e.g. 'Rotterdam now: 9 C (feels 6 C), rain, wind 25 km/h'."""
     return (f"{name} now: {round(cur['temperature_2m'])} C "
             f"(feels {round(cur['apparent_temperature'])} C), {_word(cur['weather_code'])}, "
             f"wind {round(cur['wind_speed_10m'])} km/h")
 
 
-def _day_line(daily: dict, i: int) -> str:
+def _day_line(daily: dict[str, Any], i: int) -> str:
     """One forecast day, e.g. '31 Oct: -1 to 7 C, rain, 40% precipitation'."""
     day = datetime.strptime(daily["time"][i], "%Y-%m-%d")
     line = (f"{day.day} {day:%b}: {round(daily['temperature_2m_min'][i])} "
@@ -71,8 +72,9 @@ def _day_line(daily: dict, i: int) -> str:
     return line
 
 
-def weather(place: str = "", days: int = 1) -> str:
-    """The current weather and up to seven days for `place`, or the city from config.toml when place is empty."""
+def weather(place: str = "", days: int = 3) -> str:
+    """The current weather and up to seven days (three when days is not given, so tomorrow is
+    always in it) for `place`, or the city from config.toml when place is empty."""
     where = place.strip() or config.get("city")
     if not where:
         return "error: say which place, or set city in config.toml"

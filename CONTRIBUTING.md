@@ -14,10 +14,16 @@ python -m venv .venv
 ## The gates (CI runs the same three)
 
 ```bash
-.venv\Scripts\python -m ruff check iris tests
+.venv\Scripts\python -m ruff check iris tests installer tools
 .venv\Scripts\python -m mypy
 .venv\Scripts\python -m pytest -q --cov=iris
 ```
+
+Coverage must stay at 94% or more (CI fails below it); keep it at 99% or more. mypy requires type annotations on
+every function outside `iris.policy`, `iris.registry` and `iris.eval`. CI also runs `python tools/bench.py` (start
+time, the cost of one agent turn without the model, the dashboard's first answer, the prompt size) so a slowdown
+shows in its log; run it yourself before and after a change you call faster. A change to the installer or
+`pyproject.toml` also runs the Installer workflow, which builds IrisSetup and installs, starts and uninstalls it.
 
 Tests never touch the real desktop, network, clipboard, microphone, LM Studio or files outside `tmp_path`: fake them
 with `monkeypatch`. `tests/conftest.py` already points the journal, `config.toml` and the skills folder into `tmp_path`.
@@ -38,6 +44,11 @@ with `monkeypatch`. `tests/conftest.py` already points the journal, `config.toml
 A tool that only makes sense on your own setup belongs in a plugin group (`iris/registry.py`), off by default.
 
 ## Measuring
+
+Text the model sees (the system prompt and rules in `iris/agent.py`; tool names, descriptions, parameters and every
+result or error a tool returns; skill prompts; `eval/tasks.toml`) can only be judged by the eval. Start the subject
+of every commit that changes such text with `[model] `, so `git log --oneline --grep "^\[model\]"` lists them and one
+that hurts the eval can be reverted on its own.
 
 Changes to prompts or tool descriptions are measured, not guessed: run `python -m iris eval --repeat 3` with LM Studio
 running (it touches nothing on the PC) and compare with `python -m iris eval-compare old.json new.json`. A run with

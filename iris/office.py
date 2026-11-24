@@ -62,7 +62,7 @@ def _add_content(doc: Document, content: str) -> int:
             flush()
             doc.add_heading(s[2:], 1)
             n += 1
-        elif s.startswith("- ") or s.startswith("* "):
+        elif s.startswith(("- ", "* ")):
             flush()
             _add_rich(doc.add_paragraph(style="List Bullet"), s[2:])
             n += 1
@@ -102,7 +102,7 @@ def make_document(path: str, title: str, content: str) -> str:
     return f"made {p} ({n} paragraphs)"
 
 
-def make_presentation(path: str, title: str, slides: list) -> str:
+def make_presentation(path: str, title: str, slides: list[dict[str, Any]]) -> str:
     """Make a PowerPoint .pptx for the user from a title and slide entries.
 
     The first slide is a title slide with the given title and today's date as subtitle; each entry becomes a
@@ -157,7 +157,7 @@ def _cell(value: Any) -> bool | int | float | str | None:
     return str(value)
 
 
-def make_spreadsheet(path: str, sheets: list) -> str:
+def make_spreadsheet(path: str, sheets: list[dict[str, Any]]) -> str:
     """Make a spreadsheet for the user from named worksheets of rows.
 
     Each entry becomes one worksheet; its first row is the header (bold on light gray) and the columns get a width
@@ -207,7 +207,7 @@ def make_spreadsheet(path: str, sheets: list) -> str:
     return f"made {p} ({len(sheets)} sheets)"
 
 
-def _write_csv(p: Path, sheets: list) -> str:
+def _write_csv(p: Path, sheets: list[dict[str, Any]]) -> str:
     """The first sheet as CSV; text that starts like a formula gets a leading apostrophe so Excel shows it as text."""
     import csv
 
@@ -217,7 +217,7 @@ def _write_csv(p: Path, sheets: list) -> str:
 
         trash_file(str(p))
     p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "w", newline="", encoding="utf-8-sig") as f:
+    with p.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         for row in rows:
             w.writerow(["'" + v if isinstance(v, str) and v.startswith(_FORMULA_START) else v for v in row])

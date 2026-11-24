@@ -50,7 +50,7 @@ def probe(url: str, timeout: float = 1.5) -> list[str] | None:
         return None
 
 
-def servers(probe_fn: Callable[[str], list[str] | None] = probe) -> list[dict]:
+def servers(probe_fn: Callable[[str], list[str] | None] = probe) -> list[dict[str, Any]]:
     """The configured server first, then the usual local ones, each probed (in parallel, about a second)."""
     current = config.setting("IRIS_LLM_URL", "llm_url", DEFAULT_URL)
     rows = [("Configured", current)] + [(n, u) for n, u in SERVERS if u.rstrip("/") != current.rstrip("/")]
@@ -60,8 +60,8 @@ def servers(probe_fn: Callable[[str], list[str] | None] = probe) -> list[dict]:
             for (n, u), m in zip(rows, found, strict=True)]
 
 
-def use_server(body: dict, probe_fn: Callable[[str], list[str] | None] = probe) -> dict:
-    """Save the server (llm_url) and the model (settings.json) the user picked; the model must be on that server."""
+def use_server(body: dict[str, Any], probe_fn: Callable[[str], list[str] | None] = probe) -> dict[str, Any]:
+    """Save the server (llm_url) and the model (settings.json); an empty model takes the first one the server lists."""
     from iris import settings
     from iris.llm import read_settings, settings_path
 
@@ -69,6 +69,8 @@ def use_server(body: dict, probe_fn: Callable[[str], list[str] | None] = probe) 
     models = probe_fn(url) if url else None
     if models is None:
         return {"ok": False, "error": f"no OpenAI-compatible server answers at {url or '(empty)'}"}
+    if not model and models:
+        model = models[0]  # a custom URL has no drop-down; LM Studio lists the loaded model first
     if model not in models:
         return {"ok": False, "error": "pick one of the models this server lists" if models
                 else "the server lists no models: load or download one first"}
@@ -83,7 +85,7 @@ def use_server(body: dict, probe_fn: Callable[[str], list[str] | None] = probe) 
     return {"ok": True, "url": url, "model": model}
 
 
-def mic_test(record: Callable[[float], Any] | None = None) -> dict:
+def mic_test(record: Callable[[float], Any] | None = None) -> dict[str, Any]:
     """Record MIC_SECONDS from the default microphone and say how loud it was. Nothing is kept or sent."""
     try:
         import numpy as np
@@ -99,7 +101,7 @@ def mic_test(record: Callable[[float], Any] | None = None) -> dict:
         audio = np.asarray(record(MIC_SECONDS), dtype="float32").reshape(-1)
     except ImportError:
         return {"ok": False, "level": 0, "message": "The voice parts are not installed (pip install -e .[voice])."}
-    except Exception as exc:  # noqa: BLE001 - no device, device busy: the message is the answer
+    except Exception as exc:  # no device, device busy: the message is the answer
         return {"ok": False, "level": 0, "message": f"No microphone could be opened: {exc}"}
     from iris.voice import VAD_THRESHOLD
 
@@ -113,7 +115,7 @@ def mic_test(record: Callable[[float], Any] | None = None) -> dict:
                                                     "Sound settings (the default input device and its level)."}
 
 
-def speaker_test(say: Callable[[str], object] | None = None) -> dict:
+def speaker_test(say: Callable[[str], object] | None = None) -> dict[str, Any]:
     """Say one sentence with the Windows voice, which is always there; the chosen engine speaks when Iris listens."""
     try:
         if say is None:
@@ -121,12 +123,12 @@ def speaker_test(say: Callable[[str], object] | None = None) -> dict:
 
             say = Speaker("sapi").speak
         say(SPEAKER_TEXT)
-    except Exception as exc:  # noqa: BLE001 - no audio device or no SAPI voice
+    except Exception as exc:  # no audio device or no SAPI voice
         return {"ok": False, "message": f"Could not play sound: {exc}"}
     return {"ok": True, "message": "Played. If you heard nothing, check the default output device in Windows."}
 
 
-def checks() -> list[dict]:
+def checks() -> list[dict[str, Any]]:
     """iris doctor's checks, marked ok, optional or to fix."""
     from iris import doctor
     from iris.dashboard import lmstudio_payload
@@ -135,7 +137,7 @@ def checks() -> list[dict]:
             for ok, line in doctor.checks(lmstudio_payload())]
 
 
-def payload() -> dict:
+def payload() -> dict[str, Any]:
     """Everything the Setup tab shows in one go: servers to pick from, doctor's checks and the update-check choice."""
     from iris import update
 
@@ -143,7 +145,7 @@ def payload() -> dict:
             "update_check": update.enabled()}
 
 
-def finish(body: dict) -> dict:
+def finish(body: dict[str, Any]) -> dict[str, Any]:
     """Store the update-check choice, mark setup done, and in the app start listening."""
     from iris import settings
     from iris.dashboard import APP_HOOKS

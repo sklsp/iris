@@ -1,0 +1,7 @@
+{
+ "name": "say_hello",
+ "tier": "confirm",
+ "request": "zeg hallo",
+ "status": "ready",
+ "created": "2026-10-30T10:00:00"
+}

@@ -5,8 +5,14 @@
 # repos     explicit repo roots, for example ["C:/code/my-app", "D:/work/api"]
 # worktrees roots that contain Cline worktrees: each <hash>/<project> that is a git repo is added,
 #           so a new worktree shows up in the status without editing this file (default ~/.cline/worktrees)
+# nightshift_command  how to call nightshift, for example ["W:/nightshift/.venv/Scripts/python.exe", "-m", "nightshift"];
+#                     empty = the active-run glance is off (the default)
+# nightshift_runs     folders that hold run dirs (a run dir has a run.toml), for example ["W:/Opus-notes"]
 
 repos = []
 
 # Minutes without a commit, together with uncommitted changes, that count as STUCK.
 stuck_minutes = 60
+
+nightshift_command = []
+nightshift_runs = []

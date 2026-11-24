@@ -4,6 +4,8 @@ probe, recording, voice and GitHub answer is a fake."""
 from __future__ import annotations
 
 import json
+import urllib.request
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -46,8 +48,13 @@ def test_probe_reads_an_openai_style_model_list(monkeypatch):
             return json.dumps({"data": [{"id": "a"}, {"id": ""}, {"id": "b"}]}).encode()
 
     assert firstrun.probe("http://127.0.0.1:9/v1", timeout=0.2) is None  # nothing listens on port 9
-    seen = []
-    monkeypatch.setattr(firstrun.urllib.request, "urlopen", lambda url, timeout: seen.append(url) or Resp())
+    seen: list[str] = []
+
+    def fake_urlopen(url, timeout):
+        seen.append(url)
+        return Resp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     assert firstrun.probe("http://x/v1/") == ["a", "b"] and seen == ["http://x/v1/models"]
 
 
@@ -74,6 +81,27 @@ def test_use_server_saves_the_url_and_the_model():
 def test_use_server_refuses(body, models, error):
     r = firstrun.use_server(body, lambda url: models)
     assert r["ok"] is False and error in r["error"]
+
+
+def test_use_server_with_a_custom_url_uses_the_first_listed_model():
+    """A custom URL has no model list in the drop-down, so an empty model means "the first one it lists"."""
+    from iris.llm import read_settings
+
+    r = firstrun.use_server({"url": "http://127.0.0.1:5000/v1", "model": ""}, lambda url: ["m1", "m2"])
+    assert r == {"ok": True, "url": "http://127.0.0.1:5000/v1", "model": "m1"}
+    assert config.get("llm_url") == "http://127.0.0.1:5000/v1" and read_settings()["model"] == "m1"
+
+
+def test_use_server_still_saves_a_named_model_and_refuses_one_not_listed():
+    r = firstrun.use_server({"url": "http://127.0.0.1:5000/v1", "model": "m2"}, lambda url: ["m1", "m2"])
+    assert r["ok"] is True and r["model"] == "m2"
+    r = firstrun.use_server({"url": "http://127.0.0.1:5000/v1", "model": "zzz"}, lambda url: ["m1", "m2"])
+    assert r["ok"] is False and "pick one of the models" in r["error"]
+
+
+def test_the_setup_tab_sends_no_model_for_a_custom_url():
+    html = (Path(firstrun.__file__).parent / "dashboard" / "index.html").read_text(encoding="utf-8")
+    assert 'custom.value.trim() ? "" : models.value' in html
 
 
 def test_mic_test_measures_the_level():
@@ -103,7 +131,7 @@ def test_mic_test_uses_sounddevice_when_no_recorder_is_given(monkeypatch):
     """The default recorder records MIC_SECONDS of mono float32 at 16 kHz through sounddevice."""
     import sys
 
-    asked = {}
+    asked: dict[str, object] = {}
 
     class _FakeSD:
         def rec(self, frames, samplerate, channels, dtype):
@@ -122,7 +150,7 @@ def test_mic_test_uses_sounddevice_when_no_recorder_is_given(monkeypatch):
 
 
 def test_speaker_test():
-    said = []
+    said: list[str] = []
     assert firstrun.speaker_test(said.append)["ok"] and said == [firstrun.SPEAKER_TEXT]
 
     def broken(text):
@@ -153,7 +181,7 @@ def test_speaker_test_uses_the_windows_voice_when_no_say_is_given(monkeypatch):
 def test_payload_and_checks(monkeypatch):
     from iris import dashboard, doctor
 
-    monkeypatch.setattr(firstrun, "servers", lambda: [])
+    monkeypatch.setattr(firstrun, "servers", list)
     monkeypatch.setattr(dashboard, "lmstudio_payload", lambda: {"reachable": False})
     monkeypatch.setattr(doctor, "checks", lambda payload: [(True, "voice extras installed"), (False, "browser: x"),
                                                            (False, "model server not reachable")])
@@ -220,7 +248,7 @@ def test_same_or_older_release_is_not_newer():
 
 
 def test_tell_once_says_it_once_per_version(monkeypatch):
-    told = []
+    told: list[str] = []
     monkeypatch.setattr(update, "_fetch", lambda: {"tag_name": "v99.0.0", "html_url": "u"})
     update.tell_once(told.append)
     update.tell_once(told.append)
@@ -262,10 +290,46 @@ def test_setup_routes_dispatch_each_step(monkeypatch):
         with urllib.request.urlopen(base + "/api/setup", timeout=10) as r:
             assert json.loads(r.read())["step"] == "get"
         for step in ("server", "mic", "speaker", "done"):
+            # token is set on the real server class, not the base type make_server names
             req = urllib.request.Request(base + "/api/setup/" + step, b'{"url": "u"}', method="POST", headers={
-                "Content-Type": "application/json", "X-Iris-Token": s.token, "Origin": base})
+                "Content-Type": "application/json", "X-Iris-Token": s.__dict__["token"], "Origin": base})
             with urllib.request.urlopen(req, timeout=10) as r:
                 assert json.loads(r.read())["step"] == step
     finally:
         s.shutdown()
         s.server_close()
+
+
+@pytest.mark.parametrize("latest,current,expected", [
+    ("v1.0.0", "0.6.1", True), ("1.0.0", "1.0.0rc1", True), ("1.0.0rc1", "0.6.1", True),
+    ("1.0.0rc2", "1.0.0rc1", True), ("1.0.0", "1.0.0", False), ("1.0.0rc1", "1.0.0", False),
+    ("0.7", "0.7.0", False), ("0.7.1", "0.7", True), ("1.0.0.post1", "1.0.0", True), ("1.0.0", "1.0.0.dev3", True),
+    ("v1.0.0-beta.2", "1.0.0b1", True), ("nightly", "0.6.1", False), ("0.6.0", "0.6.1", False)])
+def test_newer_orders_versions_the_way_releases_go(latest, current, expected):
+    assert update.newer(latest, current) is expected
+
+
+@pytest.mark.parametrize("answer", [[], "not json", 42])
+def test_a_release_answer_that_is_not_an_object_changes_nothing(tmp_path, monkeypatch, answer):
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    assert update.check(now=1000.0, fetch=lambda: answer)["latest"] is None
+
+
+@pytest.mark.parametrize("exc", [__import__("http.client").client.IncompleteRead(b"{", 50),
+                                 __import__("urllib.error").error.HTTPError(update.LATEST_URL, 403, "rate limited",
+                                                                             None, None)])
+def test_a_cut_off_or_rate_limited_answer_is_like_offline(tmp_path, monkeypatch, exc):
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+
+    def fail():
+        raise exc
+
+    assert update.check(now=1000.0, fetch=fail)["latest"] is None
+
+
+def test_a_broken_update_json_is_asked_again(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRIS_CONFIG", str(tmp_path / "config.toml"))
+    update.state_path().parent.mkdir(parents=True, exist_ok=True)
+    update.state_path().write_text('{"checked_at": "yesterday"}', encoding="utf-8")
+    st = update.check(now=1000.0, fetch=lambda: {"tag_name": "v9.0.0", "html_url": "https://x"})
+    assert st["latest"] == "v9.0.0" and st["newer"] is True

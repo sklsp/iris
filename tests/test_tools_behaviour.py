@@ -10,10 +10,13 @@ and concept_sites timeouts.
 
 import ctypes
 import json
+import os
 import subprocess
 import sys
+import time
 import types
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -27,29 +30,28 @@ class _FakeVM:
 
 
 def _install_fake_psutil(monkeypatch, cpu=43.0):
-    calls = []
+    calls: list[float | None] = []
 
     mod = types.ModuleType("psutil")
-    mod.virtual_memory = lambda: _FakeVM()
-    mod.cpu_percent = lambda interval=None: calls.append(interval) or cpu
-    monkeypatch.setitem(sys.modules, "psutil", mod)
+
+    def fake_cpu_percent(interval=None):
+        calls.append(interval)
+        return cpu
+
+    monkeypatch.setattr(mod, "virtual_memory", lambda: _FakeVM(), raising=False)
+    monkeypatch.setattr(mod, "cpu_percent", fake_cpu_percent, raising=False)
+    monkeypatch.setattr(tools, "psutil", mod)  # system_data uses the module-level name now
     return calls
 
 
 def _fake_nvidia(monkeypatch, stdout):
-    seen = []
+    seen: list[tuple[list[str], dict[str, object]]] = []
 
     def fake_run(cmd, **kw):
         seen.append((cmd, kw))
+        return types.SimpleNamespace(stdout=stdout)
 
-        class R:
-            pass
-
-        r = R()
-        r.stdout = stdout
-        return r
-
-    monkeypatch.setattr(tools.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     return seen
 
 
@@ -59,7 +61,7 @@ def test_system_data_reports_cpu_ram_and_gpus(monkeypatch):
 
     d = tools.system_data()
 
-    assert d["cpu_percent"] == 43.0 and cpu_calls == [0.3]
+    assert d["cpu_percent"] == 43.0 and cpu_calls == [None]
     assert d["ram_used_gb"] == pytest.approx(8.0) and d["ram_total_gb"] == pytest.approx(16.0)
     assert d["gpus"] == [{"index": 0, "name": "NVIDIA GeForce RTX 3090", "load_percent": 75.0,
                           "vram_used_mib": 10240.0, "vram_total_mib": 24576.0, "temp_c": 68.0}]
@@ -73,7 +75,7 @@ def test_system_data_reports_no_gpus_when_nvidia_smi_is_missing(monkeypatch):
     def boom(cmd, **kw):
         raise OSError("nvidia-smi not found")
 
-    monkeypatch.setattr(tools.subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
     assert tools.system_data()["gpus"] == []
 
 
@@ -91,7 +93,7 @@ def test_system_status_says_nvidia_unavailable(monkeypatch):
     def boom(cmd, **kw):
         raise OSError("no nvidia-smi")
 
-    monkeypatch.setattr(tools.subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
     assert tools.system_status() == "CPU 43%, RAM 8.0/16.0 GB\nGPU: nvidia-smi not available"
 
 
@@ -163,24 +165,13 @@ class FakeControl:
 
     @property
     def element_info(self):
-        class EI:
-            pass
-
-        ei = EI()
-        ei.control_type = self.kind
-        return ei
+        return types.SimpleNamespace(control_type=self.kind)
 
     @property
     def iface_value(self):
         if self.iface_raises:
             raise RuntimeError("no Value pattern")
-
-        class IV:
-            pass
-
-        iv = IV()
-        iv.CurrentValue = self._value
-        return iv
+        return types.SimpleNamespace(CurrentValue=self._value)
 
     def invoke(self):
         self.invoke_calls += 1
@@ -237,7 +228,7 @@ def _install_desktop(monkeypatch, desktop):
         seen["backend"] = backend
         return desktop
 
-    mod.Desktop = Desktop
+    monkeypatch.setattr(mod, "Desktop", Desktop, raising=False)
     monkeypatch.setitem(sys.modules, "pywinauto", mod)
     return seen
 
@@ -327,6 +318,18 @@ def test_click_falls_back_to_real_click_when_invoke_fails(monkeypatch):
     assert stubborn.invoke_calls == 1 and stubborn.click_input_calls == 1
 
 
+def test_a_partial_name_never_clicks_or_types_into_a_send_pay_or_password_control(monkeypatch):
+    send = FakeControl(text="Send", kind="Button")
+    field = FakeControl(text="Wachtwoord", kind="Edit")
+    _install_desktop(monkeypatch, FakeDesktop([FakeWindow("Mail", [send, field])]))
+    with pytest.raises(LookupError, match="'Sen' matches the control 'Send'; use its full name"):
+        tools.click("mail", "Sen")  # judged as a confirm click on "Sen", but it would press Send
+    with pytest.raises(LookupError, match="use its full name"):
+        tools.type_text("mail", "x", into="Wacht")
+    assert send.invoke_calls == 0 and send.click_input_calls == 0 and field.keys == []
+    assert tools.click("mail", "Send") == "clicked Button 'Send'"  # named in full, the tier saw it (and said NEVER)
+
+
 def test_type_text_escapes_and_targets_named_field(monkeypatch):
     field = FakeControl(text="Name", kind="Edit")
     win = FakeWindow("Notepad", [field])
@@ -357,8 +360,12 @@ def test_escape_keys_wraps_every_special_character():
 
 # --- open_app -------------------------------------------------------------------
 def test_open_app_uses_shell_execute(monkeypatch):
-    started = []
-    monkeypatch.setattr(tools.os, "startfile", lambda name: started.append(name))
+    started: list[str] = []
+
+    def fake_startfile(name):
+        started.append(name)
+
+    monkeypatch.setattr(os, "startfile", fake_startfile)
 
     assert tools.open_app("notepad") == "started 'notepad'"
     assert started == ["notepad"]
@@ -380,11 +387,12 @@ def test_scroll_at_moves_cursor_and_spins_the_wheel(monkeypatch):
     class Windll:
         user32 = User32()
 
-    monkeypatch.setattr(ctypes, "windll", Windll())
+    windll = Windll()
+    monkeypatch.setattr(ctypes, "windll", windll)
     tools._scroll_at(10, 20, -240)
 
-    assert ctypes.windll.user32.pos == [(10, 20)]
-    assert ctypes.windll.user32.wheel == [(0x0800, 0, -240, 0)]
+    assert windll.user32.pos == [(10, 20)]
+    assert windll.user32.wheel == [(0x0800, 0, -240, 0)]
 
 
 # --- _under ---------------------------------------------------------------------
@@ -394,13 +402,13 @@ def test_under_handles_unresolvable_roots():
             raise OSError("cannot resolve")
 
     assert tools._under(Path.home() / "a", Path.home()) is True
-    assert tools._under(Path("C:/x"), BadRoot()) is False
+    assert tools._under(Path("C:/x"), cast(Path, BadRoot())) is False  # a root whose resolve() blows up
 
 
 # --- trash_file name collision ----------------------------------------------------
 def test_trash_file_renames_on_collision(tmp_path, monkeypatch):
     monkeypatch.setenv("IRIS_TRASH_DIR", str(tmp_path / "trash"))
-    monkeypatch.setattr(tools.time, "strftime", lambda fmt: "20261023-120000")
+    monkeypatch.setattr(time, "strftime", lambda fmt: "20261023-120000")
 
     f = tmp_path / "report.txt"
     f.write_text("data")
@@ -425,6 +433,44 @@ def test_concept_sites_reports_timeout(tmp_path, monkeypatch):
     def boom(cmd, **kw):
         raise subprocess.TimeoutExpired(cmd, 120)
 
-    monkeypatch.setattr(tools.subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
     monkeypatch.setenv("IRIS_CONCEPTKIT_DIR", str(tmp_path))
-    assert tools.concept_sites() == "conceptkit took too long"
+    assert tools.concept_sites() == "error: conceptkit took longer than 2 minutes; try again later"
+
+
+# --- _control kind prefix ---------------------------------------------------------
+def test_control_accepts_a_name_copied_with_its_kind_from_read_window(monkeypatch):
+    item = FakeControl(text="Blank document", kind="ListItem")
+    win = FakeWindow("Word", [item])
+    _install_desktop(monkeypatch, FakeDesktop([win]))
+
+    assert tools._control(win, "ListItem: Blank document") is item
+    assert tools.click("word", "ListItem: Blank document") == "clicked ListItem 'Blank document'"
+
+
+def test_a_name_that_really_starts_with_a_kind_word_still_matches_first(monkeypatch):
+    labeled = FakeControl(text="Text: Arial", kind="Text")
+    plain = FakeControl(text="Arial", kind="ComboBox")
+    win = FakeWindow("Word", [labeled, plain])
+    _install_desktop(monkeypatch, FakeDesktop([win]))
+
+    assert tools._control(win, "Text: Arial") is labeled  # the name as given wins
+
+
+def test_an_unknown_prefix_is_not_stripped(monkeypatch):
+    item = FakeControl(text="Blank document", kind="ListItem")
+    win = FakeWindow("Word", [item])
+    _install_desktop(monkeypatch, FakeDesktop([win]))
+
+    with pytest.raises(LookupError):
+        tools._control(win, "Foo: Blank document")
+
+
+def test_a_kind_prefix_never_hides_a_send_control(monkeypatch):
+    send = FakeControl(text="Send", kind="Button")
+    _install_desktop(monkeypatch, FakeDesktop([FakeWindow("Mail", [send])]))
+
+    with pytest.raises(LookupError, match="use its full name"):
+        tools.click("mail", "Button: Sen")  # the stripped name would press Send; the tier saw only "Sen"
+    assert send.invoke_calls == 0 and send.click_input_calls == 0
+    assert tools.click("mail", "Button: Send") == "clicked Button 'Send'"

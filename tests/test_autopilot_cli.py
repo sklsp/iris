@@ -1,14 +1,17 @@
 """Tests for `python -m iris autopilot`: argparse in autopilot_main, dispatch from __main__,
 and the terminal confirm. watch is always faked; no git repos, no keys, no real journal."""
 import sys
+from collections.abc import Callable
+from typing import cast
 
 import pytest
 
 import iris.__main__ as imain
 import iris.autopilot as iauto
+from iris.agent import Journal
 
 
-def _install_fake_watch(monkeypatch) -> dict:
+def _install_fake_watch(monkeypatch) -> dict[str, object]:
     """Replace autopilot.watch with a recorder; return the dict of what it was called with."""
     calls = {}
 
@@ -46,9 +49,10 @@ def test_parsed_values_reach_watch(tmp_path, monkeypatch, capsys):
     assert calls["repo"] == "/some/repo"
     assert calls["agent"] == "qwen"
     assert calls["every"] == 30.0
-    assert isinstance(calls["journal"], iauto.Journal)
+    journal = calls["journal"]
+    assert isinstance(journal, Journal)
     # the autouse conftest fixture points IRIS_JOURNAL at tmp_path; the real home is never touched
-    assert calls["journal"].path == tmp_path / "iris-journal.jsonl"
+    assert journal.path == tmp_path / "iris-journal.jsonl"
     assert capsys.readouterr().out.splitlines() == ["started the next prompt"]
 
 
@@ -93,6 +97,7 @@ def test_confirm_reads_input_and_applies_is_yes_like_text_mode(monkeypatch):
 
     iauto.autopilot_main(["--repo", "/some/repo", "--agent", "qwen"])
 
-    assert calls["confirm"]("Start the next qwen prompt?") is True
-    assert calls["confirm"]("Start the next qwen prompt?") is False
+    confirm = cast(Callable[[str], bool], calls["confirm"])
+    assert confirm("Start the next qwen prompt?") is True
+    assert confirm("Start the next qwen prompt?") is False
     assert prompts == ["Iris: Start the next qwen prompt? (yes/no) "] * 2

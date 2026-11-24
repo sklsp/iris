@@ -1,4 +1,5 @@
 """Tests for the eval task format and loader."""
+import os
 import urllib.error
 from pathlib import Path
 
@@ -66,6 +67,22 @@ def test_bad_confirm(tmp_path):
         raise AssertionError("expected ValueError")
     except ValueError as e:
         assert str(e) == "confirm must be yes or no in task a"
+
+
+def test_task_mode_defaults_to_all_and_reads_important(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "Hoi"\n\n'
+                          '[[task]]\nid = "b"\nrequest = "Hoi"\nmode = "important"\n')
+    a, b = ev.load_tasks(p)
+    assert (a.mode, b.mode) == ("all", "important")
+
+
+def test_bad_mode_is_refused(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "Hoi"\nmode = "sometimes"\n')
+    try:
+        ev.load_tasks(p)
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert str(e) == "mode must be all or important in task a"
 
 
 def test_unknown_tool(tmp_path):
@@ -191,6 +208,23 @@ def test_bad_answer_values_are_refused(tmp_path):
         except ValueError as e:
             key = "answer_has" if bad.startswith("answer_has") else "answer_not"
             assert str(e) == f"bad {key} in task a"
+
+
+def test_args_has_defaults_empty_and_loads_from_toml(tmp_path):
+    p = _write(tmp_path, '[[task]]\nid = "a"\nrequest = "one."\n\n'
+                          '[[task]]\nid = "b"\nrequest = "two."\nargs_has = ["mark", "whatsapp"]\n')
+    a, b = ev.load_tasks(p)
+    assert (a.args_has, b.args_has) == ([], ["mark", "whatsapp"])
+
+
+def test_bad_args_has_values_are_refused(tmp_path):
+    for bad in ('args_has = 3', 'args_has = [3]', 'args_has = [""]'):
+        p = _write(tmp_path, f'[[task]]\nid = "a"\nrequest = "one."\n{bad}\n')
+        try:
+            ev.load_tasks(p)
+            raise AssertionError("expected ValueError")
+        except ValueError as e:
+            assert str(e) == "bad args_has in task a"
 
 
 # --- dry-run tools -------------------------------------------------------------
@@ -411,6 +445,42 @@ def test_eval_runs_in_the_default_confirm_mode_whatever_the_users_config_says(mo
     assert agent.important_only()
     assert ev.main(["--only", "no_such_task"]) == 2
     assert not agent.important_only()
+
+
+def test_run_task_runs_in_the_tasks_confirm_mode(tmp_path, monkeypatch):
+    seen = []
+
+    class ModeLLM(ScriptedLLM):
+        def chat(self, messages, tools):
+            seen.append(os.environ.get("IRIS_CONFIRM"))  # what the model was asked under
+            return super().chat(messages, tools)
+
+    monkeypatch.setenv("IRIS_CONFIRM", "all")  # the value main() sets for a normal run
+    task = ev.Task(id="t30", request="open kladblok", mode="important")
+    r = ev.run_task(ModeLLM(call("open_app"), answer("Klaar.")), task, tmp_path)
+    assert (r.passed, seen) == (True, ["important", "important"])  # every chat of the task saw it
+    assert os.environ.get("IRIS_CONFIRM") == "all"  # and the old value is back
+
+
+def test_run_task_deletes_the_confirm_mode_when_unset_before(tmp_path, monkeypatch):
+    monkeypatch.delenv("IRIS_CONFIRM", raising=False)
+    task = ev.Task(id="t31", request="open kladblok", mode="important")
+    r = ev.run_task(ScriptedLLM(call("open_app"), answer("Klaar.")), task, tmp_path)
+    assert (r.passed, "IRIS_CONFIRM" in os.environ) == (True, False)
+
+
+def test_run_task_args_has_passes_when_a_call_was_given_the_string(tmp_path):
+    task = ev.Task(id="t40", request="stuur mark op whatsapp", args_has=["mark"])  # case-insensitive
+    llm = ScriptedLLM(call("type_text", window="WhatsApp", text="Mark"), answer("Klaar."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons) == (True, [])
+
+
+def test_run_task_args_has_fails_when_no_call_was_given_the_string(tmp_path):
+    task = ev.Task(id="t41", request="stuur mark op whatsapp", args_has=["mark"])
+    llm = ScriptedLLM(call("type_text", window="WhatsApp", text="later ben ik er"), answer("Klaar."))
+    r = ev.run_task(llm, task, tmp_path)
+    assert (r.passed, r.reasons) == (False, ["no call was given: mark"])
 
 
 def test_run_task_gives_up_after_max_steps(tmp_path):
@@ -979,15 +1049,15 @@ def test_eval_command_json_model(tmp_path, monkeypatch):
 
 def test_shipped_tasks_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 215
+    assert len(tasks) == 251
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
-    assert (ids[0], ids[-1]) == ("gpu_temp", "browser_injection")
+    assert (ids[0], ids[-1]) == ("gpu_temp", "web_404_search")
 
 
 def test_shipped_task_ids_unique_and_tools_load():
     tasks = ev.load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
-    assert len(tasks) == 215
+    assert len(tasks) == 251
     ids = [t.id for t in tasks]
     assert len(set(ids)) == len(ids)
 
@@ -1419,3 +1489,16 @@ def test_an_expectation_can_name_either_of_two_right_paths(tmp_path):
     assert ev.run_task(ScriptedLLM(call("open_url"), answer("Done.")), task, tmp_path / "a").passed
     r = ev.run_task(ScriptedLLM(call("open_app"), answer("Done.")), task, tmp_path / "b")
     assert r.reasons == ["missing call: browser_type|open_url"]
+
+
+def test_german_french_and_spanish_each_have_everyday_tasks_and_safety_traps():
+    from iris.eval import load_tasks
+    from iris.tools import TOOLS
+
+    tasks = load_tasks(Path(__file__).resolve().parents[1] / "eval" / "tasks.toml")
+    for lang in ("de", "fr", "es"):
+        mine = [t for t in tasks if t.lang == lang]
+        assert sum(t.category != "safety" for t in mine) >= 8 and sum(t.category == "safety" for t in mine) >= 3, lang
+        for t in mine:
+            for name in [n for e in t.expect for n in e.split("|")] + t.forbid + list(t.fixtures):
+                assert name in TOOLS, (t.id, name)  # every expected, forbidden or faked tool exists

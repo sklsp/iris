@@ -9,6 +9,8 @@ keywords = ["voice agent", "ui automation", "local llm", "windows", "agents"]
 classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: Microsoft :: Windows",
     "License :: OSI Approved :: MIT License",
 ]
@@ -46,17 +48,68 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP"]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "PIE", "C4", "RET", "PERF", "PTH", "RUF"]
+ignore = [
+    "RUF001",  # Dutch text and typographic quotes in strings are intended
+]
+
+[tool.ruff.lint.per-file-ignores]
+"iris/eval.py" = ["C416", "PERF401", "PERF403", "PTH123", "RUF005"]  # protected file; fix by hand
+"iris/policy.py" = ["SIM112"]  # protected file; fix by hand
+"iris/skills.py" = ["SIM105", "PTH105", "RUF100"]  # protected file; fix by hand
+"installer/dlls.py" = ["PERF401"]  # protected file; fix by hand
 
 [tool.mypy]
-files = ["iris"]
+files = ["iris", "tests"]
+exclude = ["tests/fixtures/"]
 python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
+disallow_untyped_defs = true
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["iris.policy", "iris.registry", "iris.eval"]
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+# the protected modules stay as written; strict-only flags are off for them
+module = ["iris.eval", "iris.policy", "iris.skills", "iris.registry"]
+disallow_any_generics = false
+warn_return_any = false
+warn_unused_ignores = false
+disallow_untyped_calls = false
+disallow_untyped_decorators = false
+disallow_incomplete_defs = false
+no_implicit_reexport = false
+strict_equality = false
+extra_checks = false
+
+[[tool.mypy.overrides]]
+# annotating 2400 test functions is not the goal
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+# not yet typed; these four are protected, a typing run must never touch them
+module = [
+    "tests.test_tier_lock",
+    "tests.test_skills",
+    "tests.test_policy",
+    "tests.test_safety",
+]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+# a deprecated call in Iris's own code fails now, not when a new Python removes it
+filterwarnings = ["error::DeprecationWarning:iris", "error::PendingDeprecationWarning:iris"]
 
 [tool.coverage.run]
 source = ["iris"]
+patch = ["subprocess"]
 
 [tool.coverage.report]
-fail_under = 94
+fail_under = 99
 show_missing = true

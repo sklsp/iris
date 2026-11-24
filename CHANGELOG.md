@@ -2,6 +2,135 @@
 
 ## Unreleased
 
+- Every request now writes a `timing` line to the journal with its total time, model time and tool time; `python -m iris timings` summarises them (median and p90 turn time, the model's share of all the time, the slowest tools).
+- Voice mode logs how long speech recognition took for each request (`stt` lines in the journal), and `python -m iris timings` summarises those too.
+- Voice mode also logs how long each answer takes to start sounding (`tts` lines in the journal); `python -m iris timings` and the dashboard's Speed panel show them, so the whole voice turn is covered: speech recognition, model, tools, first sound.
+- The dashboard's Activity tab shows the same summary in a Speed panel, fed by `/api/timings`.
+- `iris doctor` ends with a speed line from the journal (median turn time and model share), and `python -m iris timings --json` prints the summary as JSON for scripts and bug reports.
+- Each tool call writes a `tool_timing` line to the journal, and `python -m iris timings --by-tool` summarises them per tool (call count and median time, slowest first).
+- The dashboard's Speed panel also lists the five slowest tools from their `tool_timing` lines.
+- The journal rotates at 5 MB into `journal.jsonl.1`, so the dashboard, `iris timings` and `iris doctor` read the recent part only.
+- `python -m iris timings` can compare models and narrow the window: each timing line names its model, `--by-model` prints one line per model (request count, median turn time, share of all the time), `--since YYYY-MM-DD` keeps entries from a date on and `--model NAME` keeps one model's lines.
+- docs/ARCHITECTURE.md explains how Iris works inside, written from the code (the voice turn, every module, the safety rules, where the time goes); the README links to it near the top.
+- `test_docs_truth.py` checks that every command and environment variable named in `docs/` exists.
+- The dashboard's Speed panel lists the models side by side (request count, median turn time and share of all the time) when more than one model handled the recent requests.
+- The README split: Voice, Plugins in detail and Environment variables moved to docs/voice.md, docs/plugins.md and docs/environment.md; the README keeps a short summary of each section.
+- You can ask Iris what it did today (`journal_today`); its answer now also includes the median answer time of the day from the journal's timing lines.
+- mypy now runs in strict mode for every module except policy, registry, eval and skills.
+- Every iris command starts faster: the modules that `iris --help` loads import urllib.request inside the functions that use it instead of at module level, so a cold start skips the whole chain (about 34 ms on Windows).
+- `iris startup on` now starts the tray app at login through an `Iris.vbs` in your Startup folder (pythonw, hidden), with no console window; it removes any older Iris.cmd or Iris.lnk from there.
+- `iris shortcut` now puts an `Iris.lnk` on your desktop that starts the app with its icon and no console; a second start just brings the running window forward, and any older Iris.cmd is removed.
+- ruff now also checks the SIM, PIE, C4, RET and PERF rule sets on iris/ and tests/, and every finding was fixed without changing behaviour.
+- ruff now also checks the PTH and RUF rule sets on iris/ and tests/, and every finding was fixed without changing behaviour; the protected files keep their per-file ignores for the new rules too.
+- Tests are type-checked by mypy as well; 14 test modules still sit on the ignore list until they are typed.
+- git, Cline CLI and lms output are decoded as UTF-8 with replacement, so the dashboard's agent status and autopilot survive any text on a non-UTF-8 locale code page.
+- The dashboard's Settings tab has a "Start Iris in the tray at login" switch that writes or removes the Startup-folder entry (`/api/startup`); an installer build answers that it manages its own entry.
+- When `agents.toml` names a nightshift command, the dashboard's Repos tab shows the active run above the repo list (done and blocked counts, current item and minutes on it, last gate check); `/api/agents` carries it as a `nightshift` key.
+- The dashboard's nightshift line now starts with whether the supervisor is running or stopped and ends with how many minutes ago the run was last updated; older nightshift versions that report neither read as stopped with no age.
+
+## 1.0.0 (release date): steady, safer and measured
+
+### Quality
+
+- Type annotations on every function outside policy, registry and eval, and mypy now requires them there.
+- A stability promise: the commands and flags, the config.toml keys, the files in ~/.iris and the dashboard's routes stay within 1.x, and a test fails when one goes missing.
+- Data from 0.4.0, 0.5.0 and 0.6.1 is tested to read in 1.0; nothing needs migrating.
+- A skill builder that rewrites meta.json can no longer lower the tier you agreed to, or skip the check before you approve.
+- A browser click is judged by the whole label (a quote in it no longer hides "Pay") and only works on the tab Iris read.
+- click and type_text stop when a partial name matches a send, pay or password control, so the tier sees the full name.
+- Text in a tool result can no longer close its untrusted-data wrapper.
+- The dashboard only answers at 127.0.0.1 or localhost, so a site that points its own name at your PC can not read it.
+- The web fetch refuses every address that is not public, also old forms such as 127.1.
+- Clearer muted text, a visible keyboard focus, and labelled tabs and fields on the dashboard.
+- The test suite stops every browser watcher a test starts, which removes a CI failure that came and went.
+- Coverage counts the speech worker that runs in its own process, and CI fails below 99% (it was 94%).
+- The eval can run a task in the "important" confirm mode and check what a call was given; fourteen tasks cover that mode.
+- Iris no longer empties a whole drive or folder on one sentence such as "throw everything away": it says what is there and asks which items should go.
+- The payment, password and injection traps also count a click or typing inside the browser page as forbidden.
+- Safety traps in the eval see realistic screens (a full drive listing, a checkout page, the Notepad window), so a refusal is tested against real temptation.
+- The test suite no longer leaves removed skills in the real ~/.iris/trash, nor touches the notes,
+  reminders, queue or settings files there.
+
+
+### Speed
+
+- `tools/bench.py` measures start time, the cost of one turn without the model, the dashboard and the prompt size; CI runs it.
+- iris doctor without a running model server takes under a second on Windows instead of four and a half.
+- With the voice extras installed, iris doctor no longer loads the wake-word library to check its model: 1.8 seconds instead of 4.
+- One agent turn costs about a third of what it did outside the model, and long sessions trim their history with room to spare, so the model server's cache is reused more often.
+- One tool result is at most 24000 characters, with a marker that says how much was left out; browser pages say when they were cut.
+- The dashboard does not poll while its window is hidden.
+- config.toml is parsed once until it changes, and the CPU reading no longer waits 0.3 s.
+- settings.json is read once until it changes, and two dashboard polls of one route fetch once.
+- In voice mode Iris says "One moment." once when a request runs past 8 seconds, so a long think no longer
+  sounds like she did not hear you. The panel keeps showing that she is thinking.
+- Closing a window, searching for files and taking the next queued prompt take one tool call where the model
+  used to make up to four.
+- Asking for a skill Iris does not have yet answers faster: the plan for the coding agent is six lines at most.
+- Ending voice mode while VoxCPM2 is still loading takes half a second instead of five.
+- Asking about tomorrow's weather takes one weather call: without a number of days it now returns three.
+
+
+### Skills
+
+- reminder_cancel works (it failed on every real call).
+- Tool errors say what to do next.
+- scroll, browser_scroll, web_search, focus_window and open_url say better when to use them.
+- 21 new eval tasks: German, French and Spanish now have eight everyday tasks and three safety traps each (236 in all).
+
+
+### Reliability
+
+- A web page that does not exist (404) now tells Iris to search for the real link instead of guessing another address; a site that limits requests (429) tells it to read another result.
+- click and type_text find a control when its name is copied with its type from read_window, such as "ListItem: Blank document"; the send, pay and password checks still see the full name.
+- An error nobody caught goes to ~/.iris/logs/crash.log, and Iris says where in one sentence; a failing background task is logged and voice mode goes on.
+- One bad tool call, a broken answer from the model server or a broken skill file ends one step, not the session; a refused request (often a conversation grown too long) is said as such.
+- Voice mode stops the VoxCPM2 and Piper workers when it ends (the GPU is freed), says so when there is no microphone or it was unplugged instead of hanging, and plays one speech at a time.
+- Kokoro no longer cuts each sentence off with the next one.
+- A missing custom wake word model no longer downloads every openWakeWord model.
+- A config.toml saved with a BOM is read; a setting that is not a number falls back to its default, and iris doctor names it.
+- iris doctor also checks the fallback voice, Kokoro, the voice packs and folders that do not exist.
+- Notes and reminders survive a hand edit, and an unreadable reminders file is kept aside instead of overwritten; reminders months ahead fire.
+- The trash restores .json files, write_file never replaces a folder, and copy_file never copies a folder into itself.
+- calculate never shows a complex or rounded result as exact.
+- Every dashboard request gets an answer, whatever its body.
+- The update check orders 1.0.0rc1 before 1.0.0 and survives odd answers.
+- Autopilot removes the prompt it started, not whichever was oldest by then.
+- read_file reads UTF-16 files, and a folder listing survives one unreadable entry.
+- A stuck answer is stopped before the next one, the chime and push-to-talk can no longer hang listening,
+  and Piper reads accented text correctly.
+- One failed sentence no longer switches the voice for the rest of the run (three in a row do).
+- Pack installs time out after 30 minutes and an interrupted install is not reported as done.
+- Iris quits when the window closes and the tray icon could not start, instead of hiding with no way back.
+- A failed browser connection falls back at once, ASP.NET pages are read, and click never clicks twice.
+- A journal that can not be written stops the turn, so a tool never runs twice for it.
+- The Setup tab installs the voices and Whisper model now set, can use a custom model server, and the Settings
+  tab copes with hand-edited values of the wrong type.
+- A HEAD request to the dashboard gets its error without a body, and a cline_cli that is a .cmd or .bat file is
+  refused instead of passing the prompt through cmd.exe.
+- [model] Clearer tool descriptions: taking a prompt out of the queue removes it, a site search answers from the
+  search page, and a deck or sheet with no details is made with general content instead of a question.
+- [model] Clearer tool descriptions: a smart device without a tool goes straight to a new-skill plan, a window
+  that is not open is not retried, and one weather call answers for tomorrow.
+- Review fixes: a failing fallback voice no longer replaces VoxCPM2 for good and a dropped VoxCPM2 frees its GPU,
+  Kokoro no longer pauses between sentences, a hold line ignores the wake word, config reads are deep copies, and
+  an answer after the last step is asked for in words.
+- Ending voice mode while the browser still asks Allow no longer leaves a stray browser connection behind.
+- A setting saved on the Settings tab, or a fresh config from iris init, is read at once, even when the new file is
+  exactly as long as the old one.
+- When the model server turns a request down because the conversation got too long, Iris drops the older turns
+  and tries once more by herself, instead of failing every request until a restart.
+- A reminder set across a daylight saving change goes off at the time it says, not an hour early or late.
+- Iris runs on Python 3.11 again, as promised, and on 3.13, where web search broke on the newest patch release;
+  CI now tests 3.11 to 3.14.
+
+
+### Docs
+
+- README: Upgrading from 0.x, and Stability.
+- SECURITY.md: the new protections with their tests, the gaps that need a policy change, and the supported versions.
+- CONTRIBUTING.md: the gates, the benchmark, and the `[model]` prefix for commits that change what the model sees.
+
 ## 0.6.1 (2026-11-04): clearer errors, `iris config` and more tests
 
 - 0.6.0 was not published as a release, so this is the first release with the installer and the desktop app:

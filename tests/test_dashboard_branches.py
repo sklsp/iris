@@ -1,11 +1,15 @@
 """Branches of iris/dashboard/__init__.py that tests/test_dashboard.py does not reach."""
+import io
 import json
 import sqlite3
 import threading
 import time
 import types
+import urllib.error
 import urllib.request
+from email.message import Message
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -29,8 +33,8 @@ def test_run_lms_returns_the_code_and_stderr(monkeypatch):
     monkeypatch.setattr(d, "_lms_exe", lambda: "/fake/lms")
     calls = []
 
-    def fake_run(cmd, capture_output=True, text=True, timeout=600):
-        calls.append((cmd, timeout))
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
         return Proc()
 
     monkeypatch.setattr("iris.dashboard.subprocess.run", fake_run)
@@ -39,9 +43,30 @@ def test_run_lms_returns_the_code_and_stderr(monkeypatch):
     assert calls[0][0] == ["/fake/lms", "load", "m"]
 
 
+def test_run_lms_decodes_output_as_utf8(monkeypatch):
+    """lms output is decoded as UTF-8 with replacement, so any text survives the locale code page."""
+
+    class Proc:
+        returncode = 0
+        stderr = ""
+        stdout = "loaded\n"
+
+    calls: list[dict[str, object]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(kwargs)
+        return Proc()
+
+    monkeypatch.setattr(d, "_lms_exe", lambda: "/fake/lms")
+    monkeypatch.setattr("iris.dashboard.subprocess.run", fake_run)
+    code, out = d.run_lms(["load", "m"])
+    assert (code, out) == (0, "loaded")  # empty stderr, so the stripped stdout wins
+    assert calls[0]["encoding"] == "utf-8" and calls[0]["errors"] == "replace"
+
+
 def test_model_action_rejects_a_body_that_is_not_an_object():
     with pytest.raises(d.ModelActionError) as exc:
-        d.model_action("load", ["not", "a", "dict"])
+        d.model_action("load", cast(dict[str, Any], ["not", "a", "dict"]))
     assert exc.value.code == 400
     assert exc.value.message == "the body must be a JSON object"
 
@@ -55,7 +80,7 @@ def test_model_action_rejects_a_missing_model_id():
 
 def test_set_iris_model_rejects_a_body_that_is_not_an_object():
     with pytest.raises(d.ModelActionError) as exc:
-        d.set_iris_model("qwen3")
+        d.set_iris_model(cast(dict[str, Any], "qwen3"))
     assert exc.value.code == 400
     assert exc.value.message == "the body must be a JSON object"
 
@@ -173,14 +198,14 @@ def test_an_unreadable_skill_manifest_is_skipped(tmp_path, monkeypatch):
 
 def test_queue_action_rejects_a_body_that_is_not_an_object():
     with pytest.raises(d.ModelActionError) as exc:
-        d.queue_action("add", "nope")
+        d.queue_action("add", cast(dict[str, Any], "nope"))
     assert exc.value.code == 400
     assert exc.value.message == "the body must be a JSON object"
 
 
 def test_cline_start_rejects_a_body_that_is_not_an_object():
     with pytest.raises(d.ModelActionError) as exc:
-        d.cline_start_action("nope")
+        d.cline_start_action(cast(dict[str, Any], "nope"))
     assert exc.value.code == 400
     assert exc.value.message == "the body must be a JSON object"
 
@@ -203,14 +228,18 @@ def test_a_broken_queue_file_comes_back_as_a_500(monkeypatch):
 
 def test_draining_a_body_with_a_non_numeric_content_length_returns_quietly():
     h = object.__new__(d.Handler)
-    h.headers = {"Content-Length": "not-a-number"}
+    headers = Message()
+    headers["Content-Length"] = "not-a-number"
+    h.headers = headers
     h._drain_body()  # int() raises ValueError; the body is left alone and no error escapes
 
 
 def test_draining_a_body_that_reads_empty_breaks_the_loop():
     h = object.__new__(d.Handler)
-    h.headers = {"Content-Length": "10"}
-    h.rfile = types.SimpleNamespace(read=lambda n: b"")
+    headers = Message()
+    headers["Content-Length"] = "10"
+    h.headers = headers
+    h.rfile = io.BytesIO(b"")
     h._drain_body()  # the first read gives no bytes; the loop breaks instead of spinning
 
 
@@ -219,8 +248,10 @@ def test_draining_a_body_whose_read_raises_never_escapes():
         raise OSError("the socket died")
 
     h = object.__new__(d.Handler)
-    h.headers = {"Content-Length": "10"}
-    h.rfile = types.SimpleNamespace(read=broken_read)
+    headers = Message()
+    headers["Content-Length"] = "10"
+    h.headers = headers
+    h.rfile = cast(io.BufferedIOBase, types.SimpleNamespace(read=broken_read))
     h._drain_body()  # the exception is swallowed; a lying Content-Length must never kill the handler
 
 
@@ -277,6 +308,16 @@ def test_the_journal_route_serves_the_fake_payload(server, monkeypatch):
     assert body == {"fake": "journal"}
 
 
+def test_the_timings_route_returns_the_same_json_as_the_function(server, tmp_path, monkeypatch):
+    journal = tmp_path / "journal.jsonl"
+    entry = json.dumps({"event": "timing", "ms": 1500, "llm_ms": 900, "tools_ms": 600})
+    journal.write_text(entry + "\n", encoding="utf-8")
+    monkeypatch.setenv("IRIS_JOURNAL", str(journal))
+    status, body = get_json(server + "/api/timings")
+    assert status == 200
+    assert body == json.loads(json.dumps(d.timings_payload()))
+
+
 # --- serve() and default_port ----------------------------------------------------
 
 
@@ -318,3 +359,97 @@ def test_serve_stops_on_ctrl_c_and_closes_the_server_once(monkeypatch, capsys):
 def test_default_port_falls_back_to_the_builtin_one_when_the_env_is_not_a_number(monkeypatch):
     monkeypatch.setenv("IRIS_DASHBOARD_PORT", "abc")
     assert d.default_port() == 8765
+
+
+# --- LM Studio model lists -------------------------------------------------------
+
+
+def test_a_server_without_the_v0_api_lists_models_without_states(monkeypatch):
+    # the server answers but has no v0 API (Ollama, llama.cpp, an older LM Studio)
+    # so the plain list is used; it gives ids only and carries no state
+    def fake_fetch(url):
+        if url == d.V0_MODELS_URL:
+            raise urllib.error.HTTPError(url, 404, "nf", Message(), None)
+        return {"data": [{"id": "m1"}]}
+
+    monkeypatch.setattr(d, "_fetch_json", fake_fetch)
+    payload = d.lmstudio_payload()
+    assert payload["reachable"] is True
+    assert payload["states_known"] is False
+    assert [m["id"] for m in payload["models"]] == ["m1"]
+
+
+def test_a_refused_connection_on_v0_is_not_reachable(monkeypatch):
+    # nothing answers at all: a refused connection on v0 means the plain list
+    # would fail the same way, so it is never asked
+    fetched = []
+
+    def fake_fetch(url):
+        fetched.append(url)
+        raise urllib.error.URLError(ConnectionRefusedError())
+
+    monkeypatch.setattr(d, "_fetch_json", fake_fetch)
+    assert d.lmstudio_payload() == {"reachable": False}
+    assert fetched == [d.V0_MODELS_URL]  # the v1 URL was never fetched
+
+
+# --- a POST with a lying Content-Length ------------------------------------------
+
+
+def _raw_post(srv, path, body: bytes, headers=None):
+    import http.client
+
+    port = srv.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.putrequest("POST", path)
+    for k, v in {"X-Iris-Token": srv.token, "Origin": f"http://127.0.0.1:{port}", **(headers or {})}.items():
+        conn.putheader(k, v)
+    if "Content-Length" not in (headers or {}) and "Transfer-Encoding" not in (headers or {}):
+        conn.putheader("Content-Length", str(len(body)))
+    conn.endheaders(body)
+    r = conn.getresponse()
+    out = r.status, json.loads(r.read().decode("utf-8") or "{}")
+    conn.close()
+    return out
+
+
+def test_a_content_length_that_is_not_a_number_is_refused(srv):
+    # int() raises ValueError on "abc"; the handler answers 400 like a negative
+    # length instead of dropping the connection
+    # no body: the server closes without reading it, and unread bytes make Windows reset the reply
+    status, data = _raw_post(srv, "/api/settings", b"", {"Content-Length": "abc"})
+    assert status == 400
+    assert "JSON object" in data["error"]
+
+
+# --- lmstudio_payload when nothing answers ---------------------------------------
+
+
+def test_nothing_listening_on_the_port_is_not_reachable_and_fetches_nothing(monkeypatch):
+    # the probe says the port is closed, so no HTTP request may be made at all
+    fetched = []
+
+    def fake_fetch(url):
+        fetched.append(url)
+        return {}
+
+    monkeypatch.setattr(d, "_nothing_listens", lambda url, timeout=0.5: True)
+    monkeypatch.setattr(d, "_fetch_json", fake_fetch)
+    assert d.lmstudio_payload() == {"reachable": False}
+    assert fetched == []  # neither the v0 nor the plain list was ever asked
+
+
+def test_bad_v0_json_and_a_failing_v1_list_is_not_reachable(monkeypatch):
+    # bad JSON on v0 falls through to the plain list; when that fails too, nothing is reachable
+    fetched = []
+
+    def fake_fetch(url):
+        fetched.append(url)
+        if url == d.V0_MODELS_URL:
+            raise ValueError("bad json")
+        raise OSError("the connection died")
+
+    monkeypatch.setattr(d, "_fetch_json", fake_fetch)  # _nothing_listens already says the port is open (conftest)
+    assert d.lmstudio_payload() == {"reachable": False}
+    assert fetched == [d.V0_MODELS_URL, d.V1_MODELS_URL]  # v0 first, then the fallback
+

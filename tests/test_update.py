@@ -1,6 +1,7 @@
 """Tests for iris/update.py's _fetch: the real request, with urlopen faked so no network is touched."""
 
 import io
+import urllib.request
 
 from iris import __version__, update
 
@@ -16,7 +17,7 @@ def test_fetch_asks_github_with_the_iris_user_agent_and_a_ten_second_timeout(mon
         seen["timeout"] = timeout
         return io.BytesIO(b'{"tag_name": "v9.9.9"}')  # json.load reads it; BytesIO works in a with block
 
-    monkeypatch.setattr(update.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     assert update._fetch() == {"tag_name": "v9.9.9"}
     assert seen["req"].full_url == update.LATEST_URL
     assert seen["req"].get_header("User-agent") == f"Iris/{__version__}"

@@ -1,9 +1,11 @@
 """The confirm questions of the tools the main agent tests never call, and the credential check of important mode."""
 import json
+from typing import cast
 
+from iris import agent as agent_mod
 from iris import browser as browser_mod
 from iris.agent import Agent, Journal
-from iris.llm import Reply, ToolCall
+from iris.llm import LMStudio, Reply, ToolCall
 from iris.tools import CONFIRM, NEVER, Tool
 
 
@@ -30,10 +32,20 @@ def answer(text):
 def ask(tmp_path, name, args, tier=CONFIRM):
     """One request in which the model calls the tool once; returns (the questions asked, what ran)."""
     ran = []
-    tools = {name: Tool(name, "", {}, [], tier, lambda **kw: ran.append((name, kw)) or f"{name} done")}
+
+    def run_tool(**kw):
+        ran.append((name, kw))
+        return f"{name} done"
+
+    tools = {name: Tool(name, "", {}, [], tier, run_tool)}
     llm = ScriptedLLM(call(name, **args), answer("Done."))
     asked = []
-    Agent(llm, lambda q: asked.append(q) or True, Journal(tmp_path / "j.jsonl"), tools).handle(f"do {name}")
+
+    def confirm(q):
+        asked.append(q)
+        return True
+
+    Agent(cast(LMStudio, llm), confirm, Journal(tmp_path / "j.jsonl"), tools).handle(f"do {name}")
     return asked, ran
 
 
@@ -112,3 +124,44 @@ def test_important_mode_never_types_into_a_login_window(tmp_path, monkeypatch):
     asked, ran = ask(tmp_path, "type_text", {"into": "Sign in - Bank", "text": "hunter2"}, tier=NEVER)
     assert asked == []
     assert ran == []
+
+
+class _BrokenBody(Exception):
+    """An HTTP error whose body can not be read."""
+
+    def read(self):
+        raise OSError("the body stream broke")
+
+
+def test_llm_error_keeps_the_status_when_the_body_can_not_be_read():
+    # the server's reason is a bonus: when reading it fails, the status in repr(exc) still goes to the journal
+    exc = _BrokenBody("502 Bad Gateway")
+    out = agent_mod._llm_error(exc)
+    assert out == repr(exc)
+
+
+class _FailingRetryLLM:
+    """Answers the last call with a tool call and no words; the retry without tools fails."""
+
+    def __init__(self, first):
+        self.first = first
+
+    def chat(self, messages, schemas):
+        if self.first is not None:
+            reply, self.first = self.first, None
+            return reply
+        raise OSError("the model server went away")
+
+
+def test_out_of_steps_survives_a_failing_retry_without_tools(tmp_path):
+    # the last call answers with a tool call and no words; when the retry without tools fails, nothing is raised,
+    # the journal gets an llm_error event, and Iris has nothing extra to say
+    tools = {"calculate": Tool("calculate", "", {}, [], CONFIRM, lambda **kw: "2")}
+    journal = Journal(tmp_path / "j.jsonl")
+    llm = cast(LMStudio, _FailingRetryLLM(call("calculate", expression="1+1")))
+    agent_obj = Agent(llm, lambda q: True, journal, tools)
+    out = agent_obj._out_of_steps([t.schema() for t in tools.values()])
+    assert isinstance(out, str) and out == ""
+    events = [json.loads(line) for line in (tmp_path / "j.jsonl").read_text(encoding="utf-8").splitlines()]
+    errors = [e for e in events if e.get("event") == "llm_error"]
+    assert len(errors) == 1 and "OSError" in errors[0]["error"]

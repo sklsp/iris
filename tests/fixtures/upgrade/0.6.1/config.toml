@@ -1,0 +1,12 @@
+# Iris settings
+name = "Jay"
+city = "Rotterdam"
+tts = "voxcpm"
+silence = 2.2
+follow_up = 6
+llm_url = "http://127.0.0.1:1234/v1"
+update_check = false
+plugins = ["agents"]
+
+[extra]
+keep = 1

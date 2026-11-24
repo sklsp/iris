@@ -1,0 +1,2 @@
+- [x] Q1. agents: read the active nightshift run (2470 passed in 110.81s (0:01:50))
+- [ ] Q2. dashboard: show it on the agents view

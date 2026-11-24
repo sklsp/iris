@@ -1,5 +1,6 @@
 """Tests for the read-only agent manager, against temporary git repos (no real repos touched)."""
 
+import json
 import os
 import subprocess
 import time
@@ -255,6 +256,7 @@ def test_shipped_config_is_an_empty_example():
     shipped = Path(__file__).resolve().parents[1] / "iris" / "agents.toml"
     cfg = load_config(shipped)
     assert cfg.repos == [] and cfg.stuck_minutes == 60
+    assert cfg.nightshift_command == [] and cfg.nightshift_runs == []  # the glance is off out of the box
 
 
 def test_repos_come_from_the_env_var(monkeypatch, tmp_path):
@@ -283,3 +285,192 @@ def test_age_is_spoken_in_readable_units():
     assert _age(12 * 60) == "12 minutes" and _age(2 * 3600) == "2 hours"
     assert _age(3 * 86400) == "3 days" and _age(2 * 86400 * 365) == "2 years"
     assert _age(None) == "a while"
+
+
+class _StatusProc:
+    """A stand-in for subprocess.run's result; the fake runner hands one of these back."""
+
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _status_json() -> str:
+    """The same JSON nightshift status --json prints (see _status_payload in the nightshift cli)."""
+    return json.dumps({
+        "name": "qwen92",
+        "total": 2,
+        "done": [1],
+        "blocked": [],
+        "next_item": 2,
+        "next_title": "dashboard: show it on the agents view",
+        "current_minutes": 7,
+        "gate": "pass",
+        "commits": [{"hash": "abc1234", "subject": "Q1: agents: read the active nightshift run"}],
+        "events": [],
+    })
+
+
+def make_run_dir(root: Path, name: str, *, minutes_ago: float = 0) -> Path:
+    """A nightshift run dir: a folder with a run.toml and .gate/supervise.jsonl.
+
+    `minutes_ago` backdates the supervise file so 'most recently touched' is deterministic.
+    """
+    d = root / name
+    (d / ".gate").mkdir(parents=True)
+    (d / "run.toml").write_text("[run]\nname = \"test\"\n", encoding="utf-8")
+    gate_file = d / ".gate" / "supervise.jsonl"
+    gate_file.write_text("{}\n", encoding="utf-8")
+    stamp = time.time() - minutes_ago * 60
+    os.utime(gate_file, (stamp, stamp))
+    return d
+
+
+def test_nightshift_run_is_off_by_default(tmp_path):
+    calls: list[list[str]] = []
+
+    def fake(*args, **kwargs):
+        calls.append(args[0])
+        return _StatusProc(stdout=_status_json())
+
+    assert agents.nightshift_run(Config(nightshift_command=[], nightshift_runs=[str(tmp_path)]), run=fake) is None
+    assert calls == []  # the command never runs when the feature is off
+
+
+def test_config_reads_the_nightshift_keys(tmp_path):
+    loaded = load_config(write_config(tmp_path, repos=[], worktrees=[]))  # no nightshift keys at all
+    assert loaded.nightshift_command == [] and loaded.nightshift_runs == []
+    p = tmp_path / "ns.toml"
+    p.write_text('nightshift_command = ["W:/ns/python.exe", "-m", "nightshift"]\n'
+                 'nightshift_runs = ["W:/Opus-notes"]\n', encoding="utf-8")
+    loaded = load_config(p)
+    assert loaded.nightshift_command == ["W:/ns/python.exe", "-m", "nightshift"]
+    assert loaded.nightshift_runs == ["W:/Opus-notes"]
+
+
+def test_nightshift_run_picks_the_most_recently_touched_run(tmp_path):
+    make_run_dir(tmp_path, "old-run", minutes_ago=90)
+    new = make_run_dir(tmp_path, "new-run")  # touched just now
+    argvs: list[list[str]] = []
+
+    def fake(*args, **kwargs):
+        argvs.append(args[0])
+        return _StatusProc(stdout=_status_json())
+
+    out = agents.nightshift_run(Config(nightshift_command=["ns"], nightshift_runs=[str(tmp_path)]), run=fake)
+    assert out is not None and "error" not in out
+    assert out["dir"] == str(new)  # the newer supervise.jsonl wins, not the folder name
+    assert argvs[0] == ["ns", "status", "--json", str(new)]
+
+
+def test_nightshift_run_maps_the_status_fields(tmp_path):
+    run_dir = make_run_dir(tmp_path, "qwen92")
+
+    def fake(*args, **kwargs):
+        return _StatusProc(stdout=_status_json())
+
+    out = agents.nightshift_run(Config(nightshift_command=["ns"], nightshift_runs=[str(tmp_path)]), run=fake)
+    assert out == {
+        "name": "qwen92",
+        "done": 1,
+        "total": 2,
+        "blocked": 0,
+        "next_item": 2,
+        "next_title": "dashboard: show it on the agents view",
+        "current_minutes": 7,
+        "gate": "pass",
+        "dir": str(run_dir),
+    }
+
+
+def test_nightshift_run_counts_done_and_blocked_items(tmp_path):
+    make_run_dir(tmp_path, "qwen92")
+    payload = json.dumps({"name": "done-run", "total": 5, "done": [1, 2], "blocked": [3, 4],
+                          "next_item": None, "next_title": None, "current_minutes": None, "gate": "fail"})
+
+    def fake(*args, **kwargs):
+        return _StatusProc(stdout=payload)
+
+    out = agents.nightshift_run(Config(nightshift_command=["ns"], nightshift_runs=[str(tmp_path)]), run=fake)
+    assert out is not None and "error" not in out
+    assert out["done"] == 2 and out["blocked"] == 2  # counts, not the raw lists
+    assert out["next_item"] is None and out["next_title"] is None and out["current_minutes"] is None
+    assert out["gate"] == "fail"
+
+
+def test_nightshift_run_argv_is_exactly_command_plus_status_json_and_dir(tmp_path):
+    run_dir = make_run_dir(tmp_path, "qwen92")
+    seen: dict[str, object] = {}
+
+    def fake(*args, **kwargs):
+        seen["argv"] = args[0]
+        seen.update(kwargs)
+        return _StatusProc(stdout=_status_json())
+
+    agents.nightshift_run(Config(nightshift_command=["W:/ns/python.exe", "-m", "nightshift"],
+                                 nightshift_runs=[str(tmp_path)]), run=fake)
+    assert seen["argv"] == ["W:/ns/python.exe", "-m", "nightshift", "status", "--json", str(run_dir)]
+    assert seen["capture_output"] is True and seen["text"] is True
+    assert seen["encoding"] == "utf-8" and seen["errors"] == "replace"
+    assert seen["timeout"] == 20
+
+
+def test_nightshift_run_reports_when_no_runs_exist(tmp_path):
+    (tmp_path / "not-a-run").mkdir()  # a folder without run.toml is not a run dir
+    bare = make_run_dir(tmp_path, "no-gate")
+    (bare / ".gate" / "supervise.jsonl").unlink()  # a run dir nobody has touched yet: skipped
+    calls: list[list[str]] = []
+
+    def fake(*args, **kwargs):
+        calls.append(args[0])
+        return _StatusProc(stdout=_status_json())
+
+    runs = [str(tmp_path), str(tmp_path / "missing")]  # a missing root is skipped too
+    out = agents.nightshift_run(Config(nightshift_command=["ns"], nightshift_runs=runs), run=fake)
+    assert isinstance(out, dict) and set(out) == {"error"}
+    assert "no nightshift runs" in str(out["error"])
+    assert calls == []  # nothing to ask, so the command never runs
+
+
+def test_nightshift_run_reports_a_non_zero_exit(tmp_path):
+    make_run_dir(tmp_path, "qwen92")
+
+    def fake(*args, **kwargs):
+        return _StatusProc(returncode=1, stderr="boom: first line\nthe last line\n")
+
+    out = agents.nightshift_run(Config(nightshift_command=["ns"], nightshift_runs=[str(tmp_path)]), run=fake)
+    assert out == {"error": "the last line"}
+
+
+def test_nightshift_run_reports_bad_json(tmp_path):
+    make_run_dir(tmp_path, "qwen92")
+
+    def fake(*args, **kwargs):
+        return _StatusProc(stdout="{oops")
+
+    out = agents.nightshift_run(Config(nightshift_command=["ns"], nightshift_runs=[str(tmp_path)]), run=fake)
+    assert isinstance(out, dict) and set(out) == {"error"}
+    assert "JSON" in str(out["error"])
+
+
+def test_nightshift_run_reports_a_timeout(tmp_path):
+    make_run_dir(tmp_path, "qwen92")
+
+    def fake(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="ns", timeout=20)
+
+    out = agents.nightshift_run(Config(nightshift_command=["ns"], nightshift_runs=[str(tmp_path)]), run=fake)
+    assert isinstance(out, dict) and set(out) == {"error"}
+    assert "timed out" in str(out["error"])
+
+
+def test_nightshift_run_reports_a_missing_command(tmp_path):
+    make_run_dir(tmp_path, "qwen92")
+
+    def fake(*args, **kwargs):
+        raise FileNotFoundError("ns not found")
+
+    out = agents.nightshift_run(Config(nightshift_command=["ns"], nightshift_runs=[str(tmp_path)]), run=fake)
+    assert isinstance(out, dict) and set(out) == {"error"}
+    assert "failed" in str(out["error"])

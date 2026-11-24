@@ -10,10 +10,12 @@ commit, no add.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,6 +26,7 @@ DEFAULT_REPOS: list[str] = []
 DEFAULT_WORKTREES = [str(Path.home() / ".cline" / "worktrees")]
 DEFAULT_STUCK_MINUTES = 60
 GIT_TIMEOUT = 10  # seconds; a repo on a spinning disk must not hang the voice loop
+NIGHTSHIFT_TIMEOUT = 20  # seconds; a hung status call must not hang the agents view either
 
 
 def _default_repos() -> list[str]:
@@ -74,6 +77,8 @@ class Config:
     repos: list[str] = field(default_factory=_default_repos)
     worktrees: list[str] = field(default_factory=lambda: list(DEFAULT_WORKTREES))
     stuck_minutes: int = DEFAULT_STUCK_MINUTES
+    nightshift_command: list[str] = field(default_factory=list)  # empty = the active-run glance is off
+    nightshift_runs: list[str] = field(default_factory=list)     # folders that hold run dirs (a run.toml inside)
 
 
 def load_config(path: Path | str | None = None) -> Config:
@@ -91,6 +96,10 @@ def load_config(path: Path | str | None = None) -> Config:
         cfg.worktrees = [str(x) for x in data["worktrees"]]
     if isinstance(data.get("stuck_minutes"), (int, float)) and data["stuck_minutes"] > 0:
         cfg.stuck_minutes = int(data["stuck_minutes"])
+    if isinstance(data.get("nightshift_command"), list):
+        cfg.nightshift_command = [str(x) for x in data["nightshift_command"]]
+    if isinstance(data.get("nightshift_runs"), list):
+        cfg.nightshift_runs = [str(x) for x in data["nightshift_runs"]]
     return cfg
 
 
@@ -152,6 +161,74 @@ def repo_status(repo: Path | str, stuck_minutes: int = DEFAULT_STUCK_MINUTES, no
     except (OSError, subprocess.SubprocessError, ValueError, RuntimeError) as exc:
         status.error = f"git failed: {exc}"
     return status
+
+
+def _newest_run_dir(runs: list[str]) -> Path | None:
+    """The most recently active nightshift run dir under the folders in `runs`.
+
+    A run dir is a folder with a run.toml; activity means its .gate/supervise.jsonl exists, and the
+    newest such file wins so several runs can share one notes folder.
+    """
+    best: tuple[float, Path] | None = None
+    for root in runs:
+        base = Path(root)
+        if not base.is_dir():
+            continue
+        for child in sorted(base.iterdir()):
+            gate_file = child / ".gate" / "supervise.jsonl"
+            if not (child.is_dir() and (child / "run.toml").is_file() and gate_file.is_file()):
+                continue
+            mtime = gate_file.stat().st_mtime
+            if best is None or mtime > best[0]:
+                best = (mtime, child)
+    return best[1] if best else None
+
+
+def nightshift_run(
+    cfg: Config | None = None,
+    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[str, object] | None:
+    """The active nightshift run as one dict for the agents view; None when the feature is off.
+
+    Runs `<nightshift_command> status --json <dir>` on the most recently touched run dir and maps
+    its JSON to the fields the view shows. Any failure (no runs, non-zero exit, bad JSON, timeout)
+    comes back as {"error": "<one line>"} instead of raising: this is a read-only glance, and Iris
+    never starts, stops or changes a run.
+    """
+    cfg = cfg or load_config()
+    if not cfg.nightshift_command:
+        return None
+    run_dir = _newest_run_dir(cfg.nightshift_runs)
+    if run_dir is None:
+        return {"error": "no nightshift runs found"}
+    cmd = [*cfg.nightshift_command, "status", "--json", str(run_dir)]
+    try:
+        proc = run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                   timeout=NIGHTSHIFT_TIMEOUT, check=False)
+    except subprocess.TimeoutExpired as exc:
+        return {"error": f"nightshift status timed out after {exc.timeout} seconds"}
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"error": f"nightshift status failed: {exc}"}
+    if proc.returncode != 0:
+        last = (proc.stderr or "nightshift status failed").strip().splitlines()[-1]
+        return {"error": last}
+    try:
+        data = json.loads(proc.stdout)
+        done = len(data["done"]) if isinstance(data.get("done"), list) else 0
+        blocked = len(data["blocked"]) if isinstance(data.get("blocked"), list) else 0
+        return {
+            "name": str(data["name"]),
+            "done": done,
+            "total": int(data["total"]),
+            "blocked": blocked,
+            "next_item": data["next_item"],
+            "next_title": data["next_title"],
+            "current_minutes": data["current_minutes"],
+            "gate": str(data["gate"]),
+            "dir": str(run_dir),
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        return {"error": f"bad nightshift status JSON: {exc}"}
 
 
 def agents_status(config: Path | str | None = None) -> str:

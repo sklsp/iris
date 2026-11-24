@@ -482,12 +482,22 @@ def test_agents_payload_carries_the_nightshift_run_when_configured(tmp_path, mon
 
     fake = {"name": "qwen92", "done": 1, "total": 2, "blocked": 0, "next_item": 2,
             "next_title": "dashboard: show it on the agents view", "current_minutes": 7,
-            "gate": "pass", "dir": "C:/runs/qwen92"}
+            "gate": "pass", "supervisor_running": True, "updated": "2026-11-15T23:06:00",
+            "dir": "C:/runs/qwen92"}
     monkeypatch.setattr(agents_mod, "nightshift_run", lambda cfg=None: fake)
 
     data = agents_payload()
     assert data["nightshift"] == fake   # the runner's result, untouched; the rows are still there
     assert [r["name"] for r in data["rows"]] == ["fresh"]
+
+
+def test_page_nightshift_line_shows_supervisor_state_and_age(server):
+    status, _headers, page = get(server + "/")
+    assert status == 200
+    fn = page.split("function renderAgents", 1)[1].split("\n}", 1)[0]
+    assert 'n.supervisor_running ? "running" : "stopped"' in fn   # the line starts with the supervisor's state
+    assert "new Date(n.updated)" in fn   # minutes since the last event, from the browser's clock
+    assert '" min ago"' in fn                                     # and it ends with "updated <n> min ago"
 
 
 @pytest.fixture(scope="module")

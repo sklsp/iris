@@ -6,7 +6,8 @@ IRIS_DASHBOARD_PORT). The page plus these JSON routes are polled every 3 s by th
     /api/system   CPU %, RAM used/total, per-GPU load, VRAM and temperature, with a
                   five-minute history for the sparklines
     /api/agents   one row per watched repo (branch, last commit and age, uncommitted
-                  count, BLOCKED.md, STUCK), stuck rows first; cached 30 s
+                  count, BLOCKED.md, STUCK), stuck rows first; when agents.toml names a nightshift command the payload
+                   also carries its active run's status; cached 30 s
     /api/runs     one progress row per watched repo that has a PROGRESS-*.md file: item counts
                   and whether the run is done; not-done runs first, then by name; cached 30 s
     /api/lmstudio every model LM Studio knows, with its state (loaded or not) and type
@@ -124,7 +125,7 @@ def system_payload() -> dict[str, Any]:
 
 def agents_payload() -> dict[str, Any]:
     """One structured row per watched repo; the stuck ones come first."""
-    from iris.agents import discover, load_config, repo_status
+    from iris.agents import discover, load_config, nightshift_run, repo_status
 
     cfg = load_config()
     rows = []
@@ -136,7 +137,11 @@ def agents_payload() -> dict[str, Any]:
                      "uncommitted": s.uncommitted, "blocked": s.blocked,
                      "stuck": s.stuck, "error": s.error})
     rows.sort(key=lambda r: 0 if r["stuck"] else 1)  # stuck first, stable otherwise
-    return {"rows": rows}
+    payload: dict[str, Any] = {"rows": rows}
+    ns = nightshift_run(cfg)   # the active-run glance; None when agents.toml names no command
+    if ns is not None:
+        payload["nightshift"] = ns
+    return payload
 
 
 def runs_payload() -> dict[str, Any]:

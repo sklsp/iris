@@ -65,6 +65,7 @@ h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-trans
 .b-stuck{color:#f85149;background:rgba(248,81,73,.14)}
 .b-blocked{color:#d29922;background:rgba(210,153,34,.14)}
 .a-err{color:#8a9099;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}
+.ns-line{color:#8a9099;font-size:11px;padding:2px 8px 6px;border-bottom:1px solid #23262c}
 
 /* lm studio */
 .lm-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
@@ -566,6 +567,19 @@ function renderAgents(d){
   if (!d || !Array.isArray(d.rows)){
     body.appendChild(el("div", "empty", d && d.error ? d.error : "no data yet"));
     return;
+  }
+  if (d.nightshift){   // the active nightshift run, when agents.toml names a command; above the repo list
+    const n = d.nightshift;
+    let line;
+    if (n.error){
+      line = n.error;   // already says what happened ("no nightshift runs found", ...)
+    } else {
+      const on = n.next_item != null ? "on " + n.next_item + " " + (n.next_title || "") : "complete";
+      const mins = n.current_minutes != null ? " for " + n.current_minutes + " min" : "";
+      line = "nightshift " + n.name + ": " + n.done + "/" + n.total + " done, " + n.blocked +
+             " blocked, " + on + mins + ", last check " + n.gate;
+    }
+    body.appendChild(el("div", "ns-line", line));
   }
   const head = el("div", "arow a-head");
   ["repo", "branch", "last commit", "uncommitted", ""].forEach(h => {

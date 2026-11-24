@@ -346,7 +346,7 @@ The page polls every 3 seconds and has eleven tabs:
   name and age only (it stats files but never reads them).
 - Activity: the last 50 journal entries newest first with tier and outcome chips, plus today's request, confirmation,
   refusal and error counts. Autopilot outcomes appear here with their own badge.
-- Repos: branch, last commit and its age, uncommitted files, BLOCKED.md and STUCK flags per agent repo, stuck repos first.
+- Repos: branch, last commit and its age, uncommitted files, BLOCKED.md and STUCK flags per agent repo, stuck repos first. When `agents.toml` sets `nightshift_command` (how to call nightshift) and `nightshift_runs` (the folders that hold its run dirs), one line above the list shows the active run: done and blocked counts, current item and minutes on it, last gate check.
 - Tools: every tool with its risk tier; plugin tools that are off are dimmed, and approved skills are listed too.
 - Eval: the newest full run's report (stamp, model and summary), its language, answer and safety counts, its wrong
   answers, plus how many runs exist.

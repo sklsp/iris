@@ -26,6 +26,7 @@
 - git, Cline CLI and lms output are decoded as UTF-8 with replacement, so the dashboard's agent status and autopilot survive any text on a non-UTF-8 locale code page.
 - The dashboard's Settings tab has a "Start Iris in the tray at login" switch that writes or removes the Startup-folder entry (`/api/startup`); an installer build answers that it manages its own entry.
 - When `agents.toml` names a nightshift command, the dashboard's Repos tab shows the active run above the repo list (done and blocked counts, current item and minutes on it, last gate check); `/api/agents` carries it as a `nightshift` key.
+- The dashboard's nightshift line now starts with whether the supervisor is running or stopped and ends with how many minutes ago the run was last updated; older nightshift versions that report neither read as stopped with no age.
 
 ## 1.0.0 (release date): steady, safer and measured
 

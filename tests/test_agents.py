@@ -309,6 +309,8 @@ def _status_json() -> str:
         "gate": "pass",
         "commits": [{"hash": "abc1234", "subject": "Q1: agents: read the active nightshift run"}],
         "events": [],
+        "supervisor_running": True,
+        "updated": "2026-11-15T23:06:00",
     })
 
 
@@ -380,8 +382,39 @@ def test_nightshift_run_maps_the_status_fields(tmp_path):
         "next_title": "dashboard: show it on the agents view",
         "current_minutes": 7,
         "gate": "pass",
+        "supervisor_running": True,
+        "updated": "2026-11-15T23:06:00",
         "dir": str(run_dir),
     }
+
+
+def test_nightshift_run_defaults_the_supervisor_fields_when_missing(tmp_path):
+    """Older nightshift versions print no supervisor keys at all: stopped, with no age."""
+    make_run_dir(tmp_path, "qwen92")
+    payload = json.dumps({"name": "old", "total": 1, "done": [], "blocked": [],
+                          "next_item": None, "next_title": None, "current_minutes": None, "gate": "pass"})
+
+    def fake(*args, **kwargs):
+        return _StatusProc(stdout=payload)
+
+    out = agents.nightshift_run(Config(nightshift_command=["ns"], nightshift_runs=[str(tmp_path)]), run=fake)
+    assert out is not None and "error" not in out
+    assert out["supervisor_running"] is False and out["updated"] is None
+
+
+def test_nightshift_run_maps_a_null_updated(tmp_path):
+    """A live supervisor with no events yet: running, but nothing to date."""
+    make_run_dir(tmp_path, "qwen92")
+    payload = json.dumps({"name": "fresh", "total": 1, "done": [], "blocked": [],
+                          "next_item": None, "next_title": None, "current_minutes": None, "gate": "pass",
+                          "supervisor_running": True, "updated": None})
+
+    def fake(*args, **kwargs):
+        return _StatusProc(stdout=payload)
+
+    out = agents.nightshift_run(Config(nightshift_command=["ns"], nightshift_runs=[str(tmp_path)]), run=fake)
+    assert out is not None and "error" not in out
+    assert out["supervisor_running"] is True and out["updated"] is None
 
 
 def test_nightshift_run_counts_done_and_blocked_items(tmp_path):

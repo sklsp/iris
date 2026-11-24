@@ -216,6 +216,7 @@ def nightshift_run(
         data = json.loads(proc.stdout)
         done = len(data["done"]) if isinstance(data.get("done"), list) else 0
         blocked = len(data["blocked"]) if isinstance(data.get("blocked"), list) else 0
+        updated = data.get("updated")
         return {
             "name": str(data["name"]),
             "done": done,
@@ -225,6 +226,9 @@ def nightshift_run(
             "next_title": data["next_title"],
             "current_minutes": data["current_minutes"],
             "gate": str(data["gate"]),
+            # older nightshift versions print neither key: the line then reads stopped with no age
+            "supervisor_running": bool(data.get("supervisor_running", False)),
+            "updated": updated if isinstance(updated, str) else None,
             "dir": str(run_dir),
         }
     except (KeyError, TypeError, ValueError) as exc:

@@ -574,10 +574,16 @@ function renderAgents(d){
     if (n.error){
       line = n.error;   // already says what happened ("no nightshift runs found", ...)
     } else {
+      const state = n.supervisor_running ? "running" : "stopped";   // a live supervisor holds the repo lock
       const on = n.next_item != null ? "on " + n.next_item + " " + (n.next_title || "") : "complete";
       const mins = n.current_minutes != null ? " for " + n.current_minutes + " min" : "";
-      line = "nightshift " + n.name + ": " + n.done + "/" + n.total + " done, " + n.blocked +
-             " blocked, " + on + mins + ", last check " + n.gate;
+      let updated = "";   // minutes since the last supervisor event, from the browser's clock; left out when unknown
+      if (n.updated){
+        const ageMin = Math.max(0, Math.round((Date.now() - new Date(n.updated).getTime()) / 60000));
+        updated = ", updated " + ageMin + " min ago";
+      }
+      line = "nightshift " + n.name + ": " + state + ", " + n.done + "/" + n.total + " done, " + n.blocked +
+             " blocked, " + on + mins + ", last check " + n.gate + updated;
     }
     body.appendChild(el("div", "ns-line", line));
   }
